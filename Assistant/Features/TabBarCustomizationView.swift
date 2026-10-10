@@ -71,7 +71,7 @@ struct TabBarCustomizationView: View {
                         .foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("首页 Tab 栏最多允许放置 5 个板块（最少保留 2 个）。")
+                Text("首页 Tab 栏最多允许放置 5 个板块（最少保留 2 个）。其中「设置」为系统核心入口固定常驻不可移除，但可自由上下拖拽排序。")
             }
 
             // MARK: - 3. 候选板块（可添加）
@@ -128,12 +128,18 @@ struct TabBarCustomizationView: View {
 
     @ViewBuilder
     private func activeTabRow(tab: NavigationRouter.AppTab, index: Int) -> some View {
-        let isMinCount = tabManager.activeTabs.count <= TabBarManager.minTabsCount
-        let removeButtonColor: Color = isMinCount ? Color.secondary : Color.red
+        let isSettings = tab == .settings
+        let canRemove = tabManager.canRemoveTab(tab)
+        let removeButtonColor: Color = canRemove ? Color.red : Color.secondary.opacity(0.4)
 
         HStack(spacing: 12) {
-            // 移除按钮
+            // 移除按钮（若为「设置」则展示锁定图标并禁止移除）
             Button {
+                if isSettings {
+                    noticeMessage = "「设置」为核心系统入口，固定常驻不可移除"
+                    Haptic.warning()
+                    return
+                }
                 let result = tabManager.removeTab(tab)
                 if !result.success {
                     noticeMessage = result.message
@@ -141,12 +147,19 @@ struct TabBarCustomizationView: View {
                     noticeMessage = nil
                 }
             } label: {
-                Image(systemName: "minus.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(removeButtonColor)
+                if isSettings {
+                    Image(systemName: "lock.fill")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.secondary.opacity(0.7))
+                        .frame(width: 24, height: 24)
+                } else {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(removeButtonColor)
+                }
             }
             .buttonStyle(.plain)
-            .disabled(isMinCount)
+            .disabled(!canRemove)
 
             // 图标
             Image(systemName: tab.systemImage)
@@ -160,11 +173,19 @@ struct TabBarCustomizationView: View {
                 HStack(spacing: 6) {
                     Text(tab.title)
                         .font(.body.weight(.medium))
+                    if isSettings {
+                        Text("固定常驻")
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
+                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                            .foregroundStyle(Color.secondary)
+                    }
                     Text("第 \(index + 1) 位")
                         .font(.caption2)
                         .foregroundStyle(Color.secondary)
                 }
-                Text(tab.subtitle)
+                Text(isSettings ? "核心系统设置与定制中心（支持自由排序，不可移除）" : tab.subtitle)
                     .font(.caption2)
                     .foregroundStyle(Color.secondary)
                     .lineLimit(1)

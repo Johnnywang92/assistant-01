@@ -29,6 +29,14 @@ public final class TabBarManager: ObservableObject {
                     unique.append(tab)
                 }
             }
+            // 确保「设置」作为核心系统入口始终常驻在 Tab 栏中
+            if !unique.contains(.settings) {
+                if unique.count >= Self.maxTabsCount {
+                    unique[unique.count - 1] = .settings
+                } else {
+                    unique.append(.settings)
+                }
+            }
             let valid = unique.prefix(Self.maxTabsCount)
             self.activeTabs = valid.count >= Self.minTabsCount ? Array(valid) : NavigationRouter.defaultTabs
         } else {
@@ -45,6 +53,11 @@ public final class TabBarManager: ObservableObject {
     /// 检查指定板块是否已放在 Tab 栏上
     public func isTabActive(_ tab: NavigationRouter.AppTab) -> Bool {
         activeTabs.contains(tab)
+    }
+
+    /// 检查指定板块是否可以被移除（「设置」为核心入口固定常驻，且保留最少板块数）
+    public func canRemoveTab(_ tab: NavigationRouter.AppTab) -> Bool {
+        tab != .settings && activeTabs.count > Self.minTabsCount
     }
 
     /// 所有未添加到 Tab 栏的候选板块
@@ -69,9 +82,13 @@ public final class TabBarManager: ObservableObject {
         return (true, nil)
     }
 
-    /// 从 Tab 栏移除板块
+    /// 从 Tab 栏移除板块（「设置」板块不允许移除）
     @discardableResult
     public func removeTab(_ tab: NavigationRouter.AppTab) -> (success: Bool, message: String?) {
+        guard tab != .settings else {
+            Haptic.warning()
+            return (false, "「设置」为核心系统入口，固定常驻不可移除")
+        }
         guard activeTabs.count > Self.minTabsCount else {
             Haptic.error()
             return (false, "首页 Tab 栏至少需要保留 \(Self.minTabsCount) 个板块")
