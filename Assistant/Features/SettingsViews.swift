@@ -103,9 +103,6 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(assistantName.isEmpty ? "小助" : assistantName)
                                 .font(.headline)
-                            Text("专属离线个人 AI 助理")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
                     .padding(.vertical, 4)
@@ -113,7 +110,7 @@ struct SettingsView: View {
                     HStack {
                         Text("助手命名")
                         Spacer()
-                        TextField("给你的助手起个名字", text: $assistantName)
+                        TextField("名称", text: $assistantName)
                             .multilineTextAlignment(.trailing)
                             .foregroundStyle(.primary)
                             .submitLabel(.done)
@@ -132,10 +129,6 @@ struct SettingsView: View {
 
                     // 快速命名推荐预设
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("推荐助手名：")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-
                         HStack(spacing: 8) {
                             ForEach(["小助", "管家", "贾维斯", "星期五", "小秘书"], id: \.self) { preset in
                                 Button {
@@ -164,7 +157,7 @@ struct SettingsView: View {
                     HStack {
                         Text("对我的称呼")
                         Spacer()
-                        TextField("如：老板、主人、您", text: $userTitle)
+                        TextField("称呼", text: $userTitle)
                             .multilineTextAlignment(.trailing)
                             .foregroundStyle(.primary)
                             .submitLabel(.done)
@@ -183,10 +176,6 @@ struct SettingsView: View {
 
                     // 快速称呼推荐预设
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("推荐称呼：")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-
                         HStack(spacing: 8) {
                             ForEach(["你", "您", "老板", "主人", "朋友"], id: \.self) { preset in
                                 Button {
@@ -209,9 +198,7 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, 2)
                 } header: {
-                    Text("助手与称呼定制")
-                } footer: {
-                    Text("名称与称呼支持在对话中直接通过语音设置，并同步至语音问候和主界面。")
+                    Text("助手与称呼")
                 }
 
                 // MARK: - 核心权限健康度检查
@@ -230,13 +217,10 @@ struct SettingsView: View {
                             }
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("核心权限健康度与授权检查")
+                                Text("权限检查")
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(.primary)
 
-                                Text(PermissionManager.shared.areAllCorePermissionsReady ? "通知、定位、麦克风与相册均已完全就绪" : "有核心权限未开启，点击快速配置与补全")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
                             }
 
                             Spacer()
@@ -255,9 +239,9 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                 } header: {
-                    Text("系统核心权限")
+                    Text("系统权限")
                 } footer: {
-                    Text("基础功能在设备上处理；启用局域网模型服务时，相关生活摘要会发送至你指定的端点。权限可按需开启。")
+                    Text("局域网模型启用后，生活摘要会发送至指定端点。")
                 }
 
                 Section {
@@ -265,7 +249,7 @@ struct SettingsView: View {
                         AppBackgroundSettingsView()
                     } label: {
                         HStack {
-                            Label("主题与背景设置", systemImage: "paintpalette.fill")
+                            Label("主题与背景", systemImage: "paintpalette.fill")
                                 .foregroundStyle(.primary)
                             Spacer()
                             Text(AppBackgroundManager.shared.currentStyle.rawValue)
@@ -278,7 +262,7 @@ struct SettingsView: View {
                         TabBarCustomizationView()
                     } label: {
                         HStack {
-                            Label("首页 Tab 栏自定义", systemImage: "rectangle.bottomthird.inset.filled")
+                            Label("底部导航栏", systemImage: "rectangle.bottomthird.inset.filled")
                                 .foregroundStyle(.primary)
                             Spacer()
                             Text("\(TabBarManager.shared.activeTabs.count) / 5 个板块")
@@ -287,9 +271,7 @@ struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("界面与个性化定制")
-                } footer: {
-                    Text("支持 8 款质感微光渐变主题、相册自选壁纸透光调节及首页底部 Tab 栏自由排序。")
+                    Text("界面")
                 }
 
                 // MARK: - 长辈关怀模式 (大字与无障碍)
@@ -310,7 +292,7 @@ struct SettingsView: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
-                                    Text("老年人大字关怀模式")
+                                    Text("大字关怀模式")
                                         .font(.body.bold())
                                         .foregroundStyle(.primary)
 
@@ -324,16 +306,18 @@ struct SettingsView: View {
                                     }
                                 }
 
-                                Text(seniorManager.isSeniorModeEnabled ? "当前：\(seniorManager.fontScale.title) · 高对比度已启用" : "字号全局放大 35%~100%、大声朗读与防抖大触控")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                if seniorManager.isSeniorModeEnabled {
+                                    Text(seniorManager.fontScale.title)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
 
                             Spacer()
                         }
                     }
 
-                    Toggle("快速开启大字关怀模式", isOn: $seniorManager.isSeniorModeEnabled)
+                    Toggle("开启大字模式", isOn: $seniorManager.isSeniorModeEnabled)
                         .tint(.orange)
                         .onChange(of: seniorManager.isSeniorModeEnabled) { _, val in
                             if val {
@@ -343,9 +327,7 @@ struct SettingsView: View {
                             }
                         }
                 } header: {
-                    Text("无障碍与长辈关怀")
-                } footer: {
-                    Text("开启后全 App 文字全面放大、对比度加深，服药与快递待办支持一键大声语音播报。")
+                    Text("无障碍")
                 }
 
                 Section {
@@ -363,15 +345,13 @@ struct SettingsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } header: {
-                    Text("运行模式面板")
-                } footer: {
-                    Text("安静模式下不发送横幅/通知声音；记录模式下只收录数据不催办。")
+                    Text("运行模式")
                 }
 
                 Section {
-                    Toggle("单手贴边语音悬浮球", isOn: $floatingVoiceEnabled)
+                    Toggle("语音悬浮球", isOn: $floatingVoiceEnabled)
 
-                    Toggle("语音对话回答时朗读 (TTS)", isOn: $voiceReplyEnabled)
+                    Toggle("朗读语音回答", isOn: $voiceReplyEnabled)
                         .onChange(of: voiceReplyEnabled) { _, val in
                             AppSettings.voiceReplyEnabled = val
                         }
@@ -385,7 +365,7 @@ struct SettingsView: View {
                             Haptic.light()
                         } label: {
                             HStack {
-                                Text("重置悬浮球位置至右下角")
+                                Text("重置悬浮球位置")
                                 Spacer()
                                 Image(systemName: "arrow.counterclockwise")
                             }
@@ -393,14 +373,12 @@ struct SettingsView: View {
                         }
                     }
                 } header: {
-                    Text("语音与悬浮助手")
-                } footer: {
-                    Text("开启后可在屏幕任意边缘自由拖动悬浮球，松手自动贴边吸附，最适合单手大拇指快速开启语音对话。")
+                    Text("语音")
                 }
 
                 // MARK: - 对话记录与自动滚动留存 (7天 / 30天)
                 Section {
-                    Picker("对话记录保留周期", selection: $retentionPolicy) {
+                    Picker("记录保留时间", selection: $retentionPolicy) {
                         ForEach(DialogueRetentionPolicy.allCases) { policy in
                             Text(policy.displayName).tag(policy)
                         }
@@ -413,7 +391,7 @@ struct SettingsView: View {
                     }
 
                     HStack {
-                        Text("本地存储对话消息")
+                        Text("本地对话")
                         Spacer()
                         Text("\(savedDialogueCount) 条")
                             .font(.subheadline)
@@ -425,15 +403,15 @@ struct SettingsView: View {
                             showingClearDialogueAlert = true
                         } label: {
                             HStack {
-                                Label("清空本地所有历史对话", systemImage: "trash")
+                                Label("清空对话记录", systemImage: "trash")
                                 Spacer()
                             }
                         }
                     }
                 } header: {
-                    Text("对话记录与自动滚动留存")
+                    Text("对话记录")
                 } footer: {
-                    Text("支持自动保留 7 天或 30 天。超期对话将在后台或 App 启动时静默自动滚动清理；提炼生成的待办事项、记账数据不受影响，永久存储在本地。")
+                    Text("到期自动清理；待办和账单不受影响。")
                 }
 
                 // MARK: - 定期复盘报告 (日报 / 周报 / 月报)
@@ -454,7 +432,7 @@ struct SettingsView: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
-                                    Text("生活复盘报告 (日报·周报·月报)")
+                                    Text("生活报告")
                                         .font(.body.bold())
                                         .foregroundStyle(.primary)
 
@@ -468,7 +446,7 @@ struct SettingsView: View {
                                     }
                                 }
 
-                                Text("每日 \(reportManager.dailyTime.formatted(date: .omitted, time: .shortened)) 自动汇总待办、快递与收支账单")
+                                Text("日报时间：\(reportManager.dailyTime.formatted(date: .omitted, time: .shortened))")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -477,12 +455,10 @@ struct SettingsView: View {
                         }
                     }
 
-                    Toggle("每日生活日报提醒（默认开启）", isOn: $reportManager.isDailyReportEnabled)
+                    Toggle("每日日报提醒", isOn: $reportManager.isDailyReportEnabled)
                         .tint(.green)
                 } header: {
-                    Text("定期复盘与成长报告")
-                } footer: {
-                    Text("默认开启每日生活日报，每天晚间为你总结今日搞定的待办与记账支出。进入后可随时查看历史周报、月报与成就评估。")
+                    Text("定期报告")
                 }
 
                 Section {
@@ -500,25 +476,23 @@ struct SettingsView: View {
                         }
                     }
 
-                    Toggle("全场景人性化动态排序", isOn: $isAdaptiveSortingEnabled)
+                    Toggle("情境动态排序", isOn: $isAdaptiveSortingEnabled)
 
-                    Toggle("气象预警与骤降添衣提醒", isOn: $weatherAlertsEnabled)
+                    Toggle("天气预警与添衣提醒", isOn: $weatherAlertsEnabled)
                     Toggle("在锁屏通知中显示待办详情", isOn: $showSensitiveTodoNotifications)
                         .onChange(of: showSensitiveTodoNotifications) { _, _ in
                             TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
                         }
                 } header: {
-                    Text("生活作息与情境智能感知")
-                } footer: {
-                    Text("开启后，工作日未到下班时间保持「工作通勤」，下班后与节假日根据出行概率重排选项。零网络调用，完全本地实时推算。")
+                    Text("生活习惯")
                 }
 
-                Section("智能大脑与 AI 本地模型") {
+                Section("AI 模型") {
                     NavigationLink {
                         LLMModelManagementView()
                     } label: {
                         HStack {
-                            Label("模型文件与局域网问答", systemImage: "brain.head.profile")
+                        Label("模型与局域网问答", systemImage: "brain.head.profile")
                             Spacer()
                             Text(LLMModelManager.shared.isModelDownloaded ? "文件已下载" : "可配置")
                                 .font(.caption2)
@@ -527,32 +501,32 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("安全与访问保护") {
+                Section("安全") {
                     NavigationLink {
                         AppLockSettingsView()
                     } label: {
-                        Label("App 访问锁 (Face ID & 密码)", systemImage: "lock.shield.fill")
+                        Label("应用锁", systemImage: "lock.shield.fill")
                     }
                 }
 
-                Section("快捷方式与系统联动") {
+                Section("快捷方式") {
                     NavigationLink {
                         ShortcutsGuideView()
                     } label: {
-                        Label("快捷方式与效率指南 (操作按钮/桌面长按)", systemImage: "bolt.badge.clock.fill")
+                        Label("快捷方式指南", systemImage: "bolt.badge.clock.fill")
                     }
-                    NavigationLink("短信自动同步快捷指令向导") { SetupGuideView() }
+                    NavigationLink("短信同步向导") { SetupGuideView() }
                 }
 
-                Section("数据管理与安全迁移") {
+                Section("数据管理") {
                     NavigationLink {
                         DataMigrationView()
                     } label: {
-                        Label("数据备份、跨机迁移与批量导入", systemImage: "arrow.triangle.2.circlepath.circle.fill")
+                        Label("备份、迁移与导入", systemImage: "arrow.triangle.2.circlepath.circle.fill")
                     }
                 }
 
-                Section("系统信息与调试") {
+                Section("系统信息") {
                     LabeledContent("证书签名有效期", value: "\(ExpiryReminder.daysLeft) 天")
                     NavigationLink("最近收到的原生消息") { RawMessagesView() }
                 }

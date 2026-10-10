@@ -9,7 +9,7 @@ import UserNotifications
 
 /// 全局权限管理与健康度检测中心
 @MainActor
-public final class PermissionManager: NSObject, ObservableObject, CLLocationManagerDelegate {
+public final class PermissionManager: NSObject, ObservableObject, @preconcurrency CLLocationManagerDelegate {
     public static let shared = PermissionManager()
 
     public enum PermissionState: Equatable {
@@ -75,7 +75,7 @@ public final class PermissionManager: NSObject, ObservableObject, CLLocationMana
         }
 
         // 3. 麦克风
-        switch AVAudioSession.sharedInstance().recordPermission {
+        switch AVAudioApplication.shared.recordPermission {
         case .granted:
             self.microphoneStatus = .authorized
         case .denied:
@@ -133,11 +133,7 @@ public final class PermissionManager: NSObject, ObservableObject, CLLocationMana
     /// 申请麦克风与端侧语音识别权限
     public func requestMicrophoneAndSpeech() async {
         // 麦克风
-        let micGranted: Bool = await withCheckedContinuation { cont in
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                cont.resume(returning: granted)
-            }
-        }
+        let micGranted = await AVAudioApplication.requestRecordPermission()
         self.microphoneStatus = micGranted ? .authorized : .denied
 
         // 语音识别

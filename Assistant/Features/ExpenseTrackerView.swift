@@ -63,6 +63,7 @@ struct ExpenseTrackerView: View {
     @State private var recordToEdit: ExpenseRecord? = nil
     @State private var feedbackBanner: String?
     @State private var isListeningQuickVoice = false
+    @State private var showingReceiptScanner = false
 
     private var calendar: Calendar { .current }
 
@@ -301,10 +302,19 @@ struct ExpenseTrackerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingManualAddSheet = true
-                    } label: {
-                        Image(systemName: "plus")
+                    HStack(spacing: 14) {
+                        Button {
+                            showingReceiptScanner = true
+                        } label: {
+                            Image(systemName: "doc.viewfinder")
+                        }
+                        .accessibilityLabel("拍小票记账")
+
+                        Button {
+                            showingManualAddSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
                     }
                 }
             }
@@ -313,6 +323,21 @@ struct ExpenseTrackerView: View {
             }
             .sheet(item: $recordToEdit) { record in
                 AddOrEditExpenseSheet(recordToEdit: record)
+            }
+            .sheet(isPresented: $showingReceiptScanner) {
+                ReceiptScannerView { result, rawText in
+                    let record = ExpenseRecord(
+                        amount: result.amount,
+                        isIncome: result.isIncome,
+                        category: result.category,
+                        title: result.title,
+                        rawText: rawText,
+                        date: result.date
+                    )
+                    context.insert(record)
+                    try? context.save()
+                    showFeedback("已从小票记入 ¥\(String(format: "%.2f", result.amount))")
+                }
             }
             .overlay(alignment: .bottom) {
                 if let feedback = feedbackBanner {

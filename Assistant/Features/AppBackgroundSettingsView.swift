@@ -8,6 +8,7 @@ struct AppBackgroundSettingsView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
 
     var body: some View {
+        let customImage = manager.customImage
         Form {
             // MARK: - 1. 实时微缩预览窗
             Section {
@@ -108,9 +109,9 @@ struct AppBackgroundSettingsView: View {
                     // 相册选取照片
                     PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                         HStack {
-                            Label(manager.customImage == nil ? "从相册选择照片壁纸" : "更换相册壁纸", systemImage: "photo.badge.plus")
+                            Label(customImage == nil ? "从相册选择照片壁纸" : "更换相册壁纸", systemImage: "photo.badge.plus")
                             Spacer()
-                            if let img = manager.customImage {
+                            if let img = customImage {
                                 Image(uiImage: img)
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
@@ -128,7 +129,7 @@ struct AppBackgroundSettingsView: View {
                         }
                     }
 
-                    if manager.customImage != nil {
+                    if customImage != nil {
                         // 毛玻璃模糊度滑块
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {

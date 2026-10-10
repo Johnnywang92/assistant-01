@@ -83,9 +83,9 @@ targets:
         NSLocationWhenInUseUsageDescription: "需要定位权限以支持到达离开家、公司或驿站时的情景智能感知"
         NSLocationAlwaysAndWhenInUseUsageDescription: "需要后台定位与地理围栏权限以支持到达驿站附近时离线弹出取件提醒"
         NSFaceIDUsageDescription: "需要 Face ID 权限以保护你的重要证件照片与敏感数据安全"
-        NSCameraUsageDescription: "需要相机权限以支持扫描二维码导入待办，以及现场拍摄证件照片存入保险箱"
+        NSCameraUsageDescription: "需要相机权限以扫描二维码、拍摄证件和小票"
         NSPhotoLibraryAddUsageDescription: "需要相册写入权限以保存生成的待办分享卡片到相册"
-        NSPhotoLibraryUsageDescription: "需要相册权限以自选壁纸与保存分享卡片"
+        NSPhotoLibraryUsageDescription: "需要相册权限以选择壁纸、证件和小票照片"
 
 schemes:
   Assistant:

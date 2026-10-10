@@ -122,16 +122,15 @@ struct LifeVaultView: View {
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
 
                 // MARK: - 1. 私密数字保险箱
-                Section("私密数字保险箱") {
+                Section("私密资料") {
                     NavigationLink {
                         IDDocumentVaultView()
                     } label: {
                         vaultRow(
                             icon: "person.text.rectangle.fill",
                             color: .blue,
-                            title: "重要证件与照片保险箱",
-                            subtitle: "身份证、护照、驾照、社保卡等正反面照片安全归档",
-                            status: expiringDocCount > 0 ? "⚠️ \(expiringDocCount) 张即将到期" : "已归档 \(documents.count) 张证件",
+                            title: "重要证件",
+                            status: expiringDocCount > 0 ? "\(expiringDocCount) 张即将到期" : "\(documents.count) 张证件",
                             isAlert: expiringDocCount > 0
                         )
                     }
@@ -142,9 +141,8 @@ struct LifeVaultView: View {
                         vaultRow(
                             icon: "key.fill",
                             color: .teal,
-                            title: "离线安全密码库",
-                            subtitle: "本地独立硬件加密，强随机生成与密码轮换预警",
-                            status: "已妥善加密 \(passwords.count) 组账号凭据",
+                            title: "密码库",
+                            status: "\(passwords.count) 组账号",
                             isAlert: false
                         )
                     }
@@ -156,23 +154,21 @@ struct LifeVaultView: View {
                             icon: "mic.circle.fill",
                             color: .red,
                             title: "语音备忘录",
-                            subtitle: "离线录音、倍速回放，转写文字并一键提取待办",
-                            status: "已保存 \(voiceMemos.count) 条录音",
+                            status: "\(voiceMemos.count) 条录音",
                             isAlert: false
                         )
                     }
                 }
 
                 // MARK: - 2. 情感记忆与守护
-                Section("情感与生活守护") {
+                Section("生活提醒") {
                     NavigationLink {
                         AnniversaryManagementView()
                     } label: {
                         vaultRow(
                             icon: "gift.fill",
                             color: .pink,
-                            title: "纪念日与重要日子",
-                            subtitle: "恋爱纪念日、亲友生日、天数倒数与农历智能推算",
+                            title: "纪念日",
                             status: nearestAnniversarySummary,
                             isAlert: false
                         )
@@ -184,25 +180,23 @@ struct LifeVaultView: View {
                         vaultRow(
                             icon: "shield.lefthalf.filled",
                             color: .indigo,
-                            title: "防自动续费与物品临期",
-                            subtitle: "自动扣款提前提醒拦截、开封药品与食品保质期监控",
-                            status: "\(subscriptions.count) 项自动续费 | \(expiries.count) 项物品临期",
+                            title: "续费与物品临期",
+                            status: "\(subscriptions.count) 项续费 · \(expiries.count) 项临期",
                             isAlert: false
                         )
                     }
                 }
 
                 // MARK: - 3. 物品收纳与空间感知
-                Section("物品收纳与空间记忆") {
+                Section("物品与地点") {
                     NavigationLink {
                         ItemStorageVaultView()
                     } label: {
                         vaultRow(
                             icon: "archivebox.fill",
                             color: .indigo,
-                            title: "物品收纳备忘",
-                            subtitle: "羽绒服、备用钥匙、工具盒，照片找物一秒定位",
-                            status: "已收录 \(storedItems.count) 件收纳物品",
+                            title: "物品收纳",
+                            status: "\(storedItems.count) 件物品",
                             isAlert: false
                         )
                     }
@@ -213,40 +207,37 @@ struct LifeVaultView: View {
                         vaultRow(
                             icon: "brain.head.profile",
                             color: .orange,
-                            title: "常驻地点学习 (家/公司)",
-                            subtitle: "基于夜间停留与 WiFi 的空间感知地点模型",
-                            status: "已掌握 \(places.count) 处常驻空间",
+                            title: "常驻地点",
+                            status: "\(places.count) 处地点",
                             isAlert: false
                         )
                     }
                 }
 
                 // MARK: - 4. 健康作息与习惯
-                Section("健康作息与生活习惯") {
+                Section("健康与习惯") {
                     NavigationLink {
                         HabitAndMedicationView()
                     } label: {
                         vaultRow(
                             icon: "heart.text.square.fill",
                             color: .purple,
-                            title: "周期家务与健康服药",
-                            subtitle: "滤芯更换、打扫卫生、定时服药打卡及智能家居联动",
-                            status: "\(habits.count) 项周期家务 | \(activeMedCount) 项服药提醒",
+                            title: "周期家务与服药",
+                            status: "\(habits.count) 项家务 · \(activeMedCount) 项服药",
                             isAlert: false
                         )
                     }
                 }
 
                 // MARK: - 4. 随身防丢与车务守护
-                Section("随身防丢与车务守护") {
+                Section("出行") {
                     NavigationLink {
                         VehicleManagementView()
                     } label: {
                         vaultRow(
                             icon: "car.fill",
                             color: .indigo,
-                            title: "爱车守护与车务管理",
-                            subtitle: "加油/加电周期提醒、常规保养、车险续保与年检预警",
+                            title: "爱车管理",
                             status: vehicleStatusSummary,
                             isAlert: needCareVehicleCount > 0
                         )
@@ -258,9 +249,8 @@ struct LifeVaultView: View {
                         vaultRow(
                             icon: "bag.fill",
                             color: .teal,
-                            title: "出门防遗忘清单",
-                            subtitle: "工作通勤、出差旅行、运动健身防漏带，指差四字确认",
-                            status: uncheckedDepartureCount > 0 ? "⚠️ \(uncheckedDepartureCount) 件核心装备未确认" : "已收录 \(departureItems.count) 项随身装备",
+                            title: "出门清单",
+                            status: uncheckedDepartureCount > 0 ? "\(uncheckedDepartureCount) 件未确认" : "\(departureItems.count) 件随身物品",
                             isAlert: uncheckedDepartureCount > 0
                         )
                     }
@@ -278,23 +268,23 @@ struct LifeVaultView: View {
 
     private var vehicleStatusSummary: String {
         if vehicles.isEmpty {
-            return "未添加车辆，点击开启爱车守护"
+            return "尚未添加车辆"
         } else if needCareVehicleCount > 0 {
-            return "⚠️ \(needCareVehicleCount) 辆车需关注补能或保养"
+            return "\(needCareVehicleCount) 辆车需关注"
         } else {
-            return "已守护 \(vehicles.count) 辆爱车，车况良好"
+            return "\(vehicles.count) 辆车"
         }
     }
 
     private var nearestAnniversarySummary: String {
         if let next = nearestAnniversary {
             if next.days == 0 {
-                return "今天正是 \(next.item.title)！"
+                return "今天：\(next.item.title)"
             } else {
-                return "最近：\(next.item.title) 还有 \(next.days) 天"
+                return "\(next.item.title) · 还有 \(next.days) 天"
             }
         }
-        return "共记录 \(anniversaries.count) 个纪念日"
+        return "\(anniversaries.count) 个纪念日"
     }
 
     @ViewBuilder
@@ -339,7 +329,6 @@ struct LifeVaultView: View {
         icon: String,
         color: Color,
         title: String,
-        subtitle: String,
         status: String,
         isAlert: Bool
     ) -> some View {
@@ -358,15 +347,9 @@ struct LifeVaultView: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
 
-                Text(subtitle)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-
                 Text(status)
-                    .font(.caption2.bold())
-                    .foregroundStyle(isAlert ? .red : color)
-                    .padding(.top, 1)
+                    .font(.caption)
+                    .foregroundStyle(isAlert ? .red : .secondary)
             }
             .padding(.vertical, 4)
         }
