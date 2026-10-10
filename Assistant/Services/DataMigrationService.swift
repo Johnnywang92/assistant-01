@@ -25,6 +25,7 @@ public struct BackupPackage: Codable {
     public var expenses: [ExpenseDTO]?
     public var documents: [IDDocumentDTO]?
     public var departureItems: [DepartureCheckItemDTO]?
+    public var voiceMemos: [VoiceMemoDTO]?
 }
 
 // MARK: - DTO 模型定义
@@ -167,6 +168,19 @@ public struct DepartureCheckItemDTO: Codable {
     public var createdAt: Date
 }
 
+public struct VoiceMemoDTO: Codable {
+    public var id: UUID
+    public var title: String
+    public var duration: Double
+    public var audioFileName: String
+    public var audioData: Data?
+    public var transcription: String?
+    public var summary: String?
+    public var tagRaw: String
+    public var isBookmarked: Bool
+    public var createdAt: Date
+}
+
 // MARK: - 备份解析报告
 
 public struct BackupInspectionSummary: Identifiable {
@@ -186,12 +200,13 @@ public struct BackupInspectionSummary: Identifiable {
     public var expenseCount: Int
     public var documentCount: Int
     public var departureItemCount: Int
+    public var voiceMemoCount: Int = 0
     public var isEncryptedWithPIN: Bool = false
 
     public var totalItems: Int {
         todoCount + subscriptionCount + itemExpiryCount + anniversaryCount +
         habitCount + medicationCount + placeCount + passwordCount + usageRecordCount +
-        expenseCount + documentCount + departureItemCount
+        expenseCount + documentCount + departureItemCount + voiceMemoCount
     }
 }
 
@@ -298,6 +313,7 @@ final class DataMigrationService {
         let expenses = (try? context.fetchCount(FetchDescriptor<ExpenseRecord>())) ?? 0
         let documents = (try? context.fetchCount(FetchDescriptor<IDDocumentItem>())) ?? 0
         let departures = (try? context.fetchCount(FetchDescriptor<DepartureCheckItem>())) ?? 0
+        let voiceMemos = (try? context.fetchCount(FetchDescriptor<VoiceMemo>())) ?? 0
 
         return [
             "待办事项": todos,
@@ -311,7 +327,8 @@ final class DataMigrationService {
             "流量历史记录": dataUsage,
             "日常记账明细": expenses,
             "重要证件卡包": documents,
-            "随身防丢清单": departures
+            "随身防丢清单": departures,
+            "语音备忘速记": voiceMemos
         ]
     }
 
@@ -329,6 +346,7 @@ final class DataMigrationService {
         let expenses = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
         let documents = (try? context.fetch(FetchDescriptor<IDDocumentItem>())) ?? []
         let departures = (try? context.fetch(FetchDescriptor<DepartureCheckItem>())) ?? []
+        let voiceMemos = (try? context.fetch(FetchDescriptor<VoiceMemo>())) ?? []
 
         let todoDTOs = todos.map {
             TodoDTO(
@@ -449,6 +467,22 @@ final class DataMigrationService {
             )
         }
 
+        let voiceMemoDTOs = voiceMemos.map { memo in
+            let audioData = VoiceMemoStorage.loadData(memo.audioFileName)
+            return VoiceMemoDTO(
+                id: memo.id,
+                title: memo.title,
+                duration: memo.duration,
+                audioFileName: memo.audioFileName,
+                audioData: audioData,
+                transcription: memo.transcription,
+                summary: memo.summary,
+                tagRaw: memo.tagRaw,
+                isBookmarked: memo.isBookmarked,
+                createdAt: memo.createdAt
+            )
+        }
+
         let metadata = BackupPackage.Metadata(
             schemaVersion: 1,
             appVersion: "0.1.0",
@@ -469,7 +503,8 @@ final class DataMigrationService {
             dataUsageRecords: usageDTOs,
             expenses: expenseDTOs,
             documents: documentDTOs,
-            departureItems: departureDTOs
+            departureItems: departureDTOs,
+            voiceMemos: voiceMemoDTOs
         )
     }
 
@@ -563,6 +598,7 @@ final class DataMigrationService {
             expenseCount: package.expenses?.count ?? 0,
             documentCount: package.documents?.count ?? 0,
             departureItemCount: package.departureItems?.count ?? 0,
+            voiceMemoCount: package.voiceMemos?.count ?? 0,
             isEncryptedWithPIN: isEncryptedWithPIN
         )
     }
@@ -640,6 +676,7 @@ final class DataMigrationService {
             try? context.delete(model: ExpenseRecord.self)
             try? context.delete(model: IDDocumentItem.self)
             try? context.delete(model: DepartureCheckItem.self)
+            try? context.delete(model: VoiceMemo.self)
         }
 
         var details: [String] = []
@@ -895,6 +932,36 @@ final class DataMigrationService {
         }
         details.append("随身防丢: \(restoredDepartures) 项")
         totalRestored += restoredDepartures
+
+        // 13. 语音备忘录
+        var restoredVoiceMemos = 0
+        let existingVoiceMemoIDs = Set(((try? context.fetch(FetchDescriptor<VoiceMemo>())) ?? []).map { $0.id })
+        for vm in package.voiceMemos ?? [] {
+            if strategy == .merge && existingVoiceMemoIDs.contains(vm.id) { continue }
+
+            var actualAudioFileName = vm.audioFileName
+            if let audioData = vm.audioData {
+                if let savedName = VoiceMemoStorage.save(data: audioData, preferredName: vm.audioFileName) {
+                    actualAudioFileName = savedName
+                }
+            }
+
+            let item = VoiceMemo(
+                title: vm.title,
+                duration: vm.duration,
+                audioFileName: actualAudioFileName,
+                tag: VoiceMemoTag(rawValue: vm.tagRaw) ?? .other,
+                createdAt: vm.createdAt
+            )
+            item.id = vm.id
+            item.transcription = vm.transcription
+            item.summary = vm.summary
+            item.isBookmarked = vm.isBookmarked
+            context.insert(item)
+            restoredVoiceMemos += 1
+        }
+        details.append("语音备忘: \(restoredVoiceMemos) 项")
+        totalRestored += restoredVoiceMemos
 
         try context.save()
         return RestoreResultSummary(restoredCount: totalRestored, details: details)

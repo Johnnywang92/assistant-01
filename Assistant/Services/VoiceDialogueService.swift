@@ -49,6 +49,12 @@ final class VoiceDialogueService: NSObject, ObservableObject {
 
     /// 开始离线录音与语音识别
     public func startListening() throws {
+        // 与语音备忘录互斥：录制中不抢占麦克风；回放中先停止
+        if VoiceMemoAudioService.shared.isRecording {
+            throw VoiceError.memoRecordingInProgress
+        }
+        VoiceMemoAudioService.shared.stopPlayback()
+
         stopListening()
         stopSpeaking()
         errorMessage = nil
@@ -163,6 +169,7 @@ extension VoiceDialogueService: SFSpeechRecognizerDelegate, AVSpeechSynthesizerD
 public enum VoiceError: LocalizedError {
     case recognizerUnavailable
     case requestCreationFailed
+    case memoRecordingInProgress
 
     public var errorDescription: String? {
         switch self {
@@ -170,6 +177,8 @@ public enum VoiceError: LocalizedError {
             return "当前离线语音识别器不可用"
         case .requestCreationFailed:
             return "创建语音请求失败"
+        case .memoRecordingInProgress:
+            return "正在录制语音备忘，请先结束录制"
         }
     }
 }

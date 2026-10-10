@@ -14,6 +14,7 @@ struct DraggableVoiceFloatingBall: View {
     @State private var dragOffset: CGSize = .zero
     @State private var isDragging: Bool = false
     @State private var isLongPressing: Bool = false
+    @ObservedObject private var memoAudio = VoiceMemoAudioService.shared
 
     private let ballSize: CGFloat = 52
     private let edgePadding: CGFloat = 12
@@ -24,7 +25,8 @@ struct DraggableVoiceFloatingBall: View {
     }
 
     var body: some View {
-        if isFloatingVoiceEnabled {
+        // 语音备忘录制中隐藏悬浮球，避免麦克风被抢占
+        if isFloatingVoiceEnabled && !memoAudio.isRecording {
             GeometryReader { proxy in
             let safeTop = proxy.safeAreaInsets.top
             let safeBottom = proxy.safeAreaInsets.bottom

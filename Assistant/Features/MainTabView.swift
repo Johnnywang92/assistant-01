@@ -71,6 +71,10 @@ struct MainTabView: View {
             NavigationStack {
                 IDDocumentVaultView()
             }
+        case .memos:
+            NavigationStack {
+                VoiceMemoListView()
+            }
         case .settings:
             SettingsView(isSheet: false)
         }

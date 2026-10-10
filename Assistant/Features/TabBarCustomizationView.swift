@@ -243,6 +243,7 @@ struct TabBarCustomizationView: View {
         case .vault: return .purple
         case .passwords: return .orange
         case .documents: return .teal
+        case .memos: return .red
         case .settings: return .gray
         }
     }

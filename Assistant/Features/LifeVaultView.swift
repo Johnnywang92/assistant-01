@@ -13,6 +13,7 @@ struct LifeVaultView: View {
     @Query private var expiries: [ItemExpiryItem]
     @Query private var places: [LearnedPlace]
     @Query private var departureItems: [DepartureCheckItem]
+    @Query private var voiceMemos: [VoiceMemo]
 
     // 随身防丢未清点核心件
     private var uncheckedDepartureCount: Int {
@@ -108,6 +109,19 @@ struct LifeVaultView: View {
                             title: "离线安全密码库",
                             subtitle: "本地独立硬件加密，强随机生成与密码轮换预警",
                             status: "已妥善加密 \(passwords.count) 组账号凭据",
+                            isAlert: false
+                        )
+                    }
+
+                    NavigationLink {
+                        VoiceMemoListView()
+                    } label: {
+                        vaultRow(
+                            icon: "mic.circle.fill",
+                            color: .red,
+                            title: "语音备忘录",
+                            subtitle: "离线录音、倍速回放，转写文字并一键提取待办",
+                            status: "已保存 \(voiceMemos.count) 条录音",
                             isAlert: false
                         )
                     }

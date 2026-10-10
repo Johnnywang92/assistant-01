@@ -14,6 +14,7 @@ public final class NavigationRouter: ObservableObject {
         case vault
         case passwords
         case documents
+        case memos
         case settings
 
         public var id: String { rawValue }
@@ -26,6 +27,7 @@ public final class NavigationRouter: ObservableObject {
             case .vault: return "生活档案"
             case .passwords: return "密码箱"
             case .documents: return "证件卡包"
+            case .memos: return "语音备忘"
             case .settings: return "设置"
             }
         }
@@ -38,6 +40,7 @@ public final class NavigationRouter: ObservableObject {
             case .vault: return "folder.badge.person.crop"
             case .passwords: return "key.fill"
             case .documents: return "person.text.rectangle.fill"
+            case .memos: return "mic.circle.fill"
             case .settings: return "gearshape.fill"
             }
         }
@@ -50,6 +53,7 @@ public final class NavigationRouter: ObservableObject {
             case .vault: return "纪念日、服药、家务习惯等生活全档案"
             case .passwords: return "高强度账号密码离线保险箱"
             case .documents: return "身份证、护照、驾驶证重要卡包"
+            case .memos: return "离线随身录音、倍速回放与转写提取待办"
             case .settings: return "主题壁纸、单手悬浮球与偏好设置"
             }
         }
@@ -97,6 +101,8 @@ public final class NavigationRouter: ObservableObject {
             selectedTab = .passwords
         case "documents", "document", "cards":
             selectedTab = .documents
+        case "memo", "memos", "recorder":
+            selectedTab = .memos
         case "parcels", "express", "package":
             selectedTab = .todos
             requestedFilter = "快递"
