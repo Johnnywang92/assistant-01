@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import SwiftData
 import UIKit
@@ -185,12 +186,76 @@ public struct BackupInspectionSummary: Identifiable {
     public var expenseCount: Int
     public var documentCount: Int
     public var departureItemCount: Int
+    public var isEncryptedWithPIN: Bool = false
 
     public var totalItems: Int {
         todoCount + subscriptionCount + itemExpiryCount + anniversaryCount +
         habitCount + medicationCount + placeCount + passwordCount + usageRecordCount +
         expenseCount + documentCount + departureItemCount
     }
+}
+
+// MARK: - PIN 码加密迁移与封套定义
+
+public enum MigrationCryptoError: LocalizedError {
+    case pinTooShort
+    case pinMismatch
+    case invalidPin
+    case corruptedData
+    case missingPin
+
+    public var errorDescription: String? {
+        switch self {
+        case .pinTooShort:
+            return "PIN 码长度必须在 4 到 16 位之间。"
+        case .pinMismatch:
+            return "两次输入的 PIN 码不一致，请核对后重新输入。"
+        case .invalidPin:
+            return "PIN 码不正确，无法解密该备份文件。"
+        case .corruptedData:
+            return "备份数据文件损坏或已被篡改。"
+        case .missingPin:
+            return "请输入用于解锁该备份的 PIN 码。"
+        }
+    }
+}
+
+/// 端到端 AES-256-GCM 加密迁移数据包封套
+public struct EncryptedBackupEnvelope: Codable {
+    public static let magicTag = "ASSISTANT_ENCRYPTED_MIGRATION"
+    public static let currentVersion = 1
+
+    public var magic: String
+    public var version: Int
+    public var exportedAt: Date
+    public var deviceModel: String
+    public var appVersion: String
+    public var saltBase64: String
+    public var payloadBase64: String
+    public var hint: String?
+
+    public init(
+        saltBase64: String,
+        payloadBase64: String,
+        exportedAt: Date = .now,
+        deviceModel: String = UIDevice.current.model,
+        appVersion: String = "0.1.0",
+        hint: String? = nil
+    ) {
+        self.magic = Self.magicTag
+        self.version = Self.currentVersion
+        self.exportedAt = exportedAt
+        self.deviceModel = deviceModel
+        self.appVersion = appVersion
+        self.saltBase64 = saltBase64
+        self.payloadBase64 = payloadBase64
+        self.hint = hint
+    }
+}
+
+public enum BackupFileInspection {
+    case encrypted(envelope: EncryptedBackupEnvelope)
+    case legacyPlaintext(package: BackupPackage, summary: BackupInspectionSummary)
 }
 
 public enum RestoreStrategy: String, CaseIterable, Identifiable {
@@ -250,8 +315,8 @@ final class DataMigrationService {
         ]
     }
 
-    /// 导出为 JSON 格式数据
-    public func exportArchive() throws -> (data: Data, filename: String) {
+    /// 构建全量数据包模型
+    public func buildBackupPackage() throws -> BackupPackage {
         let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
         let subs = (try? context.fetch(FetchDescriptor<SubscriptionItem>())) ?? []
         let expiries = (try? context.fetch(FetchDescriptor<ItemExpiryItem>())) ?? []
@@ -391,7 +456,7 @@ final class DataMigrationService {
             deviceModel: UIDevice.current.model
         )
 
-        let package = BackupPackage(
+        return BackupPackage(
             metadata: metadata,
             todos: todoDTOs,
             subscriptions: subDTOs,
@@ -406,7 +471,67 @@ final class DataMigrationService {
             documents: documentDTOs,
             departureItems: departureDTOs
         )
+    }
 
+    /// 从 PIN 码与盐值派生 AES-256 密钥
+    private static func deriveKey(pin: String, salt: Data) -> SymmetricKey {
+        let pinData = Data(pin.utf8)
+        let inputKey = SymmetricKey(data: pinData)
+        return HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: inputKey,
+            salt: salt,
+            info: Data("assistant.data.migration.aes256".utf8),
+            outputByteCount: 32
+        )
+    }
+
+    /// 必须使用 PIN 码加密导出全量备份数据包
+    public func exportEncryptedArchive(pin: String, hint: String? = nil) throws -> (data: Data, filename: String) {
+        let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleanPin.count >= 4 && cleanPin.count <= 16 else {
+            throw MigrationCryptoError.pinTooShort
+        }
+
+        let package = try buildBackupPackage()
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let packageData = try encoder.encode(package)
+
+        // 生成 32 字节高熵随机盐
+        let salt = SymmetricKey(size: .bits256)
+        let saltData = salt.withUnsafeBytes { Data($0) }
+
+        let symmetricKey = Self.deriveKey(pin: cleanPin, salt: saltData)
+        let sealedBox = try AES.GCM.seal(packageData, using: symmetricKey)
+        guard let combined = sealedBox.combined else {
+            throw MigrationCryptoError.corruptedData
+        }
+
+        let envelope = EncryptedBackupEnvelope(
+            saltBase64: saltData.base64EncodedString(),
+            payloadBase64: combined.base64EncodedString(),
+            exportedAt: package.metadata.exportedAt,
+            deviceModel: package.metadata.deviceModel,
+            appVersion: package.metadata.appVersion,
+            hint: (hint?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? hint : nil
+        )
+
+        let envelopeEncoder = JSONEncoder()
+        envelopeEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        envelopeEncoder.dateEncodingStrategy = .iso8601
+        let envelopeData = try envelopeEncoder.encode(envelope)
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        let timestamp = formatter.string(from: Date.now)
+        let filename = "Assistant_Migration_\(timestamp).json"
+
+        return (envelopeData, filename)
+    }
+
+    /// 导出为普通 JSON 格式数据（兼容历史方法）
+    public func exportArchive() throws -> (data: Data, filename: String) {
+        let package = try buildBackupPackage()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
@@ -420,13 +545,9 @@ final class DataMigrationService {
         return (data, filename)
     }
 
-    /// 校验并预览备份文件内容
-    public func inspectArchive(from data: Data) throws -> (package: BackupPackage, summary: BackupInspectionSummary) {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let package = try decoder.decode(BackupPackage.self, from: data)
-
-        let summary = BackupInspectionSummary(
+    /// 构建摘要对象
+    public func buildSummary(package: BackupPackage, isEncryptedWithPIN: Bool = false) -> BackupInspectionSummary {
+        BackupInspectionSummary(
             schemaVersion: package.metadata.schemaVersion,
             exportedAt: package.metadata.exportedAt,
             deviceModel: package.metadata.deviceModel,
@@ -441,10 +562,66 @@ final class DataMigrationService {
             usageRecordCount: package.dataUsageRecords.count,
             expenseCount: package.expenses?.count ?? 0,
             documentCount: package.documents?.count ?? 0,
-            departureItemCount: package.departureItems?.count ?? 0
+            departureItemCount: package.departureItems?.count ?? 0,
+            isEncryptedWithPIN: isEncryptedWithPIN
         )
+    }
 
-        return (package, summary)
+    /// 探测备份文件类型（加密封套还是旧版未加密）
+    public func inspectBackupFile(from data: Data) throws -> BackupFileInspection {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        if let envelope = try? decoder.decode(EncryptedBackupEnvelope.self, from: data),
+           envelope.magic == EncryptedBackupEnvelope.magicTag {
+            return .encrypted(envelope: envelope)
+        }
+
+        if let package = try? decoder.decode(BackupPackage.self, from: data) {
+            let summary = buildSummary(package: package, isEncryptedWithPIN: false)
+            return .legacyPlaintext(package: package, summary: summary)
+        }
+
+        throw MigrationCryptoError.corruptedData
+    }
+
+    /// 使用输入的 PIN 码解锁并解析加密备份
+    public func unlockEncryptedArchive(envelope: EncryptedBackupEnvelope, pin: String) throws -> (package: BackupPackage, summary: BackupInspectionSummary) {
+        let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanPin.isEmpty else {
+            throw MigrationCryptoError.missingPin
+        }
+
+        guard let saltData = Data(base64Encoded: envelope.saltBase64),
+              let combinedData = Data(base64Encoded: envelope.payloadBase64) else {
+            throw MigrationCryptoError.corruptedData
+        }
+
+        let symmetricKey = Self.deriveKey(pin: cleanPin, salt: saltData)
+
+        do {
+            let sealedBox = try AES.GCM.SealedBox(combined: combinedData)
+            let decryptedData = try AES.GCM.open(sealedBox, using: symmetricKey)
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let package = try decoder.decode(BackupPackage.self, from: decryptedData)
+            let summary = buildSummary(package: package, isEncryptedWithPIN: true)
+            return (package, summary)
+        } catch {
+            throw MigrationCryptoError.invalidPin
+        }
+    }
+
+    /// 校验并预览备份文件内容
+    public func inspectArchive(from data: Data) throws -> (package: BackupPackage, summary: BackupInspectionSummary) {
+        let inspection = try inspectBackupFile(from: data)
+        switch inspection {
+        case .encrypted:
+            throw MigrationCryptoError.missingPin
+        case .legacyPlaintext(let package, let summary):
+            return (package, summary)
+        }
     }
 
     /// 执行还原或合并数据
