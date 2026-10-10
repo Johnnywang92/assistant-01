@@ -1,6 +1,10 @@
 import SwiftData
 import SwiftUI
 
+private enum LifeVaultDestination: Hashable {
+    case documents, passwords, storage, vehicle, departure, anniversaries, habits, voiceMemos
+}
+
 /// 生活档案与数字资产大厅 (Tab 3: 生活档案)
 struct LifeVaultView: View {
     @Environment(\.modelContext) private var context
@@ -60,58 +64,42 @@ struct LifeVaultView: View {
                 // 顶部快速看板统计
                 Section {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                        NavigationLink {
-                            IDDocumentVaultView()
-                        } label: {
+                        NavigationLink(value: LifeVaultDestination.documents) {
                             statPill(title: "证件", count: "\(documents.count)", icon: "person.text.rectangle.fill", color: .blue, badgeCount: expiringDocCount)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink {
-                            PasswordVaultView()
-                        } label: {
+                        NavigationLink(value: LifeVaultDestination.passwords) {
                             statPill(title: "密码", count: "\(passwords.count)", icon: "key.fill", color: .teal)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink {
-                            ItemStorageVaultView()
-                        } label: {
+                        NavigationLink(value: LifeVaultDestination.storage) {
                             statPill(title: "收纳", count: "\(storedItems.count)", icon: "archivebox.fill", color: .indigo)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink {
-                            VehicleManagementView()
-                        } label: {
+                        NavigationLink(value: LifeVaultDestination.vehicle) {
                             statPill(title: "爱车", count: "\(vehicles.count)", icon: "car.fill", color: .indigo, badgeCount: needCareVehicleCount)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink {
-                            DepartureChecklistView()
-                        } label: {
+                        NavigationLink(value: LifeVaultDestination.departure) {
                             statPill(title: "防丢", count: "\(departureItems.count)", icon: "bag.fill", color: .teal, badgeCount: uncheckedDepartureCount)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink {
-                            AnniversaryManagementView()
-                        } label: {
+                        NavigationLink(value: LifeVaultDestination.anniversaries) {
                             statPill(title: "纪念日", count: "\(anniversaries.count)", icon: "gift.fill", color: .pink)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink {
-                            HabitAndMedicationView()
-                        } label: {
+                        NavigationLink(value: LifeVaultDestination.habits) {
                             statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: .purple)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink {
-                            VoiceMemoListView()
-                        } label: {
+                        NavigationLink(value: LifeVaultDestination.voiceMemos) {
                             statPill(title: "录音", count: "\(voiceMemos.count)", icon: "mic.circle.fill", color: .red)
                         }
                         .buttonStyle(.plain)
@@ -207,8 +195,8 @@ struct LifeVaultView: View {
                         vaultRow(
                             icon: "brain.head.profile",
                             color: .orange,
-                            title: "常驻地点",
-                            status: "\(places.count) 处地点",
+                            title: "常用地点",
+                            status: places.isEmpty ? "尚未记录地点" : places.map(\.name).prefix(2).joined(separator: "、") + (places.count > 2 ? " 等 \(places.count) 处" : ""),
                             isAlert: false
                         )
                     }
@@ -261,6 +249,18 @@ struct LifeVaultView: View {
             .themedAppBackground()
             .themedRow()
             .navigationTitle("生活档案")
+            .navigationDestination(for: LifeVaultDestination.self) { destination in
+                switch destination {
+                case .documents: IDDocumentVaultView()
+                case .passwords: PasswordVaultView()
+                case .storage: ItemStorageVaultView()
+                case .vehicle: VehicleManagementView()
+                case .departure: DepartureChecklistView()
+                case .anniversaries: AnniversaryManagementView()
+                case .habits: HabitAndMedicationView()
+                case .voiceMemos: VoiceMemoListView()
+                }
+            }
         }
     }
 

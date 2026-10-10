@@ -2,7 +2,7 @@ import CoreLocation
 import SwiftData
 import SwiftUI
 
-/// 常驻地点管理与自学习可视化视图
+/// 常用地点管理与自学习可视化视图
 struct LearnedPlacesView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \LearnedPlace.visitCount, order: .reverse) private var places: [LearnedPlace]
@@ -37,7 +37,7 @@ struct LearnedPlacesView: View {
                     // 指标看板
                     HStack(spacing: 20) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("常驻地点")
+                            Text("常用地点")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                             Text("\(places.count) 处")
@@ -119,14 +119,14 @@ struct LearnedPlacesView: View {
                 }
                 .padding(.vertical, 4)
             } footer: {
-                Text("学习规则：同一地点需累积采样 ≥ 3 次。工作日白天 (09:00~18:00) 停留概率高自动聚类为「公司」；夜间停留频率高自动聚类为「家」。每次打开 App 也会在后台静默自动采样一次。")
+                Text("学习规则：同一地点需累积采样 ≥ 3 次。工作日白天停留概率高自动聚类为「公司」；夜间停留频率高自动聚类为「家」。")
             }
 
             // MARK: - 地点列表
-            Section("已学习或添加的地点") {
+            Section("已记录的地点") {
                 if places.isEmpty {
                     ContentUnavailableView(
-                        "暂未识别出常驻地点",
+                        "暂未记录常用地点",
                         systemImage: "building.2.slash",
                         description: Text("当前累积样本较少（\(samples.count)/3）。你可以点击上方的「立即记录当前位置为驻留样本」，或点击右上角「+」直接将当前位置标记为公司。")
                     )
@@ -142,7 +142,7 @@ struct LearnedPlacesView: View {
                 }
             }
         }
-        .navigationTitle("常用地点与学习")
+        .navigationTitle("常用地点")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -268,6 +268,7 @@ struct LearnedPlaceDetailView: View {
     @Bindable var place: LearnedPlace
     @State private var isUpdatingLocation = false
     @State private var updateLocationFeedback: String?
+    @State private var newWiFiSSID = ""
 
     var body: some View {
         Form {
@@ -328,14 +329,29 @@ struct LearnedPlaceDetailView: View {
                 }
             }
 
-            if !place.associatedWiFiSSIDs.isEmpty {
-                Section("已学习关联的 Wi-Fi") {
+            Section("关联 Wi-Fi") {
+                if place.associatedWiFiSSIDs.isEmpty {
+                    Text("尚未记录 Wi-Fi 名称")
+                        .foregroundStyle(.secondary)
+                } else {
                     ForEach(place.associatedWiFiSSIDs, id: \.self) { ssid in
-                        HStack {
-                            Image(systemName: "wifi")
-                            Text(ssid)
-                        }
+                        Label(ssid, systemImage: "wifi")
                     }
+                    .onDelete { offsets in
+                        place.associatedWiFiSSIDs.remove(atOffsets: offsets)
+                    }
+                }
+
+                HStack {
+                    TextField("输入 Wi-Fi 名称", text: $newWiFiSSID)
+                    Button("记录") {
+                        let ssid = newWiFiSSID.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !ssid.isEmpty, !place.associatedWiFiSSIDs.contains(ssid) else { return }
+                        place.associatedWiFiSSIDs.append(ssid)
+                        newWiFiSSID = ""
+                        try? context.save()
+                    }
+                    .disabled(newWiFiSSID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
@@ -421,7 +437,7 @@ struct AddPlaceSheet: View {
                     TextField("当前连接的 Wi-Fi 名称（可选）", text: $wifiSSID)
                 }
             }
-            .navigationTitle("添加常驻地点")
+            .navigationTitle("添加常用地点")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
