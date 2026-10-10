@@ -111,12 +111,20 @@ struct TodoListView: View {
     private var classified: TodoClassification {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return TodoClassification(from: todos) }
-        return TodoClassification(from: todos.filter {
-            $0.title.localizedCaseInsensitiveContains(query) ||
-            ($0.detail?.localizedCaseInsensitiveContains(query) ?? false) ||
-            ($0.pickupCode?.localizedCaseInsensitiveContains(query) ?? false) ||
-            ($0.station?.localizedCaseInsensitiveContains(query) ?? false)
-        })
+        return TodoClassification(from: todos.filter { matchesSearch($0, query: query) })
+    }
+
+    private func matchesSearch(_ item: TodoItem, query: String) -> Bool {
+        let fields = [
+            item.title,
+            item.detail,
+            item.pickupCode,
+            item.courier,
+            item.station,
+            item.location,
+            item.sourceText
+        ]
+        return fields.contains { $0?.localizedCaseInsensitiveContains(query) == true }
     }
 
     private var activeTodos: [TodoItem] { classified.active }
