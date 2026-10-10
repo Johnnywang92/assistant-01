@@ -183,7 +183,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("语音与悬浮助手") {
+                Section {
                     Toggle("单手贴边语音悬浮球", isOn: $floatingVoiceEnabled)
 
                     Toggle("语音对话回答时朗读 (TTS)", isOn: $voiceReplyEnabled)
@@ -207,6 +207,8 @@ struct SettingsView: View {
                             .font(.subheadline)
                         }
                     }
+                } header: {
+                    Text("语音与悬浮助手")
                 } footer: {
                     Text("开启后可在屏幕任意边缘自由拖动悬浮球，松手自动贴边吸附，最适合单手大拇指快速开启语音对话。")
                 }
