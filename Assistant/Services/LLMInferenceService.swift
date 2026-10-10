@@ -126,7 +126,7 @@ public final class LLMInferenceService: ObservableObject {
         let lower = query.lowercased()
         if lower.contains("快递") || lower.contains("取件") || lower.contains("包裹") {
             let p = VoiceIntentProcessor(context: context)
-            return p.process(query: query).description
+            return await p.process(query: query)
         } else if lower.contains("记账") || lower.contains("花") || lower.contains("元") || lower.contains("块") {
             let p = VoiceIntentProcessor(context: context)
             return await p.process(query: query)
