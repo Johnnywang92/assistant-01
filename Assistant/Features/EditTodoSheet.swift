@@ -17,6 +17,8 @@ struct EditTodoSheet: View {
     @State private var courier: String
     @State private var hasDueDate: Bool
     @State private var dueDate: Date
+    @State private var remindBeforeMinutes: Int
+    @State private var customRemindBeforeMinutes: Int
     @State private var recurrenceRule: TodoRecurrenceRule
     @State private var customIntervalDays: Int
     @State private var isDone: Bool
@@ -33,6 +35,8 @@ struct EditTodoSheet: View {
         self._courier = State(initialValue: item.courier ?? "")
         self._hasDueDate = State(initialValue: item.dueAt != nil)
         self._dueDate = State(initialValue: item.dueAt ?? (Calendar.current.date(byAdding: .hour, value: 2, to: .now) ?? .now))
+        self._remindBeforeMinutes = State(initialValue: [0, 5, 60, 1440].contains(item.remindBeforeMinutes) ? item.remindBeforeMinutes : -1)
+        self._customRemindBeforeMinutes = State(initialValue: max(1, item.remindBeforeMinutes))
         let rule = item.recurrenceRule
         self._recurrenceRule = State(initialValue: rule)
         self._customIntervalDays = State(initialValue: item.recurrenceIntervalDays > 0 ? item.recurrenceIntervalDays : (rule.dayInterval() > 0 ? rule.dayInterval() : 3))
@@ -79,8 +83,21 @@ struct EditTodoSheet: View {
                 // 3. 提醒时间与重复周期
                 Section("提醒与时间") {
                     Toggle("设置截止/提醒时间", isOn: $hasDueDate)
+                        .onChange(of: hasDueDate) { _, enabled in
+                            if enabled { Task { await NotificationService.requestAuthorization() } }
+                        }
                     if hasDueDate {
                         DatePicker("截止时间", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                        Picker("提前提醒", selection: $remindBeforeMinutes) {
+                            Text("到期时").tag(0)
+                            Text("提前 5 分钟").tag(5)
+                            Text("提前 1 小时").tag(60)
+                            Text("提前 1 天").tag(1440)
+                            Text("自定义").tag(-1)
+                        }
+                        if remindBeforeMinutes == -1 {
+                            Stepper("提前 \(customRemindBeforeMinutes) 分钟", value: $customRemindBeforeMinutes, in: 1...10080, step: 5)
+                        }
                     }
 
                     Picker("重复周期", selection: $recurrenceRule) {
@@ -145,6 +162,7 @@ struct EditTodoSheet: View {
     private func saveChanges() {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return }
+        if hasDueDate { Task { await NotificationService.requestAuthorization() } }
 
         item.title = trimmedTitle
         item.type = type
@@ -155,6 +173,8 @@ struct EditTodoSheet: View {
         item.location = trimmedStation.isEmpty ? nil : trimmedStation
         item.courier = courier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : courier.trimmingCharacters(in: .whitespacesAndNewlines)
         item.dueAt = hasDueDate ? dueDate : nil
+        item.remindBeforeMinutes = hasDueDate ? (remindBeforeMinutes == -1 ? customRemindBeforeMinutes : remindBeforeMinutes) : 0
+        item.reminderOverrideAt = nil
         item.recurrenceRule = recurrenceRule
         item.recurrenceIntervalDays = recurrenceRule == .custom ? customIntervalDays : recurrenceRule.dayInterval(customDays: customIntervalDays)
 

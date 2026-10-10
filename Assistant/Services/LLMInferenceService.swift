@@ -2,17 +2,17 @@ import Foundation
 import SwiftData
 import SwiftUI
 
-/// 本地大模型推理引擎服务 (针对 Qwen2.5-1.5B-Instruct 设计)
+/// 规则问答与用户明确启用的局域网 Ollama 连接。GGUF 本地推理尚未接入。
 @MainActor
 public final class LLMInferenceService: ObservableObject {
     public static let shared = LLMInferenceService()
 
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @AppStorage("llm_developer_endpoint") public var developerEndpoint: String = "" // 如 http://192.168.1.5:11434 (局域网 Ollama)
+    @AppStorage("llm_remote_context_consent") public var remoteContextConsent: Bool = false
     @Published public var isGenerating: Bool = false
     @Published public var currentOutput: String = ""
-
-    private let modelManager = LLMModelManager.shared
+    @Published public var remoteConnectionStatus: String = "未连接"
 
     private init() {}
 
@@ -81,7 +81,7 @@ public final class LLMInferenceService: ObservableObject {
         // 组合 Qwen2.5 ChatML 格式
         let prompt = """
         <|im_start|>system
-        你是专属离线个人 AI 助理「\(name)」。你运行在用户的 iPhone 设备本地。
+        你是个人助理「\(name)」，由用户配置的局域网 Ollama 服务提供回答。
         当前对用户的称呼：\(userTitle)
         当前时间：\(now)
         【用户实时生活档案】：
@@ -107,57 +107,25 @@ public final class LLMInferenceService: ObservableObject {
         currentOutput = ""
         defer { isGenerating = false }
 
-        // 优先检查是否有局域网 Ollama 开发者端点（用于 Mac 与模拟器调试）
-        if !developerEndpoint.trimmingCharacters(in: .whitespaces).isEmpty,
+        // 只有用户明确同意发送生活数据后，才连接局域网端点。
+        if remoteContextConsent,
+           !developerEndpoint.trimmingCharacters(in: .whitespaces).isEmpty,
            let endpointURL = URL(string: developerEndpoint) {
+            remoteConnectionStatus = "连接中"
             if let result = await generateViaRemoteOllama(query: query, endpoint: endpointURL, context: context) {
+                remoteConnectionStatus = "已连接"
                 return result
             }
-        }
-
-        // 检查本地模型是否存在
-        if modelManager.isModelDownloaded {
-            // 本地 Qwen2.5-1.5B 引擎推理
-            return await runLocalQwenInference(query: query, context: context)
+            remoteConnectionStatus = "连接失败，已使用本机规则"
         } else {
-            // 模型尚未下载：平滑回退到内置智能规则解析，并温馨提示
-            let fallbackProcessor = VoiceIntentProcessor(context: context)
-            let baseReply = await fallbackProcessor.process(query: query)
-            return "\(baseReply)\n\n💡 提示：当前使用极速规则引擎。可前往「设置 -> AI 本地大模型」下载 Qwen2.5-1.5B 获得更自由的自然对话体验。"
+            remoteConnectionStatus = remoteContextConsent ? "请填写有效端点" : "未启用"
         }
-    }
 
-    /// 本地 Qwen2.5-1.5B 推理实现
-    private func runLocalQwenInference(query: String, context: ModelContext) async -> String {
-        // 构建完整的上下文 Prompt
-        _ = buildPrompt(query: query, context: context)
-
-        // 模拟本地神经网络加载与推理流水线延迟（首 Token 延迟 ~200ms）
-        try? await Task.sleep(nanoseconds: 350_000_000)
-
-        // 自然意图语义匹配与丰富化生成
-        let lower = query.lowercased()
-        if lower.contains("快递") || lower.contains("取件") || lower.contains("包裹") {
-            let p = VoiceIntentProcessor(context: context)
-            return await p.process(query: query)
-        } else if lower.contains("记账") || lower.contains("花") || lower.contains("元") || lower.contains("块") {
-            let p = VoiceIntentProcessor(context: context)
-            return await p.process(query: query)
-        } else if lower.contains("待办") || lower.contains("做什么") || lower.contains("日程") {
-            let p = VoiceIntentProcessor(context: context)
-            return await p.process(query: query)
-        } else if lower.contains("纪念日") || lower.contains("生日") {
-            let p = VoiceIntentProcessor(context: context)
-            return await p.process(query: query)
-        } else if lower.contains("流量") {
-            let p = VoiceIntentProcessor(context: context)
-            return await p.process(query: query)
-        } else if lower.contains("你是谁") || lower.contains("名字") {
-            return "我是你的离线个人助理「\(assistantName)」，基于本地部署的 Qwen2.5-1.5B 大语言模型运行，所有数据完全保存在你的 iPhone 本机。"
-        } else {
-            // 自由通用问答
-            return "收到你的问题：「\(query)」。当前 Qwen2.5-1.5B 本地引擎已就绪，已为你记录在本地备忘中。"
-        }
+        let baseReply = await VoiceIntentProcessor(context: context).process(query: query)
+        let reason = remoteConnectionStatus == "连接失败，已使用本机规则"
+            ? "局域网服务连接失败，已使用本机规则助手。"
+            : "当前使用本机规则助手；已下载的 GGUF 文件尚未接入推理。"
+        return "\(baseReply)\n\n\(reason)"
     }
 
     /// 局域网 Ollama 快速对接（方便电脑开启 `ollama run qwen2.5:1.5b` 时手机直接联调）

@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 import SwiftUI
 
@@ -57,6 +58,8 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
     @Published public var selectedSource: LLMDownloadSource = .modelScope
 
     private var downloadTask: URLSessionDownloadTask?
+    private var validationGeneration = 0
+    private let validatedDigestKey = "llm_model_validated_sha256_v1"
     private var lastSpeedCheckTime: Date = .now
     private var lastSpeedBytes: Int64 = 0
     private lazy var urlSession: URLSession = {
@@ -73,19 +76,68 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
 
     /// 检查本地模型是否存在且完整
     public func checkModelStatus() {
-        let path = localModelURL.path
-        if FileManager.default.fileExists(atPath: path) {
-            if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-               let size = attrs[.size] as? Int64, size > 100_000_000 { // 检查有效大小大于 100MB
-                isModelDownloaded = true
-                downloadedBytes = size
-                totalBytes = size
-                clearResumeData()
-                return
+        isModelDownloaded = false
+        validationGeneration += 1
+        let generation = validationGeneration
+        let url = localModelURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            UserDefaults.standard.removeObject(forKey: validatedDigestKey)
+            hasResumeData = FileManager.default.fileExists(atPath: resumeDataURL.path)
+            return
+        }
+        let expectedDigest = UserDefaults.standard.string(forKey: validatedDigestKey)
+        Task.detached(priority: .utility) {
+            let result = Result { try Self.validateModel(at: url) }
+            await MainActor.run {
+                guard generation == self.validationGeneration else { return }
+                switch result {
+                case .success(let validated):
+                    if let expectedDigest, expectedDigest != validated.digest {
+                        self.errorMessage = "模型文件校验值已变化，请重新导入。"
+                        return
+                    }
+                    UserDefaults.standard.set(validated.digest, forKey: self.validatedDigestKey)
+                    self.downloadedBytes = validated.size
+                    self.totalBytes = validated.size
+                    self.isModelDownloaded = true
+                    self.clearResumeData()
+                case .failure(let error):
+                    self.errorMessage = "模型文件无效：\(error.localizedDescription)"
+                }
             }
         }
-        isModelDownloaded = false
         hasResumeData = FileManager.default.fileExists(atPath: resumeDataURL.path)
+    }
+
+    nonisolated private static func validateModel(at url: URL) throws -> (size: Int64, digest: String) {
+        let size = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+        guard size >= 850_000_000 else { throw ModelValidationError.invalidSize }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let header = try handle.read(upToCount: 8) ?? Data()
+        guard header.count == 8, String(data: header.prefix(4), encoding: .ascii) == "GGUF" else {
+            throw ModelValidationError.invalidHeader
+        }
+        let version = header.suffix(4).enumerated().reduce(UInt32(0)) { value, byte in
+            value | (UInt32(byte.element) << (UInt32(byte.offset) * 8))
+        }
+        guard version == 2 || version == 3 else { throw ModelValidationError.invalidHeader }
+        try handle.seek(toOffset: 0)
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 1024 * 1024), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return (size, hasher.finalize().map { String(format: "%02x", $0) }.joined())
+    }
+
+    private enum ModelValidationError: LocalizedError {
+        case invalidSize, invalidHeader
+        var errorDescription: String? {
+            switch self {
+            case .invalidSize: "文件体积与预期模型不符。"
+            case .invalidHeader: "文件不是支持的 GGUF 格式。"
+            }
+        }
     }
 
     /// 保存断点续传数据
@@ -199,6 +251,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         downloadTask = nil
         clearResumeData()
         try? FileManager.default.removeItem(at: localModelURL)
+        UserDefaults.standard.removeObject(forKey: validatedDigestKey)
         checkModelStatus()
         Haptic.warning()
     }
@@ -211,11 +264,21 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         defer { sourceURL.stopAccessingSecurityScopedResource() }
 
         _ = modelsDirectory
-        if FileManager.default.fileExists(atPath: localModelURL.path) {
-            try FileManager.default.removeItem(at: localModelURL)
+        let candidate = modelsDirectory.appendingPathComponent(UUID().uuidString + ".gguf")
+        defer { try? FileManager.default.removeItem(at: candidate) }
+        try FileManager.default.copyItem(at: sourceURL, to: candidate)
+        let validated = try Self.validateModel(at: candidate)
+        let oldModel = modelsDirectory.appendingPathComponent(UUID().uuidString + ".previous")
+        let hadOldModel = FileManager.default.fileExists(atPath: localModelURL.path)
+        if hadOldModel { try FileManager.default.moveItem(at: localModelURL, to: oldModel) }
+        do {
+            try FileManager.default.moveItem(at: candidate, to: localModelURL)
+            UserDefaults.standard.set(validated.digest, forKey: validatedDigestKey)
+            if hadOldModel { try? FileManager.default.removeItem(at: oldModel) }
+        } catch {
+            if hadOldModel { try? FileManager.default.moveItem(at: oldModel, to: localModelURL) }
+            throw error
         }
-
-        try FileManager.default.copyItem(at: sourceURL, to: localModelURL)
         self.errorMessage = nil
         checkModelStatus()
         Haptic.success()
@@ -256,7 +319,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         // 重要：根据苹果 URLSession 规范，此委托方法返回后系统会立即清除临时文件（CFNetworkDownload_xxx.tmp）！
         // 必须在此方法同步返回前，将文件从临时位置移动到持久化沙盒目录中。
         let targetDir = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
-        let targetURL = targetDir.appendingPathComponent(Self.modelFileName)
+        let candidateURL = targetDir.appendingPathComponent(UUID().uuidString + ".pending")
 
         var moveError: Error?
         do {
@@ -268,33 +331,56 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
             var dirURL = targetDir
             try? dirURL.setResourceValues(values)
 
-            if FileManager.default.fileExists(atPath: targetURL.path) {
-                try FileManager.default.removeItem(at: targetURL)
-            }
-
             // 优先使用快速移动 moveItem；若跨存储分区受限则降级 copyItem
             do {
-                try FileManager.default.moveItem(at: location, to: targetURL)
+                try FileManager.default.moveItem(at: location, to: candidateURL)
             } catch {
-                try FileManager.default.copyItem(at: location, to: targetURL)
+                try FileManager.default.copyItem(at: location, to: candidateURL)
                 try? FileManager.default.removeItem(at: location)
             }
         } catch {
             moveError = error
         }
 
-        Task { @MainActor in
-            if let error = moveError {
-                self.errorMessage = "保存模型文件失败：\(error.localizedDescription)"
+        if let moveError {
+            Task { @MainActor in
+                self.errorMessage = "保存模型文件失败：\(moveError.localizedDescription)"
                 self.isDownloading = false
                 Haptic.error()
-            } else {
-                self.clearResumeData()
-                self.errorMessage = nil
-                self.isDownloading = false
-                self.checkModelStatus()
-                Haptic.success()
             }
+            return
+        }
+        Task.detached(priority: .utility) {
+            let result = Result { try Self.validateModel(at: candidateURL) }
+            await MainActor.run {
+                self.completeDownloadedModel(candidateURL: candidateURL, validation: result)
+            }
+        }
+    }
+
+    private func completeDownloadedModel(candidateURL: URL, validation: Result<(size: Int64, digest: String), Error>) {
+        defer { try? FileManager.default.removeItem(at: candidateURL) }
+        isDownloading = false
+        do {
+            let validated = try validation.get()
+            let oldModel = modelsDirectory.appendingPathComponent(UUID().uuidString + ".previous")
+            let hadOldModel = FileManager.default.fileExists(atPath: localModelURL.path)
+            if hadOldModel { try FileManager.default.moveItem(at: localModelURL, to: oldModel) }
+            do {
+                try FileManager.default.moveItem(at: candidateURL, to: localModelURL)
+            } catch {
+                if hadOldModel { try? FileManager.default.moveItem(at: oldModel, to: localModelURL) }
+                throw error
+            }
+            if hadOldModel { try? FileManager.default.removeItem(at: oldModel) }
+            UserDefaults.standard.set(validated.digest, forKey: validatedDigestKey)
+            clearResumeData()
+            errorMessage = nil
+            checkModelStatus()
+            Haptic.success()
+        } catch {
+            errorMessage = "模型校验失败：\(error.localizedDescription)"
+            Haptic.error()
         }
     }
 

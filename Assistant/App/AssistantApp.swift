@@ -17,8 +17,12 @@ struct AssistantApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                MainTabView()
-                    .blur(radius: isAppLocked ? 20 : 0)
+                if let recoveryError = Persistence.recoveryError {
+                    DataRecoveryView(error: recoveryError)
+                } else {
+                    MainTabView()
+                        .blur(radius: isAppLocked ? 20 : 0)
+                }
 
                 if isAppLocked {
                     AppLockScreen()
@@ -29,8 +33,9 @@ struct AssistantApp: App {
             .preferredColorScheme(bgManager.currentStyle.preferredColorScheme)
             .animation(.easeInOut(duration: 0.25), value: isAppLocked)
             .task {
+                guard Persistence.recoveryError == nil else { return }
+                try? PasswordVaultCrypto.migrateLegacyRecords(context: Persistence.shared.mainContext)
                 router.registerDynamicShortcuts()
-                await NotificationService.requestAuthorization()
                 TodoNotificationManager.shared.registerCategories()
                 TodoNotificationManager.shared.syncAllTodoNotifications(context: Persistence.shared.mainContext)
                 ExpiryReminder.schedule()
@@ -42,6 +47,7 @@ struct AssistantApp: App {
         }
         .modelContainer(Persistence.shared)
         .onChange(of: scenePhase) { _, phase in
+            guard Persistence.recoveryError == nil else { return }
             if phase == .active {
                 lockManager.appWillEnterForeground()
 
@@ -75,9 +81,33 @@ struct AssistantApp: App {
 
                     // 8. 巡检查验并同步待办事项通知排期
                     TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
+
+                    // 9. 巡检查验固定周期支出并自动入账
+                    RecurringExpenseManager.shared.processDueRecurringExpenses(in: context)
                 }
             } else if phase == .background {
                 lockManager.appDidEnterBackground()
+            }
+        }
+    }
+}
+
+private struct DataRecoveryView: View {
+    let error: String
+
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView {
+                Label("数据暂时无法打开", systemImage: "externaldrive.badge.exclamationmark")
+            } description: {
+                Text("原始数据库已保留。请先将数据库及其附属文件导出，再排查迁移或存储问题。\n\n错误：\(error)")
+            } actions: {
+                if !Persistence.storeFiles.isEmpty {
+                    ShareLink(items: Persistence.storeFiles) {
+                        Label("导出原始数据库文件", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
         }
     }

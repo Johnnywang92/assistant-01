@@ -38,7 +38,7 @@ struct LLMModelManagementView: View {
 
                         Spacer()
 
-                        Text(modelManager.isModelDownloaded ? "已就绪" : (modelManager.isDownloading ? "下载中" : "未下载"))
+                        Text(modelManager.isModelDownloaded ? "文件已下载" : (modelManager.isDownloading ? "下载中" : "未下载"))
                             .font(.caption2.bold())
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
@@ -80,7 +80,7 @@ struct LLMModelManagementView: View {
             } header: {
                 Text("模型基础信息")
             } footer: {
-                Text("Qwen2.5-1.5B 具备极强的中文自然语言理解与常识推理能力，可完全离线在手机芯片本地运行。")
+                Text("当前版本仅管理 GGUF 文件，尚未接入 iPhone 本地推理。下方问答使用规则助手；明确启用局域网服务后才会发送生活数据。")
             }
 
             // MARK: - 2. 下载与文件获取控制
@@ -204,7 +204,7 @@ struct LLMModelManagementView: View {
             }
 
             // MARK: - 3. 本地推理与问答沙盒测试
-            Section("本地生活档案智能问答测试") {
+            Section("规则助手 / 局域网问答测试") {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("测试提示词（将自动附带待办/快递/记账真实上下文）：")
                         .font(.caption)
@@ -242,7 +242,7 @@ struct LLMModelManagementView: View {
 
                     if let result = testResult {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Qwen2.5 回复结果：")
+                            Text("问答结果：")
                                 .font(.caption.bold())
                                 .foregroundStyle(.secondary)
 
@@ -276,6 +276,10 @@ struct LLMModelManagementView: View {
                     }
                     .padding(8)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color(.secondarySystemGroupedBackground)))
+                    Toggle("允许向此局域网端点发送待办、快递码、开销等生活数据", isOn: $inferenceService.remoteContextConsent)
+                    Text("连接状态：\(inferenceService.remoteConnectionStatus)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }

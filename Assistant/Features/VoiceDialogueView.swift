@@ -112,7 +112,7 @@ struct VoiceDialogueView: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: useLLMEngine ? "brain.head.profile" : "bolt.fill")
-                            Text(useLLMEngine ? "Qwen2.5-1.5B" : "极速规则引擎")
+                            Text(useLLMEngine ? "扩展问答" : "规则助手")
                         }
                         .font(.caption2.bold())
                         .padding(.horizontal, 8)

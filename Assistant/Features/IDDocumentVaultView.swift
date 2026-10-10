@@ -91,9 +91,9 @@ struct IDDocumentVaultView: View {
                         .font(.title2)
                         .foregroundStyle(.blue)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("完全离线私有加密")
+                        Text("本机私有存储")
                             .font(.subheadline.bold())
-                        Text("证件照片存入本设备独立沙盒中，绝不上云。支持正面与反面双页归档，办事填表随时一键复制号码。")
+                        Text("证件照片存入本设备应用沙盒，受系统文件保护。支持正反面归档及复制号码。")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }

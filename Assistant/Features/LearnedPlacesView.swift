@@ -179,7 +179,7 @@ struct LearnedPlacesView: View {
         Haptic.light()
 
         Task {
-            if let coord = await locationService.requestSingleLocationSample(context: context) {
+            if let coord = await locationService.requestSingleLocationSample(context: context, requestPermissionIfNeeded: true) {
                 let engine = PlaceLearningEngine(context: context)
                 if let place = try? engine.recordObservation(coordinate: coord, timestamp: .now) {
                     sampleResultMessage = "✅ 已成功采样坐标 (经度 \(String(format: "%.3f", coord.longitude)), 纬度 \(String(format: "%.3f", coord.latitude)))，当前归属于「\(place.name)」(累计 \(place.visitCount) 次采样)。"
@@ -350,7 +350,7 @@ struct LearnedPlaceDetailView: View {
         isUpdatingLocation = true
         updateLocationFeedback = nil
         Task {
-            if let coord = await LocationReminderService.shared.requestSingleLocationSample(context: context) {
+            if let coord = await LocationReminderService.shared.requestSingleLocationSample(context: context, requestPermissionIfNeeded: true) {
                 place.latitude = coord.latitude
                 place.longitude = coord.longitude
                 try? context.save()
@@ -457,7 +457,7 @@ struct AddPlaceSheet: View {
         guard !isLocating else { return }
         isLocating = true
         Task {
-            if let coord = await LocationReminderService.shared.requestSingleLocationSample(context: context) {
+            if let coord = await LocationReminderService.shared.requestSingleLocationSample(context: context, requestPermissionIfNeeded: true) {
                 latitude = coord.latitude
                 longitude = coord.longitude
                 locationAcquired = true

@@ -407,6 +407,8 @@ struct TodoShareSheet: View {
             return "我的生活清单"
         case .general:
             return "日常待办清单"
+        case .recurring:
+            return "周期待办清单"
         case .parcel:
             return "快递与退货清单"
         case .life:

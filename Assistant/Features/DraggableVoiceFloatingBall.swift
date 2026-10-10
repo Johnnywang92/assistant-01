@@ -4,6 +4,7 @@ import SwiftUI
 struct DraggableVoiceFloatingBall: View {
     @Binding var showVoice: Bool
     @Binding var autoStartListening: Bool
+    var onDirectVoiceConversation: (() -> Void)?
 
     // 是否开启悬浮球
     @AppStorage("floating_voice_enabled") private var isFloatingVoiceEnabled: Bool = true
@@ -22,9 +23,10 @@ struct DraggableVoiceFloatingBall: View {
     }
     private let edgePadding: CGFloat = 12
 
-    init(showVoice: Binding<Bool>, autoStartListening: Binding<Bool> = .constant(false)) {
+    init(showVoice: Binding<Bool>, autoStartListening: Binding<Bool> = .constant(false), onDirectVoiceConversation: (() -> Void)? = nil) {
         self._showVoice = showVoice
         self._autoStartListening = autoStartListening
+        self.onDirectVoiceConversation = onDirectVoiceConversation
     }
 
     var body: some View {
@@ -90,7 +92,15 @@ struct DraggableVoiceFloatingBall: View {
             .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isLongPressing)
             .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isDragging)
             .position(x: currentX, y: currentY)
-            // 长按手势：按住 0.45 秒直接激活录音并弹出对话页
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("语音助手")
+            .accessibilityHint("双击打开对话，长按开始语音输入")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                autoStartListening = false
+                showVoice = true
+            }
+            // 长按手势：按住 0.45 秒直接开始录音，不打开对话页面
             .onLongPressGesture(minimumDuration: 0.45, pressing: { pressing in
                 guard !isDragging else {
                     isLongPressing = false
@@ -106,8 +116,12 @@ struct DraggableVoiceFloatingBall: View {
                 guard !isDragging else { return }
                 isLongPressing = false
                 Haptic.heavy()
-                autoStartListening = true
-                showVoice = true
+                if let onDirectVoiceConversation {
+                    onDirectVoiceConversation()
+                } else {
+                    autoStartListening = true
+                    showVoice = true
+                }
             }
             // 仅在明确单击时触发（位移小于 8pt，打开面板但不自动录音）
             .onTapGesture {

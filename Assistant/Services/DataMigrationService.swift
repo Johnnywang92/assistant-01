@@ -1,4 +1,5 @@
 import CryptoKit
+import CommonCrypto
 import Foundation
 import SwiftData
 import UIKit
@@ -26,6 +27,11 @@ public struct BackupPackage: Codable {
     public var documents: [IDDocumentDTO]?
     public var departureItems: [DepartureCheckItemDTO]?
     public var voiceMemos: [VoiceMemoDTO]?
+    public var vehicles: [VehicleDTO]?
+    public var storedItems: [StoredItemDTO]?
+    public var dialogueRecords: [DialogueRecordDTO]?
+    public var rawMessages: [RawMessageDTO]?
+    public var locationSamples: [LocationSampleDTO]?
 }
 
 // MARK: - DTO 模型定义
@@ -44,6 +50,11 @@ public struct TodoDTO: Codable {
     public var createdAt: Date
     public var completedAt: Date?
     public var sourceText: String?
+    public var sortOrder: Int?
+    public var recurrenceRuleRaw: String?
+    public var recurrenceIntervalDays: Int?
+    public var remindBeforeMinutes: Int?
+    public var reminderOverrideAt: Date?
 }
 
 public struct SubscriptionDTO: Codable {
@@ -116,7 +127,7 @@ public struct PasswordVaultDTO: Codable {
     public var id: UUID
     public var title: String
     public var account: String
-    public var passwordEncrypted: String
+    public var passwordEncrypted: String // 明文仅存在于整个备份的 AES-GCM 加密负载内
     public var category: String
     public var notes: String?
     public var lastRotatedAt: Date
@@ -181,6 +192,64 @@ public struct VoiceMemoDTO: Codable {
     public var createdAt: Date
 }
 
+public struct VehicleDTO: Codable {
+    public var id: UUID
+    public var name: String
+    public var plateNumber: String
+    public var powerTypeRaw: String
+    public var energyCycleDays: Int
+    public var lastEnergyRefillDate: Date?
+    public var preferredEnergyHour: Int
+    public var preferredEnergyMinute: Int
+    public var maintenanceIntervalMonths: Int
+    public var lastMaintenanceDate: Date?
+    public var nextMaintenanceDate: Date
+    public var insuranceExpiryDate: Date?
+    public var annualInspectionDate: Date?
+    public var currentMileage: Double?
+    public var isReminderEnabled: Bool
+    public var notes: String?
+    public var createdAt: Date
+}
+
+public struct StoredItemDTO: Codable {
+    public var id: UUID
+    public var name: String
+    public var location: String
+    public var roomArea: String
+    public var notes: String?
+    public var imageData: Data?
+    public var createdAt: Date
+    public var updatedAt: Date
+}
+
+public struct DialogueRecordDTO: Codable {
+    public var id: UUID
+    public var roleRaw: String
+    public var text: String
+    public var timestamp: Date
+    public var sessionID: UUID?
+}
+
+public struct RawMessageDTO: Codable {
+    public var id: UUID
+    public var source: String
+    public var sender: String?
+    public var content: String
+    public var receivedAt: Date
+    public var parseSummary: String?
+}
+
+public struct LocationSampleDTO: Codable {
+    public var id: UUID
+    public var latitude: Double
+    public var longitude: Double
+    public var wifiSSID: String?
+    public var timestamp: Date
+    public var hourOfDay: Int
+    public var isWeekend: Bool
+}
+
 // MARK: - 备份解析报告
 
 public struct BackupInspectionSummary: Identifiable {
@@ -201,12 +270,18 @@ public struct BackupInspectionSummary: Identifiable {
     public var documentCount: Int
     public var departureItemCount: Int
     public var voiceMemoCount: Int = 0
+    public var vehicleCount: Int = 0
+    public var storedItemCount: Int = 0
+    public var dialogueCount: Int = 0
+    public var rawMessageCount: Int = 0
+    public var locationSampleCount: Int = 0
     public var isEncryptedWithPIN: Bool = false
 
     public var totalItems: Int {
         todoCount + subscriptionCount + itemExpiryCount + anniversaryCount +
         habitCount + medicationCount + placeCount + passwordCount + usageRecordCount +
-        expenseCount + documentCount + departureItemCount + voiceMemoCount
+        expenseCount + documentCount + departureItemCount + voiceMemoCount +
+        vehicleCount + storedItemCount + dialogueCount + rawMessageCount + locationSampleCount
     }
 }
 
@@ -214,6 +289,9 @@ public struct BackupInspectionSummary: Identifiable {
 
 public enum MigrationCryptoError: LocalizedError {
     case pinTooShort
+    case plaintextExportDisabled
+    case incompleteLegacyBackup
+    case missingAttachment(String)
     case pinMismatch
     case invalidPin
     case corruptedData
@@ -222,7 +300,13 @@ public enum MigrationCryptoError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .pinTooShort:
-            return "PIN 码长度必须在 4 到 16 位之间。"
+            return "备份口令长度必须在 8 到 64 位之间。"
+        case .plaintextExportDisabled:
+            return "含敏感数据的明文备份已停用，请使用加密导出。"
+        case .incompleteLegacyBackup:
+            return "旧版备份缺少新数据类型，只能选择智能合并；请先从原设备生成新版备份。"
+        case .missingAttachment(let name):
+            return "无法读取附件「\(name)」，备份已取消以避免数据缺失。"
         case .pinMismatch:
             return "两次输入的 PIN 码不一致，请核对后重新输入。"
         case .invalidPin:
@@ -238,7 +322,8 @@ public enum MigrationCryptoError: LocalizedError {
 /// 端到端 AES-256-GCM 加密迁移数据包封套
 public struct EncryptedBackupEnvelope: Codable {
     public static let magicTag = "ASSISTANT_ENCRYPTED_MIGRATION"
-    public static let currentVersion = 1
+    public static let currentVersion = 2
+    public static let defaultIterations = 310_000
 
     public var magic: String
     public var version: Int
@@ -246,6 +331,7 @@ public struct EncryptedBackupEnvelope: Codable {
     public var deviceModel: String
     public var appVersion: String
     public var saltBase64: String
+    public var iterations: Int?
     public var payloadBase64: String
     public var hint: String?
 
@@ -263,6 +349,7 @@ public struct EncryptedBackupEnvelope: Codable {
         self.deviceModel = deviceModel
         self.appVersion = appVersion
         self.saltBase64 = saltBase64
+        self.iterations = Self.defaultIterations
         self.payloadBase64 = payloadBase64
         self.hint = hint
     }
@@ -314,6 +401,11 @@ final class DataMigrationService {
         let documents = (try? context.fetchCount(FetchDescriptor<IDDocumentItem>())) ?? 0
         let departures = (try? context.fetchCount(FetchDescriptor<DepartureCheckItem>())) ?? 0
         let voiceMemos = (try? context.fetchCount(FetchDescriptor<VoiceMemo>())) ?? 0
+        let vehicles = (try? context.fetchCount(FetchDescriptor<VehicleProfile>())) ?? 0
+        let storedItems = (try? context.fetchCount(FetchDescriptor<StoredItem>())) ?? 0
+        let dialogueRecords = (try? context.fetchCount(FetchDescriptor<DialogueMessageRecord>())) ?? 0
+        let rawMessages = (try? context.fetchCount(FetchDescriptor<RawMessage>())) ?? 0
+        let locationSamples = (try? context.fetchCount(FetchDescriptor<LocationStaySample>())) ?? 0
 
         return [
             "待办事项": todos,
@@ -328,25 +420,35 @@ final class DataMigrationService {
             "日常记账明细": expenses,
             "重要证件卡包": documents,
             "随身防丢清单": departures,
-            "语音备忘速记": voiceMemos
+            "语音备忘速记": voiceMemos,
+            "爱车档案": vehicles,
+            "物品收纳": storedItems,
+            "对话历史": dialogueRecords,
+            "原始消息": rawMessages,
+            "位置采样": locationSamples
         ]
     }
 
     /// 构建全量数据包模型
     public func buildBackupPackage() throws -> BackupPackage {
-        let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
-        let subs = (try? context.fetch(FetchDescriptor<SubscriptionItem>())) ?? []
-        let expiries = (try? context.fetch(FetchDescriptor<ItemExpiryItem>())) ?? []
-        let anniversaries = (try? context.fetch(FetchDescriptor<AnniversaryItem>())) ?? []
-        let habits = (try? context.fetch(FetchDescriptor<PeriodicHabit>())) ?? []
-        let meds = (try? context.fetch(FetchDescriptor<MedicationPlan>())) ?? []
-        let places = (try? context.fetch(FetchDescriptor<LearnedPlace>())) ?? []
-        let passwords = (try? context.fetch(FetchDescriptor<PasswordVaultItem>())) ?? []
-        let usages = (try? context.fetch(FetchDescriptor<DataUsageRecord>())) ?? []
-        let expenses = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
-        let documents = (try? context.fetch(FetchDescriptor<IDDocumentItem>())) ?? []
-        let departures = (try? context.fetch(FetchDescriptor<DepartureCheckItem>())) ?? []
-        let voiceMemos = (try? context.fetch(FetchDescriptor<VoiceMemo>())) ?? []
+        let todos = try context.fetch(FetchDescriptor<TodoItem>())
+        let subs = try context.fetch(FetchDescriptor<SubscriptionItem>())
+        let expiries = try context.fetch(FetchDescriptor<ItemExpiryItem>())
+        let anniversaries = try context.fetch(FetchDescriptor<AnniversaryItem>())
+        let habits = try context.fetch(FetchDescriptor<PeriodicHabit>())
+        let meds = try context.fetch(FetchDescriptor<MedicationPlan>())
+        let places = try context.fetch(FetchDescriptor<LearnedPlace>())
+        let passwords = try context.fetch(FetchDescriptor<PasswordVaultItem>())
+        let usages = try context.fetch(FetchDescriptor<DataUsageRecord>())
+        let expenses = try context.fetch(FetchDescriptor<ExpenseRecord>())
+        let documents = try context.fetch(FetchDescriptor<IDDocumentItem>())
+        let departures = try context.fetch(FetchDescriptor<DepartureCheckItem>())
+        let voiceMemos = try context.fetch(FetchDescriptor<VoiceMemo>())
+        let vehicles = try context.fetch(FetchDescriptor<VehicleProfile>())
+        let storedItems = try context.fetch(FetchDescriptor<StoredItem>())
+        let dialogueRecords = try context.fetch(FetchDescriptor<DialogueMessageRecord>())
+        let rawMessages = try context.fetch(FetchDescriptor<RawMessage>())
+        let locationSamples = try context.fetch(FetchDescriptor<LocationStaySample>())
 
         let todoDTOs = todos.map {
             TodoDTO(
@@ -354,7 +456,12 @@ final class DataMigrationService {
                 title: $0.title, detail: $0.detail, pickupCode: $0.pickupCode,
                 courier: $0.courier, station: $0.station, location: $0.location,
                 dueAt: $0.dueAt, createdAt: $0.createdAt, completedAt: $0.completedAt,
-                sourceText: $0.sourceText
+                sourceText: $0.sourceText,
+                sortOrder: $0.sortOrder,
+                recurrenceRuleRaw: $0.recurrenceRuleRaw,
+                recurrenceIntervalDays: $0.recurrenceIntervalDays,
+                remindBeforeMinutes: $0.remindBeforeMinutes,
+                reminderOverrideAt: $0.reminderOverrideAt
             )
         }
 
@@ -411,10 +518,10 @@ final class DataMigrationService {
             )
         }
 
-        let pwdDTOs = passwords.map {
+        let pwdDTOs = try passwords.map {
             PasswordVaultDTO(
                 id: $0.id, title: $0.title, account: $0.account,
-                passwordEncrypted: $0.passwordEncrypted, category: $0.category,
+                passwordEncrypted: try PasswordVaultCrypto.decrypt($0.passwordEncrypted), category: $0.category,
                 notes: $0.notes, lastRotatedAt: $0.lastRotatedAt,
                 rotateCycleDays: $0.rotateCycleDays
             )
@@ -436,9 +543,11 @@ final class DataMigrationService {
             )
         }
 
-        let documentDTOs = documents.map { doc in
+        let documentDTOs = try documents.map { doc in
             let frontImg = IDPhotoStorage.loadImage(fileName: doc.frontImageFileName)
             let backImg = IDPhotoStorage.loadImage(fileName: doc.backImageFileName)
+            if doc.frontImageFileName != nil && frontImg == nil { throw MigrationCryptoError.missingAttachment(doc.title) }
+            if doc.backImageFileName != nil && backImg == nil { throw MigrationCryptoError.missingAttachment(doc.title) }
             return IDDocumentDTO(
                 id: doc.id,
                 title: doc.title,
@@ -467,8 +576,9 @@ final class DataMigrationService {
             )
         }
 
-        let voiceMemoDTOs = voiceMemos.map { memo in
+        let voiceMemoDTOs = try voiceMemos.map { memo in
             let audioData = VoiceMemoStorage.loadData(memo.audioFileName)
+            guard audioData != nil else { throw MigrationCryptoError.missingAttachment(memo.title) }
             return VoiceMemoDTO(
                 id: memo.id,
                 title: memo.title,
@@ -483,8 +593,35 @@ final class DataMigrationService {
             )
         }
 
+        let vehicleDTOs = vehicles.map { v in
+            VehicleDTO(id: v.id, name: v.name, plateNumber: v.plateNumber, powerTypeRaw: v.powerTypeRaw,
+                       energyCycleDays: v.energyCycleDays, lastEnergyRefillDate: v.lastEnergyRefillDate,
+                       preferredEnergyHour: v.preferredEnergyHour, preferredEnergyMinute: v.preferredEnergyMinute,
+                       maintenanceIntervalMonths: v.maintenanceIntervalMonths, lastMaintenanceDate: v.lastMaintenanceDate,
+                       nextMaintenanceDate: v.nextMaintenanceDate, insuranceExpiryDate: v.insuranceExpiryDate,
+                       annualInspectionDate: v.annualInspectionDate, currentMileage: v.currentMileage,
+                       isReminderEnabled: v.isReminderEnabled, notes: v.notes, createdAt: v.createdAt)
+        }
+        let storedItemDTOs = storedItems.map { item in
+            StoredItemDTO(id: item.id, name: item.name, location: item.location, roomArea: item.roomArea,
+                          notes: item.notes, imageData: item.imageData, createdAt: item.createdAt, updatedAt: item.updatedAt)
+        }
+        let dialogueDTOs = dialogueRecords.map { record in
+            DialogueRecordDTO(id: record.id, roleRaw: record.roleRaw, text: record.text,
+                              timestamp: record.timestamp, sessionID: record.sessionID)
+        }
+        let rawMessageDTOs = rawMessages.map { message in
+            RawMessageDTO(id: message.id, source: message.source, sender: message.sender,
+                          content: message.content, receivedAt: message.receivedAt, parseSummary: message.parseSummary)
+        }
+        let locationDTOs = locationSamples.map { sample in
+            LocationSampleDTO(id: sample.id, latitude: sample.latitude, longitude: sample.longitude,
+                              wifiSSID: sample.wifiSSID, timestamp: sample.timestamp,
+                              hourOfDay: sample.hourOfDay, isWeekend: sample.isWeekend)
+        }
+
         let metadata = BackupPackage.Metadata(
-            schemaVersion: 1,
+            schemaVersion: 2,
             appVersion: "0.1.0",
             exportedAt: Date.now,
             deviceModel: UIDevice.current.model
@@ -504,12 +641,17 @@ final class DataMigrationService {
             expenses: expenseDTOs,
             documents: documentDTOs,
             departureItems: departureDTOs,
-            voiceMemos: voiceMemoDTOs
+            voiceMemos: voiceMemoDTOs,
+            vehicles: vehicleDTOs,
+            storedItems: storedItemDTOs,
+            dialogueRecords: dialogueDTOs,
+            rawMessages: rawMessageDTOs,
+            locationSamples: locationDTOs
         )
     }
 
     /// 从 PIN 码与盐值派生 AES-256 密钥
-    private static func deriveKey(pin: String, salt: Data) -> SymmetricKey {
+    private static func deriveLegacyKey(pin: String, salt: Data) -> SymmetricKey {
         let pinData = Data(pin.utf8)
         let inputKey = SymmetricKey(data: pinData)
         return HKDF<SHA256>.deriveKey(
@@ -520,10 +662,27 @@ final class DataMigrationService {
         )
     }
 
+    private static func deriveKey(pin: String, salt: Data, iterations: Int) throws -> SymmetricKey {
+        guard (100_000...2_000_000).contains(iterations) else { throw MigrationCryptoError.corruptedData }
+        var derived = Data(count: 32)
+        let status = pin.withCString { password in
+            salt.withUnsafeBytes { saltBytes in
+                derived.withUnsafeMutableBytes { keyBytes in
+                    CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), password, pin.utf8.count,
+                                       saltBytes.bindMemory(to: UInt8.self).baseAddress, salt.count,
+                                       CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), UInt32(iterations),
+                                       keyBytes.bindMemory(to: UInt8.self).baseAddress, 32)
+                }
+            }
+        }
+        guard status == kCCSuccess else { throw MigrationCryptoError.corruptedData }
+        return SymmetricKey(data: derived)
+    }
+
     /// 必须使用 PIN 码加密导出全量备份数据包
     public func exportEncryptedArchive(pin: String, hint: String? = nil) throws -> (data: Data, filename: String) {
         let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard cleanPin.count >= 4 && cleanPin.count <= 16 else {
+        guard cleanPin.count >= 8 && cleanPin.count <= 64 else {
             throw MigrationCryptoError.pinTooShort
         }
 
@@ -536,7 +695,7 @@ final class DataMigrationService {
         let salt = SymmetricKey(size: .bits256)
         let saltData = salt.withUnsafeBytes { Data($0) }
 
-        let symmetricKey = Self.deriveKey(pin: cleanPin, salt: saltData)
+        let symmetricKey = try Self.deriveKey(pin: cleanPin, salt: saltData, iterations: EncryptedBackupEnvelope.defaultIterations)
         let sealedBox = try AES.GCM.seal(packageData, using: symmetricKey)
         guard let combined = sealedBox.combined else {
             throw MigrationCryptoError.corruptedData
@@ -564,20 +723,9 @@ final class DataMigrationService {
         return (envelopeData, filename)
     }
 
-    /// 导出为普通 JSON 格式数据（兼容历史方法）
+    /// 兼容旧调用方，但拒绝生成含敏感数据的明文备份。
     public func exportArchive() throws -> (data: Data, filename: String) {
-        let package = try buildBackupPackage()
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        let data = try encoder.encode(package)
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd_HHmmss"
-        let timestamp = formatter.string(from: Date.now)
-        let filename = "Assistant_Backup_\(timestamp).json"
-
-        return (data, filename)
+        throw MigrationCryptoError.plaintextExportDisabled
     }
 
     /// 构建摘要对象
@@ -599,6 +747,11 @@ final class DataMigrationService {
             documentCount: package.documents?.count ?? 0,
             departureItemCount: package.departureItems?.count ?? 0,
             voiceMemoCount: package.voiceMemos?.count ?? 0,
+            vehicleCount: package.vehicles?.count ?? 0,
+            storedItemCount: package.storedItems?.count ?? 0,
+            dialogueCount: package.dialogueRecords?.count ?? 0,
+            rawMessageCount: package.rawMessages?.count ?? 0,
+            locationSampleCount: package.locationSamples?.count ?? 0,
             isEncryptedWithPIN: isEncryptedWithPIN
         )
     }
@@ -633,7 +786,14 @@ final class DataMigrationService {
             throw MigrationCryptoError.corruptedData
         }
 
-        let symmetricKey = Self.deriveKey(pin: cleanPin, salt: saltData)
+        let symmetricKey: SymmetricKey
+        if envelope.version == 1 {
+            symmetricKey = Self.deriveLegacyKey(pin: cleanPin, salt: saltData)
+        } else if envelope.version == EncryptedBackupEnvelope.currentVersion {
+            symmetricKey = try Self.deriveKey(pin: cleanPin, salt: saltData, iterations: envelope.iterations ?? EncryptedBackupEnvelope.defaultIterations)
+        } else {
+            throw MigrationCryptoError.corruptedData
+        }
 
         do {
             let sealedBox = try AES.GCM.SealedBox(combined: combinedData)
@@ -662,21 +822,56 @@ final class DataMigrationService {
 
     /// 执行还原或合并数据
     public func restore(from package: BackupPackage, strategy: RestoreStrategy) throws -> RestoreResultSummary {
+        guard package.metadata.schemaVersion <= 2 else { throw MigrationCryptoError.corruptedData }
+        if package.metadata.schemaVersion >= 2 {
+            guard package.vehicles != nil, package.storedItems != nil, package.dialogueRecords != nil,
+                  package.rawMessages != nil, package.locationSamples != nil else {
+                throw MigrationCryptoError.corruptedData
+            }
+        }
+        guard strategy != .overwrite || package.metadata.schemaVersion >= 2 else {
+            throw MigrationCryptoError.incompleteLegacyBackup
+        }
+        // 覆盖数据库前先验证备份负载与设备密钥，避免可预见的错误在删除后才暴露。
+        for document in package.documents ?? [] {
+            if let data = document.frontImageData, UIImage(data: data) == nil {
+                throw MigrationCryptoError.missingAttachment(document.title)
+            }
+            if let data = document.backImageData, UIImage(data: data) == nil {
+                throw MigrationCryptoError.missingAttachment(document.title)
+            }
+        }
+        if package.metadata.schemaVersion >= 2 {
+            for memo in package.voiceMemos ?? [] where memo.audioData == nil {
+                throw MigrationCryptoError.missingAttachment(memo.title)
+            }
+        }
+        var encryptedPasswords: [UUID: String] = [:]
+        for password in package.passwords {
+            guard encryptedPasswords[password.id] == nil else { throw MigrationCryptoError.corruptedData }
+            encryptedPasswords[password.id] = try PasswordVaultCrypto.encrypt(password.passwordEncrypted)
+        }
+        do {
         if strategy == .overwrite {
             // 清理所有现有库中实体
-            try? context.delete(model: TodoItem.self)
-            try? context.delete(model: SubscriptionItem.self)
-            try? context.delete(model: ItemExpiryItem.self)
-            try? context.delete(model: AnniversaryItem.self)
-            try? context.delete(model: PeriodicHabit.self)
-            try? context.delete(model: MedicationPlan.self)
-            try? context.delete(model: LearnedPlace.self)
-            try? context.delete(model: PasswordVaultItem.self)
-            try? context.delete(model: DataUsageRecord.self)
-            try? context.delete(model: ExpenseRecord.self)
-            try? context.delete(model: IDDocumentItem.self)
-            try? context.delete(model: DepartureCheckItem.self)
-            try? context.delete(model: VoiceMemo.self)
+            try context.delete(model: TodoItem.self)
+            try context.delete(model: SubscriptionItem.self)
+            try context.delete(model: ItemExpiryItem.self)
+            try context.delete(model: AnniversaryItem.self)
+            try context.delete(model: PeriodicHabit.self)
+            try context.delete(model: MedicationPlan.self)
+            try context.delete(model: LearnedPlace.self)
+            try context.delete(model: PasswordVaultItem.self)
+            try context.delete(model: DataUsageRecord.self)
+            try context.delete(model: ExpenseRecord.self)
+            try context.delete(model: IDDocumentItem.self)
+            try context.delete(model: DepartureCheckItem.self)
+            try context.delete(model: VoiceMemo.self)
+            try context.delete(model: VehicleProfile.self)
+            try context.delete(model: StoredItem.self)
+            try context.delete(model: DialogueMessageRecord.self)
+            try context.delete(model: RawMessage.self)
+            try context.delete(model: LocationStaySample.self)
         }
 
         var details: [String] = []
@@ -684,7 +879,7 @@ final class DataMigrationService {
 
         // 1. 待办事项
         var restoredTodos = 0
-        let existingTodoIDs = Set(((try? context.fetch(FetchDescriptor<TodoItem>())) ?? []).map { $0.id })
+        let existingTodoIDs = Set(try context.fetch(FetchDescriptor<TodoItem>()).map(\.id))
         for t in package.todos {
             if strategy == .merge && existingTodoIDs.contains(t.id) { continue }
             let item = TodoItem(
@@ -697,11 +892,16 @@ final class DataMigrationService {
                 station: t.station,
                 location: t.location,
                 dueAt: t.dueAt,
-                sourceText: t.sourceText
+                sourceText: t.sourceText,
+                sortOrder: t.sortOrder ?? 0,
+                recurrenceRuleRaw: t.recurrenceRuleRaw,
+                recurrenceIntervalDays: t.recurrenceIntervalDays ?? 0,
+                remindBeforeMinutes: t.remindBeforeMinutes ?? 0
             )
             item.id = t.id
             item.createdAt = t.createdAt
             item.completedAt = t.completedAt
+            item.reminderOverrideAt = t.reminderOverrideAt
             context.insert(item)
             restoredTodos += 1
         }
@@ -710,7 +910,7 @@ final class DataMigrationService {
 
         // 2. 订阅
         var restoredSubs = 0
-        let existingSubIDs = Set(((try? context.fetch(FetchDescriptor<SubscriptionItem>())) ?? []).map { $0.id })
+        let existingSubIDs = Set(try context.fetch(FetchDescriptor<SubscriptionItem>()).map(\.id))
         for s in package.subscriptions {
             if strategy == .merge && existingSubIDs.contains(s.id) { continue }
             let item = SubscriptionItem(
@@ -727,7 +927,7 @@ final class DataMigrationService {
 
         // 3. 临期预警
         var restoredExpiries = 0
-        let existingExpIDs = Set(((try? context.fetch(FetchDescriptor<ItemExpiryItem>())) ?? []).map { $0.id })
+        let existingExpIDs = Set(try context.fetch(FetchDescriptor<ItemExpiryItem>()).map(\.id))
         for e in package.itemExpiries {
             if strategy == .merge && existingExpIDs.contains(e.id) { continue }
             let item = ItemExpiryItem(
@@ -744,7 +944,7 @@ final class DataMigrationService {
 
         // 4. 纪念日
         var restoredAnnis = 0
-        let existingAnniIDs = Set(((try? context.fetch(FetchDescriptor<AnniversaryItem>())) ?? []).map { $0.id })
+        let existingAnniIDs = Set(try context.fetch(FetchDescriptor<AnniversaryItem>()).map(\.id))
         for a in package.anniversaries {
             if strategy == .merge && existingAnniIDs.contains(a.id) { continue }
             let item = AnniversaryItem(
@@ -761,7 +961,7 @@ final class DataMigrationService {
 
         // 5. 习惯与家务
         var restoredHabits = 0
-        let existingHabitIDs = Set(((try? context.fetch(FetchDescriptor<PeriodicHabit>())) ?? []).map { $0.id })
+        let existingHabitIDs = Set(try context.fetch(FetchDescriptor<PeriodicHabit>()).map(\.id))
         for h in package.habits {
             if strategy == .merge && existingHabitIDs.contains(h.id) { continue }
             let item = PeriodicHabit(
@@ -782,7 +982,7 @@ final class DataMigrationService {
 
         // 6. 服药计划
         var restoredMeds = 0
-        let existingMedIDs = Set(((try? context.fetch(FetchDescriptor<MedicationPlan>())) ?? []).map { $0.id })
+        let existingMedIDs = Set(try context.fetch(FetchDescriptor<MedicationPlan>()).map(\.id))
         for m in package.medications {
             if strategy == .merge && existingMedIDs.contains(m.id) { continue }
             let item = MedicationPlan(
@@ -799,12 +999,13 @@ final class DataMigrationService {
 
         // 7. 密码
         var restoredPwds = 0
-        let existingPwdIDs = Set(((try? context.fetch(FetchDescriptor<PasswordVaultItem>())) ?? []).map { $0.id })
+        let existingPwdIDs = Set(try context.fetch(FetchDescriptor<PasswordVaultItem>()).map(\.id))
         for p in package.passwords {
             if strategy == .merge && existingPwdIDs.contains(p.id) { continue }
+            guard let encryptedPassword = encryptedPasswords[p.id] else { throw MigrationCryptoError.corruptedData }
             let item = PasswordVaultItem(
                 title: p.title, account: p.account,
-                passwordEncrypted: p.passwordEncrypted, category: p.category,
+                passwordEncrypted: encryptedPassword, category: p.category,
                 notes: p.notes, lastRotatedAt: p.lastRotatedAt,
                 rotateCycleDays: p.rotateCycleDays
             )
@@ -817,7 +1018,7 @@ final class DataMigrationService {
 
         // 8. 地点档案
         var restoredPlaces = 0
-        let existingPlaceIDs = Set(((try? context.fetch(FetchDescriptor<LearnedPlace>())) ?? []).map { $0.id })
+        let existingPlaceIDs = Set(try context.fetch(FetchDescriptor<LearnedPlace>()).map(\.id))
         for pl in package.learnedPlaces {
             if strategy == .merge && existingPlaceIDs.contains(pl.id) { continue }
             let item = LearnedPlace(
@@ -842,7 +1043,7 @@ final class DataMigrationService {
 
         // 9. 流量历史
         var restoredUsage = 0
-        let existingUsageIDs = Set(((try? context.fetch(FetchDescriptor<DataUsageRecord>())) ?? []).map { $0.id })
+        let existingUsageIDs = Set(try context.fetch(FetchDescriptor<DataUsageRecord>()).map(\.id))
         for u in package.dataUsageRecords {
             if strategy == .merge && existingUsageIDs.contains(u.id) { continue }
             let item = DataUsageRecord(
@@ -861,7 +1062,7 @@ final class DataMigrationService {
 
         // 10. 收支记账
         var restoredExpenses = 0
-        let existingExpenseIDs = Set(((try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []).map { $0.id })
+        let existingExpenseIDs = Set(try context.fetch(FetchDescriptor<ExpenseRecord>()).map(\.id))
         for ex in package.expenses ?? [] {
             if strategy == .merge && existingExpenseIDs.contains(ex.id) { continue }
             let item = ExpenseRecord(
@@ -882,16 +1083,20 @@ final class DataMigrationService {
 
         // 11. 重要证件
         var restoredDocs = 0
-        let existingDocIDs = Set(((try? context.fetch(FetchDescriptor<IDDocumentItem>())) ?? []).map { $0.id })
+        let existingDocIDs = Set(try context.fetch(FetchDescriptor<IDDocumentItem>()).map(\.id))
         for d in package.documents ?? [] {
             if strategy == .merge && existingDocIDs.contains(d.id) { continue }
             var frontFileName: String? = nil
-            if let frontData = d.frontImageData, let image = UIImage(data: frontData) {
+            if let frontData = d.frontImageData {
+                guard let image = UIImage(data: frontData) else { throw MigrationCryptoError.missingAttachment(d.title) }
                 frontFileName = IDPhotoStorage.saveImage(image)
+                guard frontFileName != nil else { throw MigrationCryptoError.missingAttachment(d.title) }
             }
             var backFileName: String? = nil
-            if let backData = d.backImageData, let image = UIImage(data: backData) {
+            if let backData = d.backImageData {
+                guard let image = UIImage(data: backData) else { throw MigrationCryptoError.missingAttachment(d.title) }
                 backFileName = IDPhotoStorage.saveImage(image)
+                guard backFileName != nil else { throw MigrationCryptoError.missingAttachment(d.title) }
             }
             let item = IDDocumentItem(
                 title: d.title,
@@ -915,7 +1120,7 @@ final class DataMigrationService {
 
         // 12. 出门防丢装备清单
         var restoredDepartures = 0
-        let existingDepartureIDs = Set(((try? context.fetch(FetchDescriptor<DepartureCheckItem>())) ?? []).map { $0.id })
+        let existingDepartureIDs = Set(try context.fetch(FetchDescriptor<DepartureCheckItem>()).map(\.id))
         for dep in package.departureItems ?? [] {
             if strategy == .merge && existingDepartureIDs.contains(dep.id) { continue }
             let item = DepartureCheckItem(
@@ -935,7 +1140,7 @@ final class DataMigrationService {
 
         // 13. 语音备忘录
         var restoredVoiceMemos = 0
-        let existingVoiceMemoIDs = Set(((try? context.fetch(FetchDescriptor<VoiceMemo>())) ?? []).map { $0.id })
+        let existingVoiceMemoIDs = Set(try context.fetch(FetchDescriptor<VoiceMemo>()).map(\.id))
         for vm in package.voiceMemos ?? [] {
             if strategy == .merge && existingVoiceMemoIDs.contains(vm.id) { continue }
 
@@ -943,7 +1148,11 @@ final class DataMigrationService {
             if let audioData = vm.audioData {
                 if let savedName = VoiceMemoStorage.save(data: audioData, preferredName: vm.audioFileName) {
                     actualAudioFileName = savedName
+                } else {
+                    throw MigrationCryptoError.missingAttachment(vm.title)
                 }
+            } else if package.metadata.schemaVersion >= 2 {
+                throw MigrationCryptoError.missingAttachment(vm.title)
             }
 
             let item = VoiceMemo(
@@ -963,8 +1172,91 @@ final class DataMigrationService {
         details.append("语音备忘: \(restoredVoiceMemos) 项")
         totalRestored += restoredVoiceMemos
 
+        let existingVehicleIDs = Set(try context.fetch(FetchDescriptor<VehicleProfile>()).map(\.id))
+        var restoredVehicles = 0
+        for v in package.vehicles ?? [] {
+            if strategy == .merge && existingVehicleIDs.contains(v.id) { continue }
+            let item = VehicleProfile(name: v.name, plateNumber: v.plateNumber,
+                                      powerType: VehiclePowerType(rawValue: v.powerTypeRaw) ?? .gasoline,
+                                      energyCycleDays: v.energyCycleDays, preferredEnergyHour: v.preferredEnergyHour,
+                                      preferredEnergyMinute: v.preferredEnergyMinute,
+                                      maintenanceIntervalMonths: v.maintenanceIntervalMonths,
+                                      insuranceExpiryDate: v.insuranceExpiryDate,
+                                      annualInspectionDate: v.annualInspectionDate,
+                                      currentMileage: v.currentMileage, notes: v.notes)
+            item.id = v.id
+            item.lastEnergyRefillDate = v.lastEnergyRefillDate
+            item.lastMaintenanceDate = v.lastMaintenanceDate
+            item.nextMaintenanceDate = v.nextMaintenanceDate
+            item.isReminderEnabled = v.isReminderEnabled
+            item.createdAt = v.createdAt
+            context.insert(item)
+            restoredVehicles += 1
+        }
+        details.append("爱车档案: \(restoredVehicles) 项")
+        totalRestored += restoredVehicles
+
+        let existingStoredIDs = Set(try context.fetch(FetchDescriptor<StoredItem>()).map(\.id))
+        var restoredStoredItems = 0
+        for s in package.storedItems ?? [] {
+            if strategy == .merge && existingStoredIDs.contains(s.id) { continue }
+            let item = StoredItem(name: s.name, location: s.location, roomArea: s.roomArea,
+                                  notes: s.notes, imageData: s.imageData)
+            item.id = s.id
+            item.createdAt = s.createdAt
+            item.updatedAt = s.updatedAt
+            context.insert(item)
+            restoredStoredItems += 1
+        }
+        details.append("物品收纳: \(restoredStoredItems) 项")
+        totalRestored += restoredStoredItems
+
+        let existingDialogueIDs = Set(try context.fetch(FetchDescriptor<DialogueMessageRecord>()).map(\.id))
+        var restoredDialogues = 0
+        for d in package.dialogueRecords ?? [] {
+            if strategy == .merge && existingDialogueIDs.contains(d.id) { continue }
+            context.insert(DialogueMessageRecord(id: d.id, role: d.roleRaw, text: d.text,
+                                                 timestamp: d.timestamp, sessionID: d.sessionID))
+            restoredDialogues += 1
+        }
+        details.append("对话历史: \(restoredDialogues) 项")
+        totalRestored += restoredDialogues
+
+        let existingMessageIDs = Set(try context.fetch(FetchDescriptor<RawMessage>()).map(\.id))
+        var restoredMessages = 0
+        for m in package.rawMessages ?? [] {
+            if strategy == .merge && existingMessageIDs.contains(m.id) { continue }
+            let item = RawMessage(source: m.source, sender: m.sender, content: m.content)
+            item.id = m.id
+            item.receivedAt = m.receivedAt
+            item.parseSummary = m.parseSummary
+            context.insert(item)
+            restoredMessages += 1
+        }
+        details.append("原始消息: \(restoredMessages) 项")
+        totalRestored += restoredMessages
+
+        let existingSampleIDs = Set(try context.fetch(FetchDescriptor<LocationStaySample>()).map(\.id))
+        var restoredSamples = 0
+        for s in package.locationSamples ?? [] {
+            if strategy == .merge && existingSampleIDs.contains(s.id) { continue }
+            let item = LocationStaySample(latitude: s.latitude, longitude: s.longitude,
+                                          wifiSSID: s.wifiSSID, timestamp: s.timestamp)
+            item.id = s.id
+            item.hourOfDay = s.hourOfDay
+            item.isWeekend = s.isWeekend
+            context.insert(item)
+            restoredSamples += 1
+        }
+        details.append("位置采样: \(restoredSamples) 项")
+        totalRestored += restoredSamples
+
         try context.save()
         return RestoreResultSummary(restoredCount: totalRestored, details: details)
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 
     // MARK: - 外部纯文本 / CSV 批量导入
@@ -1007,10 +1299,11 @@ final class DataMigrationService {
             let category = parts.count >= 4 && !parts[3].isEmpty ? String(parts[3]) : "日常账号"
             let notes = parts.count >= 5 ? String(parts[4]) : nil
 
+            guard let encrypted = try? PasswordVaultCrypto.encrypt(password) else { continue }
             let item = PasswordVaultItem(
                 title: title,
                 account: account,
-                passwordEncrypted: password,
+                passwordEncrypted: encrypted,
                 category: category,
                 notes: notes
             )

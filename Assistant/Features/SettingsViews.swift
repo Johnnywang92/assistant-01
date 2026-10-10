@@ -66,6 +66,7 @@ struct SettingsView: View {
     @AppStorage("floating_voice_norm_x") private var normX: Double = 1.0
     @AppStorage("floating_voice_norm_y") private var normY: Double = 0.68
     @AppStorage("weather_alerts_enabled") private var weatherAlertsEnabled: Bool = true
+    @AppStorage("todo_notification_show_sensitive_details") private var showSensitiveTodoNotifications: Bool = false
     @AppStorage("user_lifestyle_profile") private var lifestyleProfile: UserLifestyleProfile = .officeWorker
     @AppStorage("user_off_work_hour") private var offWorkHour: Int = 18
     @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true
@@ -210,7 +211,7 @@ struct SettingsView: View {
                 } header: {
                     Text("助手与称呼定制")
                 } footer: {
-                    Text("名称与称呼支持在对话中直接通过语音说出（如“以后叫我老板”或“帮我设置”），设置将即时同步至端侧大模型、语音问候及主界面。")
+                    Text("名称与称呼支持在对话中直接通过语音设置，并同步至语音问候和主界面。")
                 }
 
                 // MARK: - 核心权限健康度检查
@@ -256,7 +257,7 @@ struct SettingsView: View {
                 } header: {
                     Text("系统核心权限")
                 } footer: {
-                    Text("小助坚持 100% 离线端侧运作，通知、定位与语音权限将保障待办催办与常驻地点学习正常运作。")
+                    Text("基础功能在设备上处理；启用局域网模型服务时，相关生活摘要会发送至你指定的端点。权限可按需开启。")
                 }
 
                 Section {
@@ -502,6 +503,10 @@ struct SettingsView: View {
                     Toggle("全场景人性化动态排序", isOn: $isAdaptiveSortingEnabled)
 
                     Toggle("气象预警与骤降添衣提醒", isOn: $weatherAlertsEnabled)
+                    Toggle("在锁屏通知中显示待办详情", isOn: $showSensitiveTodoNotifications)
+                        .onChange(of: showSensitiveTodoNotifications) { _, _ in
+                            TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
+                        }
                 } header: {
                     Text("生活作息与情境智能感知")
                 } footer: {
@@ -513,9 +518,9 @@ struct SettingsView: View {
                         LLMModelManagementView()
                     } label: {
                         HStack {
-                            Label("端侧大模型 (Qwen2.5-1.5B)", systemImage: "brain.head.profile")
+                            Label("模型文件与局域网问答", systemImage: "brain.head.profile")
                             Spacer()
-                            Text(LLMModelManager.shared.isModelDownloaded ? "已就绪" : "可配置")
+                            Text(LLMModelManager.shared.isModelDownloaded ? "文件已下载" : "可配置")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }

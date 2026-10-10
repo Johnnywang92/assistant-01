@@ -86,7 +86,7 @@ public struct ExpenseParseResult: Equatable {
 public enum ExpenseNaturalLanguageParser {
     /// 解析一句话记账文本，例如："中午吃麦当劳花了 38 块"、"打车 25.5 元"、"发工资 15000"
     public static func parse(_ text: String) -> ExpenseParseResult? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = normalizeSpeechText(text)
         guard !trimmed.isEmpty else { return nil }
 
         // 1. 提取金额
@@ -117,12 +117,35 @@ public enum ExpenseNaturalLanguageParser {
 
     // MARK: - 金额提取
     private static func extractAmount(from text: String) -> Double? {
-        // 模式 1：常见语法 "花了/付了/用去/收入/支出/消费/为/是 38.5"
+        let chineseAmountPattern = "(?:花了|付了|收入|进账|到账|工资|奖金|支出|消费|共计|借出)\\s*([零〇一二两三四五六七八九十百千万]+)"
+        if let regex = try? NSRegularExpression(pattern: chineseAmountPattern),
+           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let range = Range(match.range(at: 1), in: text),
+           let value = numberValue(String(text[range])), value > 0 {
+            return value
+        }
+
+        // 先处理口语金额："二十五块五"、"12块5毛"、"12元5角"。
+        let spokenAmountPattern = "([0-9]+|[零〇一二两三四五六七八九十百千万]+)\\s*(?:元|块|块钱)\\s*([0-9]+|[零〇一二两三四五六七八九十百千万]+)?\\s*(?:毛|角)?"
+        if let regex = try? NSRegularExpression(pattern: spokenAmountPattern),
+           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let wholeRange = Range(match.range(at: 1), in: text),
+           let whole = numberValue(String(text[wholeRange])), whole > 0 {
+            if match.numberOfRanges > 2, match.range(at: 2).location != NSNotFound,
+               let fractionRange = Range(match.range(at: 2), in: text),
+               let fractionValue = numberValue(String(text[fractionRange])) {
+                let fraction = fractionValue >= 10 ? fractionValue / 100 : fractionValue / 10
+                return whole + fraction
+            }
+            return whole
+        }
+
+        // 常见语法 "花了/付了/用去/收入/支出/消费/为/是 38.5"
         let patterns = [
-            "(?:花了|付了|用去|支出|消费|收入|进账|共计|为|是|买.*?花了?|借出)\\s*([0-9]+(?:\\.[0-9]{1,2})?)",
-            "([0-9]+(?:\\.[0-9]{1,2})?)\\s*(?:元|块钱|块|RMB|rmb|\\¥)",
+            "(?:花了|付了|用去|支出|消费|收入|进账|共计|为|是|买.*?花了?|借出)\\s*([0-9]+(?:[.．][0-9]{1,2})?)",
+            "([0-9]+(?:[.．][0-9]{1,2})?)\\s*(?:元|块钱|块|RMB|rmb|\\¥)",
             "(?:\\¥|￥)\\s*([0-9]+(?:\\.[0-9]{1,2})?)",
-            "\\b([0-9]+(?:\\.[0-9]{1,2})?)\\b" // 末尾或独立的数字
+            "\\b([0-9]+(?:[.．][0-9]{1,2})?)\\b" // 末尾或独立的数字
         ]
 
         for p in patterns {
@@ -130,7 +153,7 @@ public enum ExpenseNaturalLanguageParser {
                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
                match.numberOfRanges > 1,
                let range = Range(match.range(at: 1), in: text) {
-                if let val = Double(text[range]), val > 0 {
+                if let val = Double(text[range].replacingOccurrences(of: "．", with: ".")), val > 0 {
                     return val
                 }
             }
@@ -140,7 +163,7 @@ public enum ExpenseNaturalLanguageParser {
 
     // MARK: - 收入/支出判断
     private static func determineIsIncome(from text: String) -> Bool {
-        let incomeKeywords = ["收入", "进账", "发工资", "工资", "奖金", "年终奖", "红包收入", "收红包", "兼职", "副业", "退款", "报销", "利息", "理财收益", "收账"]
+        let incomeKeywords = ["收入", "进账", "到账", "收到", "发工资", "工资", "奖金", "年终奖", "红包收入", "收红包", "兼职", "副业", "退款", "报销", "利息", "理财收益", "收账", "赚到", "入账"]
         for kw in incomeKeywords {
             if text.contains(kw) && !text.contains("发红包") && !text.contains("给红包") {
                 return true
@@ -223,5 +246,35 @@ public enum ExpenseNaturalLanguageParser {
             return isIncome ? "收到款项" : "日常消费"
         }
         return clean
+    }
+
+    // MARK: - 语音文本归一化与中文数字
+    private static func normalizeSpeechText(_ text: String) -> String {
+        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let replacements = [
+            "元钱": "元", "圆": "元", "园": "元", "块 q": "块", "块钱": "块",
+            "人民币": "元", "点": ".", "．": "."
+        ]
+        for (from, to) in replacements { value = value.replacingOccurrences(of: from, with: to) }
+        return value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
+
+    private static func numberValue(_ value: String) -> Double? {
+        if let arabic = Double(value.replacingOccurrences(of: "．", with: ".")) { return arabic }
+        let digits: [Character: Double] = ["零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9]
+        var total = 0.0
+        var section = 0.0
+        var current = 0.0
+        for char in value {
+            if let digit = digits[char] { current = digit; continue }
+            switch char {
+            case "十": section += (current == 0 ? 1 : current) * 10; current = 0
+            case "百": section += (current == 0 ? 1 : current) * 100; current = 0
+            case "千": section += (current == 0 ? 1 : current) * 1_000; current = 0
+            case "万": total += (section + current) * 10_000; section = 0; current = 0
+            default: return nil
+            }
+        }
+        return total + section + current
     }
 }

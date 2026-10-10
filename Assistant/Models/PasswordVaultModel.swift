@@ -7,7 +7,7 @@ public final class PasswordVaultItem {
     public var id: UUID
     public var title: String               // 服务/账号名称，如 "公司企业邮箱", "路由器管理", "Apple ID"
     public var account: String             // 账号/用户名/邮箱
-    public var passwordEncrypted: String   // 存储的密码值
+    public var passwordEncrypted: String   // aesgcm:v1: 前缀的密文；旧版记录迁移时可能为明文
     public var category: String            // 分类：工作/日常/银行资产/服务器设备
     public var notes: String?              // 补充提示/安全问题备忘
     public var lastRotatedAt: Date         // 上次更换密码的时间

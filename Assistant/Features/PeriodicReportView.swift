@@ -364,7 +364,8 @@ struct PeriodicReportView: View {
 
                 Spacer()
 
-                if LLMModelManager.shared.isModelDownloaded {
+                if LLMInferenceService.shared.remoteContextConsent &&
+                    !LLMInferenceService.shared.developerEndpoint.isEmpty {
                     Button {
                         polishWithLLM()
                     } label: {
@@ -376,7 +377,7 @@ struct PeriodicReportView: View {
                                 Image(systemName: "brain.head.profile")
                                     .font(.caption2)
                             }
-                            Text(isPolishingWithLLM ? "思考中..." : "端侧大模型润色")
+                            Text(isPolishingWithLLM ? "思考中..." : "局域网服务润色")
                                 .font(.caption2.bold())
                         }
                         .padding(.horizontal, 8)

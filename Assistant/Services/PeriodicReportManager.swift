@@ -184,7 +184,7 @@ struct PeriodicReportData: Identifiable {
             lines.append("")
         }
         lines.append("---")
-        lines.append("*本报告数据 100% 离线端侧运作，隐私数据绝不上云。*")
+        lines.append("*本报告默认在设备上生成；仅在你开启局域网问答后，相关摘要可能发送到指定端点。*")
         return lines.joined(separator: "\n")
     }
 }

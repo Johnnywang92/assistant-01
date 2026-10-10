@@ -3,6 +3,19 @@ import SwiftData
 
 /// 全局共享的 SwiftData 容器。App 界面和 App Intent（后台）用同一个。
 enum Persistence {
+    private static var storedRecoveryError: String?
+    static var recoveryError: String? {
+        _ = shared
+        return storedRecoveryError
+    }
+
+    static var storeFiles: [URL] {
+        guard let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return [] }
+        return ["default.store", "default.store-wal", "default.store-shm"]
+            .map { directory.appendingPathComponent($0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
     static let shared: ModelContainer = {
         let schema = Schema([
             TodoItem.self,
@@ -29,30 +42,12 @@ enum Persistence {
         do {
             return try ModelContainer(for: schema, configurations: config)
         } catch {
-            print("⚠️ ModelContainer 首次加载失败: \(error)，尝试重置数据库文件...")
-            // 可能是由于新增模型导致的数据库迁移不兼容，尝试清理旧 store 文件并重建
-            if let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-                let defaultStore = appSupportURL.appendingPathComponent("default.store")
-                let defaultStoreShm = appSupportURL.appendingPathComponent("default.store-shm")
-                let defaultStoreWal = appSupportURL.appendingPathComponent("default.store-wal")
-                try? FileManager.default.removeItem(at: defaultStore)
-                try? FileManager.default.removeItem(at: defaultStoreShm)
-                try? FileManager.default.removeItem(at: defaultStoreWal)
-            }
-            if let retryContainer = try? ModelContainer(for: schema, configurations: config) {
-                print("✅ 重建数据库成功")
-                return retryContainer
-            }
-            if let fallbackContainer = try? ModelContainer(for: schema) {
-                print("✅ 默认路径数据库恢复成功")
-                return fallbackContainer
-            }
-            // 内存模式终极兜底，保证应用绝不闪退或黑屏卡死
+            // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
+            storedRecoveryError = error.localizedDescription
             if let memContainer = try? ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
-                print("⚠️ 使用内存数据库兜底")
                 return memContainer
             }
-            fatalError("无法创建数据库: \(error)")
+            fatalError("无法打开数据库或恢复页: \(error)")
         }
     }()
 }

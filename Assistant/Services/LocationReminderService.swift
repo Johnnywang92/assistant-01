@@ -43,11 +43,10 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
 
     /// 请求一次单次精简定位，并自动喂给常驻地点学习引擎进行空间时空聚类
     @discardableResult
-    public func requestSingleLocationSample(context: ModelContext? = nil) async -> CLLocationCoordinate2D? {
-        // 若未授权，先尝试申请
+    public func requestSingleLocationSample(context: ModelContext? = nil, requestPermissionIfNeeded: Bool = false) async -> CLLocationCoordinate2D? {
         let currentAuth = locationManager.authorizationStatus
         if currentAuth == .notDetermined {
-            locationManager.requestWhenInUseAuthorization()
+            if requestPermissionIfNeeded { locationManager.requestWhenInUseAuthorization() }
             return nil
         }
 

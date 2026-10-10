@@ -14,6 +14,12 @@ public final class TodoNotificationManager {
 
     private init() {}
 
+    /// 默认隐藏取件码、地点和个人备注，避免锁屏横幅泄露信息。
+    public var showSensitiveDetails: Bool {
+        get { UserDefaults.standard.bool(forKey: "todo_notification_show_sensitive_details") }
+        set { UserDefaults.standard.set(newValue, forKey: "todo_notification_show_sensitive_details") }
+    }
+
     /// 注册交互式通知分类与快捷操作按钮（完成、推迟、查看）
     public func registerCategories() {
         let markDoneAction = UNNotificationAction(
@@ -52,15 +58,21 @@ public final class TodoNotificationManager {
     }
 
     /// 为单个待办事项排期提醒通知
-    public func scheduleNotification(for item: TodoItem) {
+    func scheduleNotification(for item: TodoItem) {
         // 仅对活跃且设定了未来截止时间的事项进行提醒排期
-        guard item.status == .active, let dueAt = item.dueAt, dueAt > .now else {
+        guard item.status == .active, let dueAt = item.dueAt else {
+            cancelNotification(for: item.id)
+            return
+        }
+        let earlyReminder = dueAt.addingTimeInterval(-TimeInterval(max(0, item.remindBeforeMinutes) * 60))
+        let plannedReminder = item.reminderOverrideAt ?? (earlyReminder > .now ? earlyReminder : dueAt)
+        guard plannedReminder > .now || dueAt > .now else {
             cancelNotification(for: item.id)
             return
         }
 
         let content = UNMutableNotificationContent()
-        content.title = "待办提醒：\(item.title)"
+        content.title = showSensitiveDetails ? "待办提醒：\(item.title)" : "待办提醒"
 
         var bodySnippets: [String] = []
         if let code = item.pickupCode, !code.isEmpty {
@@ -76,7 +88,9 @@ public final class TodoNotificationManager {
             bodySnippets.append("[\(item.recurrenceSummaryText)]")
         }
 
-        if bodySnippets.isEmpty {
+        if !showSensitiveDetails {
+            content.body = "有一项待办已到提醒时间，请解锁后查看。"
+        } else if bodySnippets.isEmpty {
             content.body = "事项已到达提醒时间，请及时处理。"
         } else {
             content.body = bodySnippets.joined(separator: " · ")
@@ -89,7 +103,7 @@ public final class TodoNotificationManager {
             "type": "todo"
         ]
 
-        let interval = max(1, dueAt.timeIntervalSinceNow)
+        let interval = max(1, plannedReminder.timeIntervalSinceNow)
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
         let request = UNNotificationRequest(
             identifier: notificationId(for: item.id),
@@ -129,15 +143,14 @@ public final class TodoNotificationManager {
             // 标记完成当前待办，若为周期事项将自动生成下一期并注册下次通知
             item.markAsCompleted(in: context)
             try? context.save()
-            Haptic.success()
+            Task { @MainActor in Haptic.success() }
 
         case Self.actionSnooze1H:
-            // 顺延 1 小时
-            let newDue = Calendar.current.date(byAdding: .hour, value: 1, to: item.dueAt ?? .now) ?? .now
-            item.dueAt = newDue
+            // 只推迟通知，不改变原截止时间。
+            item.reminderOverrideAt = Calendar.current.date(byAdding: .hour, value: 1, to: .now)
             scheduleNotification(for: item)
             try? context.save()
-            Haptic.light()
+            Task { @MainActor in Haptic.light() }
 
         case Self.actionView, UNNotificationDefaultActionIdentifier:
             // 打开并路由至待办页面
@@ -158,9 +171,24 @@ public final class TodoNotificationManager {
         guard let allItems = try? context.fetch(descriptor) else { return }
 
         let now = Date.now
-        let activeItemsWithDue = allItems.filter { $0.status == .active && ($0.dueAt ?? .distantPast) > now }
+        let activeItemsWithDue = allItems.filter {
+            $0.status == .active && (($0.dueAt ?? .distantPast) > now || ($0.reminderOverrideAt ?? .distantPast) > now)
+        }
 
-        for item in activeItemsWithDue {
+        // iOS 对应用待处理通知数量有限制；优先排期最近的事项。
+        let scheduledItems = activeItemsWithDue.sorted {
+            let first = $0.reminderOverrideAt ?? ($0.dueAt ?? .distantFuture).addingTimeInterval(-TimeInterval($0.remindBeforeMinutes * 60))
+            let second = $1.reminderOverrideAt ?? ($1.dueAt ?? .distantFuture).addingTimeInterval(-TimeInterval($1.remindBeforeMinutes * 60))
+            return first < second
+        }.prefix(50)
+        let validIDs = Set(scheduledItems.map { notificationId(for: $0.id) })
+        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
+            let stale = requests.map(\.identifier).filter { $0.hasPrefix("todo-") && !validIDs.contains($0) }
+            if !stale.isEmpty {
+                UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: stale)
+            }
+        }
+        for item in scheduledItems {
             scheduleNotification(for: item)
         }
     }

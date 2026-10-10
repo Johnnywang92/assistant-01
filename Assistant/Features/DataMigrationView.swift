@@ -161,6 +161,10 @@ struct DataMigrationView: View {
                             .font(.caption)
                         Text("• 记账: \(summary.expenseCount) | 证件: \(summary.documentCount) | 防丢: \(summary.departureItemCount) | 备忘: \(summary.voiceMemoCount)")
                             .font(.caption)
+                        Text("• 爱车: \(summary.vehicleCount) | 收纳: \(summary.storedItemCount) | 对话: \(summary.dialogueCount)")
+                            .font(.caption)
+                        Text("• 原始消息: \(summary.rawMessageCount) | 位置采样: \(summary.locationSampleCount)")
+                            .font(.caption)
 
                         Divider()
 
@@ -299,7 +303,7 @@ struct DataMigrationView: View {
         do {
             guard let selectedURL = try result.get().first else { return }
             guard selectedURL.startAccessingSecurityScopedResource() else {
-                return
+                throw CocoaError(.fileReadNoPermission)
             }
             defer { selectedURL.stopAccessingSecurityScopedResource() }
 
@@ -417,15 +421,15 @@ struct SetExportPinSheet: View {
                     .padding(.vertical, 4)
                 }
 
-                Section("设置 PIN 码 (4 - 16 位)") {
-                    SecureField("输入 PIN 码 (如 6 位数字)", text: $pin)
-                        .keyboardType(.asciiCapableNumberPad)
+                Section("设置备份口令 (8 - 64 位)") {
+                    SecureField("输入至少 8 位口令", text: $pin)
+                        .keyboardType(.asciiCapable)
                     SecureField("再次确认 PIN 码", text: $confirmPin)
-                        .keyboardType(.asciiCapableNumberPad)
+                        .keyboardType(.asciiCapable)
                 }
 
                 Section("密码提示 (选填)") {
-                    TextField("例如：常用卡号后四位 / 某个特定年份", text: $hint)
+                    TextField("仅填写自己看得懂的提示，不要写出完整口令", text: $hint)
                         .font(.subheadline)
                 }
 
@@ -449,8 +453,8 @@ struct SetExportPinSheet: View {
                     Button("确定生成") {
                         let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
                         let cleanConfirm = confirmPin.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if cleanPin.count < 4 {
-                            errorMessage = "PIN 码长度不能少于 4 位"
+                        if cleanPin.count < 8 || cleanPin.count > 64 {
+                            errorMessage = "备份口令需为 8 到 64 位"
                             Haptic.error()
                             return
                         }

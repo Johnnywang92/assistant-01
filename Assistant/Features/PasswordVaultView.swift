@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 离线密码管理、随机生成与轮换预警视图
 struct PasswordVaultView: View {
@@ -10,10 +11,12 @@ struct PasswordVaultView: View {
 
     @State private var showingAddSheet = false
     @State private var showingGeneratorSheet = false
+    @State private var vaultError: String?
+    @State private var migrationReady = false
 
     var body: some View {
         Group {
-            if auth.isUnlocked {
+            if auth.isUnlocked && migrationReady {
                 unlockedContent
             } else {
                 lockedContent
@@ -41,7 +44,15 @@ struct PasswordVaultView: View {
         }
         .sheet(isPresented: $showingAddSheet) { AddPasswordSheet() }
         .sheet(isPresented: $showingGeneratorSheet) { StandaloneGeneratorSheet() }
+        .alert("密码库操作失败", isPresented: Binding(get: { vaultError != nil }, set: { if !$0 { vaultError = nil } })) {
+            Button("知道了", role: .cancel) { vaultError = nil }
+        } message: { Text(vaultError ?? "") }
         .onAppear {
+            do {
+                try PasswordVaultCrypto.migrateLegacyRecords(context: context)
+                migrationReady = true
+            }
+            catch { vaultError = error.localizedDescription }
             if !auth.isUnlocked {
                 auth.authenticate(reason: "使用 Face ID / Touch ID 解锁密码保险箱")
             }
@@ -128,6 +139,9 @@ struct PasswordVaultRow: View {
     @Environment(\.modelContext) private var context
     @Bindable var item: PasswordVaultItem
     @State private var isRevealed = false
+    @State private var revealError: String?
+
+    private var decryptedPassword: String? { try? PasswordVaultCrypto.decrypt(item.passwordEncrypted) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -157,7 +171,7 @@ struct PasswordVaultRow: View {
 
             HStack {
                 if isRevealed {
-                    Text(item.passwordEncrypted)
+                    Text(decryptedPassword ?? "无法解密")
                         .font(.body.monospaced())
                 } else {
                     Text("••••••••••••")
@@ -173,7 +187,11 @@ struct PasswordVaultRow: View {
                 .buttonStyle(.borderless)
 
                 Button {
-                    UIPasteboard.general.string = item.passwordEncrypted
+                    guard let password = decryptedPassword else {
+                        revealError = "无法解密这条密码，请确认设备安全密钥可用。"
+                        return
+                    }
+                    UIPasteboard.general.setItems([[UTType.utf8PlainText.identifier: password]], options: [.expirationDate: Date().addingTimeInterval(60), .localOnly: true])
                 } label: {
                     Label("复制", systemImage: "doc.on.doc").font(.caption)
                 }
@@ -203,6 +221,9 @@ struct PasswordVaultRow: View {
         }
         .padding(.vertical, 4)
         .themedRow()
+        .alert("无法复制密码", isPresented: Binding(get: { revealError != nil }, set: { if !$0 { revealError = nil } })) {
+            Button("知道了", role: .cancel) { revealError = nil }
+        } message: { Text(revealError ?? "") }
     }
 }
 
@@ -218,6 +239,7 @@ struct AddPasswordSheet: View {
     @State private var notes = ""
     @State private var mnemonicHint = ""
     @State private var showingGeneratorSheet = false
+    @State private var saveError: String?
 
     let categories = ["日常账号", "工作企业", "银行资产", "路由器设备", "其他"]
 
@@ -310,17 +332,20 @@ struct AddPasswordSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
-                        let item = PasswordVaultItem(
-                            title: title,
-                            account: account,
-                            passwordEncrypted: password,
-                            category: category,
-                            notes: notes.isEmpty ? nil : notes,
-                            rotateCycleDays: rotateDays
-                        )
-                        context.insert(item)
-                        try? context.save()
-                        dismiss()
+                        do {
+                            let encrypted = try PasswordVaultCrypto.encrypt(password)
+                            let item = PasswordVaultItem(
+                                title: title,
+                                account: account,
+                                passwordEncrypted: encrypted,
+                                category: category,
+                                notes: notes.isEmpty ? nil : notes,
+                                rotateCycleDays: rotateDays
+                            )
+                            context.insert(item)
+                            try context.save()
+                            dismiss()
+                        } catch { saveError = error.localizedDescription }
                     }
                     .disabled(title.isEmpty || password.isEmpty)
                 }
@@ -331,6 +356,9 @@ struct AddPasswordSheet: View {
                     self.mnemonicHint = generatedResult.mnemonicHint
                 }
             }
+            .alert("保存失败", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+                Button("知道了", role: .cancel) { saveError = nil }
+            } message: { Text(saveError ?? "") }
         }
     }
 }

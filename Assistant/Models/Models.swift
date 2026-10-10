@@ -130,11 +130,16 @@ final class TodoItem {
     var recurrenceRuleRaw: String?
     /// 重复周期天数（自定义天数或预设天数）
     var recurrenceIntervalDays: Int = 0
+    /// 到期前提醒分钟数；0 表示到期时提醒。
+    var remindBeforeMinutes: Int = 0
+    /// 通知中的“稍后提醒”只改变下次提醒时间，不改变待办截止时间。
+    var reminderOverrideAt: Date?
 
     init(type: TodoType, status: TodoStatus = .active, title: String, detail: String? = nil,
          pickupCode: String? = nil, courier: String? = nil, station: String? = nil, location: String? = nil,
          dueAt: Date? = nil, sourceText: String? = nil, sortOrder: Int = 0,
-         recurrenceRuleRaw: String? = nil, recurrenceIntervalDays: Int = 0) {
+         recurrenceRuleRaw: String? = nil, recurrenceIntervalDays: Int = 0,
+         remindBeforeMinutes: Int = 0) {
         self.id = UUID()
         self.typeRaw = type.rawValue
         self.statusRaw = status.rawValue
@@ -150,6 +155,7 @@ final class TodoItem {
         self.sortOrder = sortOrder
         self.recurrenceRuleRaw = recurrenceRuleRaw
         self.recurrenceIntervalDays = recurrenceIntervalDays
+        self.remindBeforeMinutes = remindBeforeMinutes
     }
 
     var type: TodoType {
@@ -233,7 +239,8 @@ final class TodoItem {
             sourceText: self.sourceText,
             sortOrder: self.sortOrder,
             recurrenceRuleRaw: self.recurrenceRuleRaw,
-            recurrenceIntervalDays: self.recurrenceIntervalDays
+            recurrenceIntervalDays: self.recurrenceIntervalDays,
+            remindBeforeMinutes: self.remindBeforeMinutes
         )
         context.insert(nextItem)
         TodoNotificationManager.shared.scheduleNotification(for: nextItem)

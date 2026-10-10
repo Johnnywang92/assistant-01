@@ -105,10 +105,18 @@ struct TodoListView: View {
     @State private var itemToShare: TodoItem? = nil
     @State private var prepToastMessage: String? = nil
     @State private var isReordering: Bool = false
+    @State private var searchText: String = ""
 
     // MARK: - 单次 O(N) 极速分类缓存（彻底消除视图树重复全表遍历）
     private var classified: TodoClassification {
-        TodoClassification(from: todos)
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return TodoClassification(from: todos) }
+        return TodoClassification(from: todos.filter {
+            $0.title.localizedCaseInsensitiveContains(query) ||
+            ($0.detail?.localizedCaseInsensitiveContains(query) ?? false) ||
+            ($0.pickupCode?.localizedCaseInsensitiveContains(query) ?? false) ||
+            ($0.station?.localizedCaseInsensitiveContains(query) ?? false)
+        })
     }
 
     private var activeTodos: [TodoItem] { classified.active }
@@ -170,6 +178,7 @@ struct TodoListView: View {
             .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
             .themedAppBackground()
             .navigationTitle(assistantName.isEmpty ? "小助" : assistantName)
+            .searchable(text: $searchText, prompt: "搜索待办、详情、取件码或驿站")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if isReordering {
@@ -291,19 +300,26 @@ struct TodoListView: View {
                 }
                 router.requestedFilter = nil
             }
+            .onChange(of: searchText) { _, query in
+                if !query.isEmpty { selectedFilter = .all }
+            }
             .overlay {
                 if activeTodos.isEmpty && review.isEmpty && done.isEmpty {
-                    ContentUnavailableView {
+                    if !searchText.isEmpty {
+                        ContentUnavailableView.search(text: searchText)
+                    } else {
+                        ContentUnavailableView {
                         Label("暂无待办事项", systemImage: "list.bullet.clipboard")
-                    } description: {
+                        } description: {
                         Text("待办不仅支持快递，还涵盖日常日程、服药提醒、周期家务与防扣款预警。\n点击右上角 ➕ 快速添加。")
-                    } actions: {
+                        } actions: {
                         Button {
                             showAddTodo = true
                         } label: {
                             Label("新建待办", systemImage: "plus")
                         }
                         .buttonStyle(.borderedProminent)
+                        }
                     }
                 }
             }
@@ -1119,58 +1135,57 @@ struct TodoListView: View {
 
     @ViewBuilder
     private var filterTabBar: some View {
-        HStack(spacing: 6) {
-            ForEach(TodoFilterCategory.allCases) { category in
-                let isSelected = selectedFilter == category
-                let count = badgeCount(for: category)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(TodoFilterCategory.allCases) { category in
+                        let isSelected = selectedFilter == category
+                        let count = badgeCount(for: category)
 
-                Button {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                        selectedFilter = category
-                    }
-                    Haptic.selection()
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(category.rawValue)
-                            .font(.subheadline)
-                            .fontWeight(isSelected ? .bold : .medium)
-
-                        if count > 0 {
-                            Text(count > 99 ? "99+" : "\(count)")
-                                .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 1)
-                                .background(
-                                    Capsule().fill(
-                                        isSelected
-                                            ? Color.white.opacity(0.25)
-                                            : badgeColor(for: category).opacity(0.16)
-                                    )
-                                )
-                                .foregroundStyle(isSelected ? Color.white : badgeColor(for: category))
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
-                    .background(
-                        ZStack {
-                            if isSelected {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(Color.accentColor)
-                                    .shadow(color: Color.accentColor.opacity(0.22), radius: 4, y: 2)
-                            } else {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(bgManager.isCustomBackgroundActive ? Color(.secondarySystemBackground).opacity(0.7) : Color(.secondarySystemBackground))
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                selectedFilter = category
                             }
+                            Haptic.selection()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(category.rawValue)
+                                    .font(.subheadline)
+                                    .fontWeight(isSelected ? .bold : .medium)
+
+                                if count > 0 {
+                                    Text(count > 99 ? "99+" : "\(count)")
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background(Capsule().fill(
+                                            isSelected ? Color.white.opacity(0.25) : badgeColor(for: category).opacity(0.16)
+                                        ))
+                                        .foregroundStyle(isSelected ? Color.white : badgeColor(for: category))
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 44)
+                            .background {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(isSelected ? Color.accentColor : Color(.secondarySystemBackground))
+                                    .shadow(color: isSelected ? Color.accentColor.opacity(0.22) : .clear, radius: 4, y: 2)
+                            }
+                            .foregroundStyle(isSelected ? Color.white : Color.primary)
                         }
-                    )
-                    .foregroundStyle(isSelected ? Color.white : Color.primary)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(category.rawValue)，\(count) 项")
+                        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                        .id(category)
+                    }
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+            .onChange(of: selectedFilter) { _, category in
+                withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(category, anchor: .center) }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
         .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemBackground))
     }
 
@@ -1802,6 +1817,8 @@ struct AddTodoSheet: View {
     @State private var detail: String = ""
     @State private var hasDueDate: Bool
     @State private var dueDate: Date
+    @State private var remindBeforeMinutes: Int = 0
+    @State private var customRemindBeforeMinutes: Int = 120
     @State private var recurrenceRule: TodoRecurrenceRule = .none
     @State private var customIntervalDays: Int = 3
     @State private var pickupCode: String = ""
@@ -2275,8 +2292,21 @@ struct AddTodoSheet: View {
                             .lineLimit(2...4)
 
                         Toggle("设置提醒时间", isOn: $hasDueDate)
+                            .onChange(of: hasDueDate) { _, enabled in
+                                if enabled { Task { await NotificationService.requestAuthorization() } }
+                            }
                         if hasDueDate {
                             DatePicker("截止时间", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                            Picker("提前提醒", selection: $remindBeforeMinutes) {
+                                Text("到期时").tag(0)
+                                Text("提前 5 分钟").tag(5)
+                                Text("提前 1 小时").tag(60)
+                                Text("提前 1 天").tag(1440)
+                                Text("自定义").tag(-1)
+                            }
+                            if remindBeforeMinutes == -1 {
+                                Stepper("提前 \(customRemindBeforeMinutes) 分钟", value: $customRemindBeforeMinutes, in: 1...10080, step: 5)
+                            }
                         }
 
                         Picker("重复周期", selection: $recurrenceRule) {
@@ -2345,6 +2375,7 @@ struct AddTodoSheet: View {
     private func createTodo() {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return }
+        if hasDueDate { Task { await NotificationService.requestAuthorization() } }
 
         let trimmedDetail = detail.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedCode = pickupCode.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2364,7 +2395,8 @@ struct AddTodoSheet: View {
             dueAt: hasDueDate ? dueDate : nil,
             sortOrder: minOrder - 1,
             recurrenceRuleRaw: recurrenceRule == .none ? nil : recurrenceRule.rawValue,
-            recurrenceIntervalDays: recurrenceRule == .custom ? customIntervalDays : recurrenceRule.dayInterval(customDays: customIntervalDays)
+            recurrenceIntervalDays: recurrenceRule == .custom ? customIntervalDays : recurrenceRule.dayInterval(customDays: customIntervalDays),
+            remindBeforeMinutes: remindBeforeMinutes == -1 ? customRemindBeforeMinutes : remindBeforeMinutes
         )
         context.insert(item)
         TodoNotificationManager.shared.scheduleNotification(for: item)

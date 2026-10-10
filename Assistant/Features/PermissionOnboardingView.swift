@@ -26,7 +26,7 @@ struct PermissionOnboardingView: View {
                                 .font(.title3.bold())
                                 .multilineTextAlignment(.center)
 
-                            Text("小助坚持 100% 离线端侧运作，数据绝不上云。\n为了确保待办催办、家与公司学习及语音对话正常生效，请在开始前配置以下 4 项核心权限：")
+                            Text("待办、定位和语音等基础功能在设备上处理。若你主动启用局域网模型服务，相关生活摘要会发送至指定端点。\n以下权限可按需开启，也可稍后在设置中配置：")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
