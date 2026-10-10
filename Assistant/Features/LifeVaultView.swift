@@ -19,6 +19,21 @@ struct LifeVaultView: View {
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @Environment(\.colorScheme) private var colorScheme
 
+    @State private var selectedDestination: VaultDestination?
+
+    private enum VaultDestination: Hashable, Identifiable {
+        case documents
+        case passwords
+        case storage
+        case vehicles
+        case departure
+        case anniversaries
+        case habits
+        case voiceMemos
+
+        var id: Self { self }
+    }
+
     // 随身防丢未清点核心件
     private var uncheckedDepartureCount: Int {
         departureItems.filter { $0.isEssential && !$0.isChecked }.count
@@ -60,61 +75,61 @@ struct LifeVaultView: View {
                 // 顶部快速看板统计
                 Section {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                        NavigationLink {
-                            IDDocumentVaultView()
+                        Button {
+                            selectedDestination = .documents
                         } label: {
                             statPill(title: "证件", count: "\(documents.count)", icon: "person.text.rectangle.fill", color: .blue, badgeCount: expiringDocCount)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
 
-                        NavigationLink {
-                            PasswordVaultView()
+                        Button {
+                            selectedDestination = .passwords
                         } label: {
                             statPill(title: "密码", count: "\(passwords.count)", icon: "key.fill", color: .teal)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
 
-                        NavigationLink {
-                            ItemStorageVaultView()
+                        Button {
+                            selectedDestination = .storage
                         } label: {
                             statPill(title: "收纳", count: "\(storedItems.count)", icon: "archivebox.fill", color: .indigo)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
 
-                        NavigationLink {
-                            VehicleManagementView()
+                        Button {
+                            selectedDestination = .vehicles
                         } label: {
                             statPill(title: "爱车", count: "\(vehicles.count)", icon: "car.fill", color: .indigo, badgeCount: needCareVehicleCount)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
 
-                        NavigationLink {
-                            DepartureChecklistView()
+                        Button {
+                            selectedDestination = .departure
                         } label: {
                             statPill(title: "防丢", count: "\(departureItems.count)", icon: "bag.fill", color: .teal, badgeCount: uncheckedDepartureCount)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
 
-                        NavigationLink {
-                            AnniversaryManagementView()
+                        Button {
+                            selectedDestination = .anniversaries
                         } label: {
                             statPill(title: "纪念日", count: "\(anniversaries.count)", icon: "gift.fill", color: .pink)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
 
-                        NavigationLink {
-                            HabitAndMedicationView()
+                        Button {
+                            selectedDestination = .habits
                         } label: {
                             statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: .purple)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
 
-                        NavigationLink {
-                            VoiceMemoListView()
+                        Button {
+                            selectedDestination = .voiceMemos
                         } label: {
                             statPill(title: "录音", count: "\(voiceMemos.count)", icon: "mic.circle.fill", color: .red)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.borderless)
                     }
                     .padding(.vertical, 4)
                 }
@@ -261,10 +276,35 @@ struct LifeVaultView: View {
             .themedAppBackground()
             .themedRow()
             .navigationTitle("生活档案")
+            .navigationDestination(item: $selectedDestination) { destination in
+                destinationView(for: destination)
+            }
         }
     }
 
     // MARK: - 辅助子视图
+
+    @ViewBuilder
+    private func destinationView(for destination: VaultDestination) -> some View {
+        switch destination {
+        case .documents:
+            IDDocumentVaultView()
+        case .passwords:
+            PasswordVaultView()
+        case .storage:
+            ItemStorageVaultView()
+        case .vehicles:
+            VehicleManagementView()
+        case .departure:
+            DepartureChecklistView()
+        case .anniversaries:
+            AnniversaryManagementView()
+        case .habits:
+            HabitAndMedicationView()
+        case .voiceMemos:
+            VoiceMemoListView()
+        }
+    }
 
     private var vehicleStatusSummary: String {
         if vehicles.isEmpty {
@@ -322,6 +362,7 @@ struct LifeVaultView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(badgeCount > 0 ? Color.red.opacity(0.35) : Color.clear, lineWidth: 1)
         )
+        .contentShape(Rectangle())
     }
 
     @ViewBuilder
