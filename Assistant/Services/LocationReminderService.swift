@@ -4,6 +4,16 @@ import SwiftData
 import UIKit
 import UserNotifications
 
+/// ModelContext 只会在主队列上的定位回调中使用；包装后可安全地穿过
+/// DispatchQueue 的 @Sendable 闭包边界，实际访问仍保持在主队列。
+private final class LocationSampleContextBox: @unchecked Sendable {
+    let context: ModelContext?
+
+    init(_ context: ModelContext?) {
+        self.context = context
+    }
+}
+
 /// 地理围栏与定位采样提醒服务（完全基于 CoreLocation 硬件事件触发，离线运作）
 public final class LocationReminderService: NSObject, ObservableObject, CLLocationManagerDelegate, @unchecked Sendable {
     public static let shared = LocationReminderService()
@@ -54,23 +64,28 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
             return nil
         }
 
+        let contextBox = LocationSampleContextBox(context)
         return await withCheckedContinuation { continuation in
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
                 self.isSamplingLocation = true
                 self.lock.lock()
-                self.pendingLocationCompletions.append { [weak self] loc in
-                    guard let self else {
+                self.pendingLocationCompletions.append { [weak service = self] loc in
+                    guard let service else {
                         continuation.resume(returning: nil)
                         return
                     }
                     if let location = loc {
-                        self.lastKnownLocation = location
-                        // 异步喂给地点学习引擎
-                        Task { @MainActor in
-                            let ctx = context ?? Persistence.shared.mainContext
-                            let engine = PlaceLearningEngine(context: ctx)
-                            _ = try? engine.recordObservation(coordinate: location.coordinate, timestamp: .now)
-                        }
+                        service.lastKnownLocation = location
+                        // 回调在主队列执行，直接使用主上下文，避免将 ModelContext
+                        // 捕获到 Swift 6 要求 @Sendable 的 Task 闭包中。
+                        let ctx = contextBox.context ?? Persistence.shared.mainContext
+                        let engine = PlaceLearningEngine(context: ctx)
+                        _ = try? engine.recordObservation(coordinate: location.coordinate, timestamp: .now)
                         continuation.resume(returning: location.coordinate)
                     } else {
                         continuation.resume(returning: nil)

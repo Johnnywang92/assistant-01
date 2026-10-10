@@ -1,10 +1,6 @@
 import SwiftData
 import SwiftUI
 
-private enum LifeVaultDestination: Hashable {
-    case documents, passwords, storage, vehicle, departure, anniversaries, habits, voiceMemos
-}
-
 /// 生活档案与数字资产大厅 (Tab 3: 生活档案)
 struct LifeVaultView: View {
     @Environment(\.modelContext) private var context
@@ -64,42 +60,58 @@ struct LifeVaultView: View {
                 // 顶部快速看板统计
                 Section {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                        NavigationLink(value: LifeVaultDestination.documents) {
+                        NavigationLink {
+                            IDDocumentVaultView()
+                        } label: {
                             statPill(title: "证件", count: "\(documents.count)", icon: "person.text.rectangle.fill", color: .blue, badgeCount: expiringDocCount)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink(value: LifeVaultDestination.passwords) {
+                        NavigationLink {
+                            PasswordVaultView()
+                        } label: {
                             statPill(title: "密码", count: "\(passwords.count)", icon: "key.fill", color: .teal)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink(value: LifeVaultDestination.storage) {
+                        NavigationLink {
+                            ItemStorageVaultView()
+                        } label: {
                             statPill(title: "收纳", count: "\(storedItems.count)", icon: "archivebox.fill", color: .indigo)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink(value: LifeVaultDestination.vehicle) {
+                        NavigationLink {
+                            VehicleManagementView()
+                        } label: {
                             statPill(title: "爱车", count: "\(vehicles.count)", icon: "car.fill", color: .indigo, badgeCount: needCareVehicleCount)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink(value: LifeVaultDestination.departure) {
+                        NavigationLink {
+                            DepartureChecklistView()
+                        } label: {
                             statPill(title: "防丢", count: "\(departureItems.count)", icon: "bag.fill", color: .teal, badgeCount: uncheckedDepartureCount)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink(value: LifeVaultDestination.anniversaries) {
+                        NavigationLink {
+                            AnniversaryManagementView()
+                        } label: {
                             statPill(title: "纪念日", count: "\(anniversaries.count)", icon: "gift.fill", color: .pink)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink(value: LifeVaultDestination.habits) {
+                        NavigationLink {
+                            HabitAndMedicationView()
+                        } label: {
                             statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: .purple)
                         }
                         .buttonStyle(.plain)
 
-                        NavigationLink(value: LifeVaultDestination.voiceMemos) {
+                        NavigationLink {
+                            VoiceMemoListView()
+                        } label: {
                             statPill(title: "录音", count: "\(voiceMemos.count)", icon: "mic.circle.fill", color: .red)
                         }
                         .buttonStyle(.plain)
@@ -249,18 +261,6 @@ struct LifeVaultView: View {
             .themedAppBackground()
             .themedRow()
             .navigationTitle("生活档案")
-            .navigationDestination(for: LifeVaultDestination.self) { destination in
-                switch destination {
-                case .documents: IDDocumentVaultView()
-                case .passwords: PasswordVaultView()
-                case .storage: ItemStorageVaultView()
-                case .vehicle: VehicleManagementView()
-                case .departure: DepartureChecklistView()
-                case .anniversaries: AnniversaryManagementView()
-                case .habits: HabitAndMedicationView()
-                case .voiceMemos: VoiceMemoListView()
-                }
-            }
         }
     }
 
