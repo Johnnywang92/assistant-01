@@ -53,7 +53,7 @@ struct VoiceDialogueView: View {
                             .font(.caption2.bold())
                             .padding(6)
                             .background(Circle().fill(Color(.secondarySystemFill)))
-                            .foregroundStyle(isMuted ? .secondary : .tint)
+                            .foregroundStyle(isMuted ? Color.secondary : Color.accentColor)
                     }
 
                     // 极速规则引擎 vs 端侧本地大模型切换
@@ -269,7 +269,7 @@ struct VoiceDialogueView: View {
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.title2)
-                    .foregroundStyle(manualInputText.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary.opacity(0.4) : Color.tint)
+                    .foregroundStyle(manualInputText.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary.opacity(0.4) : Color.accentColor)
             }
             .disabled(manualInputText.trimmingCharacters(in: .whitespaces).isEmpty)
         }
