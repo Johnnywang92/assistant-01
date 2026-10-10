@@ -181,10 +181,12 @@ struct LearnedPlacesView: View {
         Task {
             if let coord = await locationService.requestSingleLocationSample(context: context, requestPermissionIfNeeded: true) {
                 let engine = PlaceLearningEngine(context: context)
-                if let place = try? engine.recordObservation(coordinate: coord, timestamp: .now) {
-                    sampleResultMessage = "✅ 已成功采样坐标 (经度 \(String(format: "%.3f", coord.longitude)), 纬度 \(String(format: "%.3f", coord.latitude)))，当前归属于「\(place.name)」(累计 \(place.visitCount) 次采样)。"
+                if let place = engine.resolveCurrentPlace(wifiSSID: locationService.lastKnownWiFiSSID, coordinate: coord) {
+                    let wifiText = locationService.lastKnownWiFiSSID.map { "，已记录 Wi‑Fi「\($0)」" } ?? ""
+                    sampleResultMessage = "✅ 已成功采样坐标 (经度 \(String(format: "%.3f", coord.longitude)), 纬度 \(String(format: "%.3f", coord.latitude)))，当前归属于「\(place.name)」\(wifiText)。"
                 } else {
-                    sampleResultMessage = "✅ 采样记录已录入，正在等待进一步聚类分析。"
+                    let wifiText = locationService.lastKnownWiFiSSID.map { "，已记录 Wi‑Fi「\($0)」" } ?? ""
+                    sampleResultMessage = "✅ 采样记录已录入，正在等待进一步聚类分析\(wifiText)。"
                 }
                 Haptic.success()
             } else {
@@ -369,8 +371,14 @@ struct LearnedPlaceDetailView: View {
             if let coord = await LocationReminderService.shared.requestSingleLocationSample(context: context, requestPermissionIfNeeded: true) {
                 place.latitude = coord.latitude
                 place.longitude = coord.longitude
+                if let ssid = LocationReminderService.shared.lastKnownWiFiSSID,
+                   !place.associatedWiFiSSIDs.contains(ssid) {
+                    place.associatedWiFiSSIDs.append(ssid)
+                }
                 try? context.save()
-                updateLocationFeedback = "已成功校准为当前坐标！"
+                updateLocationFeedback = LocationReminderService.shared.lastKnownWiFiSSID.map {
+                    "已成功校准坐标，并关联 Wi‑Fi「\($0)」！"
+                } ?? "已成功校准为当前坐标！"
                 Haptic.success()
             }
             isUpdatingLocation = false
@@ -476,6 +484,10 @@ struct AddPlaceSheet: View {
             if let coord = await LocationReminderService.shared.requestSingleLocationSample(context: context, requestPermissionIfNeeded: true) {
                 latitude = coord.latitude
                 longitude = coord.longitude
+                if wifiSSID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   let ssid = LocationReminderService.shared.lastKnownWiFiSSID {
+                    wifiSSID = ssid
+                }
                 locationAcquired = true
 
                 if name.isEmpty {

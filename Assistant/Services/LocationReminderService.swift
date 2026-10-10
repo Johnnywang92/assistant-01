@@ -1,8 +1,22 @@
 import CoreLocation
 import Foundation
+import NetworkExtension
 import SwiftData
 import UIKit
 import UserNotifications
+
+/// 读取设备当前连接的 Wi‑Fi 名称。系统不会提供密码或附近网络列表。
+@MainActor
+private enum WiFiInfoService {
+    static func currentSSID() async -> String? {
+        await withCheckedContinuation { continuation in
+            NEHotspotNetwork.fetchCurrent { network in
+                let ssid = network?.ssid.trimmingCharacters(in: .whitespacesAndNewlines)
+                continuation.resume(returning: ssid?.isEmpty == false ? ssid : nil)
+            }
+        }
+    }
+}
 
 /// 地理围栏与定位采样提醒服务（完全基于 CoreLocation 硬件事件触发，离线运作）
 public final class LocationReminderService: NSObject, ObservableObject, CLLocationManagerDelegate {
@@ -11,6 +25,7 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
     private let locationManager = CLLocationManager()
     @Published public var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published public var lastKnownLocation: CLLocation?
+    @Published public var lastKnownWiFiSSID: String?
     @Published public var isSamplingLocation: Bool = false
 
     private let lock = NSLock()
@@ -55,6 +70,7 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
             return nil
         }
 
+        let currentWiFiSSID = await WiFiInfoService.currentSSID()
         return await withCheckedContinuation { continuation in
             self.isSamplingLocation = true
             self.lock.lock()
@@ -65,9 +81,14 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
                 }
                 if let location = loc {
                     service.lastKnownLocation = location
+                    service.lastKnownWiFiSSID = currentWiFiSSID
                     let ctx = context ?? Persistence.shared.mainContext
                     let engine = PlaceLearningEngine(context: ctx)
-                    _ = try? engine.recordObservation(coordinate: location.coordinate, timestamp: .now)
+                    _ = try? engine.recordObservation(
+                        coordinate: location.coordinate,
+                        wifiSSID: currentWiFiSSID,
+                        timestamp: .now
+                    )
                     continuation.resume(returning: location.coordinate)
                 } else {
                     continuation.resume(returning: nil)
