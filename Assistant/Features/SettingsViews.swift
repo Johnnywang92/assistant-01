@@ -99,7 +99,47 @@ struct SettingsView: View {
                         TextField("给你的助手起个名字", text: $assistantName)
                             .multilineTextAlignment(.trailing)
                             .foregroundStyle(.primary)
+                            .submitLabel(.done)
+
+                        if !assistantName.isEmpty && assistantName != "助手" {
+                            Button {
+                                assistantName = "助手"
+                                Haptic.light()
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
+
+                    // 快速命名推荐预设
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("推荐名称：")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+
+                        HStack(spacing: 8) {
+                            ForEach(["小助", "管家", "贾维斯", "星期五", "小秘书"], id: \.self) { preset in
+                                Button {
+                                    assistantName = preset
+                                    Haptic.light()
+                                } label: {
+                                    Text(preset)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(
+                                            Capsule()
+                                                .fill(assistantName == preset ? Color.accentColor.opacity(0.18) : Color(.tertiarySystemFill))
+                                        )
+                                        .foregroundStyle(assistantName == preset ? Color.accentColor : Color.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
                 } header: {
                     Text("助手专属定制")
                 } footer: {
