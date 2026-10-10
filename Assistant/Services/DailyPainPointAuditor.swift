@@ -23,6 +23,8 @@ struct DailyPainPointAuditor {
         auditPasswordRotations()
         auditIDDocuments()
         auditVehicleCare()
+        auditPetCare()
+        auditChildVaccines()
         AnniversaryReminderManager.shared.checkAndSendDailyNotifications(context: context)
         TravelTicketReminderManager.shared.checkAndSendDailyNotifications(context: context)
     }
@@ -208,6 +210,63 @@ struct DailyPainPointAuditor {
                     id: "vehicle-inspect-\(vehicle.id.uuidString)",
                     title: "车辆年检预警",
                     body: "「\(vehicle.name)」年检\(statusText)，请及时办理免检标或上线检测。"
+                )
+            }
+        }
+    }
+
+    /// 7. 毛孩子宠物养护（体内外驱虫与年度疫苗到期提醒）
+    private func auditPetCare() {
+        let descriptor = FetchDescriptor<PetProfile>(
+            predicate: #Predicate { $0.isReminderEnabled }
+        )
+        guard let pets = try? context.fetch(descriptor) else { return }
+
+        for pet in pets {
+            // 体外驱虫提醒
+            if let days = pet.daysUntilNextExternalDeworm, days <= 1 {
+                let status = days <= 0 ? "已达驱虫周期（30天）" : "明天到期"
+                postThrottledNotification(
+                    id: "pet-ext-deworm-\(pet.id.uuidString)",
+                    title: "🐾 毛孩子体外驱虫提醒",
+                    body: "「\(pet.name)」体外驱虫\(status)，记得及时滴药预防跳蚤蜱虫哦。"
+                )
+            }
+
+            // 体内驱虫提醒
+            if let days = pet.daysUntilNextInternalDeworm, days <= 2 {
+                let status = days <= 0 ? "已满 3 个月周期" : "将在 \(days) 天后到期"
+                postThrottledNotification(
+                    id: "pet-int-deworm-\(pet.id.uuidString)",
+                    title: "💊 毛孩子体内驱虫提醒",
+                    body: "「\(pet.name)」体内驱虫\(status)，建议安排药片驱虫。"
+                )
+            }
+
+            // 年度疫苗预警（提前 14 天）
+            if let days = pet.daysUntilNextVaccine, days <= 14 {
+                let status = days <= 0 ? "疫苗已到期" : "即将在 \(days) 天后到期"
+                postThrottledNotification(
+                    id: "pet-vaccine-\(pet.id.uuidString)",
+                    title: "💉 宠物联苗/狂犬接种预警",
+                    body: "「\(pet.name)」年度疫苗\(status)，请提前预约宠物医院接种。"
+                )
+            }
+        }
+    }
+
+    /// 8. 亲子育儿适龄疫苗接种提醒
+    private func auditChildVaccines() {
+        let descriptor = FetchDescriptor<ChildProfile>()
+        guard let children = try? context.fetch(descriptor) else { return }
+
+        for child in children {
+            let pending = child.pendingVaccines
+            if let firstPending = pending.first {
+                postThrottledNotification(
+                    id: "child-vaccine-\(child.id.uuidString)-\(firstPending.id)",
+                    title: "👶 宝贝疫苗适龄接种提醒",
+                    body: "「\(child.name)」已达 \(child.currentMonthAge) 月龄适龄期，建议预约接种「\(firstPending.vaccineName)」。"
                 )
             }
         }

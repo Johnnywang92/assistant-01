@@ -16,6 +16,8 @@ struct LifeVaultView: View {
     @Query private var departureItems: [DepartureCheckItem]
     @Query private var voiceMemos: [VoiceMemo]
     @Query private var vehicles: [VehicleProfile]
+    @Query private var pets: [PetProfile]
+    @Query private var children: [ChildProfile]
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -30,6 +32,8 @@ struct LifeVaultView: View {
         case anniversaries
         case habits
         case voiceMemos
+        case pets
+        case children
 
         var id: Self { self }
     }
@@ -244,7 +248,34 @@ struct LifeVaultView: View {
                     }
                 }
 
-                // MARK: - 4. 随身防丢与车务守护
+                // MARK: - 5. 家庭与陪伴（毛孩子与亲子成长）
+                Section("家庭与陪伴") {
+                    NavigationLink {
+                        PetManagementView()
+                    } label: {
+                        vaultRow(
+                            icon: "pawprint.fill",
+                            color: .teal,
+                            title: "宠物管家",
+                            status: pets.isEmpty ? "未录入爱宠 · 每月驱虫/疫苗提醒" : "\(pets.count) 只毛孩子" + (pets.filter(\.needsAttention).count > 0 ? " · \(pets.filter(\.needsAttention).count) 项待处理" : ""),
+                            isAlert: pets.contains(where: \.needsAttention)
+                        )
+                    }
+
+                    NavigationLink {
+                        ChildManagementView()
+                    } label: {
+                        vaultRow(
+                            icon: "figure.and.child.holdinghands",
+                            color: .pink,
+                            title: "亲子育儿",
+                            status: children.isEmpty ? "未录入宝贝 · 国家免疫规划疫苗追踪" : "\(children.count) 位宝贝" + (children.flatMap(\.pendingVaccines).count > 0 ? " · \(children.flatMap(\.pendingVaccines).count) 剂适龄疫苗" : ""),
+                            isAlert: false
+                        )
+                    }
+                }
+
+                // MARK: - 6. 随身防丢与车务守护
                 Section("出行") {
                     NavigationLink {
                         VehicleManagementView()
@@ -303,6 +334,10 @@ struct LifeVaultView: View {
             HabitAndMedicationView()
         case .voiceMemos:
             VoiceMemoListView()
+        case .pets:
+            PetManagementView()
+        case .children:
+            ChildManagementView()
         }
     }
 

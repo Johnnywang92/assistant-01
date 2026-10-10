@@ -148,25 +148,25 @@ public final class SituationalContextEngine: ObservableObject {
 
         switch ctx {
         case .holidayTravel, .eveOfHoliday:
-            // 节假日或前夕：出差旅行概率最高，其次日常休闲与运动
-            scenes = [.travel, .casual, .workout, .commute, .rainy]
+            // 节假日或前夕：出差旅行概率最高，其次亲子带娃、宠物日常休闲
+            scenes = [.travel, .parenting, .petWalk, .casual, .workout, .commute, .rainy]
 
         case .weekendLeisure:
-            // 周末休闲：日常轻装/运动健身排前面
+            // 周末休闲：带娃与遛狗随行、日常轻装/运动健身排前面
             if hour >= 18 {
-                scenes = [.casual, .workout, .travel, .commute, .rainy]
+                scenes = [.petWalk, .casual, .parenting, .workout, .travel, .commute, .rainy]
             } else {
-                scenes = [.casual, .workout, .commute, .travel, .rainy]
+                scenes = [.parenting, .casual, .petWalk, .workout, .commute, .travel, .rainy]
             }
 
         case .workCommute:
             // 工作日周一至周五：
             if hour < offWorkHour {
-                // 没到下班时间：工作通勤概率最高！
-                scenes = [.commute, .casual, .workout, .travel, .rainy]
+                // 没到下班时间：工作通勤概率最高
+                scenes = [.commute, .parenting, .petWalk, .casual, .workout, .travel, .rainy]
             } else {
-                // 已过下班时间：健身运动、晚间休闲轻装概率大幅提升，超越工作通勤！
-                scenes = [.workout, .casual, .commute, .travel, .rainy]
+                // 已过下班时间：晚间遛狗散步、家庭亲子、健身运动概率提升
+                scenes = [.petWalk, .workout, .parenting, .casual, .commute, .travel, .rainy]
             }
         }
 
