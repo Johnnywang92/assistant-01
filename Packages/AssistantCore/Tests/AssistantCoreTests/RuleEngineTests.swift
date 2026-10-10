@@ -158,6 +158,34 @@ final class RuleEngineTests: XCTestCase {
     func testUnknown() {
         XCTAssertEqual(engine.parse("明天下午三点开会，记得带电脑"), .unknown)
     }
+
+    func testNormalizeMixedWidthAndLineBreaks() {
+        guard case .parcel(let p) = engine.parse("【菜鸟驿站】\n取件码：８－２－３０２１，请到北门菜鸟驿站取件") else {
+            return XCTFail("expected parcel")
+        }
+        XCTAssertEqual(p.pickupCodes, ["8-2-3021"])
+        XCTAssertEqual(p.location, "北门菜鸟驿站")
+    }
+
+    func testDataUsageKilobytesAndTerabytes() {
+        guard case .dataUsage(let kb) = engine.parse("【中国移动】本月已使用512KB，剩余1MB。") else {
+            return XCTFail("expected data usage")
+        }
+        XCTAssertEqual(kb.usedMB ?? 0, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(kb.remainingMB ?? 0, 1, accuracy: 0.0001)
+
+        guard case .dataUsage(let tb) = engine.parse("【中国移动】本月已使用0.01TB。") else {
+            return XCTFail("expected data usage")
+        }
+        XCTAssertEqual(tb.usedMB ?? 0, 0.01 * 1024 * 1024, accuracy: 0.01)
+    }
+
+    func testVerificationWithBankKeywordStaysIgnored() {
+        XCTAssertEqual(
+            engine.parse("【招商银行】验证码834921，5分钟内有效，请勿泄露。"),
+            .ignored
+        )
+    }
 }
 
 final class ParcelMatcherTests: XCTestCase {
