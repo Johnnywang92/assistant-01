@@ -1,0 +1,9 @@
+.DS_Store
+build/
+.build/
+DerivedData/
+*.xcodeproj/
+xcuserdata/
+scripts/config.local
+Assistant/Info.plist
+*.litertlm

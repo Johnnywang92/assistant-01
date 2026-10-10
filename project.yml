@@ -1,0 +1,92 @@
+name: Assistant
+options:
+  bundleIdPrefix: com.yifanwang
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  developmentLanguage: zh-Hans
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    # 个人免费团队的 Team ID: yifan Wang (Personal Team)
+    DEVELOPMENT_TEAM: 3559VJC998
+    TARGETED_DEVICE_FAMILY: "1"
+    BUNDLE_ID: com.yifanwang.assistant01
+
+packages:
+  AssistantCore:
+    path: Packages/AssistantCore
+
+targets:
+  Assistant:
+    type: application
+    platform: iOS
+    sources:
+      - Assistant
+    dependencies:
+      - package: AssistantCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${BUNDLE_ID}
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_APP_SHORTCUTS_FLEXIBLE_MATCHING: "NO"
+        ENABLE_APPINTENTS_DEPLOYMENT_AWARE_PROCESSING: "NO"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: Assistant/Info.plist
+      properties:
+        CFBundleDisplayName: 助手
+        CFBundleDevelopmentRegion: zh-Hans
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        CFBundleURLTypes:
+          - CFBundleURLName: com.yifanwang.assistant01
+            CFBundleURLSchemes:
+              - assistant
+        UIApplicationShortcutItems:
+          - UIApplicationShortcutItemType: assistant.action.voice
+            UIApplicationShortcutItemTitle: 语音对话
+            UIApplicationShortcutItemSubtitle: 快速唤起离线语音助手
+            UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeAudio
+          - UIApplicationShortcutItemType: assistant.action.add_todo
+            UIApplicationShortcutItemTitle: 新建待办
+            UIApplicationShortcutItemSubtitle: 快速创建日常待办与日程
+            UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeCompose
+          - UIApplicationShortcutItemType: assistant.action.expense
+            UIApplicationShortcutItemTitle: 一句话记账
+            UIApplicationShortcutItemSubtitle: 语音或打字自动记账
+            UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeAdd
+          - UIApplicationShortcutItemType: assistant.action.parcels
+            UIApplicationShortcutItemTitle: 待取快递
+            UIApplicationShortcutItemSubtitle: 快速查看所有取件码
+            UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeTask
+          - UIApplicationShortcutItemType: assistant.action.id_vault
+            UIApplicationShortcutItemTitle: 证件保险箱
+            UIApplicationShortcutItemSubtitle: 查阅身份证/护照/凭证
+            UIApplicationShortcutItemIconType: UIApplicationShortcutIconTypeLove
+        # 让 Documents 在「文件」App 中可见（inbox.txt 补录用）
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        NSMicrophoneUsageDescription: "需要麦克风权限以支持离线语音对话交互"
+        NSSpeechRecognitionUsageDescription: "需要语音识别权限以离线转写你的语音指令"
+        NSLocationWhenInUseUsageDescription: "需要定位权限以支持到达离开家、公司或驿站时的情景智能感知"
+        NSLocationAlwaysAndWhenInUseUsageDescription: "需要后台定位与地理围栏权限以支持到达驿站附近时离线弹出取件提醒"
+        NSFaceIDUsageDescription: "需要 Face ID 权限以保护你的重要证件照片与敏感数据安全"
+        NSCameraUsageDescription: "需要相机权限以支持现场拍摄证件照片存入保险箱"
+
+schemes:
+  Assistant:
+    build:
+      targets:
+        Assistant: all
+    run:
+      config: Debug

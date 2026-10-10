@@ -1,0 +1,11 @@
+# 复制为 scripts/config.local 后填写（config.local 不提交到 git）
+
+# 个人免费团队 ID：Xcode → Settings → Accounts → 选中 Apple ID → Personal Team
+# 或运行：security find-identity -v -p codesigning  （括号里的 10 位字符）
+DEVELOPMENT_TEAM="XXXXXXXXXX"
+
+# Bundle ID 必须全局唯一，免费账号建议带上自己的名字
+BUNDLE_ID="com.yifanwang.assistant01"
+
+# 设备 ID：运行 xcrun devicectl list devices 查看 Identifier 列
+DEVICE_ID="00000000-0000000000000000"
