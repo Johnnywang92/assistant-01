@@ -7,6 +7,8 @@ enum VoiceMemoTag: String, Codable, CaseIterable, Identifiable {
     case work = "工作"
     case meeting = "会议"
     case life = "生活"
+    case children = "小朋友"
+    case pets = "宠物"
     case study = "学习"
     case other = "其他"
 
@@ -18,6 +20,8 @@ enum VoiceMemoTag: String, Codable, CaseIterable, Identifiable {
         case .work: return "briefcase.fill"
         case .meeting: return "person.3.fill"
         case .life: return "house.fill"
+        case .children: return "figure.and.child.holdinghands"
+        case .pets: return "pawprint.fill"
         case .study: return "book.fill"
         case .other: return "tag.fill"
         }
