@@ -20,6 +20,8 @@ struct TodoListView: View {
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @ObservedObject private var router = NavigationRouter.shared
     @ObservedObject private var weatherAlerts = WeatherAlertService.shared
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showAddTodo = false
     @State private var showVoice = false
     @State private var showDone = false
@@ -68,7 +70,8 @@ struct TodoListView: View {
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
             }
-            .background(AppBackgroundManager.shared.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
+            .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
+            .themedAppBackground()
             .navigationTitle(assistantName.isEmpty ? "小助" : assistantName)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -376,7 +379,7 @@ struct TodoListView: View {
                                     .shadow(color: Color.accentColor.opacity(0.22), radius: 4, y: 2)
                             } else {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(Color(.secondarySystemBackground))
+                                    .fill(bgManager.isCustomBackgroundActive ? Color(.secondarySystemBackground).opacity(0.7) : Color(.secondarySystemBackground))
                             }
                         }
                     )
@@ -387,7 +390,7 @@ struct TodoListView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Color(.systemBackground))
+        .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemBackground))
     }
 
     @ViewBuilder
@@ -490,7 +493,8 @@ struct TodoListView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(AppBackgroundManager.shared.isCustomBackgroundActive ? .hidden : .automatic)
+        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedRow()
     }
 
     private func badgeCount(for category: TodoFilterCategory) -> Int {
@@ -724,6 +728,7 @@ struct TodoRow: View {
                 try? context.save()
             } label: { Label("删除", systemImage: "trash") }
         }
+        .themedRow()
     }
 }
 
@@ -753,6 +758,7 @@ struct ReviewRow: View {
             .controlSize(.small)
         }
         .padding(.vertical, 4)
+        .themedRow()
     }
 }
 
@@ -778,6 +784,7 @@ struct DataUsageCard: View {
                 Text(String(format: "已使用 %.0f%%", p)).font(.caption).foregroundStyle(.secondary)
             }
         }
+        .themedRow()
     }
 
     private var percent: Double? {

@@ -40,6 +40,16 @@ public enum AppBackgroundStyle: String, CaseIterable, Identifiable {
         case .customImage: return "从本地相册导入心仪照片并调节模糊度"
         }
     }
+
+    /// 针对特定极黑或暗夜主题推荐适用的系统色彩方案
+    public var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .pureDark, .midnight:
+            return .dark
+        default:
+            return nil
+        }
+    }
 }
 
 /// 全局背景主题管理器
@@ -47,9 +57,27 @@ public enum AppBackgroundStyle: String, CaseIterable, Identifiable {
 public final class AppBackgroundManager: ObservableObject {
     public static let shared = AppBackgroundManager()
 
-    @AppStorage("app_background_style") public var currentStyleRaw: String = AppBackgroundStyle.system.rawValue
-    @AppStorage("app_background_blur") public var blurRadius: Double = 8.0
-    @AppStorage("app_background_dim") public var dimOpacity: Double = 0.25
+    private let styleKey = "app_background_style"
+    private let blurKey = "app_background_blur"
+    private let dimKey = "app_background_dim"
+
+    @Published public var currentStyleRaw: String {
+        didSet {
+            UserDefaults.standard.set(currentStyleRaw, forKey: styleKey)
+        }
+    }
+
+    @Published public var blurRadius: Double {
+        didSet {
+            UserDefaults.standard.set(blurRadius, forKey: blurKey)
+        }
+    }
+
+    @Published public var dimOpacity: Double {
+        didSet {
+            UserDefaults.standard.set(dimOpacity, forKey: dimKey)
+        }
+    }
 
     @Published public var customImage: UIImage?
 
@@ -59,7 +87,6 @@ public final class AppBackgroundManager: ObservableObject {
         get { AppBackgroundStyle(rawValue: currentStyleRaw) ?? .system }
         set {
             currentStyleRaw = newValue.rawValue
-            objectWillChange.send()
         }
     }
 
@@ -68,6 +95,9 @@ public final class AppBackgroundManager: ObservableObject {
     }
 
     private init() {
+        self.currentStyleRaw = UserDefaults.standard.string(forKey: styleKey) ?? AppBackgroundStyle.system.rawValue
+        self.blurRadius = UserDefaults.standard.object(forKey: blurKey) as? Double ?? 8.0
+        self.dimOpacity = UserDefaults.standard.object(forKey: dimKey) as? Double ?? 0.25
         loadCustomImage()
     }
 
@@ -226,3 +256,54 @@ extension Color {
         )
     }
 }
+
+// MARK: - 主题全局背景与列表卡片透光修饰器
+
+/// 全局主题背景修饰器（当激活自定主题时，在底层渲染全屏高质感背景）
+public struct ThemedBackgroundModifier: ViewModifier {
+    @ObservedObject private var manager = AppBackgroundManager.shared
+
+    public init() {}
+
+    public func body(content: Content) -> some View {
+        ZStack {
+            if manager.isCustomBackgroundActive {
+                AppBackgroundView()
+            }
+            content
+        }
+    }
+}
+
+/// 列表卡片毛玻璃通透质感修饰器
+public struct ThemedRowModifier: ViewModifier {
+    @ObservedObject private var manager = AppBackgroundManager.shared
+    @Environment(\.colorScheme) private var colorScheme
+
+    public init() {}
+
+    public func body(content: Content) -> some View {
+        if manager.isCustomBackgroundActive {
+            content
+                .listRowBackground(
+                    Color(.secondarySystemGroupedBackground)
+                        .opacity(colorScheme == .dark ? 0.72 : 0.85)
+                )
+        } else {
+            content
+        }
+    }
+}
+
+public extension View {
+    /// 挂载全局主题背景底色层
+    func themedAppBackground() -> some View {
+        modifier(ThemedBackgroundModifier())
+    }
+
+    /// 应用主题磨砂半透明行背景
+    func themedRow() -> some View {
+        modifier(ThemedRowModifier())
+    }
+}
+

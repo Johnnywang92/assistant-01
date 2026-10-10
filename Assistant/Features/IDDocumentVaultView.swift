@@ -7,6 +7,7 @@ struct IDDocumentVaultView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \IDDocumentItem.createdAt, order: .reverse) private var documents: [IDDocumentItem]
     @StateObject private var auth = BiometricAuthManager.shared
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
 
     @State private var showingAddSheet = false
     @State private var selectedDocumentForDetail: IDDocumentItem?
@@ -120,6 +121,10 @@ struct IDDocumentVaultView: View {
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedAppBackground()
+        .themedRow()
         .searchable(text: $searchText, prompt: "搜索证件名称、持有人或号码")
     }
 
@@ -159,7 +164,8 @@ struct IDDocumentVaultView: View {
             .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
+        .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
+        .themedAppBackground()
     }
 
     private func triggerCopyFeedback() {
@@ -274,6 +280,7 @@ struct IDDocumentCard: View {
         .onTapGesture {
             onSelect()
         }
+        .themedRow()
     }
 
     @ViewBuilder

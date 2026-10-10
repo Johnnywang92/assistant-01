@@ -6,6 +6,7 @@ struct PasswordVaultView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \PasswordVaultItem.lastRotatedAt) private var passwords: [PasswordVaultItem]
     @StateObject private var auth = BiometricAuthManager()
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
 
     @State private var showingAddSheet = false
     @State private var showingGeneratorSheet = false
@@ -80,6 +81,10 @@ struct PasswordVaultView: View {
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedAppBackground()
+        .themedRow()
     }
 
     private var lockedContent: some View {
@@ -109,7 +114,8 @@ struct PasswordVaultView: View {
             .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground))
+        .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
+        .themedAppBackground()
     }
 
     private func deleteItems(at offsets: IndexSet) {
@@ -196,6 +202,7 @@ struct PasswordVaultRow: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+        .themedRow()
     }
 }
 

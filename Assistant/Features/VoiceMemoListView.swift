@@ -6,6 +6,7 @@ struct VoiceMemoListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \VoiceMemo.createdAt, order: .reverse) private var memos: [VoiceMemo]
     @StateObject private var audio = VoiceMemoAudioService.shared
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
 
     @State private var searchText = ""
     @State private var selectedTag: VoiceMemoTag?
@@ -41,6 +42,10 @@ struct VoiceMemoListView: View {
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedAppBackground()
+        .themedRow()
         .overlay {
             if memos.isEmpty {
                 ContentUnavailableView(
@@ -120,6 +125,7 @@ struct VoiceMemoListView: View {
             }
             .tint(.yellow)
         }
+        .themedRow()
     }
 
     private var recordButton: some View {

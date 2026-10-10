@@ -7,6 +7,7 @@ struct AssistantApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var lockManager = AppLockManager.shared
     @StateObject private var router = NavigationRouter.shared
+    @StateObject private var bgManager = AppBackgroundManager.shared
 
     private var isAppLocked: Bool {
         lockManager.isAppLockEnabled && lockManager.hasPasscode && lockManager.isLocked
@@ -23,6 +24,7 @@ struct AssistantApp: App {
                         .transition(.opacity)
                 }
             }
+            .preferredColorScheme(bgManager.currentStyle.preferredColorScheme)
             .animation(.easeInOut(duration: 0.25), value: isAppLocked)
             .task {
                 router.registerDynamicShortcuts()

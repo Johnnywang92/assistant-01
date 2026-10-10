@@ -6,6 +6,8 @@ struct DepartureChecklistView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \DepartureCheckItem.createdAt) private var items: [DepartureCheckItem]
     @ObservedObject private var contextEngine = SituationalContextEngine.shared
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var selectedScene: DepartureScene? = nil
     @State private var showingAddSheet = false
@@ -209,6 +211,9 @@ struct DepartureChecklistView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedAppBackground()
+        .themedRow()
         .navigationTitle("出门防遗忘清单")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -260,8 +265,11 @@ struct DepartureChecklistView: View {
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(isChecked.wrappedValue ? Color.indigo : Color(.secondarySystemBackground))
+            .background(
+                isChecked.wrappedValue
+                    ? Color.indigo
+                    : (bgManager.isCustomBackgroundActive ? Color(.secondarySystemBackground).opacity(0.68) : Color(.secondarySystemBackground))
+            )
             .foregroundStyle(isChecked.wrappedValue ? .white : .primary)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }

@@ -67,6 +67,8 @@ struct SettingsView: View {
     @AppStorage("weather_alerts_enabled") private var weatherAlertsEnabled: Bool = true
     @AppStorage("user_lifestyle_profile") private var lifestyleProfile: UserLifestyleProfile = .officeWorker
     @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @Environment(\.colorScheme) private var colorScheme
     @State private var selectedMode = AppSettings.currentMode
     @State private var voiceReplyEnabled = AppSettings.voiceReplyEnabled
     @State private var threshold = AppSettings.lowDataThresholdMB
@@ -298,7 +300,9 @@ struct SettingsView: View {
                     NavigationLink("最近收到的原生消息") { RawMessagesView() }
                 }
             }
-            .scrollContentBackground(AppBackgroundManager.shared.isCustomBackgroundActive ? .hidden : .automatic)
+            .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+            .themedAppBackground()
+            .themedRow()
             .navigationTitle("助手设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

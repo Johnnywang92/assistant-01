@@ -15,6 +15,7 @@ struct CompletedTodoHistoryView: View {
     @State private var searchText: String = ""
     @State private var selectedCategory: TodoFilterCategory = .all
     @State private var showingClearAlert = false
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
 
     // 搜索与分类过滤
     private var filteredItems: [TodoItem] {
@@ -140,6 +141,9 @@ struct CompletedTodoHistoryView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+            .themedAppBackground()
+            .themedRow()
             .navigationTitle("已完成事项归档")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "搜索已完成标题、取件码或快递...")
@@ -267,6 +271,7 @@ struct CompletedHistoryRow: View {
             .buttonStyle(.plain)
         }
         .padding(.vertical, 2)
+        .themedRow()
     }
 
     private func formatCompletedTime(_ date: Date) -> String {

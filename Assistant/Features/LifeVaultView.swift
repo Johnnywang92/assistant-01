@@ -14,6 +14,8 @@ struct LifeVaultView: View {
     @Query private var places: [LearnedPlace]
     @Query private var departureItems: [DepartureCheckItem]
     @Query private var voiceMemos: [VoiceMemo]
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     // 随身防丢未清点核心件
     private var uncheckedDepartureCount: Int {
@@ -202,7 +204,9 @@ struct LifeVaultView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .scrollContentBackground(AppBackgroundManager.shared.isCustomBackgroundActive ? .hidden : .automatic)
+            .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+            .themedAppBackground()
+            .themedRow()
             .navigationTitle("生活档案")
         }
     }

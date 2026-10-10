@@ -6,6 +6,8 @@ struct ExpenseTrackerView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \ExpenseRecord.date, order: .reverse) private var records: [ExpenseRecord]
     @StateObject private var voice = VoiceDialogueService.shared
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var quickInputText: String = ""
     @State private var showingManualAddSheet = false
@@ -246,7 +248,9 @@ struct ExpenseTrackerView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .scrollContentBackground(AppBackgroundManager.shared.isCustomBackgroundActive ? .hidden : .automatic)
+            .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+            .themedAppBackground()
+            .themedRow()
             .navigationTitle("智能记账")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -174,6 +174,9 @@ struct AppBackgroundSettingsView: View {
                 }
             }
         }
+        .scrollContentBackground(manager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedAppBackground()
+        .themedRow()
         .navigationTitle("主题与背景设置")
         .navigationBarTitleDisplayMode(.inline)
     }

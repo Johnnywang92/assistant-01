@@ -5,6 +5,7 @@ import SwiftUI
 struct MainTabView: View {
     @ObservedObject private var router = NavigationRouter.shared
     @ObservedObject private var tabManager = TabBarManager.shared
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
     @Query(filter: #Predicate<TodoItem> { $0.statusRaw == "active" }) private var activeTodos: [TodoItem]
     @State private var showVoice = false
     @State private var autoStartListening = false
@@ -52,32 +53,35 @@ struct MainTabView: View {
 
     @ViewBuilder
     private func tabContentView(for tab: NavigationRouter.AppTab) -> some View {
-        switch tab {
-        case .todos:
-            TodoListView()
-        case .departure:
-            NavigationStack {
-                DepartureChecklistView()
+        Group {
+            switch tab {
+            case .todos:
+                TodoListView()
+            case .departure:
+                NavigationStack {
+                    DepartureChecklistView()
+                }
+            case .expenses:
+                ExpenseTrackerView()
+            case .vault:
+                LifeVaultView()
+            case .passwords:
+                NavigationStack {
+                    PasswordVaultView()
+                }
+            case .documents:
+                NavigationStack {
+                    IDDocumentVaultView()
+                }
+            case .memos:
+                NavigationStack {
+                    VoiceMemoListView()
+                }
+            case .settings:
+                SettingsView(isSheet: false)
             }
-        case .expenses:
-            ExpenseTrackerView()
-        case .vault:
-            LifeVaultView()
-        case .passwords:
-            NavigationStack {
-                PasswordVaultView()
-            }
-        case .documents:
-            NavigationStack {
-                IDDocumentVaultView()
-            }
-        case .memos:
-            NavigationStack {
-                VoiceMemoListView()
-            }
-        case .settings:
-            SettingsView(isSheet: false)
         }
+        .themedAppBackground()
     }
 
     // MARK: - 动态角标徽标
