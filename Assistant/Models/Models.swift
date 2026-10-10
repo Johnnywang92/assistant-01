@@ -11,10 +11,13 @@ enum TodoType: String, Codable, CaseIterable {
     case hydration     // 喝水与久坐起立活动提醒
     case anniversary   // 纪念日/生日倒数与提醒
     case passwordSecurity // 密码轮换与安全提醒
+    case vehicleCare      // 爱车守护（加油/加电/定期保养/车险年检）
+    case returnParcel     // 网购待退货与售后寄件截止倒数
 
     var icon: String {
         switch self {
         case .parcel: "shippingbox.fill"
+        case .returnParcel: "arrow.uturn.backward.circle.fill"
         case .data: "antenna.radiowaves.left.and.right"
         case .bill: "yensign.circle.fill"
         case .event: "calendar"
@@ -27,6 +30,7 @@ enum TodoType: String, Codable, CaseIterable {
         case .hydration: "drop.fill"
         case .anniversary: "gift.fill"
         case .passwordSecurity: "key.fill"
+        case .vehicleCare: "car.fill"
         }
     }
 
@@ -34,6 +38,7 @@ enum TodoType: String, Codable, CaseIterable {
         switch self {
         case .general: "日常待办"
         case .parcel: "快递取件"
+        case .returnParcel: "退货寄件"
         case .medication: "服药提醒"
         case .charging: "设备充电"
         case .housework: "周期家务"
@@ -42,6 +47,7 @@ enum TodoType: String, Codable, CaseIterable {
         case .hydration: "喝水提醒"
         case .anniversary: "纪念日"
         case .passwordSecurity: "密码安全"
+        case .vehicleCare: "爱车守护"
         case .bill: "信用卡账单"
         case .event: "日程事项"
         case .data: "流量预警"
@@ -54,6 +60,52 @@ enum TodoStatus: String, Codable {
     case pendingReview
     case active
     case done
+}
+
+/// 待办重复周期规则
+public enum TodoRecurrenceRule: String, Codable, CaseIterable, Identifiable {
+    case none = "不重复"
+    case daily = "每天"
+    case everyOtherDay = "每2天（隔天）"
+    case everyThreeDays = "每3天"
+    case weekly = "每周"
+    case biweekly = "每两周"
+    case monthly = "每月"
+    case custom = "自定义天数"
+
+    public var id: String { rawValue }
+
+    public var icon: String {
+        switch self {
+        case .none: return "slash.circle"
+        case .daily: return "repeat"
+        case .everyOtherDay, .everyThreeDays, .custom: return "repeat.1"
+        case .weekly, .biweekly: return "calendar.badge.clock"
+        case .monthly: return "calendar"
+        }
+    }
+
+    public func dayInterval(customDays: Int = 1) -> Int {
+        switch self {
+        case .none: return 0
+        case .daily: return 1
+        case .everyOtherDay: return 2
+        case .everyThreeDays: return 3
+        case .weekly: return 7
+        case .biweekly: return 14
+        case .monthly: return 30
+        case .custom: return max(1, customDays)
+        }
+    }
+
+    public func displayLabel(customDays: Int = 1) -> String {
+        switch self {
+        case .custom:
+            return "每\(max(1, customDays))天"
+        default:
+            return rawValue
+        }
+    }
 }
 
 @Model
@@ -70,12 +122,19 @@ final class TodoItem {
     var dueAt: Date?
     var createdAt: Date
     var completedAt: Date?
+    /// 用户自定义上下展示次序（数字越小越靠前）
+    var sortOrder: Int = 0
     /// 来源短信/文本原文
     var sourceText: String?
+    /// 重复规则原始字符串
+    var recurrenceRuleRaw: String?
+    /// 重复周期天数（自定义天数或预设天数）
+    var recurrenceIntervalDays: Int = 0
 
     init(type: TodoType, status: TodoStatus = .active, title: String, detail: String? = nil,
          pickupCode: String? = nil, courier: String? = nil, station: String? = nil, location: String? = nil,
-         dueAt: Date? = nil, sourceText: String? = nil) {
+         dueAt: Date? = nil, sourceText: String? = nil, sortOrder: Int = 0,
+         recurrenceRuleRaw: String? = nil, recurrenceIntervalDays: Int = 0) {
         self.id = UUID()
         self.typeRaw = type.rawValue
         self.statusRaw = status.rawValue
@@ -88,6 +147,9 @@ final class TodoItem {
         self.dueAt = dueAt
         self.createdAt = .now
         self.sourceText = sourceText
+        self.sortOrder = sortOrder
+        self.recurrenceRuleRaw = recurrenceRuleRaw
+        self.recurrenceIntervalDays = recurrenceIntervalDays
     }
 
     var type: TodoType {
@@ -101,6 +163,81 @@ final class TodoItem {
             statusRaw = newValue.rawValue
             completedAt = newValue == .done ? .now : nil
         }
+    }
+
+    var recurrenceRule: TodoRecurrenceRule {
+        get {
+            guard let raw = recurrenceRuleRaw else { return .none }
+            return TodoRecurrenceRule(rawValue: raw) ?? .none
+        }
+        set {
+            recurrenceRuleRaw = newValue == .none ? nil : newValue.rawValue
+        }
+    }
+
+    var isRecurring: Bool {
+        recurrenceRule != .none
+    }
+
+    var effectiveRecurrenceDays: Int {
+        if recurrenceRule == .custom {
+            return max(1, recurrenceIntervalDays)
+        }
+        return recurrenceRule.dayInterval(customDays: recurrenceIntervalDays)
+    }
+
+    var recurrenceSummaryText: String {
+        if recurrenceRule == .custom {
+            return "每\(max(1, recurrenceIntervalDays))天"
+        }
+        return recurrenceRule.rawValue
+    }
+
+    /// 计算下一次循环的截止时间
+    func nextRecurringDueDate(from referenceDate: Date = .now) -> Date {
+        let calendar = Calendar.current
+        let days = effectiveRecurrenceDays
+        guard days > 0 else { return referenceDate }
+
+        if let baseDue = dueAt {
+            var nextDate = calendar.date(byAdding: .day, value: days, to: baseDue) ?? referenceDate
+            while nextDate <= referenceDate {
+                guard let advanced = calendar.date(byAdding: .day, value: days, to: nextDate) else { break }
+                nextDate = advanced
+            }
+            return nextDate
+        } else {
+            return calendar.date(byAdding: .day, value: days, to: referenceDate) ?? referenceDate
+        }
+    }
+
+    /// 完成该事项。如果为周期性待办，会自动生成下一期活跃待办事项并插入 ModelContext
+    @discardableResult
+    func markAsCompleted(in context: ModelContext) -> TodoItem? {
+        self.status = .done
+        TodoNotificationManager.shared.cancelNotification(for: self.id)
+
+        guard isRecurring else { return nil }
+
+        let nextDue = nextRecurringDueDate(from: .now)
+        let nextItem = TodoItem(
+            type: self.type,
+            status: .active,
+            title: self.title,
+            detail: self.detail,
+            pickupCode: self.pickupCode,
+            courier: self.courier,
+            station: self.station,
+            location: self.location,
+            dueAt: nextDue,
+            sourceText: self.sourceText,
+            sortOrder: self.sortOrder,
+            recurrenceRuleRaw: self.recurrenceRuleRaw,
+            recurrenceIntervalDays: self.recurrenceIntervalDays
+        )
+        context.insert(nextItem)
+        TodoNotificationManager.shared.scheduleNotification(for: nextItem)
+        return nextItem
     }
 }
 

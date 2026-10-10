@@ -25,6 +25,7 @@ struct CompletedTodoHistoryView: View {
         switch selectedCategory {
         case .all: break
         case .general: result = result.filter { [.general, .event].contains($0.type) }
+        case .recurring: result = result.filter { $0.isRecurring }
         case .parcel: result = result.filter { $0.type == .parcel }
         case .life: result = result.filter { [.medication, .housework, .charging].contains($0.type) }
         case .alert: result = result.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity].contains($0.type) }
@@ -167,6 +168,7 @@ struct CompletedTodoHistoryView: View {
         switch cat {
         case .all: return doneTodos.count
         case .general: return doneTodos.filter { [.general, .event].contains($0.type) }.count
+        case .recurring: return doneTodos.filter { $0.isRecurring }.count
         case .parcel: return doneTodos.filter { $0.type == .parcel }.count
         case .life: return doneTodos.filter { [.medication, .housework, .charging].contains($0.type) }.count
         case .alert: return doneTodos.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity].contains($0.type) }.count
@@ -194,6 +196,7 @@ struct CompletedTodoHistoryView: View {
 struct CompletedHistoryRow: View {
     @Environment(\.modelContext) private var context
     let item: TodoItem
+    @State private var isShowingEditSheet = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -251,6 +254,11 @@ struct CompletedHistoryRow: View {
                         .lineLimit(1)
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                isShowingEditSheet = true
+                Haptic.light()
+            }
 
             // 快捷放回未完成按钮
             Button {
@@ -271,6 +279,30 @@ struct CompletedHistoryRow: View {
             .buttonStyle(.plain)
         }
         .padding(.vertical, 2)
+        .contextMenu {
+            Button("编辑事项", systemImage: "pencil") {
+                isShowingEditSheet = true
+                Haptic.light()
+            }
+            if let code = item.pickupCode {
+                Button("复制取件码", systemImage: "doc.on.doc") {
+                    UIPasteboard.general.string = code
+                    Haptic.light()
+                }
+            }
+        }
+        .sheet(isPresented: $isShowingEditSheet) {
+            EditTodoSheet(item: item)
+        }
+        .swipeActions(edge: .leading) {
+            Button {
+                isShowingEditSheet = true
+                Haptic.light()
+            } label: {
+                Label("编辑", systemImage: "pencil")
+            }
+            .tint(.blue)
+        }
         .themedRow()
     }
 

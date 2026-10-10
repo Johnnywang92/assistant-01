@@ -68,6 +68,7 @@ public final class NavigationRouter: ObservableObject {
         case expense
         case idVault
         case settings
+        case qrScanner
 
         public var id: String { rawValue }
     }
@@ -75,6 +76,7 @@ public final class NavigationRouter: ObservableObject {
     @Published public var selectedTab: AppTab = .todos
     @Published public var activeSheet: ActiveSheet?
     @Published public var requestedFilter: String?
+    @Published public var pendingImportPayload: TodoSharePayload?
 
     private init() {}
 
@@ -86,6 +88,14 @@ public final class NavigationRouter: ObservableObject {
         let host = (url.host?.lowercased() ?? url.pathComponents.filter { $0 != "/" }.first?.lowercased()) ?? ""
 
         switch host {
+        case "import", "import-todo", "import-qr":
+            if let payload = QRCodeService.decodePayload(from: url.absoluteString) {
+                selectedTab = .todos
+                pendingImportPayload = payload
+            }
+        case "scan", "scanner", "qr":
+            selectedTab = .todos
+            activeSheet = .qrScanner
         case "voice", "dialogue":
             activeSheet = .voice
         case "add", "add-todo", "todo":
@@ -214,6 +224,20 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .sound, .badge])
+    }
+
+    // 处理用户点击通知横幅或锁屏快捷操作按钮（如：标记完成、稍后推迟）
+    public func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let userInfo = response.notification.request.content.userInfo
+        if let type = userInfo["type"] as? String, type == "todo" {
+            let context = Persistence.shared.mainContext
+            TodoNotificationManager.shared.handleNotificationResponse(response, context: context)
+        }
+        completionHandler()
     }
 }
 
