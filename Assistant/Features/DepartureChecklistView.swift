@@ -223,7 +223,11 @@ struct DepartureChecklistView: View {
     private func ritualButton(title: String, sub: String, isChecked: Binding<Bool>) -> some View {
         Button {
             isChecked.wrappedValue.toggle()
-            Haptic.impact(style: isChecked.wrappedValue ? .heavy : .light)
+            if isChecked.wrappedValue {
+                Haptic.heavy()
+            } else {
+                Haptic.light()
+            }
         } label: {
             VStack(spacing: 4) {
                 Text(title)
@@ -283,7 +287,11 @@ struct CheckItemRow: View {
     var body: some View {
         Button {
             item.isChecked.toggle()
-            Haptic.impact(style: item.isChecked ? .medium : .light)
+            if item.isChecked {
+                Haptic.medium()
+            } else {
+                Haptic.light()
+            }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: item.isChecked ? "checkmark.circle.fill" : "circle")

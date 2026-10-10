@@ -18,6 +18,11 @@ public enum Haptic {
     }
 
     @MainActor
+    public static func impact(style: UIImpactFeedbackGenerator.FeedbackStyle = .medium) {
+        UIImpactFeedbackGenerator(style: style).impactOccurred()
+    }
+
+    @MainActor
     public static func success() {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }

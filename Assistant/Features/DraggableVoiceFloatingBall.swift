@@ -41,7 +41,7 @@ struct DraggableVoiceFloatingBall: View {
             // 悬浮球主体
             Button {
                 // 点击直接触发语音对话（由手势和 tap 结合）
-                Haptic.impact(style: .medium)
+                Haptic.medium()
                 showVoice = true
             } label: {
                 ZStack {
@@ -101,7 +101,7 @@ struct DraggableVoiceFloatingBall: View {
                             normY = Double(finalNormY)
                         }
 
-                        Haptic.impact(style: .light)
+                        Haptic.light()
                     }
             )
         }
