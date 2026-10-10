@@ -823,19 +823,42 @@ final class DataMigrationService {
         }
     }
 
-    /// 执行还原或合并数据
-    public func restore(from package: BackupPackage, strategy: RestoreStrategy) throws -> RestoreResultSummary {
-        guard package.metadata.schemaVersion <= 2 else { throw MigrationCryptoError.corruptedData }
+    /// 在覆盖本地数据库前验证备份结构，避免重复 ID 或损坏附件进入还原流程。
+    private func validate(package: BackupPackage) throws {
+        guard (1...2).contains(package.metadata.schemaVersion) else {
+            throw MigrationCryptoError.corruptedData
+        }
         if package.metadata.schemaVersion >= 2 {
-            guard package.vehicles != nil, package.storedItems != nil, package.dialogueRecords != nil,
-                  package.rawMessages != nil, package.locationSamples != nil else {
+            guard package.expenses != nil, package.documents != nil, package.departureItems != nil,
+                  package.voiceMemos != nil, package.vehicles != nil, package.storedItems != nil,
+                  package.dialogueRecords != nil, package.rawMessages != nil, package.locationSamples != nil else {
                 throw MigrationCryptoError.corruptedData
             }
         }
-        guard strategy != .overwrite || package.metadata.schemaVersion >= 2 else {
-            throw MigrationCryptoError.incompleteLegacyBackup
+
+        func requireUniqueIDs(_ ids: [UUID]) throws {
+            guard Set(ids).count == ids.count else { throw MigrationCryptoError.corruptedData }
         }
-        // 覆盖数据库前先验证备份负载与设备密钥，避免可预见的错误在删除后才暴露。
+
+        try requireUniqueIDs(package.todos.map(\.id))
+        try requireUniqueIDs(package.subscriptions.map(\.id))
+        try requireUniqueIDs(package.itemExpiries.map(\.id))
+        try requireUniqueIDs(package.anniversaries.map(\.id))
+        try requireUniqueIDs(package.habits.map(\.id))
+        try requireUniqueIDs(package.medications.map(\.id))
+        try requireUniqueIDs(package.learnedPlaces.map(\.id))
+        try requireUniqueIDs(package.passwords.map(\.id))
+        try requireUniqueIDs(package.dataUsageRecords.map(\.id))
+        try requireUniqueIDs(package.expenses?.map(\.id) ?? [])
+        try requireUniqueIDs(package.documents?.map(\.id) ?? [])
+        try requireUniqueIDs(package.departureItems?.map(\.id) ?? [])
+        try requireUniqueIDs(package.voiceMemos?.map(\.id) ?? [])
+        try requireUniqueIDs(package.vehicles?.map(\.id) ?? [])
+        try requireUniqueIDs(package.storedItems?.map(\.id) ?? [])
+        try requireUniqueIDs(package.dialogueRecords?.map(\.id) ?? [])
+        try requireUniqueIDs(package.rawMessages?.map(\.id) ?? [])
+        try requireUniqueIDs(package.locationSamples?.map(\.id) ?? [])
+
         for document in package.documents ?? [] {
             if let data = document.frontImageData, UIImage(data: data) == nil {
                 throw MigrationCryptoError.missingAttachment(document.title)
@@ -844,11 +867,18 @@ final class DataMigrationService {
                 throw MigrationCryptoError.missingAttachment(document.title)
             }
         }
-        if package.metadata.schemaVersion >= 2 {
-            for memo in package.voiceMemos ?? [] where memo.audioData == nil {
-                throw MigrationCryptoError.missingAttachment(memo.title)
-            }
+        for memo in package.voiceMemos ?? [] where memo.audioData == nil {
+            throw MigrationCryptoError.missingAttachment(memo.title)
         }
+    }
+
+    /// 执行还原或合并数据
+    public func restore(from package: BackupPackage, strategy: RestoreStrategy) throws -> RestoreResultSummary {
+        try validate(package: package)
+        guard strategy != .overwrite || package.metadata.schemaVersion >= 2 else {
+            throw MigrationCryptoError.incompleteLegacyBackup
+        }
+        // 覆盖数据库前先验证备份负载与设备密钥，避免可预见的错误在删除后才暴露。
         var encryptedPasswords: [UUID: String] = [:]
         for password in package.passwords {
             guard encryptedPasswords[password.id] == nil else { throw MigrationCryptoError.corruptedData }
