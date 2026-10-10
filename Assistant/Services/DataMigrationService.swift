@@ -23,6 +23,7 @@ public struct BackupPackage: Codable {
     public var dataUsageRecords: [DataUsageRecordDTO]
     public var expenses: [ExpenseDTO]?
     public var documents: [IDDocumentDTO]?
+    public var departureItems: [DepartureCheckItemDTO]?
 }
 
 // MARK: - DTO 模型定义
@@ -155,6 +156,16 @@ public struct IDDocumentDTO: Codable {
     public var updatedAt: Date
 }
 
+public struct DepartureCheckItemDTO: Codable {
+    public var id: UUID
+    public var title: String
+    public var sceneRaw: String
+    public var isChecked: Bool
+    public var isEssential: Bool
+    public var storageLocationNote: String?
+    public var createdAt: Date
+}
+
 // MARK: - 备份解析报告
 
 public struct BackupInspectionSummary: Identifiable {
@@ -173,11 +184,12 @@ public struct BackupInspectionSummary: Identifiable {
     public var usageRecordCount: Int
     public var expenseCount: Int
     public var documentCount: Int
+    public var departureItemCount: Int
 
     public var totalItems: Int {
         todoCount + subscriptionCount + itemExpiryCount + anniversaryCount +
         habitCount + medicationCount + placeCount + passwordCount + usageRecordCount +
-        expenseCount + documentCount
+        expenseCount + documentCount + departureItemCount
     }
 }
 
@@ -220,6 +232,7 @@ final class DataMigrationService {
         let dataUsage = (try? context.fetchCount(FetchDescriptor<DataUsageRecord>())) ?? 0
         let expenses = (try? context.fetchCount(FetchDescriptor<ExpenseRecord>())) ?? 0
         let documents = (try? context.fetchCount(FetchDescriptor<IDDocumentItem>())) ?? 0
+        let departures = (try? context.fetchCount(FetchDescriptor<DepartureCheckItem>())) ?? 0
 
         return [
             "待办事项": todos,
@@ -232,7 +245,8 @@ final class DataMigrationService {
             "离线安全密码": passwords,
             "流量历史记录": dataUsage,
             "日常记账明细": expenses,
-            "重要证件卡包": documents
+            "重要证件卡包": documents,
+            "随身防丢清单": departures
         ]
     }
 
@@ -249,6 +263,7 @@ final class DataMigrationService {
         let usages = (try? context.fetch(FetchDescriptor<DataUsageRecord>())) ?? []
         let expenses = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
         let documents = (try? context.fetch(FetchDescriptor<IDDocumentItem>())) ?? []
+        let departures = (try? context.fetch(FetchDescriptor<DepartureCheckItem>())) ?? []
 
         let todoDTOs = todos.map {
             TodoDTO(
@@ -357,6 +372,18 @@ final class DataMigrationService {
             )
         }
 
+        let departureDTOs = departures.map {
+            DepartureCheckItemDTO(
+                id: $0.id,
+                title: $0.title,
+                sceneRaw: $0.sceneRaw,
+                isChecked: $0.isChecked,
+                isEssential: $0.isEssential,
+                storageLocationNote: $0.storageLocationNote,
+                createdAt: $0.createdAt
+            )
+        }
+
         let metadata = BackupPackage.Metadata(
             schemaVersion: 1,
             appVersion: "0.1.0",
@@ -376,7 +403,8 @@ final class DataMigrationService {
             passwords: pwdDTOs,
             dataUsageRecords: usageDTOs,
             expenses: expenseDTOs,
-            documents: documentDTOs
+            documents: documentDTOs,
+            departureItems: departureDTOs
         )
 
         let encoder = JSONEncoder()
@@ -412,7 +440,8 @@ final class DataMigrationService {
             passwordCount: package.passwords.count,
             usageRecordCount: package.dataUsageRecords.count,
             expenseCount: package.expenses?.count ?? 0,
-            documentCount: package.documents?.count ?? 0
+            documentCount: package.documents?.count ?? 0,
+            departureItemCount: package.departureItems?.count ?? 0
         )
 
         return (package, summary)
@@ -433,6 +462,7 @@ final class DataMigrationService {
             try? context.delete(model: DataUsageRecord.self)
             try? context.delete(model: ExpenseRecord.self)
             try? context.delete(model: IDDocumentItem.self)
+            try? context.delete(model: DepartureCheckItem.self)
         }
 
         var details: [String] = []
@@ -668,6 +698,26 @@ final class DataMigrationService {
         }
         details.append("重要证件: \(restoredDocs) 项")
         totalRestored += restoredDocs
+
+        // 12. 出门防丢装备清单
+        var restoredDepartures = 0
+        let existingDepartureIDs = Set(((try? context.fetch(FetchDescriptor<DepartureCheckItem>())) ?? []).map { $0.id })
+        for dep in package.departureItems ?? [] {
+            if strategy == .merge && existingDepartureIDs.contains(dep.id) { continue }
+            let item = DepartureCheckItem(
+                title: dep.title,
+                scene: DepartureScene(rawValue: dep.sceneRaw) ?? .commute,
+                isEssential: dep.isEssential,
+                storageLocationNote: dep.storageLocationNote,
+                isChecked: dep.isChecked
+            )
+            item.id = dep.id
+            item.createdAt = dep.createdAt
+            context.insert(item)
+            restoredDepartures += 1
+        }
+        details.append("随身防丢: \(restoredDepartures) 项")
+        totalRestored += restoredDepartures
 
         try context.save()
         return RestoreResultSummary(restoredCount: totalRestored, details: details)
