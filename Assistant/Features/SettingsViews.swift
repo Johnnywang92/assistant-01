@@ -64,6 +64,7 @@ struct SettingsView: View {
     @AppStorage("floating_voice_enabled") private var floatingVoiceEnabled: Bool = true
     @AppStorage("floating_voice_norm_x") private var normX: Double = 1.0
     @AppStorage("floating_voice_norm_y") private var normY: Double = 0.68
+    @AppStorage("weather_alerts_enabled") private var weatherAlertsEnabled: Bool = true
     @State private var selectedMode = AppSettings.currentMode
     @State private var voiceReplyEnabled = AppSettings.voiceReplyEnabled
     @State private var threshold = AppSettings.lowDataThresholdMB
@@ -229,6 +230,14 @@ struct SettingsView: View {
                     Text("语音与悬浮助手")
                 } footer: {
                     Text("开启后可在屏幕任意边缘自由拖动悬浮球，松手自动贴边吸附，最适合单手大拇指快速开启语音对话。")
+                }
+
+                Section {
+                    Toggle("气象预警与骤降添衣提醒", isOn: $weatherAlertsEnabled)
+                } header: {
+                    Text("智能情境与气象感知")
+                } footer: {
+                    Text("开启后，遇到气象局官方严重预警（暴雨/大风/雷电等）或气温骤降超过 6°C 时，自动在首页待办顶部提供轻量提醒。零后台长驻轮询，不消耗额外电量。")
                 }
 
                 Section("智能大脑与 AI 本地模型") {

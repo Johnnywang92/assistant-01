@@ -19,6 +19,7 @@ struct TodoListView: View {
 
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @ObservedObject private var router = NavigationRouter.shared
+    @ObservedObject private var weatherAlerts = WeatherAlertService.shared
     @State private var showAddTodo = false
     @State private var showVoice = false
     @State private var showDone = false
@@ -50,6 +51,11 @@ struct TodoListView: View {
             VStack(spacing: 0) {
                 // 顶部固定横向分类 Tab 栏（带指示胶囊与角标）
                 filterTabBar
+
+                // 突发气象预警或气温骤降轻巧胶囊（若有则展示，支持手动划掉关闭）
+                if let banner = weatherAlerts.currentBanner {
+                    weatherAlertBanner(banner)
+                }
 
                 Divider()
 
@@ -136,7 +142,57 @@ struct TodoListView: View {
                     }
                 }
             }
+            .task {
+                await weatherAlerts.checkAlertsIfNeeded()
+            }
         }
+    }
+
+    // MARK: - 气象预警轻量胶囊卡片
+
+    @ViewBuilder
+    private func weatherAlertBanner(_ banner: WeatherAlertService.AlertBanner) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: banner.icon)
+                .font(.subheadline.bold())
+                .foregroundStyle(banner.color)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(banner.title)
+                    .font(.caption.bold())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(banner.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Button {
+                weatherAlerts.dismissCurrentBanner()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                    .padding(5)
+                    .background(Circle().fill(Color(.secondarySystemFill)))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(banner.color.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(banner.color.opacity(0.32), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal)
+        .padding(.vertical, 4)
     }
 
     // MARK: - 分类渲染器

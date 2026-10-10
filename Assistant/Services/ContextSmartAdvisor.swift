@@ -50,10 +50,15 @@ struct ContextSmartAdvisor {
         let resolvedPlace = learningEngine.resolveCurrentPlace(wifiSSID: wifiSSID, coordinate: location?.coordinate)
         let placeName = resolvedPlace?.name ?? (resolvedPlace?.category.rawValue ?? "")
 
-        // 1. 根据天气环境决策（出门带伞、雨天提醒）
+        // 1. 根据天气环境决策（出门带伞、雨天提醒、气象突变与降温添衣）
         var weatherNotice: String?
         if let location {
             weatherNotice = await fetchWeatherNotice(for: location)
+            await WeatherAlertService.shared.checkAlertsIfNeeded(location: location)
+            if let banner = WeatherAlertService.shared.currentBanner {
+                let alertPrefix = "\(banner.title)：\(banner.detail)"
+                weatherNotice = (weatherNotice != nil) ? "\(alertPrefix)\n\(weatherNotice!)" : alertPrefix
+            }
         }
 
         var adviceParts: [String] = []
