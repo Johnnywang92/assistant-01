@@ -72,7 +72,7 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
             if let alerts = weather.weatherAlerts, !alerts.isEmpty {
                 let firstAlert = alerts[0]
                 let summary = firstAlert.summary
-                let detail = firstAlert.detailsURL?.absoluteString ?? (firstAlert.region ?? "官方发布严重气象警报，外出请注意安全！")
+                let detail = firstAlert.region ?? "官方发布严重气象警报，外出请注意安全！"
 
                 self.currentBanner = AlertBanner(
                     type: .severeWeather,
