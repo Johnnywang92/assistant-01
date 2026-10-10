@@ -45,59 +45,22 @@ struct TodoListView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                // 顶部流量卡片（如有）
-                if let latest = usage.first {
-                    Section { DataUsageCard(record: latest) }
-                }
+            VStack(spacing: 0) {
+                // 顶部固定横向分类 Tab 栏（带指示胶囊与角标）
+                filterTabBar
 
-                // 顶部分类筛选器
-                Section {
-                    Picker("分类筛选", selection: $selectedFilter) {
-                        ForEach(TodoFilterCategory.allCases) { cat in
-                            Text(cat.rawValue).tag(cat)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: selectedFilter) { _, _ in
-                        Haptic.selection()
+                Divider()
+
+                // 支持横向滑动的分页容器
+                TabView(selection: $selectedFilter) {
+                    ForEach(TodoFilterCategory.allCases) { category in
+                        renderPageContent(for: category)
+                            .tag(category)
                     }
                 }
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 6, trailing: 4))
-
-                // 待确认事项
-                if !review.isEmpty && (selectedFilter == .all || selectedFilter == .general) {
-                    Section("待确认（\(review.count)）") {
-                        ForEach(review) { ReviewRow(item: $0) }
-                    }
-                }
-
-                // 动态分类展示
-                switch selectedFilter {
-                case .all:
-                    renderAllSections()
-                case .general:
-                    renderGeneralSection()
-                case .parcel:
-                    renderParcelSection()
-                case .life:
-                    renderLifeSection()
-                case .alert:
-                    renderAlertSection()
-                }
-
-                // 已完成事项（可折叠）
-                let currentDone = filteredDoneItems
-                if !currentDone.isEmpty {
-                    Section(isExpanded: $showDone) {
-                        ForEach(currentDone.prefix(50)) { TodoRow(item: $0) }
-                    } header: {
-                        Text("已完成（\(currentDone.count)）")
-                    }
-                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
             }
-            .listStyle(.insetGrouped)
+            .background(Color(.systemGroupedBackground))
             .navigationTitle(assistantName.isEmpty ? "小助" : assistantName)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -287,8 +250,129 @@ struct TodoListView: View {
         }
     }
 
-    private var filteredDoneItems: [TodoItem] {
-        switch selectedFilter {
+    // MARK: - 页面与顶部 Tab 栏组件
+
+    @ViewBuilder
+    private var filterTabBar: some View {
+        HStack(spacing: 6) {
+            ForEach(TodoFilterCategory.allCases) { category in
+                let isSelected = selectedFilter == category
+                let count = badgeCount(for: category)
+
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        selectedFilter = category
+                    }
+                    Haptic.selection()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(category.rawValue)
+                            .font(.subheadline)
+                            .fontWeight(isSelected ? .bold : .medium)
+
+                        if count > 0 {
+                            Text(count > 99 ? "99+" : "\(count)")
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(
+                                    Capsule().fill(
+                                        isSelected
+                                            ? Color.white.opacity(0.25)
+                                            : badgeColor(for: category).opacity(0.16)
+                                    )
+                                )
+                                .foregroundStyle(isSelected ? Color.white : badgeColor(for: category))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .background(
+                        ZStack {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.accentColor)
+                                    .shadow(color: Color.accentColor.opacity(0.22), radius: 4, y: 2)
+                            } else {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color(.secondarySystemBackground))
+                            }
+                        }
+                    )
+                    .foregroundStyle(isSelected ? Color.white : Color.primary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color(.systemBackground))
+    }
+
+    @ViewBuilder
+    private func renderPageContent(for category: TodoFilterCategory) -> some View {
+        List {
+            // 顶部流量卡片（仅在全部页面，若有流量记录）
+            if category == .all, let latest = usage.first {
+                Section { DataUsageCard(record: latest) }
+            }
+
+            // 待确认事项（在全部和日常待办页面显示）
+            if !review.isEmpty && (category == .all || category == .general) {
+                Section("待确认（\(review.count)）") {
+                    ForEach(review) { ReviewRow(item: $0) }
+                }
+            }
+
+            // 分类具体列表
+            switch category {
+            case .all:
+                renderAllSections()
+            case .general:
+                renderGeneralSection()
+            case .parcel:
+                renderParcelSection()
+            case .life:
+                renderLifeSection()
+            case .alert:
+                renderAlertSection()
+            }
+
+            // 已完成事项（可折叠）
+            let currentDone = filteredDoneItems(for: category)
+            if !currentDone.isEmpty {
+                Section(isExpanded: $showDone) {
+                    ForEach(currentDone.prefix(50)) { TodoRow(item: $0) }
+                } header: {
+                    Text("已完成（\(currentDone.count)）")
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    private func badgeCount(for category: TodoFilterCategory) -> Int {
+        switch category {
+        case .all: return activeTodos.count
+        case .general: return generals.count
+        case .parcel: return parcels.count
+        case .life: return medications.count + houseworks.count + chargings.count
+        case .alert: return subscriptions.count + expiries.count + anniversaries.count + passwordTodos.count
+        }
+    }
+
+    private func badgeColor(for category: TodoFilterCategory) -> Color {
+        switch category {
+        case .all: return .secondary
+        case .general: return .blue
+        case .parcel: return .orange
+        case .life: return .green
+        case .alert: return .red
+        }
+    }
+
+    private func filteredDoneItems(for category: TodoFilterCategory) -> [TodoItem] {
+        switch category {
         case .all:
             return done
         case .general:
