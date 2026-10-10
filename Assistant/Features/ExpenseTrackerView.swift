@@ -246,6 +246,7 @@ struct ExpenseTrackerView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(AppBackgroundManager.shared.isCustomBackgroundActive ? .hidden : .automatic)
             .navigationTitle("智能记账")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

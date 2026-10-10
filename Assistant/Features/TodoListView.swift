@@ -60,7 +60,7 @@ struct TodoListView: View {
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
             }
-            .background(Color(.systemGroupedBackground))
+            .background(AppBackgroundManager.shared.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
             .navigationTitle(assistantName.isEmpty ? "小助" : assistantName)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -344,6 +344,7 @@ struct TodoListView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .scrollContentBackground(AppBackgroundManager.shared.isCustomBackgroundActive ? .hidden : .automatic)
     }
 
     private func badgeCount(for category: TodoFilterCategory) -> Int {

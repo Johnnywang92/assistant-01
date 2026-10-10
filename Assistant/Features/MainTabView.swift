@@ -9,6 +9,9 @@ struct MainTabView: View {
 
     var body: some View {
         ZStack {
+            // 全局个性化背景底色层
+            AppBackgroundView()
+
             TabView(selection: $router.selectedTab) {
                 TodoListView()
                     .tabItem {

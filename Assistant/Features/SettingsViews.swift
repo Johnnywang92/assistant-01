@@ -169,6 +169,20 @@ struct SettingsView: View {
                     Text("安静模式下不发送横幅/通知声音；记录模式下只收录数据不催办。")
                 }
 
+                Section("视觉与个性化") {
+                    NavigationLink {
+                        AppBackgroundSettingsView()
+                    } label: {
+                        HStack {
+                            Label("主题与背景设置", systemImage: "paintpalette.fill")
+                            Spacer()
+                            Text(AppBackgroundManager.shared.currentStyle.rawValue)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("语音与悬浮助手") {
                     Toggle("单手贴边语音悬浮球", isOn: $floatingVoiceEnabled)
 
@@ -245,6 +259,7 @@ struct SettingsView: View {
                     NavigationLink("最近收到的原生消息") { RawMessagesView() }
                 }
             }
+            .scrollContentBackground(AppBackgroundManager.shared.isCustomBackgroundActive ? .hidden : .automatic)
             .navigationTitle("助手设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

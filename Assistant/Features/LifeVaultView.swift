@@ -188,6 +188,7 @@ struct LifeVaultView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(AppBackgroundManager.shared.isCustomBackgroundActive ? .hidden : .automatic)
             .navigationTitle("生活档案")
         }
     }
