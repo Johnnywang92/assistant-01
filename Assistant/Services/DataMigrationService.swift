@@ -292,6 +292,7 @@ public enum MigrationCryptoError: LocalizedError {
     case plaintextExportDisabled
     case incompleteLegacyBackup
     case missingAttachment(String)
+    case persistenceFailure
     case pinMismatch
     case invalidPin
     case corruptedData
@@ -307,6 +308,8 @@ public enum MigrationCryptoError: LocalizedError {
             return "旧版备份缺少新数据类型，只能选择智能合并；请先从原设备生成新版备份。"
         case .missingAttachment(let name):
             return "无法读取附件「\(name)」，备份已取消以避免数据缺失。"
+        case .persistenceFailure:
+            return "数据写入失败，已撤销本次导入。"
         case .pinMismatch:
             return "两次输入的 PIN 码不一致，请核对后重新输入。"
         case .invalidPin:
@@ -1262,7 +1265,7 @@ final class DataMigrationService {
     // MARK: - 外部纯文本 / CSV 批量导入
 
     /// 批量导入纪念日（格式：名称, 日期(yyyy-MM-dd), 分类(可选), 备注(可选)）
-    public func batchImportAnniversaries(text: String) -> Int {
+    public func batchImportAnniversaries(text: String) throws -> Int {
         let lines = text.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         var count = 0
         let formatter = DateFormatter()
@@ -1281,12 +1284,17 @@ final class DataMigrationService {
             count += 1
         }
 
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw MigrationCryptoError.persistenceFailure
+        }
         return count
     }
 
     /// 批量导入密码 CSV（兼容通用 CSV 格式：标题, 账号, 密码, 分类, 备注）
-    public func batchImportPasswords(text: String) -> Int {
+    public func batchImportPasswords(text: String) throws -> Int {
         let lines = text.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         var count = 0
 
@@ -1311,12 +1319,17 @@ final class DataMigrationService {
             count += 1
         }
 
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw MigrationCryptoError.persistenceFailure
+        }
         return count
     }
 
     /// 批量导入待办事项（每行一条）
-    public func batchImportTodos(text: String) -> Int {
+    public func batchImportTodos(text: String) throws -> Int {
         let lines = text.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         var count = 0
 
@@ -1328,7 +1341,12 @@ final class DataMigrationService {
             count += 1
         }
 
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw MigrationCryptoError.persistenceFailure
+        }
         return count
     }
 }

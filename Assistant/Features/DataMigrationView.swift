@@ -369,20 +369,25 @@ struct DataMigrationView: View {
 
     private func executeBatchImport() {
         guard let service = migrationService ?? DataMigrationService(context: context) as DataMigrationService? else { return }
-        let count: Int
-        switch batchType {
-        case .anniversary:
-            count = service.batchImportAnniversaries(text: batchText)
-            batchResultNotice = "✅ 成功批量添加 \(count) 个纪念日/生日档案"
-        case .password:
-            count = service.batchImportPasswords(text: batchText)
-            batchResultNotice = "✅ 成功批量登记 \(count) 个账号密码凭据"
-        case .todo:
-            count = service.batchImportTodos(text: batchText)
-            batchResultNotice = "✅ 成功批量创建 \(count) 条待办事项"
+        do {
+            let count: Int
+            switch batchType {
+            case .anniversary:
+                count = try service.batchImportAnniversaries(text: batchText)
+                batchResultNotice = "✅ 成功批量添加 \(count) 个纪念日/生日档案"
+            case .password:
+                count = try service.batchImportPasswords(text: batchText)
+                batchResultNotice = "✅ 成功批量登记 \(count) 个账号密码凭据"
+            case .todo:
+                count = try service.batchImportTodos(text: batchText)
+                batchResultNotice = "✅ 成功批量创建 \(count) 条待办事项"
+            }
+            batchText = ""
+            Haptic.success()
+        } catch {
+            batchResultNotice = "❌ 导入失败：\(error.localizedDescription)"
+            Haptic.error()
         }
-        batchText = ""
-        Haptic.success()
     }
 }
 
