@@ -12,6 +12,12 @@ struct LifeVaultView: View {
     @Query private var subscriptions: [SubscriptionItem]
     @Query private var expiries: [ItemExpiryItem]
     @Query private var places: [LearnedPlace]
+    @Query private var departureItems: [DepartureCheckItem]
+
+    // 随身防丢未清点核心件
+    private var uncheckedDepartureCount: Int {
+        departureItems.filter { $0.isEssential && !$0.isChecked }.count
+    }
 
     // 最近即将到来的纪念日
     private var nearestAnniversary: (item: AnniversaryItem, days: Int)? {
@@ -37,7 +43,7 @@ struct LifeVaultView: View {
             List {
                 // 顶部快速看板统计
                 Section {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                         NavigationLink {
                             IDDocumentVaultView()
                         } label: {
@@ -49,6 +55,13 @@ struct LifeVaultView: View {
                             PasswordVaultView()
                         } label: {
                             statPill(title: "密码", count: "\(passwords.count)", icon: "key.fill", color: .teal)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            DepartureChecklistView()
+                        } label: {
+                            statPill(title: "防丢", count: "\(departureItems.count)", icon: "bag.fill", color: .indigo, badgeCount: uncheckedDepartureCount)
                         }
                         .buttonStyle(.plain)
 
@@ -154,6 +167,22 @@ struct LifeVaultView: View {
                             subtitle: "基于夜间停留与 WiFi 的空间感知地点模型",
                             status: "已掌握 \(places.count) 处常驻空间",
                             isAlert: false
+                        )
+                    }
+                }
+
+                // MARK: - 4. 随身防丢与出行装备
+                Section("随身防丢与出行装备") {
+                    NavigationLink {
+                        DepartureChecklistView()
+                    } label: {
+                        vaultRow(
+                            icon: "bag.fill",
+                            color: .indigo,
+                            title: "出门防遗忘清单",
+                            subtitle: "工作通勤、出差旅行、运动健身防漏带，指差四字确认",
+                            status: uncheckedDepartureCount > 0 ? "⚠️ \(uncheckedDepartureCount) 件核心装备未确认" : "已收录 \(departureItems.count) 项随身装备",
+                            isAlert: uncheckedDepartureCount > 0
                         )
                     }
                 }

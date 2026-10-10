@@ -1,0 +1,99 @@
+import Foundation
+import SwiftData
+
+/// 出门与随身出行场景
+public enum DepartureScene: String, Codable, CaseIterable, Identifiable {
+    case commute = "工作通勤"
+    case workout = "运动健身"
+    case travel = "出差旅行"
+    case rainy = "雨雪恶劣"
+    case casual = "日常轻装"
+
+    public var id: String { rawValue }
+
+    public var icon: String {
+        switch self {
+        case .commute: return "briefcase.fill"
+        case .workout: return "figure.run"
+        case .travel: return "airplane"
+        case .rainy: return "cloud.rain.fill"
+        case .casual: return "bag.fill"
+        }
+    }
+
+    public var colorName: String {
+        switch self {
+        case .commute: return "blue"
+        case .workout: return "orange"
+        case .travel: return "purple"
+        case .rainy: return "teal"
+        case .casual: return "green"
+        }
+    }
+}
+
+/// 随身防丢与出门检查清单项模型
+@Model
+public final class DepartureCheckItem {
+    public var id: UUID
+    public var title: String                // 物品名称（如：电脑电源、工卡、耳机、家门钥匙）
+    public var sceneRaw: String             // 归属场景
+    public var isChecked: Bool              // 本次出发前是否已确认携带
+    public var isEssential: Bool            // 是否属于核心必带项（遗漏会导致无法工作或进门）
+    public var storageLocationNote: String? // 习惯放置位置，如“玄关置物盘”、“背包内侧网兜”
+    public var createdAt: Date
+
+    public init(
+        title: String,
+        scene: DepartureScene = .commute,
+        isEssential: Bool = false,
+        storageLocationNote: String? = nil,
+        isChecked: Bool = false
+    ) {
+        self.id = UUID()
+        self.title = title
+        self.sceneRaw = scene.rawValue
+        self.isEssential = isEssential
+        self.storageLocationNote = storageLocationNote
+        self.isChecked = isChecked
+        self.createdAt = .now
+    }
+
+    public var scene: DepartureScene {
+        get { DepartureScene(rawValue: sceneRaw) ?? .commute }
+        set { sceneRaw = newValue.rawValue }
+    }
+}
+
+/// 默认内置常用清单种子数据
+public enum DepartureChecklistDefaults {
+    public static let seeds: [(title: String, scene: DepartureScene, isEssential: Bool, location: String)] = [
+        // 工作通勤
+        ("家门钥匙 / 门禁卡", .commute, true, "玄关置物托盘"),
+        ("公司工卡 / 工牌", .commute, true, "背包前置外袋"),
+        ("笔记本电脑与电源线", .commute, true, "电脑夹层隔袋"),
+        ("手机与手机壳", .commute, true, "口袋或桌面充电座"),
+        ("降噪耳机 (AirPods)", .commute, false, "随身口袋"),
+
+        // 运动健身
+        ("运动水杯 / 摇摇杯", .workout, true, "厨房水槽晾干架"),
+        ("运动手环 / Apple Watch", .workout, true, "床头充电座"),
+        ("健身房储物柜锁", .workout, true, "运动挎包侧袋"),
+        ("速干毛巾与换洗衣物", .workout, false, "衣柜运动专区"),
+
+        // 出差旅行
+        ("身份证件 / 护照", .travel, true, "随身贴身胸包"),
+        ("大容量充电宝与快充线", .travel, true, "数码配件收纳包"),
+        ("个人常备药品", .travel, true, "行李箱拉链内袋"),
+        ("便携洗漱包与刮胡刀", .travel, false, "浴室出差洗漱袋"),
+
+        // 雨雪出行
+        ("便携折叠雨伞", .rainy, true, "玄关伞架"),
+        ("备用纸巾 / 湿巾", .rainy, false, "随身外衣口袋"),
+
+        // 日常轻装
+        ("手机", .casual, true, "随身携带"),
+        ("钥匙", .casual, true, "玄关置物托盘"),
+        ("纸巾", .casual, false, "口袋")
+    ]
+}

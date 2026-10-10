@@ -63,7 +63,12 @@ struct VoiceIntentProcessor {
             return queryActiveTodos()
         }
 
-        // 6. 默认将未明确意图当成待办直接收录
+        // 9. 意图：出门防丢 / 随身装备检查
+        if trimmed.contains("出门") || trimmed.contains("防丢") || trimmed.contains("忘带") || trimmed.contains("随身") || trimmed.contains("要走了") {
+            return queryDepartureChecklist()
+        }
+
+        // 10. 默认将未明确意图当成待办直接收录
         let item = TodoItem(type: .general, status: .active, title: trimmed, sourceText: trimmed)
         context.insert(item)
         try? context.save()
@@ -200,5 +205,25 @@ struct VoiceIntentProcessor {
         let todayStr = String(format: "%.1f", todayTotal)
         let monthStr = String(format: "%.1f", monthTotal)
         return "今日已支出 \(todayStr) 元（\(todayExpenses.count) 笔），本月累计支出 \(monthStr) 元。"
+    }
+
+    private func queryDepartureChecklist() -> String {
+        let items = (try? context.fetch(FetchDescriptor<DepartureCheckItem>())) ?? []
+        if items.isEmpty {
+            return "出门前请确认随身四字诀：身（工卡证件）、手（手机）、钥（钥匙）、耳（耳机或雨伞）。目前清单暂未登记个性化装备。"
+        }
+
+        let uncheckEssentials = items.filter { $0.isEssential && !$0.isChecked }
+        if !uncheckEssentials.isEmpty {
+            let names = uncheckEssentials.prefix(3).map { $0.title }.joined(separator: "、")
+            return "出发请留步！你还有 \(uncheckEssentials.count) 件核心装备尚未清点：如【\(names)】。出门前请确认指差四字：身、手、钥、耳！"
+        }
+
+        let uncheckedTotal = items.filter { !$0.isChecked }.count
+        if uncheckedTotal == 0 {
+            return "核心装备与随身物品已全部清点齐全，可以安心出发！祝你一路顺风！"
+        } else {
+            return "核心必带装备已就绪，还有 \(uncheckedTotal) 件非关键随身物品未打勾。请默念「身手钥耳」指差确认后出发。"
+        }
     }
 }

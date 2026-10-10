@@ -17,7 +17,8 @@ enum Persistence {
             AnniversaryItem.self,
             PasswordVaultItem.self,
             IDDocumentItem.self,
-            ExpenseRecord.self
+            ExpenseRecord.self,
+            DepartureCheckItem.self
         ])
         // 存在 Application Support，覆盖安装（重签）不会丢失
         let config = ModelConfiguration(schema: schema)
