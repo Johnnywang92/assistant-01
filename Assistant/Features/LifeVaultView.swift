@@ -233,7 +233,7 @@ struct LifeVaultView: View {
                     }
                 }
 
-                // MARK: - 4. 健康作息与习惯
+                // MARK: - 4. 健康与习惯
                 Section("健康与习惯") {
                     NavigationLink {
                         HabitAndMedicationView()
@@ -241,8 +241,8 @@ struct LifeVaultView: View {
                         vaultRow(
                             icon: "heart.text.square.fill",
                             color: .purple,
-                            title: "周期家务与服药",
-                            status: "\(habits.count) 项家务 · \(activeMedCount) 项服药",
+                            title: "运动与药物保健品",
+                            status: "\(habits.count) 项运动 · \(activeMedCount) 项药物与保健品",
                             isAlert: false
                         )
                     }

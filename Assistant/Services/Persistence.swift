@@ -37,7 +37,11 @@ enum Persistence {
             StoredItem.self,
             DialogueMessageRecord.self,
             PetProfile.self,
-            ChildProfile.self
+            ChildProfile.self,
+            ChildGrowthRecord.self,
+            ChildMilestoneRecord.self,
+            ChildHealthVisitRecord.self,
+            ChildVaccinationRecord.self
         ])
         // 存在 Application Support，覆盖安装（重签）不会丢失
         let config = ModelConfiguration(schema: schema)

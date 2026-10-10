@@ -9,6 +9,7 @@ struct ChildManagementView: View {
 
     @State private var showAddChild = false
     @State private var editingChild: ChildProfile? = nil
+    @State private var recordsChild: ChildProfile? = nil
     @State private var toastMessage: String? = nil
 
     var body: some View {
@@ -48,6 +49,9 @@ struct ChildManagementView: View {
             }
             .sheet(item: $editingChild) { child in
                 AddEditChildSheet(childToEdit: child)
+            }
+            .sheet(item: $recordsChild) { child in
+                ChildRecordsView(child: child)
             }
             .overlay(alignment: .bottom) {
                 if let msg = toastMessage {
@@ -183,9 +187,24 @@ struct ChildManagementView: View {
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+
+                    if !child.growthRecords.isEmpty || !child.milestones.isEmpty || !child.healthVisits.isEmpty {
+                        Text("已累计 (child.growthRecords.count) 次测量 · (child.milestones.count) 个里程碑 · (child.healthVisits.count) 条健康记录")
+                            .font(.caption2)
+                            .foregroundStyle(.pink)
+                    }
                 }
 
                 Spacer()
+
+                Button {
+                    recordsChild = child
+                } label: {
+                    Label("成长记录", systemImage: "chart.xyaxis.line")
+                        .font(.caption.bold())
+                        .foregroundStyle(.pink)
+                }
+                .buttonStyle(.plain)
 
                 Menu {
                     Button("编辑档案", systemImage: "pencil") {

@@ -15,7 +15,7 @@ struct HabitAndMedicationScheduler {
         self.context = Persistence.shared.mainContext
     }
 
-    /// 检查是否有到达周期的家务，若到达则自动生成待办，并联动智能家居
+    /// 检查是否有到达周期的运动计划，若到达则自动生成待办
     public func evaluatePeriodicHabits() async {
         let descriptor = FetchDescriptor<PeriodicHabit>(
             predicate: #Predicate { $0.isEnabled }
@@ -24,18 +24,18 @@ struct HabitAndMedicationScheduler {
 
         for habit in habits {
             if habit.nextDueAt <= .now {
-                let housework = TodoType.housework.rawValue
+                let exercise = TodoType.exercise.rawValue
                 let active = TodoStatus.active.rawValue
-                let title = "周期家务：\(habit.title)"
+                let title = "运动：\(habit.title)"
 
                 // 查重：避免同一家务重复生成未完成的待办
                 let existing = (try? context.fetch(FetchDescriptor<TodoItem>(
-                    predicate: #Predicate { $0.title == title && $0.typeRaw == housework && $0.statusRaw == active }
+                    predicate: #Predicate { $0.title == title && $0.typeRaw == exercise && $0.statusRaw == active }
                 ))) ?? []
 
                 if existing.isEmpty {
                     let todo = TodoItem(
-                        type: .housework,
+                        type: .exercise,
                         status: .active,
                         title: title,
                         detail: habit.detail,

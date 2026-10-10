@@ -14,6 +14,11 @@ enum TodoType: String, Codable, CaseIterable {
     case vehicleCare      // 爱车守护（加油/加电/定期保养/车险年检）
     case returnParcel     // 网购待退货与售后寄件截止倒数
     case travelBooking    // 出行购票提醒（火车票提前15天，机票提前15-30天）
+    case exercise         // 运动提醒
+    case childVaccine     // 亲子育儿疫苗
+    case childGrowth      // 亲子育儿成长测量
+    case childMilestone   // 亲子育儿里程碑
+    case childHealth      // 亲子育儿健康随访
 
     var icon: String {
         switch self {
@@ -33,6 +38,11 @@ enum TodoType: String, Codable, CaseIterable {
         case .passwordSecurity: "key.fill"
         case .vehicleCare: "car.fill"
         case .travelBooking: "ticket.fill"
+        case .exercise: "figure.run"
+        case .childVaccine: "syringe.fill"
+        case .childGrowth: "chart.xyaxis.line"
+        case .childMilestone: "sparkles"
+        case .childHealth: "cross.case.fill"
         }
     }
 
@@ -51,6 +61,11 @@ enum TodoType: String, Codable, CaseIterable {
         case .passwordSecurity: "密码安全"
         case .vehicleCare: "爱车守护"
         case .travelBooking: "出行购票"
+        case .exercise: "运动提醒"
+        case .childVaccine: "疫苗接种"
+        case .childGrowth: "成长测量"
+        case .childMilestone: "成长里程碑"
+        case .childHealth: "健康随访"
         case .bill: "信用卡账单"
         case .event: "日程事项"
         case .data: "流量预警"

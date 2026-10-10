@@ -50,7 +50,7 @@ public final class NavigationRouter: ObservableObject {
             case .todos: return "日常事务、快递取件与待办催办"
             case .departure: return "随身物品清点、防丢检查与口诀"
             case .expenses: return "日常收支账本与统计分析"
-            case .vault: return "纪念日、服药、家务习惯等生活全档案"
+            case .vault: return "纪念日、运动、药物保健品等生活全档案"
             case .passwords: return "高强度账号密码离线保险箱"
             case .documents: return "身份证、护照、驾驶证重要卡包"
             case .memos: return "离线随身录音、倍速回放与转写提取待办"

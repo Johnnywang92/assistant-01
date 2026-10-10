@@ -9,6 +9,7 @@ enum TodoFilterCategory: String, CaseIterable, Identifiable {
     case parcel = "快递"
     case life = "生活"
     case alert = "预警"
+    case parenting = "育儿"
 
     var id: String { rawValue }
 }
@@ -31,6 +32,7 @@ fileprivate struct TodoClassification {
     var anniversaries: [TodoItem] = []
     var passwordTodos: [TodoItem] = []
     var vehicleTodos: [TodoItem] = []
+    var parentingTodos: [TodoItem] = []
     var others: [TodoItem] = []
 
     var doneGenerals: [TodoItem] = []
@@ -50,7 +52,7 @@ fileprivate struct TodoClassification {
                 switch item.type {
                 case .general, .event, .travelBooking: doneGenerals.append(item)
                 case .parcel, .returnParcel: doneParcels.append(item)
-                case .medication, .housework, .charging: doneLife.append(item)
+                case .medication, .housework, .exercise, .charging: doneLife.append(item)
                 case .subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare: doneAlerts.append(item)
                 default: break
                 }
@@ -63,12 +65,13 @@ fileprivate struct TodoClassification {
                 case .returnParcel: returnParcels.append(item)
                 case .medication: medications.append(item)
                 case .charging: chargings.append(item)
-                case .housework: houseworks.append(item)
+                case .housework, .exercise: houseworks.append(item)
                 case .subscription, .bill: subscriptions.append(item)
                 case .itemExpiry: expiries.append(item)
                 case .anniversary: anniversaries.append(item)
                 case .passwordSecurity: passwordTodos.append(item)
                 case .vehicleCare: vehicleTodos.append(item)
+                case .childVaccine, .childGrowth, .childMilestone, .childHealth: parentingTodos.append(item)
                 default: others.append(item)
                 }
             }
@@ -146,6 +149,7 @@ struct TodoListView: View {
     private var passwordTodos: [TodoItem] { classified.passwordTodos }
     private var vehicleTodos: [TodoItem] { classified.vehicleTodos }
     private var otherActive: [TodoItem] { classified.others }
+    private var parentingTodos: [TodoItem] { classified.parentingTodos }
 
     var body: some View {
         NavigationStack {
@@ -1040,6 +1044,9 @@ struct TodoListView: View {
                 .onMove { from, to in reorder(items: vehicleTodos, fromOffsets: from, toOffset: to) }
             }
         }
+        if !parentingTodos.isEmpty {
+            renderParentingSection()
+        }
         if !otherActive.isEmpty {
             Section("其它事项（\(otherActive.count)）") {
                 ForEach(otherActive) { item in
@@ -1286,6 +1293,25 @@ struct TodoListView: View {
         }
     }
 
+    @ViewBuilder
+    private func renderParentingSection() -> some View {
+        Section("亲子育儿（(parentingTodos.count)）") {
+            if parentingTodos.isEmpty {
+                Text("暂无育儿待办，可添加疫苗、成长测量或健康随访提醒。")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(parentingTodos) { item in
+                    TodoRow(item: item,
+                            onMoveToTop: { moveItemToTop(item, within: parentingTodos) },
+                            onMoveUp: { moveItemUp(item, within: parentingTodos) },
+                            onMoveDown: { moveItemDown(item, within: parentingTodos) },
+                            onEnterReorder: { withAnimation { isReordering = true } })
+                }
+                .onMove { from, to in reorder(items: parentingTodos, fromOffsets: from, toOffset: to) }
+            }
+        }
+    }
+
     // MARK: - 页面与顶部 Tab 栏组件
 
     @ViewBuilder
@@ -1368,6 +1394,8 @@ struct TodoListView: View {
                 renderLifeSection()
             case .alert:
                 renderAlertSection()
+            case .parenting:
+                renderParentingSection()
             }
 
             // 已完成事项（显式可折叠卡片 + 归档入口）
@@ -1455,6 +1483,7 @@ struct TodoListView: View {
         case .parcel: return parcels.count + returnParcels.count
         case .life: return medications.count + houseworks.count + chargings.count
         case .alert: return subscriptions.count + expiries.count + anniversaries.count + passwordTodos.count + vehicleTodos.count
+        case .parenting: return parentingTodos.count
         }
     }
 
@@ -1466,6 +1495,7 @@ struct TodoListView: View {
         case .parcel: return .orange
         case .life: return .green
         case .alert: return .red
+        case .parenting: return .pink
         }
     }
 
@@ -1480,9 +1510,11 @@ struct TodoListView: View {
         case .parcel:
             return done.filter { [.parcel, .returnParcel].contains($0.type) }
         case .life:
-            return done.filter { [.medication, .housework, .charging].contains($0.type) }
+            return done.filter { [.medication, .housework, .exercise, .charging].contains($0.type) }
         case .alert:
             return done.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare].contains($0.type) }
+        case .parenting:
+            return done.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }
         }
     }
 }
@@ -1519,6 +1551,8 @@ struct TodoRow: View {
         case .anniversary: return .pink
         case .passwordSecurity: return .teal
         case .vehicleCare: return .indigo
+        case .exercise: return .green
+        case .childVaccine, .childGrowth, .childMilestone, .childHealth: return .pink
         default: return .secondary
         }
     }
@@ -2029,6 +2063,10 @@ struct AddTodoSheet: View {
             defaultType = .general
             defaultHasDueDate = true
             defaultDue = Calendar.current.date(byAdding: .day, value: 1, to: .now) ?? .now
+        case .parenting:
+            defaultType = .childVaccine
+            defaultHasDueDate = true
+            defaultDue = Calendar.current.date(byAdding: .day, value: 3, to: .now) ?? .now
         }
 
         self._type = State(initialValue: defaultType)
@@ -2045,7 +2083,7 @@ struct AddTodoSheet: View {
     private var availableTypesForCategory: [TodoType] {
         switch selectedCategory {
         case .all:
-            return [.general, .travelBooking, .parcel, .medication, .housework, .charging, .subscription, .vehicleCare, .bill, .itemExpiry, .anniversary, .hydration, .event]
+            return [.general, .travelBooking, .parcel, .medication, .housework, .exercise, .charging, .subscription, .vehicleCare, .bill, .itemExpiry, .anniversary, .hydration, .event, .childVaccine, .childGrowth, .childMilestone, .childHealth]
         case .general:
             return [.general, .travelBooking, .event]
         case .recurring:
@@ -2053,9 +2091,11 @@ struct AddTodoSheet: View {
         case .parcel:
             return [.parcel, .returnParcel]
         case .life:
-            return [.medication, .housework, .charging, .hydration]
+            return [.medication, .exercise, .charging, .hydration]
         case .alert:
             return [.bill, .travelBooking, .vehicleCare, .subscription, .itemExpiry, .anniversary, .passwordSecurity]
+        case .parenting:
+            return [.childVaccine, .childGrowth, .childMilestone, .childHealth]
         }
     }
 
@@ -2066,7 +2106,7 @@ struct AddTodoSheet: View {
         if !candidates.contains(type) {
             type = candidates.first ?? .general
         }
-        if newCat == .life || newCat == .alert || newCat == .recurring {
+        if newCat == .life || newCat == .alert || newCat == .recurring || newCat == .parenting {
             hasDueDate = true
             if newCat == .recurring && recurrenceRule == .none {
                 recurrenceRule = .weekly
@@ -2107,6 +2147,16 @@ struct AddTodoSheet: View {
             return "日程事项（如：周五下午团队例会、拜访重要客户）"
         case .travelBooking:
             return "出行与购票（如：国庆返乡高铁票、下周上海出差机票、假期旅行）"
+        case .exercise:
+            return "运动事项（如：晚间跑步、瑜伽训练、球类活动）"
+        case .childVaccine:
+            return "疫苗接种（如：宝宝 6 月龄疫苗预约）"
+        case .childGrowth:
+            return "成长测量（如：记录宝宝身高体重）"
+        case .childMilestone:
+            return "成长里程碑（如：记录宝宝第一次走路）"
+        case .childHealth:
+            return "健康随访（如：宝宝儿保复查）"
         case .general, .data:
             return "待办名称（如：去超市买牛奶、准备工作周报、下午开会）"
         }
@@ -2212,6 +2262,19 @@ struct AddTodoSheet: View {
                 QuickSuggestion(title: "出差往返机票预订", detail: "确认航班班次与行程报销凭证", defaultHourOffset: 120),
                 QuickSuggestion(title: "长假节假日火车票抢票", detail: "提前设置开售提醒闹钟与候补", defaultHourOffset: 360)
             ]
+        case .exercise:
+            return [
+                QuickSuggestion(title: "晚间跑步训练", detail: "热身后进行 30 分钟有氧运动", defaultHourOffset: 4),
+                QuickSuggestion(title: "瑜伽或拉伸", detail: "放松肩颈和腰背，保持规律活动", defaultHourOffset: 24)
+            ]
+        case .childVaccine:
+            return [QuickSuggestion(title: "预约宝宝疫苗接种", detail: "核对月龄和接种本，提前预约门诊", defaultHourOffset: 72)]
+        case .childGrowth:
+            return [QuickSuggestion(title: "记录宝宝身高体重", detail: "同步记录测量日期和月龄", defaultHourOffset: 168)]
+        case .childMilestone:
+            return [QuickSuggestion(title: "记录宝宝成长里程碑", detail: "记下发生日期、场景和当时的心情", defaultHourOffset: nil)]
+        case .childHealth:
+            return [QuickSuggestion(title: "宝宝儿保复查", detail: "带好既往测量记录和就诊资料", defaultHourOffset: 168)]
         default:
             return []
         }

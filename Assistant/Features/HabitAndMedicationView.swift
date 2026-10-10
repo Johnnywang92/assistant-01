@@ -1,7 +1,7 @@
 import SwiftData
 import SwiftUI
 
-/// 周期家务与健康服药管理视图
+/// 运动与药物保健品管理视图
 struct HabitAndMedicationView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \PeriodicHabit.nextDueAt) private var habits: [PeriodicHabit]
@@ -14,15 +14,15 @@ struct HabitAndMedicationView: View {
     var body: some View {
         List {
             Section {
-                Text("助手会自动根据周期推算下次到期时间，并在到期当天生成待办。若绑定了智能家居场景（如扫地机），还可联动自动执行。")
+                Text("助手会自动根据周期推算下次时间，并在到期当天生成待办。运动与药物、保健品提醒可以长期持续记录。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
-            // MARK: - 周期家务
-            Section("周期性家务 (扫地/洗床单/换滤网/浇花)") {
+            // MARK: - 运动
+            Section("运动") {
                 if habits.isEmpty {
-                    Text("暂无周期家务规则，点击右上角 + 添加").foregroundStyle(.secondary)
+                    Text("暂无运动计划，点击右上角 + 添加").foregroundStyle(.secondary)
                 } else {
                     ForEach(habits) { habit in
                         HabitRow(habit: habit)
@@ -31,10 +31,10 @@ struct HabitAndMedicationView: View {
                 }
             }
 
-            // MARK: - 吃药提醒
-            Section("日常用药与健康提醒") {
+            // MARK: - 药物与保健品
+            Section("药物与保健品") {
                 if medPlans.isEmpty {
-                    Text("暂无用药提醒计划").foregroundStyle(.secondary)
+                    Text("暂无药物或保健品提醒计划").foregroundStyle(.secondary)
                 } else {
                     ForEach(medPlans) { med in
                         MedicationRow(med: med)
@@ -47,12 +47,12 @@ struct HabitAndMedicationView: View {
         .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
         .themedAppBackground()
         .themedRow()
-        .navigationTitle("周期家务与健康")
+        .navigationTitle("运动与药物保健品")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("添加周期家务", systemImage: "sparkles") { showingAddHabitSheet = true }
-                    Button("添加服药提醒", systemImage: "pills") { showingAddMedSheet = true }
+                    Button("添加运动计划", systemImage: "figure.run") { showingAddHabitSheet = true }
+                    Button("添加药物或保健品", systemImage: "pills") { showingAddMedSheet = true }
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -80,7 +80,7 @@ struct HabitRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Label(habit.title, systemImage: "bubbles.and.sparkles.fill")
+                Label(habit.title, systemImage: "figure.run")
                     .font(.headline)
                 Spacer()
                 Text(habit.recurrence.rawValue)
@@ -165,8 +165,8 @@ struct AddHabitSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("家务内容") {
-                    TextField("家务名称（如：换洗床单、扫地机器人清扫）", text: $title)
+                Section("运动内容") {
+                    TextField("运动名称（如：跑步、瑜伽、力量训练）", text: $title)
                     TextField("补充备注（可选）", text: $detail)
                     Picker("重复周期", selection: $recurrence) {
                         ForEach(RecurrenceInterval.allCases, id: \.self) { r in
@@ -175,11 +175,11 @@ struct AddHabitSheet: View {
                     }
                 }
 
-                Section("智能家居联动 (HomeKit)") {
-                    TextField("触发场景名称（如：扫地机全屋打扫）", text: $homeKitScene)
+                Section("运动备注（可选）") {
+                    TextField("训练地点或器械备注", text: $homeKitScene)
                 }
             }
-            .navigationTitle("新建周期家务")
+            .navigationTitle("新建运动计划")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
