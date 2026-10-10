@@ -133,6 +133,20 @@ struct SettingsView: View {
                         }
                 }
 
+                Section("智能大脑与 AI 本地模型") {
+                    NavigationLink {
+                        LLMModelManagementView()
+                    } label: {
+                        HStack {
+                            Label("端侧大模型 (Qwen2.5-1.5B)", systemImage: "brain.head.profile")
+                            Spacer()
+                            Text(LLMModelManager.shared.isModelDownloaded ? "已就绪" : "可配置")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section("安全与访问保护") {
                     NavigationLink {
                         AppLockSettingsView()

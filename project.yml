@@ -40,6 +40,8 @@ targets:
       properties:
         CFBundleDisplayName: 助手
         CFBundleDevelopmentRegion: zh-Hans
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]

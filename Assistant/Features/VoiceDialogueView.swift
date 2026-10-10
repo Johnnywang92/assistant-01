@@ -8,23 +8,35 @@ struct VoiceDialogueView: View {
     @StateObject private var voice = VoiceDialogueService.shared
 
     @AppStorage("assistant_custom_name") private var assistantName: String = "助手"
+    @AppStorage("voice_use_llm_engine") private var useLLMEngine: Bool = false
     @State private var dialogueHistory: [DialogueMessage] = []
     @State private var hasPermission = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 运行模式指示条
+                // 运行模式与推理引擎切换指示条
                 HStack {
                     Label(AppSettings.currentMode.rawValue, systemImage: AppSettings.currentMode.icon)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
                     Spacer()
-                    Text("完全离线运行")
-                        .font(.caption2)
+
+                    Button {
+                        useLLMEngine.toggle()
+                        Haptic.light()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: useLLMEngine ? "brain.head.profile" : "bolt.fill")
+                            Text(useLLMEngine ? "Qwen2.5-1.5B" : "极速规则引擎")
+                        }
+                        .font(.caption2.bold())
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Capsule().fill(.secondary.opacity(0.15)))
+                        .background(Capsule().fill(useLLMEngine ? Color.purple.opacity(0.18) : Color.blue.opacity(0.15)))
+                        .foregroundStyle(useLLMEngine ? Color.purple : Color.blue)
+                    }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
@@ -152,8 +164,13 @@ struct VoiceDialogueView: View {
         dialogueHistory.append(userMsg)
 
         Task {
-            let processor = VoiceIntentProcessor(context: context)
-            let reply = await processor.process(query: query)
+            let reply: String
+            if useLLMEngine {
+                reply = await LLMInferenceService.shared.generate(query: query, context: context)
+            } else {
+                let processor = VoiceIntentProcessor(context: context)
+                reply = await processor.process(query: query)
+            }
             let assistantMsg = DialogueMessage(role: .assistant, text: reply)
             dialogueHistory.append(assistantMsg)
 
