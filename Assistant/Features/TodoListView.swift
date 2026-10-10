@@ -22,6 +22,7 @@ struct TodoListView: View {
     @State private var showAddTodo = false
     @State private var showVoice = false
     @State private var showDone = false
+    @State private var showCompletedHistory = false
     @State private var selectedFilter: TodoFilterCategory = .all
 
     private var activeTodos: [TodoItem] { todos.filter { $0.status == .active } }
@@ -63,7 +64,14 @@ struct TodoListView: View {
             .background(AppBackgroundManager.shared.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
             .navigationTitle(assistantName.isEmpty ? "小助" : assistantName)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        showCompletedHistory = true
+                        Haptic.light()
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+
                     Button { showAddTodo = true } label: {
                         Image(systemName: "plus")
                     }
@@ -71,6 +79,7 @@ struct TodoListView: View {
             }
             .sheet(isPresented: $showAddTodo) { AddTodoSheet() }
             .sheet(isPresented: $showVoice) { VoiceDialogueView() }
+            .sheet(isPresented: $showCompletedHistory) { CompletedTodoHistoryView() }
             .onChange(of: router.activeSheet) { _, newSheet in
                 guard let newSheet else { return }
                 switch newSheet {
@@ -333,13 +342,73 @@ struct TodoListView: View {
                 renderAlertSection()
             }
 
-            // 已完成事项（可折叠）
+            // 已完成事项（显式可折叠卡片 + 归档入口）
             let currentDone = filteredDoneItems(for: category)
             if !currentDone.isEmpty {
-                Section(isExpanded: $showDone) {
-                    ForEach(currentDone.prefix(50)) { TodoRow(item: $0) }
-                } header: {
-                    Text("已完成（\(currentDone.count)）")
+                Section {
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            showDone.toggle()
+                        }
+                        Haptic.light()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(.green)
+
+                            Text("已完成事项")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+
+                            Text("\(currentDone.count)")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.green.opacity(0.15)))
+                                .foregroundStyle(.green)
+
+                            Spacer()
+
+                            Text(showDone ? "收起" : "展开查看")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Image(systemName: showDone ? "chevron.up" : "chevron.down")
+                                .font(.caption2.bold())
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    if showDone {
+                        ForEach(currentDone.prefix(50)) { doneItem in
+                            CompletedHistoryRow(item: doneItem)
+                        }
+                        .onDelete { offsets in
+                            for idx in offsets {
+                                context.delete(currentDone[idx])
+                            }
+                            try? context.save()
+                        }
+
+                        Button {
+                            showCompletedHistory = true
+                            Haptic.light()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Text("进入完整已完成归档大厅")
+                                Image(systemName: "chevron.right")
+                                Spacer()
+                            }
+                            .font(.caption)
+                            .foregroundStyle(.tint)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
@@ -387,6 +456,13 @@ struct TodoRow: View {
     @Environment(\.modelContext) private var context
     let item: TodoItem
     @State private var isCopied: Bool = false
+    @State private var isAnimatingCompletion: Bool = false
+    @State private var ringScale: CGFloat = 0.5
+    @State private var ringOpacity: Double = 0.0
+
+    private var isEffectivelyDone: Bool {
+        item.status == .done || isAnimatingCompletion
+    }
 
     private var typeColor: Color {
         switch item.type {
@@ -406,16 +482,50 @@ struct TodoRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Button {
-                Haptic.medium()
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                    item.status = item.status == .done ? .active : .done
+                if item.status == .active {
+                    // 1. 播放成功震动与波纹动效
+                    Haptic.success()
+                    isAnimatingCompletion = true
+                    ringScale = 0.6
+                    ringOpacity = 1.0
+                    withAnimation(.easeOut(duration: 0.45)) {
+                        ringScale = 2.0
+                        ringOpacity = 0.0
+                    }
+                    // 2. 延迟 0.45 秒平滑移入已完成列表
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                            item.status = .done
+                            isAnimatingCompletion = false
+                            ringScale = 0.5
+                            ringOpacity = 0.0
+                        }
+                        try? context.save()
+                    }
+                } else {
+                    // 反选/恢复为未完成
+                    Haptic.medium()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        item.status = .active
+                        isAnimatingCompletion = false
+                    }
+                    try? context.save()
                 }
-                try? context.save()
             } label: {
-                Image(systemName: item.status == .done ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .foregroundStyle(item.status == .done ? Color.green : Color.secondary)
-                    .symbolEffect(.bounce, value: item.status == .done)
+                ZStack {
+                    // 绿色波纹动效光环
+                    Circle()
+                        .stroke(Color.green, lineWidth: 2)
+                        .scaleEffect(ringScale)
+                        .opacity(ringOpacity)
+                        .frame(width: 24, height: 24)
+
+                    Image(systemName: isEffectivelyDone ? "checkmark.circle.fill" : "circle")
+                        .font(.title2)
+                        .foregroundStyle(isEffectivelyDone ? Color.green : Color.secondary)
+                        .scaleEffect(isAnimatingCompletion ? 1.25 : 1.0)
+                        .animation(.spring(response: 0.28, dampingFraction: 0.5), value: isAnimatingCompletion)
+                }
             }
             .buttonStyle(.plain)
             .padding(.top, 2)
@@ -425,13 +535,13 @@ struct TodoRow: View {
                     HStack(spacing: 8) {
                         Text(code)
                             .font(.title3.monospaced().bold())
-                            .foregroundStyle(item.status == .done ? .secondary : .primary)
-                            .strikethrough(item.status == .done)
+                            .foregroundStyle(isEffectivelyDone ? .secondary : .primary)
+                            .strikethrough(isEffectivelyDone)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(
                                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(item.status == .done ? Color.secondary.opacity(0.12) : Color.orange.opacity(0.15))
+                                    .fill(isEffectivelyDone ? Color.secondary.opacity(0.12) : Color.orange.opacity(0.15))
                             )
 
                         Button {
@@ -474,17 +584,17 @@ struct TodoRow: View {
                     HStack(spacing: 8) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(typeColor.opacity(item.status == .done ? 0.08 : 0.16))
+                                .fill(typeColor.opacity(isEffectivelyDone ? 0.08 : 0.16))
                                 .frame(width: 24, height: 24)
                             Image(systemName: item.type.icon)
                                 .font(.caption.bold())
-                                .foregroundStyle(item.status == .done ? .secondary : typeColor)
+                                .foregroundStyle(isEffectivelyDone ? .secondary : typeColor)
                         }
 
                         Text(item.title)
-                            .font(.body.weight(item.status == .done ? .regular : .medium))
-                            .strikethrough(item.status == .done)
-                            .foregroundStyle(item.status == .done ? .secondary : .primary)
+                            .font(.body.weight(isEffectivelyDone ? .regular : .medium))
+                            .strikethrough(isEffectivelyDone)
+                            .foregroundStyle(isEffectivelyDone ? .secondary : .primary)
                     }
 
                     if let detail = item.detail, !detail.isEmpty {
@@ -502,7 +612,7 @@ struct TodoRow: View {
                             Text("截止: \(due.formatted(date: .numeric, time: .shortened))")
                         }
                         .font(.caption2)
-                        .foregroundStyle(due < .now && item.status != .done ? Color.red : Color.secondary)
+                        .foregroundStyle(due < .now && !isEffectivelyDone ? Color.red : Color.secondary)
                     }
 
                     Text(item.createdAt, format: .relative(presentation: .named))
@@ -512,7 +622,8 @@ struct TodoRow: View {
                 .padding(.leading, item.type == .parcel ? 0 : 32)
             }
         }
-        .opacity(item.status == .done ? 0.6 : 1.0)
+        .opacity(isEffectivelyDone ? 0.6 : 1.0)
+        .animation(.easeInOut(duration: 0.25), value: isEffectivelyDone)
         .animation(.easeInOut(duration: 0.2), value: item.status)
         .padding(.vertical, 3)
         .contextMenu {
