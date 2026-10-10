@@ -53,15 +53,15 @@ enum Persistence {
 }
 
 enum AppSettings {
-    /// 助手名称（用户可自定义，默认："助手"）
+    /// 助手名称（用户可自定义，默认："小助"）
     static var assistantName: String {
         get {
             let name = UserDefaults.standard.string(forKey: "assistant_custom_name")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return name.isEmpty ? "助手" : name
+            return name.isEmpty ? "小助" : name
         }
         set {
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            UserDefaults.standard.set(trimmed.isEmpty ? "助手" : trimmed, forKey: "assistant_custom_name")
+            UserDefaults.standard.set(trimmed.isEmpty ? "小助" : trimmed, forKey: "assistant_custom_name")
         }
     }
 

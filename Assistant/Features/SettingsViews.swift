@@ -60,7 +60,7 @@ struct ManualImportView: View {
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("assistant_custom_name") private var assistantName: String = "助手"
+    @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @State private var selectedMode = AppSettings.currentMode
     @State private var voiceReplyEnabled = AppSettings.voiceReplyEnabled
     @State private var threshold = AppSettings.lowDataThresholdMB
@@ -84,7 +84,7 @@ struct SettingsView: View {
                             .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(assistantName.isEmpty ? "助手" : assistantName)
+                            Text(assistantName.isEmpty ? "小助" : assistantName)
                                 .font(.headline)
                             Text("专属离线个人 AI 助理")
                                 .font(.caption)
@@ -101,9 +101,9 @@ struct SettingsView: View {
                             .foregroundStyle(.primary)
                             .submitLabel(.done)
 
-                        if !assistantName.isEmpty && assistantName != "助手" {
+                        if !assistantName.isEmpty && assistantName != "小助" {
                             Button {
-                                assistantName = "助手"
+                                assistantName = "小助"
                                 Haptic.light()
                             } label: {
                                 Image(systemName: "arrow.counterclockwise.circle.fill")

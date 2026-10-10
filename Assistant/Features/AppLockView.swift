@@ -3,7 +3,7 @@ import SwiftUI
 /// 全屏解锁界面（App 处于锁定状态时覆盖显示）
 struct AppLockScreen: View {
     @ObservedObject var lockManager = AppLockManager.shared
-    @AppStorage("assistant_custom_name") private var assistantName: String = "助手"
+    @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
 
     @State private var inputCode: String = ""
     @State private var shakeOffset: CGFloat = 0
@@ -29,7 +29,7 @@ struct AppLockScreen: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
 
-                    Text(assistantName.isEmpty ? "助手" : assistantName)
+                    Text(assistantName.isEmpty ? "小助" : assistantName)
                         .font(.title2.bold())
 
                     Text(errorMessage ?? (lockManager.useBiometrics ? "轻触人脸或输入数字密码解锁" : "请输入 4 位数字密码"))

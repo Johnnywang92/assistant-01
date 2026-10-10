@@ -7,7 +7,7 @@ import SwiftUI
 public final class LLMInferenceService: ObservableObject {
     public static let shared = LLMInferenceService()
 
-    @AppStorage("assistant_custom_name") private var assistantName: String = "助手"
+    @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @AppStorage("llm_developer_endpoint") public var developerEndpoint: String = "" // 如 http://192.168.1.5:11434 (局域网 Ollama)
     @Published public var isGenerating: Bool = false
     @Published public var currentOutput: String = ""
@@ -18,7 +18,7 @@ public final class LLMInferenceService: ObservableObject {
 
     /// 提取用户生活数据并构建 ChatML 提示词模板
     public func buildPrompt(query: String, context: ModelContext) -> String {
-        let name = assistantName.isEmpty ? "助手" : assistantName
+        let name = assistantName.isEmpty ? "小助" : assistantName
         let now = Date.now.formatted(date: .complete, time: .shortened)
 
         // 1. 快递信息

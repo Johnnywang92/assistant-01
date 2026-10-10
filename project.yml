@@ -38,7 +38,7 @@ targets:
     info:
       path: Assistant/Info.plist
       properties:
-        CFBundleDisplayName: 助手
+        CFBundleDisplayName: 小助
         CFBundleDevelopmentRegion: zh-Hans
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true

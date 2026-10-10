@@ -18,7 +18,7 @@ struct ImportSMSIntent: AppIntent {
         let context = Persistence.shared.mainContext
         let result = try ImportService(context: context).ingest(text, source: "sms", sender: sender)
         if result.isNotable {
-            NotificationService.post(title: "助手", body: result.summary)
+            NotificationService.post(title: AppSettings.assistantName, body: result.summary)
         }
         return .result(value: result.summary)
     }

@@ -17,7 +17,7 @@ struct TodoListView: View {
     @Query(sort: \TodoItem.createdAt, order: .reverse) private var todos: [TodoItem]
     @Query(sort: \DataUsageRecord.recordedAt, order: .reverse) private var usage: [DataUsageRecord]
 
-    @AppStorage("assistant_custom_name") private var assistantName: String = "助手"
+    @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @ObservedObject private var router = NavigationRouter.shared
     @State private var showAddTodo = false
     @State private var showVoice = false
@@ -98,7 +98,7 @@ struct TodoListView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle(assistantName.isEmpty ? "助手" : assistantName)
+            .navigationTitle(assistantName.isEmpty ? "小助" : assistantName)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { showVoice = true } label: {

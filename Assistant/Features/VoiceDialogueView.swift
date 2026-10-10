@@ -7,7 +7,7 @@ struct VoiceDialogueView: View {
     @Environment(\.modelContext) private var context
     @StateObject private var voice = VoiceDialogueService.shared
 
-    @AppStorage("assistant_custom_name") private var assistantName: String = "助手"
+    @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @AppStorage("voice_use_llm_engine") private var useLLMEngine: Bool = false
     @State private var dialogueHistory: [DialogueMessage] = []
     @State private var hasPermission = false
@@ -132,7 +132,7 @@ struct VoiceDialogueView: View {
             }
             .task {
                 if dialogueHistory.isEmpty {
-                    let name = assistantName.isEmpty ? "助手" : assistantName
+                    let name = assistantName.isEmpty ? "小助" : assistantName
                     dialogueHistory.append(DialogueMessage(role: .assistant, text: "你好！我是你的个人离线助理「\(name)」。你可以问我「有哪些快递？」、「流量还剩多少？」或说「记一下明天下午开会」。"))
                 }
                 hasPermission = await voice.requestPermissions()
