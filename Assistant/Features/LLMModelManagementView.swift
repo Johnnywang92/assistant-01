@@ -84,7 +84,7 @@ struct LLMModelManagementView: View {
             }
 
             // MARK: - 2. 下载与文件获取控制
-            Section("模型文件获取与管理") {
+            Section {
                 if modelManager.isDownloading {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
@@ -161,6 +161,8 @@ struct LLMModelManagementView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+            } header: {
+                Text("模型文件获取与管理")
             } footer: {
                 Text("💡 提示：您也可以在 Mac 上下载好 `qwen2.5-1.5b-instruct-q4_k_m.gguf` 后，通过 AirDrop 发送至 iPhone「文件」App，或通过访达连线拖入本 App 的「Models」目录。")
             }
