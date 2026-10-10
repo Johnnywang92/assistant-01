@@ -15,7 +15,7 @@ struct AssistantApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                TodoListView()
+                MainTabView()
                     .blur(radius: isAppLocked ? 20 : 0)
 
                 if isAppLocked {

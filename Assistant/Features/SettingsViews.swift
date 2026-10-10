@@ -65,6 +65,8 @@ struct SettingsView: View {
     @State private var voiceReplyEnabled = AppSettings.voiceReplyEnabled
     @State private var threshold = AppSettings.lowDataThresholdMB
 
+    var isSheet: Bool = false
+
     var body: some View {
         NavigationStack {
             Form {
@@ -103,6 +105,7 @@ struct SettingsView: View {
                 } footer: {
                     Text("自定义名称将即时同步至主界面标题、语音对话及系统回复中。")
                 }
+
                 Section {
                     Picker("助手模式", selection: $selectedMode) {
                         ForEach(AssistantMode.allCases, id: \.self) { mode in
@@ -130,62 +133,14 @@ struct SettingsView: View {
                         }
                 }
 
-                Section("签名有效期（免费账号）") {
-                    LabeledContent("剩余天数", value: "\(ExpiryReminder.daysLeft) 天")
-                    LabeledContent("到期时间") {
-                        Text(ExpiryReminder.expiryDate, format: .dateTime.month().day().hour().minute())
-                    }
-                }
-                Section("生活与情感守护") {
-                    NavigationLink {
-                        AnniversaryManagementView()
-                    } label: {
-                        Label("纪念日与生日倒数", systemImage: "gift.fill")
-                    }
-                    NavigationLink {
-                        PainPointManagementView()
-                    } label: {
-                        Label("防自动续费 & 证件临期预警", systemImage: "shield.lefthalf.filled")
-                    }
-                }
-                Section("财务与记账") {
-                    NavigationLink {
-                        ExpenseTrackerView()
-                    } label: {
-                        Label("智能记账与开销账单", systemImage: "yensign.circle.fill")
-                    }
-                }
-                Section("安全与数字资产") {
+                Section("安全与访问保护") {
                     NavigationLink {
                         AppLockSettingsView()
                     } label: {
                         Label("App 访问锁 (Face ID & 密码)", systemImage: "lock.shield.fill")
                     }
-                    NavigationLink {
-                        IDDocumentVaultView()
-                    } label: {
-                        Label("重要证件与照片保险箱", systemImage: "person.text.rectangle.fill")
-                    }
-                    NavigationLink {
-                        PasswordVaultView()
-                    } label: {
-                        Label("离线密码库与安全轮换", systemImage: "key.fill")
-                    }
                 }
-                Section("健康与周期家务") {
-                    NavigationLink {
-                        HabitAndMedicationView()
-                    } label: {
-                        Label("周期家务、吃药与智能家居", systemImage: "heart.text.square")
-                    }
-                }
-                Section("智能感知与地点学习") {
-                    NavigationLink {
-                        LearnedPlacesView()
-                    } label: {
-                        Label("常用地点自学习 (家/公司)", systemImage: "brain.head.profile")
-                    }
-                }
+
                 Section("快捷方式与系统联动") {
                     NavigationLink {
                         ShortcutsGuideView()
@@ -198,6 +153,7 @@ struct SettingsView: View {
                     }
                     .onChange(of: threshold) { _, v in AppSettings.lowDataThresholdMB = v }
                 }
+
                 Section("数据管理与安全迁移") {
                     NavigationLink {
                         DataMigrationView()
@@ -205,14 +161,20 @@ struct SettingsView: View {
                         Label("数据备份、跨机迁移与批量导入", systemImage: "arrow.triangle.2.circlepath.circle.fill")
                     }
                 }
-                Section("调试") {
-                    NavigationLink("最近收到的消息") { RawMessagesView() }
+
+                Section("系统信息与调试") {
+                    LabeledContent("证书签名有效期", value: "\(ExpiryReminder.daysLeft) 天")
+                    NavigationLink("最近收到的原生消息") { RawMessagesView() }
                 }
             }
-            .navigationTitle("设置")
+            .navigationTitle("助手设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
+                if isSheet {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { dismiss() }
+                    }
+                }
             }
         }
     }

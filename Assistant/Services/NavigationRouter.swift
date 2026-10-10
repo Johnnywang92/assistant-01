@@ -7,6 +7,15 @@ import UIKit
 public final class NavigationRouter: ObservableObject {
     public static let shared = NavigationRouter()
 
+    public enum AppTab: String, CaseIterable, Identifiable {
+        case todos
+        case expenses
+        case vault
+        case settings
+
+        public var id: String { rawValue }
+    }
+
     public enum ActiveSheet: String, Identifiable {
         case addTodo
         case voice
@@ -17,6 +26,7 @@ public final class NavigationRouter: ObservableObject {
         public var id: String { rawValue }
     }
 
+    @Published public var selectedTab: AppTab = .todos
     @Published public var activeSheet: ActiveSheet?
     @Published public var requestedFilter: String?
 
@@ -33,16 +43,17 @@ public final class NavigationRouter: ObservableObject {
         case "voice", "dialogue":
             activeSheet = .voice
         case "add", "add-todo", "todo":
+            selectedTab = .todos
             activeSheet = .addTodo
         case "expense", "billing", "bill":
-            activeSheet = .expense
+            selectedTab = .expenses
         case "vault", "id-vault", "ids":
-            activeSheet = .idVault
+            selectedTab = .vault
         case "parcels", "express", "package":
+            selectedTab = .todos
             requestedFilter = "快递"
-            activeSheet = nil
         case "settings":
-            activeSheet = .settings
+            selectedTab = .settings
         default:
             break
         }
@@ -54,14 +65,15 @@ public final class NavigationRouter: ObservableObject {
         case "assistant.action.voice":
             activeSheet = .voice
         case "assistant.action.add_todo":
+            selectedTab = .todos
             activeSheet = .addTodo
         case "assistant.action.expense":
-            activeSheet = .expense
+            selectedTab = .expenses
         case "assistant.action.parcels":
+            selectedTab = .todos
             requestedFilter = "快递"
-            activeSheet = nil
         case "assistant.action.id_vault":
-            activeSheet = .idVault
+            selectedTab = .vault
         default:
             break
         }

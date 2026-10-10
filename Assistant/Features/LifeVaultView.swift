@@ -1,0 +1,214 @@
+import SwiftData
+import SwiftUI
+
+/// 生活档案与数字资产大厅 (Tab 3: 生活档案)
+struct LifeVaultView: View {
+    @Environment(\.modelContext) private var context
+    @Query private var documents: [IDDocumentItem]
+    @Query private var passwords: [PasswordVaultItem]
+    @Query private var anniversaries: [AnniversaryItem]
+    @Query private var habits: [PeriodicHabit]
+    @Query private var medications: [MedicationPlan]
+    @Query private var subscriptions: [SubscriptionItem]
+    @Query private var expiries: [ItemExpiryItem]
+    @Query private var places: [LearnedPlace]
+
+    // 最近即将到来的纪念日
+    private var nearestAnniversary: (item: AnniversaryItem, days: Int)? {
+        let list = anniversaries.compactMap { item -> (AnniversaryItem, Int)? in
+            let days = item.daysUntilNext
+            return (item, days)
+        }.sorted { $0.1 < $1.1 }
+        return list.first
+    }
+
+    // 临期证件数量
+    private var expiringDocCount: Int {
+        documents.filter { $0.isExpiringSoon || $0.isExpired }.count
+    }
+
+    // 活跃服药计划
+    private var activeMedCount: Int {
+        medications.filter { $0.isEnabled }.count
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                // 顶部快速看板统计
+                Section {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        statPill(title: "证件", count: "\(documents.count)", icon: "person.text.rectangle.fill", color: .blue)
+                        statPill(title: "密码", count: "\(passwords.count)", icon: "key.fill", color: .teal)
+                        statPill(title: "纪念日", count: "\(anniversaries.count)", icon: "gift.fill", color: .pink)
+                        statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: .purple)
+                    }
+                    .padding(.vertical, 4)
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+
+                // MARK: - 1. 私密数字保险箱
+                Section("私密数字保险箱") {
+                    NavigationLink {
+                        IDDocumentVaultView()
+                    } label: {
+                        vaultRow(
+                            icon: "person.text.rectangle.fill",
+                            color: .blue,
+                            title: "重要证件与照片保险箱",
+                            subtitle: "身份证、护照、驾照、社保卡等正反面照片安全归档",
+                            status: expiringDocCount > 0 ? "⚠️ \(expiringDocCount) 张即将到期" : "已归档 \(documents.count) 张证件",
+                            isAlert: expiringDocCount > 0
+                        )
+                    }
+
+                    NavigationLink {
+                        PasswordVaultView()
+                    } label: {
+                        vaultRow(
+                            icon: "key.fill",
+                            color: .teal,
+                            title: "离线安全密码库",
+                            subtitle: "本地独立硬件加密，强随机生成与密码轮换预警",
+                            status: "已妥善加密 \(passwords.count) 组账号凭据",
+                            isAlert: false
+                        )
+                    }
+                }
+
+                // MARK: - 2. 情感记忆与守护
+                Section("情感与生活守护") {
+                    NavigationLink {
+                        AnniversaryManagementView()
+                    } label: {
+                        vaultRow(
+                            icon: "gift.fill",
+                            color: .pink,
+                            title: "纪念日与重要日子",
+                            subtitle: "恋爱纪念日、亲友生日、天数倒数与农历智能推算",
+                            status: nearestAnniversarySummary,
+                            isAlert: false
+                        )
+                    }
+
+                    NavigationLink {
+                        PainPointManagementView()
+                    } label: {
+                        vaultRow(
+                            icon: "shield.lefthalf.filled",
+                            color: .indigo,
+                            title: "防自动续费与物品临期",
+                            subtitle: "自动扣款提前提醒拦截、开封药品与食品保质期监控",
+                            status: "\(subscriptions.count) 项自动续费 | \(expiries.count) 项物品临期",
+                            isAlert: false
+                        )
+                    }
+                }
+
+                // MARK: - 3. 健康作息与环境感知
+                Section("健康作息与空间感知") {
+                    NavigationLink {
+                        HabitAndMedicationView()
+                    } label: {
+                        vaultRow(
+                            icon: "heart.text.square.fill",
+                            color: .purple,
+                            title: "周期家务与健康服药",
+                            subtitle: "滤芯更换、打扫卫生、定时服药打卡及智能家居联动",
+                            status: "\(habits.count) 项周期家务 | \(activeMedCount) 项服药提醒",
+                            isAlert: false
+                        )
+                    }
+
+                    NavigationLink {
+                        LearnedPlacesView()
+                    } label: {
+                        vaultRow(
+                            icon: "brain.head.profile",
+                            color: .orange,
+                            title: "常驻地点学习 (家/公司)",
+                            subtitle: "基于夜间停留与 WiFi 的空间感知地点模型",
+                            status: "已掌握 \(places.count) 处常驻空间",
+                            isAlert: false
+                        )
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("生活档案")
+        }
+    }
+
+    // MARK: - 辅助子视图
+
+    private var nearestAnniversarySummary: String {
+        if let next = nearestAnniversary {
+            if next.days == 0 {
+                return "今天正是 \(next.item.title)！"
+            } else {
+                return "最近：\(next.item.title) 还有 \(next.days) 天"
+            }
+        }
+        return "共记录 \(anniversaries.count) 个纪念日"
+    }
+
+    @ViewBuilder
+    private func statPill(title: String, count: String, icon: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(color)
+            Text(count)
+                .font(.headline)
+                .foregroundStyle(.primary)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+    }
+
+    @ViewBuilder
+    private func vaultRow(
+        icon: String,
+        color: Color,
+        title: String,
+        subtitle: String,
+        status: String,
+        isAlert: Bool
+    ) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(color.gradient)
+                    .frame(width: 40, height: 40)
+                Image(systemName: icon)
+                    .font(.body.bold())
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Text(status)
+                    .font(.caption2.bold())
+                    .foregroundStyle(isAlert ? .red : color)
+                    .padding(.top, 1)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}

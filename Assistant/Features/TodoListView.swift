@@ -20,10 +20,7 @@ struct TodoListView: View {
     @AppStorage("assistant_custom_name") private var assistantName: String = "助手"
     @ObservedObject private var router = NavigationRouter.shared
     @State private var showAddTodo = false
-    @State private var showSettings = false
     @State private var showVoice = false
-    @State private var showExpense = false
-    @State private var showVault = false
     @State private var showDone = false
     @State private var selectedFilter: TodoFilterCategory = .all
 
@@ -100,14 +97,7 @@ struct TodoListView: View {
             .listStyle(.insetGrouped)
             .navigationTitle(assistantName.isEmpty ? "助手" : assistantName)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
-                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showExpense = true } label: {
-                        Image(systemName: "yensign.circle")
-                            .font(.title3)
-                    }
                     Button { showVoice = true } label: {
                         Image(systemName: "waveform.circle.fill")
                             .font(.title3)
@@ -119,10 +109,7 @@ struct TodoListView: View {
                 }
             }
             .sheet(isPresented: $showAddTodo) { AddTodoSheet() }
-            .sheet(isPresented: $showSettings) { SettingsView() }
             .sheet(isPresented: $showVoice) { VoiceDialogueView() }
-            .sheet(isPresented: $showExpense) { ExpenseTrackerView() }
-            .sheet(isPresented: $showVault) { IDDocumentVaultView() }
             .onChange(of: router.activeSheet) { _, newSheet in
                 guard let newSheet else { return }
                 switch newSheet {
@@ -130,12 +117,8 @@ struct TodoListView: View {
                     showAddTodo = true
                 case .voice:
                     showVoice = true
-                case .expense:
-                    showExpense = true
-                case .idVault:
-                    showVault = true
-                case .settings:
-                    showSettings = true
+                default:
+                    break
                 }
                 router.activeSheet = nil
             }
