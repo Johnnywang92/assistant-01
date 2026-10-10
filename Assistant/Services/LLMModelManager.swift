@@ -40,9 +40,15 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         modelsDirectory.appendingPathComponent(Self.modelFileName)
     }
 
+    /// 断点续传数据持久化路径
+    public var resumeDataURL: URL {
+        modelsDirectory.appendingPathComponent("qwen_download.resume_data")
+    }
+
     // 状态发布
     @Published public var isModelDownloaded: Bool = false
     @Published public var isDownloading: Bool = false
+    @Published public var hasResumeData: Bool = false
     @Published public var downloadProgress: Double = 0.0
     @Published public var downloadedBytes: Int64 = 0
     @Published public var totalBytes: Int64 = expectedSizeApproxBytes
@@ -74,10 +80,34 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
                 isModelDownloaded = true
                 downloadedBytes = size
                 totalBytes = size
+                clearResumeData()
                 return
             }
         }
         isModelDownloaded = false
+        hasResumeData = FileManager.default.fileExists(atPath: resumeDataURL.path)
+    }
+
+    /// 保存断点续传数据
+    public func saveResumeData(_ data: Data) {
+        do {
+            try data.write(to: resumeDataURL, options: .atomic)
+            hasResumeData = true
+        } catch {
+            print("⚠️ 保存断点续传数据失败: \(error)")
+        }
+    }
+
+    /// 加载断点续传数据
+    public func loadResumeData() -> Data? {
+        guard FileManager.default.fileExists(atPath: resumeDataURL.path) else { return nil }
+        return try? Data(contentsOf: resumeDataURL)
+    }
+
+    /// 清空断点续传数据
+    public func clearResumeData() {
+        try? FileManager.default.removeItem(at: resumeDataURL)
+        hasResumeData = false
     }
 
     /// 获取模型文件大小的可读文本
@@ -91,14 +121,12 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         return "约 986 MB"
     }
 
-    /// 开启模型下载
-    public func startDownload(source: LLMDownloadSource? = nil) {
+    /// 开启或继续模型下载（支持断点续传）
+    public func startDownload(source: LLMDownloadSource? = nil, forceRestart: Bool = false) {
         guard !isDownloading else { return }
         let src = source ?? selectedSource
         self.selectedSource = src
         self.errorMessage = nil
-        self.downloadProgress = 0.0
-        self.downloadedBytes = 0
         self.downloadSpeedMBps = 0.0
         self.lastSpeedCheckTime = .now
         self.lastSpeedBytes = 0
@@ -106,25 +134,70 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         // 确保目标目录存在
         _ = modelsDirectory
 
-        downloadTask = urlSession.downloadTask(with: src.downloadURL)
-        downloadTask?.resume()
-        isDownloading = true
-        Haptic.light()
+        if forceRestart {
+            clearResumeData()
+            self.downloadProgress = 0.0
+            self.downloadedBytes = 0
+        }
+
+        // 优先检查是否有断点续传数据
+        if !forceRestart, let resumeData = loadResumeData() {
+            let task = urlSession.downloadTask(withResumeData: resumeData)
+            downloadTask = task
+            task.resume()
+            isDownloading = true
+            Haptic.medium()
+        } else {
+            clearResumeData()
+            self.downloadProgress = 0.0
+            self.downloadedBytes = 0
+            let task = urlSession.downloadTask(with: src.downloadURL)
+            downloadTask = task
+            task.resume()
+            isDownloading = true
+            Haptic.light()
+        }
     }
 
-    /// 取消下载
+    /// 暂停下载并保留断点进度数据
+    public func pauseDownload() {
+        guard isDownloading, let task = downloadTask else { return }
+        task.cancel { [weak self] resumeData in
+            Task { @MainActor in
+                if let data = resumeData {
+                    self?.saveResumeData(data)
+                }
+                self?.downloadTask = nil
+                self?.isDownloading = false
+                self?.downloadSpeedMBps = 0.0
+                Haptic.light()
+            }
+        }
+    }
+
+    /// 取消下载并保留当前已下载的断点进度（用于用户临时取消或退出）
     public func cancelDownload() {
+        pauseDownload()
+    }
+
+    /// 彻底放弃进度并重新归零
+    public func discardProgressAndReset() {
         downloadTask?.cancel()
         downloadTask = nil
+        clearResumeData()
         isDownloading = false
         downloadProgress = 0.0
+        downloadedBytes = 0
         downloadSpeedMBps = 0.0
+        errorMessage = nil
         Haptic.warning()
     }
 
     /// 删除已下载的本地模型释放空间
     public func deleteModel() {
-        cancelDownload()
+        downloadTask?.cancel()
+        downloadTask = nil
+        clearResumeData()
         try? FileManager.default.removeItem(at: localModelURL)
         checkModelStatus()
         Haptic.warning()
@@ -216,6 +289,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
                 self.isDownloading = false
                 Haptic.error()
             } else {
+                self.clearResumeData()
                 self.errorMessage = nil
                 self.isDownloading = false
                 self.checkModelStatus()
@@ -230,10 +304,21 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         didCompleteWithError error: Error?
     ) {
         Task { @MainActor in
-            if let error = error as NSError?, error.code != NSURLErrorCancelled {
-                self.errorMessage = "下载失败：\(error.localizedDescription)（建议切换至 ModelScope 镜像重试）"
-                self.isDownloading = false
-                Haptic.error()
+            if let error = error as NSError? {
+                // 自动保存网络中断或异常时的断点续传数据
+                if let resumeData = error.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
+                    self.saveResumeData(resumeData)
+                }
+
+                if error.code != NSURLErrorCancelled {
+                    if self.hasResumeData {
+                        self.errorMessage = "下载中断：\(error.localizedDescription)（已保留当前进度，点击可直接断点续传）"
+                    } else {
+                        self.errorMessage = "下载失败：\(error.localizedDescription)（建议切换至 ModelScope 镜像重试）"
+                    }
+                    self.isDownloading = false
+                    Haptic.error()
+                }
             }
         }
     }

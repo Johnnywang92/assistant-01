@@ -108,8 +108,15 @@ struct LLMModelManagementView: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            Button("取消下载", role: .destructive) {
-                                modelManager.cancelDownload()
+                            Button("暂停") {
+                                modelManager.pauseDownload()
+                            }
+                            .font(.caption)
+                            .buttonStyle(.bordered)
+                            .controlSize(.mini)
+
+                            Button("取消", role: .destructive) {
+                                modelManager.discardProgressAndReset()
                             }
                             .font(.caption.bold())
                         }
@@ -135,19 +142,48 @@ struct LLMModelManagementView: View {
                     }
                     .pickerStyle(.menu)
 
-                    Button {
-                        modelManager.startDownload()
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Image(systemName: "arrow.down.circle.fill")
-                            Text("一键极速下载 (~986 MB)")
-                                .bold()
-                            Spacer()
+                    if modelManager.hasResumeData {
+                        VStack(spacing: 8) {
+                            Button {
+                                modelManager.startDownload()
+                            } label: {
+                                HStack {
+                                    Spacer()
+                                    Image(systemName: "play.circle.fill")
+                                    Text("继续断点下载")
+                                        .bold()
+                                    Spacer()
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.purple)
+
+                            HStack {
+                                Text("已保存中断前进度，无需从头下载")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("放弃并重来", role: .destructive) {
+                                    modelManager.discardProgressAndReset()
+                                }
+                                .font(.caption2)
+                            }
                         }
+                    } else {
+                        Button {
+                            modelManager.startDownload()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "arrow.down.circle.fill")
+                                Text("一键极速下载 (~986 MB)")
+                                    .bold()
+                                Spacer()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.purple)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.purple)
 
                     Button {
                         showFileImporter = true
