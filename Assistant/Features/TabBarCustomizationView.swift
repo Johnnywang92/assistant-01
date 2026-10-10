@@ -57,75 +57,7 @@ struct TabBarCustomizationView: View {
             // MARK: - 2. 当前启用的 Tab 列表（支持排序与移除）
             Section {
                 ForEach(Array(tabManager.activeTabs.enumerated()), id: \.element) { index, tab in
-                    HStack(spacing: 12) {
-                        // 移除按钮
-                        Button {
-                            let result = tabManager.removeTab(tab)
-                            if !result.success {
-                                noticeMessage = result.message
-                            } else {
-                                noticeMessage = nil
-                            }
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .font(.title3)
-                                .foregroundStyle(tabManager.activeTabs.count <= TabBarManager.minTabsCount ? .secondary : .red)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(tabManager.activeTabs.count <= TabBarManager.minTabsCount)
-
-                        // 图标
-                        Image(systemName: tab.systemImage)
-                            .font(.body.bold())
-                            .foregroundStyle(.white)
-                            .frame(width: 32, height: 32)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(colorForTab(tab)))
-
-                        // 名称与副标题
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text(tab.title)
-                                    .font(.body.weight(.medium))
-                                Text("第 \(index + 1) 位")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text(tab.subtitle)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-
-                        Spacer()
-
-                        // 便捷微调上下移按钮
-                        HStack(spacing: 8) {
-                            Button {
-                                tabManager.moveUp(tab)
-                            } label: {
-                                Image(systemName: "arrow.up")
-                                    .font(.caption.bold())
-                                    .padding(6)
-                                    .background(Circle().fill(Color(.tertiarySystemFill)))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(index == 0)
-                            .opacity(index == 0 ? 0.3 : 1.0)
-
-                            Button {
-                                tabManager.moveDown(tab)
-                            } label: {
-                                Image(systemName: "arrow.down")
-                                    .font(.caption.bold())
-                                    .padding(6)
-                                    .background(Circle().fill(Color(.tertiarySystemFill)))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(index == tabManager.activeTabs.count - 1)
-                            .opacity(index == tabManager.activeTabs.count - 1 ? 0.3 : 1.0)
-                        }
-                    }
-                    .padding(.vertical, 3)
+                    activeTabRow(tab: tab, index: index)
                 }
                 .onMove { source, destination in
                     tabManager.moveTabs(from: source, to: destination)
@@ -150,48 +82,7 @@ struct TabBarCustomizationView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(tabManager.inactiveTabs) { tab in
-                        HStack(spacing: 12) {
-                            Button {
-                                let result = tabManager.addTab(tab)
-                                if !result.success {
-                                    noticeMessage = result.message
-                                } else {
-                                    noticeMessage = nil
-                                }
-                            } label: {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(tabManager.activeTabs.count >= TabBarManager.maxTabsCount ? .secondary : .green)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(tabManager.activeTabs.count >= TabBarManager.maxTabsCount)
-
-                            Image(systemName: tab.systemImage)
-                                .font(.body.bold())
-                                .foregroundStyle(.white)
-                                .frame(width: 32, height: 32)
-                                .background(RoundedRectangle(cornerRadius: 8).fill(colorForTab(tab).opacity(0.8)))
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(tab.title)
-                                    .font(.body.weight(.medium))
-                                Text(tab.subtitle)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-
-                            Spacer()
-
-                            Button("添加") {
-                                tabManager.addTab(tab)
-                            }
-                            .font(.caption.bold())
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(tabManager.activeTabs.count >= TabBarManager.maxTabsCount)
-                        }
-                        .padding(.vertical, 3)
+                        inactiveTabRow(tab: tab)
                     }
                 }
             } header: {
@@ -199,7 +90,7 @@ struct TabBarCustomizationView: View {
             } footer: {
                 if tabManager.activeTabs.count >= TabBarManager.maxTabsCount {
                     Text("⚠️ 已达到 5 个板块上限。如需添加新板块，请先点击上方红减号移除一个现有板块。")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.orange)
                 }
             }
 
@@ -231,6 +122,133 @@ struct TabBarCustomizationView: View {
         } message: {
             Text("将恢复为官方推荐排列：待办、出门防丢、记账、生活档案、设置。")
         }
+    }
+
+    // MARK: - 单行组件拆分
+
+    @ViewBuilder
+    private func activeTabRow(tab: NavigationRouter.AppTab, index: Int) -> some View {
+        let isMinCount = tabManager.activeTabs.count <= TabBarManager.minTabsCount
+        let removeButtonColor: Color = isMinCount ? Color.secondary : Color.red
+
+        HStack(spacing: 12) {
+            // 移除按钮
+            Button {
+                let result = tabManager.removeTab(tab)
+                if !result.success {
+                    noticeMessage = result.message
+                } else {
+                    noticeMessage = nil
+                }
+            } label: {
+                Image(systemName: "minus.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(removeButtonColor)
+            }
+            .buttonStyle(.plain)
+            .disabled(isMinCount)
+
+            // 图标
+            Image(systemName: tab.systemImage)
+                .font(.body.bold())
+                .foregroundStyle(Color.white)
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 8).fill(colorForTab(tab)))
+
+            // 名称与副标题
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(tab.title)
+                        .font(.body.weight(.medium))
+                    Text("第 \(index + 1) 位")
+                        .font(.caption2)
+                        .foregroundStyle(Color.secondary)
+                }
+                Text(tab.subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            // 便捷微调上下移按钮
+            HStack(spacing: 8) {
+                Button {
+                    tabManager.moveUp(tab)
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.caption.bold())
+                        .padding(6)
+                        .background(Circle().fill(Color(.tertiarySystemFill)))
+                }
+                .buttonStyle(.plain)
+                .disabled(index == 0)
+                .opacity(index == 0 ? 0.3 : 1.0)
+
+                Button {
+                    tabManager.moveDown(tab)
+                } label: {
+                    Image(systemName: "arrow.down")
+                        .font(.caption.bold())
+                        .padding(6)
+                        .background(Circle().fill(Color(.tertiarySystemFill)))
+                }
+                .buttonStyle(.plain)
+                .disabled(index == tabManager.activeTabs.count - 1)
+                .opacity(index == tabManager.activeTabs.count - 1 ? 0.3 : 1.0)
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    @ViewBuilder
+    private func inactiveTabRow(tab: NavigationRouter.AppTab) -> some View {
+        let isMaxCount = tabManager.activeTabs.count >= TabBarManager.maxTabsCount
+        let addButtonColor: Color = isMaxCount ? Color.secondary : Color.green
+
+        HStack(spacing: 12) {
+            Button {
+                let result = tabManager.addTab(tab)
+                if !result.success {
+                    noticeMessage = result.message
+                } else {
+                    noticeMessage = nil
+                }
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(addButtonColor)
+            }
+            .buttonStyle(.plain)
+            .disabled(isMaxCount)
+
+            Image(systemName: tab.systemImage)
+                .font(.body.bold())
+                .foregroundStyle(Color.white)
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 8).fill(colorForTab(tab).opacity(0.8)))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tab.title)
+                    .font(.body.weight(.medium))
+                Text(tab.subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Button("添加") {
+                tabManager.addTab(tab)
+            }
+            .font(.caption.bold())
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isMaxCount)
+        }
+        .padding(.vertical, 3)
     }
 
     // MARK: - 颜色映射
