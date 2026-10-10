@@ -43,44 +43,120 @@ public final class AppLockManager: ObservableObject {
     private var backgroundTimestamp: Date?
 
     public init() {
-        let hasCode = UserDefaults.standard.string(forKey: keyPasscodeHash)?.isEmpty == false
-        let enabled = UserDefaults.standard.bool(forKey: keyEnabled) && hasCode
         let bio = UserDefaults.standard.object(forKey: keyBiometrics) as? Bool ?? true
         let timeoutRaw = UserDefaults.standard.integer(forKey: keyTimeout)
 
-        self.isAppLockEnabled = enabled
         self.useBiometrics = bio
         self.timeoutOption = LockTimeoutOption(rawValue: timeoutRaw) ?? .immediately
-        // 只有确实设置了密码且启用了应用锁，才在启动时锁定
-        self.isLocked = enabled
+
+        let enabled = UserDefaults.standard.bool(forKey: keyEnabled)
+        // 从 Keychain 安全读取密码标记
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: keyPasscodeHash,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let hasCode: Bool
+        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
+            hasCode = !data.isEmpty
+        } else {
+            hasCode = UserDefaults.standard.string(forKey: keyPasscodeHash)?.isEmpty == false
+        }
+
+        let valid = enabled && hasCode
+        self.isAppLockEnabled = valid
+        self.isLocked = valid
     }
 
     public var hasPasscode: Bool {
-        guard let hash = UserDefaults.standard.string(forKey: keyPasscodeHash) else { return false }
-        return !hash.isEmpty
+        if let kcHash = readFromKeychain(key: keyPasscodeHash), !kcHash.isEmpty {
+            return true
+        }
+        // 向下兼容：如果旧版本存储在 UserDefaults，自动无缝迁移至系统 Keychain
+        if let legacyHash = UserDefaults.standard.string(forKey: keyPasscodeHash), !legacyHash.isEmpty {
+            saveToKeychain(key: keyPasscodeHash, value: legacyHash)
+            UserDefaults.standard.removeObject(forKey: keyPasscodeHash)
+            return true
+        }
+        return false
     }
 
-    /// 设置 4 位数字密码
+    /// 设置 4 位数字密码（存入 iOS 硬件受保护的 Keychain）
     public func setPasscode(_ code: String) {
         let hashed = hash(code)
-        UserDefaults.standard.set(hashed, forKey: keyPasscodeHash)
+        saveToKeychain(key: keyPasscodeHash, value: hashed)
+        UserDefaults.standard.removeObject(forKey: keyPasscodeHash)
         isAppLockEnabled = true
         isLocked = false
     }
 
     /// 验证数字密码
     public func verifyPasscode(_ code: String) -> Bool {
-        guard let savedHash = UserDefaults.standard.string(forKey: keyPasscodeHash) else {
-            return false
+        let targetHash = hash(code)
+        let legacyRawHash = hashLegacy(code)
+
+        if let kcHash = readFromKeychain(key: keyPasscodeHash) {
+            if kcHash == targetHash || kcHash == legacyRawHash {
+                // 如果是旧无盐哈希，升级为带盐哈希
+                if kcHash == legacyRawHash {
+                    saveToKeychain(key: keyPasscodeHash, value: targetHash)
+                }
+                return true
+            }
         }
-        return hash(code) == savedHash
+        if let legacyHash = UserDefaults.standard.string(forKey: keyPasscodeHash) {
+            if legacyHash == targetHash || legacyHash == legacyRawHash {
+                saveToKeychain(key: keyPasscodeHash, value: targetHash)
+                UserDefaults.standard.removeObject(forKey: keyPasscodeHash)
+                return true
+            }
+        }
+        return false
     }
 
     /// 关闭密码并禁用 App 锁
     public func removePasscode() {
+        deleteFromKeychain(key: keyPasscodeHash)
         UserDefaults.standard.removeObject(forKey: keyPasscodeHash)
         isAppLockEnabled = false
         isLocked = false
+    }
+
+    // MARK: - Keychain 底层安全存取
+
+    private func saveToKeychain(key: String, value: String) {
+        guard let data = value.data(using: .utf8) else { return }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        SecItemDelete(query as CFDictionary)
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    private func readFromKeychain(key: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func deleteFromKeychain(key: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: key
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     /// App 进入后台
@@ -147,6 +223,13 @@ public final class AppLockManager: ObservableObject {
     }
 
     private func hash(_ text: String) -> String {
+        let salted = "assistant_secure_salt_\(text)"
+        let inputData = Data(salted.utf8)
+        let hashed = SHA256.hash(data: inputData)
+        return hashed.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    private func hashLegacy(_ text: String) -> String {
         let inputData = Data(text.utf8)
         let hashed = SHA256.hash(data: inputData)
         return hashed.compactMap { String(format: "%02x", $0) }.joined()

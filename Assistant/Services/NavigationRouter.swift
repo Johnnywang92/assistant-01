@@ -112,12 +112,23 @@ public final class NavigationRouter: ObservableObject {
 
 // MARK: - UIKit 桥接 AppDelegate 处理冷启动与热唤起快捷方式
 
-public final class AppDelegate: NSObject, UIApplicationDelegate {
+import UserNotifications
+
+public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    public func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
     public func application(
         _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
+        UNUserNotificationCenter.current().delegate = self
         if let shortcutItem = options.shortcutItem {
             Task { @MainActor in
                 NavigationRouter.shared.handleShortcutItem(shortcutItem)
@@ -126,6 +137,15 @@ public final class AppDelegate: NSObject, UIApplicationDelegate {
         let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
         config.delegateClass = SceneDelegate.self
         return config
+    }
+
+    // 支持 App 处于前台运行时依然弹出本地通知横幅与声音
+    public func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .badge])
     }
 }
 

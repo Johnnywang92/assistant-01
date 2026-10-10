@@ -39,10 +39,10 @@ struct DailyPainPointAuditor {
                 let detail = "预计将在 \(daysUntilBilling) 天后自动扣款（\(sub.priceString)），若不再需要请及时前往取消。"
                 upsertTodo(type: .subscription, title: title, detail: detail, dueAt: sub.nextBillingDate)
 
-                NotificationService.post(
+                postThrottledNotification(
+                    id: "sub-\(sub.id.uuidString)",
                     title: "自动续费提醒",
-                    body: "「\(sub.name)」即将于 \(daysUntilBilling) 天后扣费（\(sub.priceString)）",
-                    id: "sub-\(sub.id.uuidString)"
+                    body: "「\(sub.name)」即将于 \(daysUntilBilling) 天后扣费（\(sub.priceString)）"
                 )
             }
         }
@@ -66,10 +66,10 @@ struct DailyPainPointAuditor {
                 let detail = "[\(item.category)] \(statusDesc)，请尽快处理或换新。"
                 upsertTodo(type: .itemExpiry, title: title, detail: detail, dueAt: item.expireDate)
 
-                NotificationService.post(
+                postThrottledNotification(
+                    id: "exp-\(item.id.uuidString)",
                     title: "临期提醒",
-                    body: "「\(item.title)」\(statusDesc)",
-                    id: "exp-\(item.id.uuidString)"
+                    body: "「\(item.title)」\(statusDesc)"
                 )
             }
         }
@@ -91,10 +91,10 @@ struct DailyPainPointAuditor {
 
                 upsertTodo(type: .anniversary, title: title, detail: detail, dueAt: item.nextAnniversaryDate)
 
-                NotificationService.post(
+                postThrottledNotification(
+                    id: "anni-\(item.id.uuidString)-\(daysLeft)",
                     title: "纪念日提醒",
-                    body: "「\(item.title)」\(daysDesc)（第 \(count) 周年）",
-                    id: "anni-\(item.id.uuidString)-\(daysLeft)"
+                    body: "「\(item.title)」\(daysDesc)（第 \(count) 周年）"
                 )
             }
         }
@@ -111,10 +111,10 @@ struct DailyPainPointAuditor {
                 let detail = "[\(item.category)] 账号 \(item.account) 的密码已连续使用 \(item.usedDays) 天，建议及时轮换更新以保障安全。"
                 upsertTodo(type: .passwordSecurity, title: title, detail: detail, dueAt: item.nextRotationDueDate ?? .now)
 
-                NotificationService.post(
+                postThrottledNotification(
+                    id: "pwd-rotate-\(item.id.uuidString)",
                     title: "密码更新预警",
-                    body: "「\(item.title)」密码已使用超 \(item.rotateCycleDays) 天，建议更换。",
-                    id: "pwd-rotate-\(item.id.uuidString)"
+                    body: "「\(item.title)」密码已使用超 \(item.rotateCycleDays) 天，建议更换。"
                 )
             }
         }
@@ -133,13 +133,24 @@ struct DailyPainPointAuditor {
                 let detail = "[\(item.type.rawValue)] \(statusDesc)，若需使用请提前前往换领或续签。"
                 upsertTodo(type: .itemExpiry, title: title, detail: detail, dueAt: expiry)
 
-                NotificationService.post(
+                postThrottledNotification(
+                    id: "id-doc-\(item.id.uuidString)",
                     title: "证件临期预警",
-                    body: "「\(item.title)」\(statusDesc)，请记得及时换证。",
-                    id: "id-doc-\(item.id.uuidString)"
+                    body: "「\(item.title)」\(statusDesc)，请记得及时换证。"
                 )
             }
         }
+    }
+
+    private func postThrottledNotification(id: String, title: String, body: String) {
+        let dateKey = "audit_notif_date_\(id)"
+        let cal = Calendar.current
+        if let lastDate = UserDefaults.standard.object(forKey: dateKey) as? Date,
+           cal.isDateInToday(lastDate) {
+            return
+        }
+        UserDefaults.standard.set(Date.now, forKey: dateKey)
+        NotificationService.post(title: title, body: body, id: id)
     }
 
     private func upsertTodo(type: TodoType, title: String, detail: String, dueAt: Date) {

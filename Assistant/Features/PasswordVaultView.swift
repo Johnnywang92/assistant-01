@@ -5,14 +5,52 @@ import SwiftUI
 struct PasswordVaultView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \PasswordVaultItem.lastRotatedAt) private var passwords: [PasswordVaultItem]
+    @StateObject private var auth = BiometricAuthManager()
 
     @State private var showingAddSheet = false
     @State private var showingGeneratorSheet = false
 
     var body: some View {
+        Group {
+            if auth.isUnlocked {
+                unlockedContent
+            } else {
+                lockedContent
+            }
+        }
+        .navigationTitle("密码与安全保险箱")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if auth.isUnlocked {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingAddSheet = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        auth.lock()
+                    } label: {
+                        Image(systemName: "lock.fill")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingAddSheet) { AddPasswordSheet() }
+        .sheet(isPresented: $showingGeneratorSheet) { StandaloneGeneratorSheet() }
+        .onAppear {
+            if !auth.isUnlocked {
+                auth.authenticate(reason: "使用 Face ID / Touch ID 解锁密码保险箱")
+            }
+        }
+    }
+
+    private var unlockedContent: some View {
         List {
             Section {
-                Text("所有密码完全保存在本设备离线数据库中，绝不上传云端。支持生成高强度随机密码，并在密码长期未更换时自动提醒轮换更新。")
+                Text("所有密码完全保存在本设备私有沙盒中，绝不上传云端。支持生成高强度随机密码，并在密码长期未更换时自动提醒轮换更新。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -42,18 +80,36 @@ struct PasswordVaultView: View {
                 }
             }
         }
-        .navigationTitle("密码与安全保险箱")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingAddSheet = true
-                } label: {
-                    Image(systemName: "plus")
-                }
+    }
+
+    private var lockedContent: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.blue)
+
+            Text("密码保险箱已锁定")
+                .font(.title2.bold())
+
+            Text("为了保护你的敏感账号与重要密码安全，\n请验证 Face ID 或锁屏密码以解锁。")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            Button {
+                auth.authenticate(reason: "使用 Face ID / Touch ID 解锁密码保险箱")
+            } label: {
+                Label("点击进行身份验证", systemImage: "faceid")
+                    .font(.headline)
+                    .frame(maxWidth: 240)
+                    .padding(.vertical, 12)
             }
+            .buttonStyle(.borderedProminent)
+            .padding(.top, 8)
         }
-        .sheet(isPresented: $showingAddSheet) { AddPasswordSheet() }
-        .sheet(isPresented: $showingGeneratorSheet) { StandaloneGeneratorSheet() }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
     }
 
     private func deleteItems(at offsets: IndexSet) {

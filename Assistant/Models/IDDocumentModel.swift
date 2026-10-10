@@ -138,21 +138,21 @@ public final class IDDocumentItem {
 public enum IDPhotoStorage {
     private static var storageDirectory: URL {
         let fileManager = FileManager.default
-        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = appSupport.appendingPathComponent("IDVaultPhotos", isDirectory: true)
+        let baseDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? URL.documentsDirectory
+        let dir = baseDir.appendingPathComponent("IDVaultPhotos", isDirectory: true)
         if !fileManager.fileExists(atPath: dir.path) {
             try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         return dir
     }
 
-    /// 保存照片数据到私有沙盒，返回生成的文件名
+    /// 保存照片数据到私有沙盒，返回生成的文件名（应用系统级硬件加密保护）
     public static func saveImage(_ image: UIImage) -> String? {
         guard let data = image.jpegData(compressionQuality: 0.88) else { return nil }
         let fileName = "\(UUID().uuidString).jpg"
         let fileURL = storageDirectory.appendingPathComponent(fileName)
         do {
-            try data.write(to: fileURL, options: .atomic)
+            try data.write(to: fileURL, options: [.atomic, .completeFileProtection])
             return fileName
         } catch {
             return nil

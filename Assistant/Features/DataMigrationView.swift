@@ -124,6 +124,8 @@ struct DataMigrationView: View {
                             .font(.caption)
                         Text("• 服药: \(summary.medicationCount) | 地点: \(summary.placeCount) | 流量: \(summary.usageRecordCount)")
                             .font(.caption)
+                        Text("• 记账: \(summary.expenseCount) | 证件: \(summary.documentCount)")
+                            .font(.caption)
 
                         Divider()
 

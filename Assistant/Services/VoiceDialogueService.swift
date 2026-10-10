@@ -99,7 +99,18 @@ final class VoiceDialogueService: NSObject, ObservableObject {
 
     /// 停止录音
     public func stopListening() {
-        audioEngine.stop()
+        guard isListening || audioEngine.isRunning else {
+            recognitionRequest?.endAudio()
+            recognitionRequest = nil
+            recognitionTask?.cancel()
+            recognitionTask = nil
+            isListening = false
+            return
+        }
+
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
         audioEngine.inputNode.removeTap(onBus: 0)
         recognitionRequest?.endAudio()
         recognitionRequest = nil

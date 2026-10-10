@@ -21,6 +21,8 @@ public struct BackupPackage: Codable {
     public var learnedPlaces: [LearnedPlaceDTO]
     public var passwords: [PasswordVaultDTO]
     public var dataUsageRecords: [DataUsageRecordDTO]
+    public var expenses: [ExpenseDTO]?
+    public var documents: [IDDocumentDTO]?
 }
 
 // MARK: - DTO 模型定义
@@ -127,6 +129,32 @@ public struct DataUsageRecordDTO: Codable {
     public var recordedAt: Date
 }
 
+public struct ExpenseDTO: Codable {
+    public var id: UUID
+    public var amount: Double
+    public var isIncome: Bool
+    public var categoryRaw: String
+    public var title: String
+    public var rawText: String
+    public var date: Date
+    public var createdAt: Date
+}
+
+public struct IDDocumentDTO: Codable {
+    public var id: UUID
+    public var title: String
+    public var typeRaw: String
+    public var holderName: String?
+    public var documentNumber: String?
+    public var expiryDate: Date?
+    public var isPermanent: Bool
+    public var notes: String?
+    public var frontImageData: Data?
+    public var backImageData: Data?
+    public var createdAt: Date
+    public var updatedAt: Date
+}
+
 // MARK: - 备份解析报告
 
 public struct BackupInspectionSummary: Identifiable {
@@ -143,10 +171,13 @@ public struct BackupInspectionSummary: Identifiable {
     public var placeCount: Int
     public var passwordCount: Int
     public var usageRecordCount: Int
+    public var expenseCount: Int
+    public var documentCount: Int
 
     public var totalItems: Int {
         todoCount + subscriptionCount + itemExpiryCount + anniversaryCount +
-        habitCount + medicationCount + placeCount + passwordCount + usageRecordCount
+        habitCount + medicationCount + placeCount + passwordCount + usageRecordCount +
+        expenseCount + documentCount
     }
 }
 
@@ -187,6 +218,8 @@ final class DataMigrationService {
         let places = (try? context.fetchCount(FetchDescriptor<LearnedPlace>())) ?? 0
         let passwords = (try? context.fetchCount(FetchDescriptor<PasswordVaultItem>())) ?? 0
         let dataUsage = (try? context.fetchCount(FetchDescriptor<DataUsageRecord>())) ?? 0
+        let expenses = (try? context.fetchCount(FetchDescriptor<ExpenseRecord>())) ?? 0
+        let documents = (try? context.fetchCount(FetchDescriptor<IDDocumentItem>())) ?? 0
 
         return [
             "待办事项": todos,
@@ -197,7 +230,9 @@ final class DataMigrationService {
             "健康服药计划": meds,
             "空间感知地点": places,
             "离线安全密码": passwords,
-            "流量历史记录": dataUsage
+            "流量历史记录": dataUsage,
+            "日常记账明细": expenses,
+            "重要证件卡包": documents
         ]
     }
 
@@ -212,6 +247,8 @@ final class DataMigrationService {
         let places = (try? context.fetch(FetchDescriptor<LearnedPlace>())) ?? []
         let passwords = (try? context.fetch(FetchDescriptor<PasswordVaultItem>())) ?? []
         let usages = (try? context.fetch(FetchDescriptor<DataUsageRecord>())) ?? []
+        let expenses = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
+        let documents = (try? context.fetch(FetchDescriptor<IDDocumentItem>())) ?? []
 
         let todoDTOs = todos.map {
             TodoDTO(
@@ -293,6 +330,33 @@ final class DataMigrationService {
             )
         }
 
+        let expenseDTOs = expenses.map {
+            ExpenseDTO(
+                id: $0.id, amount: $0.amount, isIncome: $0.isIncome,
+                categoryRaw: $0.categoryRaw, title: $0.title,
+                rawText: $0.rawText, date: $0.date, createdAt: $0.createdAt
+            )
+        }
+
+        let documentDTOs = documents.map { doc in
+            let frontImg = IDPhotoStorage.loadImage(fileName: doc.frontImageFileName)
+            let backImg = IDPhotoStorage.loadImage(fileName: doc.backImageFileName)
+            return IDDocumentDTO(
+                id: doc.id,
+                title: doc.title,
+                typeRaw: doc.typeRaw,
+                holderName: doc.holderName,
+                documentNumber: doc.documentNumber,
+                expiryDate: doc.expiryDate,
+                isPermanent: doc.isPermanent,
+                notes: doc.notes,
+                frontImageData: frontImg?.jpegData(compressionQuality: 0.88),
+                backImageData: backImg?.jpegData(compressionQuality: 0.88),
+                createdAt: doc.createdAt,
+                updatedAt: doc.updatedAt
+            )
+        }
+
         let metadata = BackupPackage.Metadata(
             schemaVersion: 1,
             appVersion: "0.1.0",
@@ -310,7 +374,9 @@ final class DataMigrationService {
             medications: medDTOs,
             learnedPlaces: placeDTOs,
             passwords: pwdDTOs,
-            dataUsageRecords: usageDTOs
+            dataUsageRecords: usageDTOs,
+            expenses: expenseDTOs,
+            documents: documentDTOs
         )
 
         let encoder = JSONEncoder()
@@ -344,7 +410,9 @@ final class DataMigrationService {
             medicationCount: package.medications.count,
             placeCount: package.learnedPlaces.count,
             passwordCount: package.passwords.count,
-            usageRecordCount: package.dataUsageRecords.count
+            usageRecordCount: package.dataUsageRecords.count,
+            expenseCount: package.expenses?.count ?? 0,
+            documentCount: package.documents?.count ?? 0
         )
 
         return (package, summary)
@@ -363,6 +431,8 @@ final class DataMigrationService {
             try? context.delete(model: LearnedPlace.self)
             try? context.delete(model: PasswordVaultItem.self)
             try? context.delete(model: DataUsageRecord.self)
+            try? context.delete(model: ExpenseRecord.self)
+            try? context.delete(model: IDDocumentItem.self)
         }
 
         var details: [String] = []
@@ -544,6 +614,60 @@ final class DataMigrationService {
         }
         details.append("流量记录: \(restoredUsage) 项")
         totalRestored += restoredUsage
+
+        // 10. 收支记账
+        var restoredExpenses = 0
+        let existingExpenseIDs = Set(((try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []).map { $0.id })
+        for ex in package.expenses ?? [] {
+            if strategy == .merge && existingExpenseIDs.contains(ex.id) { continue }
+            let item = ExpenseRecord(
+                amount: ex.amount,
+                isIncome: ex.isIncome,
+                category: ExpenseCategory(rawValue: ex.categoryRaw) ?? (ex.isIncome ? .otherIncome : .other),
+                title: ex.title,
+                rawText: ex.rawText,
+                date: ex.date
+            )
+            item.id = ex.id
+            item.createdAt = ex.createdAt
+            context.insert(item)
+            restoredExpenses += 1
+        }
+        details.append("日常记账: \(restoredExpenses) 项")
+        totalRestored += restoredExpenses
+
+        // 11. 重要证件
+        var restoredDocs = 0
+        let existingDocIDs = Set(((try? context.fetch(FetchDescriptor<IDDocumentItem>())) ?? []).map { $0.id })
+        for d in package.documents ?? [] {
+            if strategy == .merge && existingDocIDs.contains(d.id) { continue }
+            var frontFileName: String? = nil
+            if let frontData = d.frontImageData, let image = UIImage(data: frontData) {
+                frontFileName = IDPhotoStorage.saveImage(image)
+            }
+            var backFileName: String? = nil
+            if let backData = d.backImageData, let image = UIImage(data: backData) {
+                backFileName = IDPhotoStorage.saveImage(image)
+            }
+            let item = IDDocumentItem(
+                title: d.title,
+                type: IDDocumentType(rawValue: d.typeRaw) ?? .other,
+                holderName: d.holderName,
+                documentNumber: d.documentNumber,
+                expiryDate: d.expiryDate,
+                isPermanent: d.isPermanent,
+                frontImageFileName: frontFileName,
+                backImageFileName: backFileName,
+                notes: d.notes
+            )
+            item.id = d.id
+            item.createdAt = d.createdAt
+            item.updatedAt = d.updatedAt
+            context.insert(item)
+            restoredDocs += 1
+        }
+        details.append("重要证件: \(restoredDocs) 项")
+        totalRestored += restoredDocs
 
         try context.save()
         return RestoreResultSummary(restoredCount: totalRestored, details: details)
