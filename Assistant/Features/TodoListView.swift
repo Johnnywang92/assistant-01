@@ -130,7 +130,7 @@ struct TodoListView: View {
                 router.requestedFilter = nil
             }
             .overlay {
-                if activeTodos.isEmpty && review.isEmpty && usage.isEmpty {
+                if activeTodos.isEmpty && review.isEmpty && usage.isEmpty && done.isEmpty {
                     ContentUnavailableView {
                         Label("暂无待办事项", systemImage: "list.bullet.clipboard")
                     } description: {
@@ -202,6 +202,27 @@ struct TodoListView: View {
 
     @ViewBuilder
     private func renderAllSections() -> some View {
+        if activeTodos.isEmpty {
+            Section {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.title2)
+                        .foregroundStyle(.green)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("当前待办已全部搞定！")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.primary)
+                        Text("暂无未完成事项，可点击下方查看已完成明细，或点击右上角 ➕ 快速添加。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            }
+            .themedRow()
+        }
+
         if !generals.isEmpty {
             Section("📋 日常待办（\(generals.count)）") {
                 ForEach(generals) { TodoRow(item: $0) }
