@@ -7,6 +7,9 @@ struct VoiceDialogueView: View {
     @Environment(\.modelContext) private var context
     @StateObject private var voice = VoiceDialogueService.shared
 
+    /// 是否在进入页面时自动开启语音聆听录音（例如通过长按悬浮球直接唤起）
+    var autoStartListening: Bool = false
+
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @AppStorage("voice_use_llm_engine") private var useLLMEngine: Bool = false
     @State private var dialogueHistory: [DialogueMessage] = []
@@ -151,6 +154,11 @@ struct VoiceDialogueView: View {
                     dialogueHistory.append(DialogueMessage(role: .assistant, text: "你好！我是你的个人离线助理「\(name)」。随时对我说出指令，或在下方打字输入问题。"))
                 }
                 hasPermission = await voice.requestPermissions()
+                if autoStartListening && hasPermission && !voice.isListening {
+                    // 延时等待 sheet 弹出过渡动效就绪后，平滑开启离线语音拾音
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    toggleListening()
+                }
             }
             .onChange(of: voice.isListening) { _, listening in
                 if !listening && !voice.recognizedText.isEmpty {

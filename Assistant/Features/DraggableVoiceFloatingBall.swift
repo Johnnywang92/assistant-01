@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// 可拖拽、自由吸附屏幕边缘的语音对话悬浮球
+/// 可拖拽、自由吸附屏幕边缘的语音对话悬浮球（支持长按直启语音输入，单击展开面板，拖拽贴边）
 struct DraggableVoiceFloatingBall: View {
     @Binding var showVoice: Bool
+    @Binding var autoStartListening: Bool
 
     // 是否开启悬浮球
     @AppStorage("floating_voice_enabled") private var isFloatingVoiceEnabled: Bool = true
@@ -12,9 +13,15 @@ struct DraggableVoiceFloatingBall: View {
 
     @State private var dragOffset: CGSize = .zero
     @State private var isDragging: Bool = false
+    @State private var isLongPressing: Bool = false
 
     private let ballSize: CGFloat = 52
     private let edgePadding: CGFloat = 12
+
+    init(showVoice: Binding<Bool>, autoStartListening: Binding<Bool> = .constant(false)) {
+        self._showVoice = showVoice
+        self._autoStartListening = autoStartListening
+    }
 
     var body: some View {
         if isFloatingVoiceEnabled {
@@ -40,40 +47,77 @@ struct DraggableVoiceFloatingBall: View {
 
             // 悬浮球主体 (移除 Button 避免拖动松手时触发点击事件)
             ZStack {
-                // 背景渐变与毛玻璃投影
+                // 长按过程中的外圈声波脉冲微光
+                if isLongPressing {
+                    Circle()
+                        .stroke(Color.red.opacity(0.4), lineWidth: 4)
+                        .frame(width: ballSize + 14, height: ballSize + 14)
+                        .scaleEffect(1.15)
+                }
+
+                // 背景渐变与毛玻璃投影（长按时呈现拾音专属红橙色渐变）
                 Circle()
                     .fill(
                         LinearGradient(
-                            colors: [Color.blue, Color.indigo],
+                            colors: isLongPressing ? [Color.red, Color.orange] : [Color.blue, Color.indigo],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
                     .frame(width: ballSize, height: ballSize)
-                    .shadow(color: Color.indigo.opacity(isDragging ? 0.45 : 0.3), radius: isDragging ? 12 : 8, y: isDragging ? 6 : 4)
+                    .shadow(
+                        color: (isLongPressing ? Color.red : Color.indigo).opacity(isDragging || isLongPressing ? 0.55 : 0.3),
+                        radius: isDragging || isLongPressing ? 12 : 8,
+                        y: isDragging || isLongPressing ? 6 : 4
+                    )
 
-                // 动态微光光圈（拖拽时微放亮）
+                // 动态微光光圈
                 Circle()
-                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 1.5)
+                    .strokeBorder(Color.white.opacity(isLongPressing ? 0.6 : 0.35), lineWidth: 1.5)
                     .frame(width: ballSize, height: ballSize)
 
-                // 声波图标
-                Image(systemName: "waveform")
-                    .font(.system(size: 22, weight: .semibold))
+                // 状态图标（长按时切换为麦克风提示，常规为声波）
+                Image(systemName: isLongPressing ? "mic.fill" : "waveform")
+                    .font(.system(size: isLongPressing ? 23 : 22, weight: .semibold))
                     .foregroundStyle(.white)
             }
-            .scaleEffect(isDragging ? 1.15 : 1.0)
+            .scaleEffect(isDragging ? 1.15 : (isLongPressing ? 1.24 : 1.0))
+            .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isLongPressing)
+            .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isDragging)
             .position(x: currentX, y: currentY)
-            // 仅在明确点击时触发（位移小于 8pt 时响应）
+            // 长按手势：按住 0.45 秒直接激活录音并弹出对话页
+            .onLongPressGesture(minimumDuration: 0.45, pressing: { pressing in
+                guard !isDragging else {
+                    isLongPressing = false
+                    return
+                }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) {
+                    isLongPressing = pressing
+                }
+                if pressing {
+                    Haptic.light()
+                }
+            }) {
+                guard !isDragging else { return }
+                isLongPressing = false
+                Haptic.heavy()
+                autoStartListening = true
+                showVoice = true
+            }
+            // 仅在明确单击时触发（位移小于 8pt，打开面板但不自动录音）
             .onTapGesture {
                 guard !isDragging else { return }
                 Haptic.medium()
+                autoStartListening = false
                 showVoice = true
             }
-            // 拖拽手势：设置 minimumDistance: 8，手指滑动超过 8pt 才会识别为拖拽，且绝对不会触发 onTapGesture
+            // 拖拽手势：设置 minimumDistance: 8，手指滑动超过 8pt 才会识别为拖拽，且绝对不会触发 onTapGesture 或长按
             .gesture(
                 DragGesture(minimumDistance: 8, coordinateSpace: .local)
                     .onChanged { value in
+                        if isLongPressing {
+                            isLongPressing = false
+                        }
                         if !isDragging {
                             isDragging = true
                             Haptic.light()
@@ -82,6 +126,7 @@ struct DraggableVoiceFloatingBall: View {
                     }
                     .onEnded { value in
                         isDragging = false
+                        isLongPressing = false
 
                         // 计算最终停靠坐标
                         let rawFinalX = baseX + value.translation.width

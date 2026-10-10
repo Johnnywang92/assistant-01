@@ -7,6 +7,7 @@ struct MainTabView: View {
     @ObservedObject private var tabManager = TabBarManager.shared
     @Query(filter: #Predicate<TodoItem> { $0.statusRaw == "active" }) private var activeTodos: [TodoItem]
     @State private var showVoice = false
+    @State private var autoStartListening = false
 
     var body: some View {
         ZStack {
@@ -24,14 +25,17 @@ struct MainTabView: View {
                 }
             }
 
-            // 单手自由拖拽吸边语音悬浮球
-            DraggableVoiceFloatingBall(showVoice: $showVoice)
+            // 单手自由拖拽吸边语音悬浮球（支持单击唤起、长按直启语音输入）
+            DraggableVoiceFloatingBall(showVoice: $showVoice, autoStartListening: $autoStartListening)
         }
-        .sheet(isPresented: $showVoice) {
-            VoiceDialogueView()
+        .sheet(isPresented: $showVoice, onDismiss: {
+            autoStartListening = false
+        }) {
+            VoiceDialogueView(autoStartListening: autoStartListening)
         }
         .onChange(of: router.activeSheet) { _, newSheet in
             if newSheet == .voice {
+                autoStartListening = false
                 showVoice = true
                 router.activeSheet = nil
             }
