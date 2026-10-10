@@ -38,10 +38,33 @@ struct LifeVaultView: View {
                 // 顶部快速看板统计
                 Section {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                        statPill(title: "证件", count: "\(documents.count)", icon: "person.text.rectangle.fill", color: .blue)
-                        statPill(title: "密码", count: "\(passwords.count)", icon: "key.fill", color: .teal)
-                        statPill(title: "纪念日", count: "\(anniversaries.count)", icon: "gift.fill", color: .pink)
-                        statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: .purple)
+                        NavigationLink {
+                            IDDocumentVaultView()
+                        } label: {
+                            statPill(title: "证件", count: "\(documents.count)", icon: "person.text.rectangle.fill", color: .blue, badgeCount: expiringDocCount)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            PasswordVaultView()
+                        } label: {
+                            statPill(title: "密码", count: "\(passwords.count)", icon: "key.fill", color: .teal)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            AnniversaryManagementView()
+                        } label: {
+                            statPill(title: "纪念日", count: "\(anniversaries.count)", icon: "gift.fill", color: .pink)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            HabitAndMedicationView()
+                        } label: {
+                            statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: .purple)
+                        }
+                        .buttonStyle(.plain)
                     }
                     .padding(.vertical, 4)
                 }
@@ -154,14 +177,26 @@ struct LifeVaultView: View {
     }
 
     @ViewBuilder
-    private func statPill(title: String, count: String, icon: String, color: Color) -> some View {
+    private func statPill(title: String, count: String, icon: String, color: Color, badgeCount: Int = 0) -> some View {
         VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(color)
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(color)
+                    .frame(width: 28, height: 28)
+
+                if badgeCount > 0 {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 8, height: 8)
+                        .offset(x: 4, y: -2)
+                }
+            }
+
             Text(count)
                 .font(.headline)
                 .foregroundStyle(.primary)
+
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -171,6 +206,10 @@ struct LifeVaultView: View {
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(badgeCount > 0 ? Color.red.opacity(0.35) : Color.clear, lineWidth: 1)
         )
     }
 

@@ -39,6 +39,40 @@ struct ExpenseTrackerView: View {
             .reduce(0) { $0 + $1.amount }
     }
 
+    // 本月各分类支出构成占比
+    private var currentMonthCategoryBreakdown: [(category: ExpenseCategory, amount: Double, ratio: Double)] {
+        let now = Date.now
+        let m = calendar.component(.month, from: now)
+        let y = calendar.component(.year, from: now)
+        let monthExpenses = records.filter {
+            !$0.isIncome && calendar.component(.month, from: $0.date) == m && calendar.component(.year, from: $0.date) == y
+        }
+        let total = monthExpenses.reduce(0) { $0 + $1.amount }
+        guard total > 0 else { return [] }
+
+        let grouped = Dictionary(grouping: monthExpenses, by: { $0.category })
+        return grouped.map { cat, items in
+            let amount = items.reduce(0) { $0 + $1.amount }
+            return (category: cat, amount: amount, ratio: amount / total)
+        }
+        .sorted { $0.amount > $1.amount }
+    }
+
+    private func categoryColor(_ cat: ExpenseCategory) -> Color {
+        switch cat {
+        case .food: return .orange
+        case .transport: return .blue
+        case .living: return .teal
+        case .shopping: return .pink
+        case .entertainment: return .purple
+        case .medical: return .red
+        case .pets: return .yellow
+        case .digital: return .indigo
+        case .social: return .mint
+        default: return .gray
+        }
+    }
+
     // 按日期分组记录
     private var groupedRecords: [(key: String, items: [ExpenseRecord])] {
         let formatter = DateFormatter()
@@ -81,12 +115,56 @@ struct ExpenseTrackerView: View {
     var body: some View {
         NavigationStack {
             List {
-                // 1. 统计卡片
+                // 1. 统计卡片与本月支出构成胶囊条
                 Section {
-                    HStack(spacing: 16) {
-                        statCard(title: "今日支出", amount: todayExpenses, color: .orange)
-                        statCard(title: "本月支出", amount: currentMonthExpenses, color: .red)
-                        statCard(title: "本月收入", amount: currentMonthIncome, color: .green)
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 16) {
+                            statCard(title: "今日支出", amount: todayExpenses, color: .orange)
+                            statCard(title: "本月支出", amount: currentMonthExpenses, color: .red)
+                            statCard(title: "本月收入", amount: currentMonthIncome, color: .green)
+                        }
+
+                        if !currentMonthCategoryBreakdown.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("本月支出构成")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text("共 \(currentMonthCategoryBreakdown.count) 类别")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+
+                                // 分类彩色多段胶囊条
+                                GeometryReader { geo in
+                                    HStack(spacing: 2) {
+                                        ForEach(currentMonthCategoryBreakdown, id: \.category) { item in
+                                            RoundedRectangle(cornerRadius: 3)
+                                                .fill(categoryColor(item.category))
+                                                .frame(width: max((geo.size.width - CGFloat(currentMonthCategoryBreakdown.count - 1) * 2) * CGFloat(item.ratio), 4))
+                                        }
+                                    }
+                                }
+                                .frame(height: 8)
+                                .clipShape(Capsule())
+
+                                // 图例标签
+                                HStack(spacing: 10) {
+                                    ForEach(currentMonthCategoryBreakdown.prefix(4), id: \.category) { item in
+                                        HStack(spacing: 4) {
+                                            Circle()
+                                                .fill(categoryColor(item.category))
+                                                .frame(width: 6, height: 6)
+                                            Text("\(item.category.rawValue) \(Int(item.ratio * 100))%")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.top, 2)
+                        }
                     }
                     .padding(.vertical, 4)
                 }
@@ -240,15 +318,14 @@ struct ExpenseTrackerView: View {
             )
             context.insert(record)
             try? context.save()
-
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Haptic.success()
             quickInputText = ""
 
             let amountStr = String(format: "%.2f", result.amount)
             let desc = result.isIncome ? "已记入入账 ¥\(amountStr)" : "已记入 ¥\(amountStr)（\(result.category.rawValue)）"
             showFeedback(desc)
         } else {
-            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            Haptic.warning()
             showFeedback("未能识别出金额，请写明金额（如：吃午饭 25 元）")
         }
     }

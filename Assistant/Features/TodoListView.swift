@@ -59,6 +59,9 @@ struct TodoListView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: selectedFilter) { _, _ in
+                        Haptic.selection()
+                    }
                 }
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 2, leading: 4, bottom: 6, trailing: 4))
@@ -303,63 +306,152 @@ struct TodoListView: View {
 struct TodoRow: View {
     @Environment(\.modelContext) private var context
     let item: TodoItem
+    @State private var isCopied: Bool = false
+
+    private var typeColor: Color {
+        switch item.type {
+        case .parcel: return .orange
+        case .general, .event: return .blue
+        case .medication: return .green
+        case .housework: return .purple
+        case .charging: return .yellow
+        case .subscription, .bill: return .indigo
+        case .itemExpiry: return .red
+        case .anniversary: return .pink
+        case .passwordSecurity: return .teal
+        default: return .secondary
+        }
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             Button {
-                withAnimation { item.status = item.status == .done ? .active : .done }
+                Haptic.medium()
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                    item.status = item.status == .done ? .active : .done
+                }
                 try? context.save()
             } label: {
                 Image(systemName: item.status == .done ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
                     .foregroundStyle(item.status == .done ? Color.green : Color.secondary)
+                    .symbolEffect(.bounce, value: item.status == .done)
             }
             .buttonStyle(.plain)
+            .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 if item.type == .parcel, let code = item.pickupCode {
-                    Text(code)
-                        .font(.title3.monospaced().bold())
-                        .strikethrough(item.status == .done)
+                    HStack(spacing: 8) {
+                        Text(code)
+                            .font(.title3.monospaced().bold())
+                            .foregroundStyle(item.status == .done ? .secondary : .primary)
+                            .strikethrough(item.status == .done)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(item.status == .done ? Color.secondary.opacity(0.12) : Color.orange.opacity(0.15))
+                            )
+
+                        Button {
+                            UIPasteboard.general.string = code
+                            Haptic.light()
+                            withAnimation(.spring(duration: 0.2)) {
+                                isCopied = true
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                                withAnimation { isCopied = false }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
+                                Text(isCopied ? "已复制" : "复制")
+                            }
+                            .font(.caption2.bold())
+                            .foregroundStyle(isCopied ? .green : .orange)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule().fill(isCopied ? Color.green.opacity(0.15) : Color.orange.opacity(0.12))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     let placeText: String? = {
                         if let loc = item.location, let st = item.station, !loc.contains(st) {
                             return "\(st) · \(loc)"
                         }
                         return item.location ?? item.station
                     }()
-                    Text([item.courier, placeText].compactMap { $0 }.joined(separator: " · "))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    if let text = [item.courier, placeText].compactMap({ $0 }).joined(separator: " · ") as String?, !text.isEmpty {
+                        Text(text)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
-                    Label(item.title, systemImage: item.type.icon)
-                        .strikethrough(item.status == .done)
-                    if let detail = item.detail {
-                        Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(typeColor.opacity(item.status == .done ? 0.08 : 0.16))
+                                .frame(width: 24, height: 24)
+                            Image(systemName: item.type.icon)
+                                .font(.caption.bold())
+                                .foregroundStyle(item.status == .done ? .secondary : typeColor)
+                        }
+
+                        Text(item.title)
+                            .font(.body.weight(item.status == .done ? .regular : .medium))
+                            .strikethrough(item.status == .done)
+                            .foregroundStyle(item.status == .done ? .secondary : .primary)
+                    }
+
+                    if let detail = item.detail, !detail.isEmpty {
+                        Text(detail)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 32)
                     }
                 }
-                if let due = item.dueAt {
-                    HStack(spacing: 4) {
-                        Image(systemName: "calendar.badge.clock")
-                        Text("截止: \(due.formatted(date: .numeric, time: .shortened))")
+
+                HStack(spacing: 12) {
+                    if let due = item.dueAt {
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar.badge.clock")
+                            Text("截止: \(due.formatted(date: .numeric, time: .shortened))")
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(due < .now && item.status != .done ? Color.red : Color.secondary)
                     }
-                    .font(.caption2)
-                    .foregroundStyle(due < .now && item.status != .done ? Color.red : Color.secondary)
+
+                    Text(item.createdAt, format: .relative(presentation: .named))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
-                Text(item.createdAt, format: .relative(presentation: .named))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                .padding(.leading, item.type == .parcel ? 0 : 32)
             }
         }
+        .opacity(item.status == .done ? 0.6 : 1.0)
+        .animation(.easeInOut(duration: 0.2), value: item.status)
+        .padding(.vertical, 3)
         .contextMenu {
             if let code = item.pickupCode {
-                Button("复制取件码", systemImage: "doc.on.doc") { UIPasteboard.general.string = code }
+                Button("复制取件码", systemImage: "doc.on.doc") {
+                    UIPasteboard.general.string = code
+                    Haptic.light()
+                }
             }
             if let src = item.sourceText {
-                Button("复制原文", systemImage: "text.quote") { UIPasteboard.general.string = src }
+                Button("复制原文", systemImage: "text.quote") {
+                    UIPasteboard.general.string = src
+                    Haptic.light()
+                }
             }
         }
         .swipeActions {
             Button(role: .destructive) {
+                Haptic.warning()
                 context.delete(item)
                 try? context.save()
             } label: { Label("删除", systemImage: "trash") }
