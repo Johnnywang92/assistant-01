@@ -7,6 +7,7 @@ struct HabitAndMedicationView: View {
     @Query(sort: \PeriodicHabit.nextDueAt) private var habits: [PeriodicHabit]
     @Query private var medPlans: [MedicationPlan]
 
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
     @State private var showingAddHabitSheet = false
     @State private var showingAddMedSheet = false
 
@@ -42,6 +43,10 @@ struct HabitAndMedicationView: View {
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedAppBackground()
+        .themedRow()
         .navigationTitle("周期家务与健康")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -102,20 +107,47 @@ struct HabitRow: View {
 
 struct MedicationRow: View {
     @Bindable var med: MedicationPlan
+    @ObservedObject private var seniorManager = SeniorModeManager.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Label(med.medName, systemImage: "pills.fill")
-                    .font(.headline)
-                Spacer()
-                Text(med.dosage)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Label(med.medName, systemImage: "pills.fill")
+                        .font(seniorManager.isSeniorModeEnabled ? .title3.bold() : .headline)
+                        .foregroundStyle(seniorManager.isSeniorModeEnabled ? .green : .primary)
+                    Spacer()
+                    Text(med.dosage)
+                        .font(seniorManager.isSeniorModeEnabled ? .body.bold() : .subheadline)
+                        .foregroundStyle(seniorManager.isHighContrastEnabled ? .primary : .secondary)
+                }
+                Text("每日时点: \(med.dailyTimePoints.joined(separator: ", "))")
+                    .font(seniorManager.isSeniorModeEnabled ? .subheadline : .caption)
+                    .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.8) : .secondary)
             }
-            Text("每日时点: \(med.dailyTimePoints.joined(separator: ", "))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+
+            if seniorManager.isVoiceBroadcastEnabled {
+                Button {
+                    let speech = "服药提醒：\(med.medName)，\(med.dosage)。服药时间：\(med.dailyTimePoints.joined(separator: "、"))。"
+                    if seniorManager.isSpeaking && seniorManager.currentSpeakingId == med.id.uuidString {
+                        seniorManager.stopSpeaking()
+                    } else {
+                        seniorManager.speakSenior(text: speech, id: med.id.uuidString)
+                        Haptic.light()
+                    }
+                } label: {
+                    let isCurrentSpeaking = seniorManager.isSpeaking && seniorManager.currentSpeakingId == med.id.uuidString
+                    Image(systemName: isCurrentSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2")
+                        .font(seniorManager.isSeniorModeEnabled ? .title3.bold() : .caption)
+                        .foregroundStyle(isCurrentSpeaking ? Color.orange : Color.secondary.opacity(0.8))
+                        .frame(width: seniorManager.isSeniorModeEnabled ? 38 : 28, height: seniorManager.isSeniorModeEnabled ? 38 : 28)
+                        .background(
+                            Circle().fill(isCurrentSpeaking ? Color.orange.opacity(0.2) : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+            }
         }
         .padding(.vertical, 4)
     }

@@ -34,6 +34,7 @@ struct IDDocumentVaultView: View {
                 lockedContent
             }
         }
+        .themedAppBackground()
         .navigationTitle("重要证件保险箱")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -123,7 +124,6 @@ struct IDDocumentVaultView: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
-        .themedAppBackground()
         .themedRow()
         .searchable(text: $searchText, prompt: "搜索证件名称、持有人或号码")
     }
@@ -165,7 +165,6 @@ struct IDDocumentVaultView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
-        .themedAppBackground()
     }
 
     private func triggerCopyFeedback() {
@@ -265,11 +264,11 @@ struct IDDocumentCard: View {
 
             // 照片双格预览槽位
             HStack(spacing: 12) {
-                photoSlotPreview(
+                IDPhotoThumbnailSlotView(
                     label: document.type.frontSlotLabel,
                     fileName: document.frontImageFileName
                 )
-                photoSlotPreview(
+                IDPhotoThumbnailSlotView(
                     label: document.type.backSlotLabel,
                     fileName: document.backImageFileName
                 )
@@ -282,10 +281,15 @@ struct IDDocumentCard: View {
         }
         .themedRow()
     }
+}
 
-    @ViewBuilder
-    private func photoSlotPreview(label: String, fileName: String?) -> some View {
-        let image = IDPhotoStorage.loadImage(fileName: fileName)
+/// 异步降采样加载的卡片缩略图插槽组件（彻底避免主线程 I/O 与大图解码卡顿）
+struct IDPhotoThumbnailSlotView: View {
+    let label: String
+    let fileName: String?
+    @State private var image: UIImage?
+
+    var body: some View {
         VStack(spacing: 4) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -303,12 +307,13 @@ struct IDDocumentCard: View {
                         .frame(height: 70)
                         .clipped()
                         .cornerRadius(8)
+                        .transition(.opacity)
                 } else {
                     VStack(spacing: 3) {
-                        Image(systemName: "photo.badge.plus")
+                        Image(systemName: fileName == nil ? "photo.badge.plus" : "photo")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
-                        Text("未添加")
+                        Text(fileName == nil ? "未添加" : "加载中…")
                             .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
                     }
@@ -320,6 +325,24 @@ struct IDDocumentCard: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
+        .task(id: fileName) {
+            guard let fileName, !fileName.isEmpty else {
+                image = nil
+                return
+            }
+            // 优先检查内存缓存，命中即刻展现
+            if let cached = IDPhotoStorage.loadThumbnail(fileName: fileName) {
+                self.image = cached
+                return
+            }
+            // 未命中缓存则在后台线程做异步降采样解码
+            let loaded = await Task.detached(priority: .userInitiated) {
+                IDPhotoStorage.loadThumbnail(fileName: fileName)
+            }.value
+            withAnimation(.easeInOut(duration: 0.15)) {
+                self.image = loaded
+            }
+        }
     }
 }
 

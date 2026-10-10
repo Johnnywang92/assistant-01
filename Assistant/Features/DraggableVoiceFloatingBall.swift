@@ -15,8 +15,11 @@ struct DraggableVoiceFloatingBall: View {
     @State private var isDragging: Bool = false
     @State private var isLongPressing: Bool = false
     @ObservedObject private var memoAudio = VoiceMemoAudioService.shared
+    @ObservedObject private var seniorManager = SeniorModeManager.shared
 
-    private let ballSize: CGFloat = 52
+    private var ballSize: CGFloat {
+        seniorManager.isSeniorModeEnabled ? 64 : 52
+    }
     private let edgePadding: CGFloat = 12
 
     init(showVoice: Binding<Bool>, autoStartListening: Binding<Bool> = .constant(false)) {

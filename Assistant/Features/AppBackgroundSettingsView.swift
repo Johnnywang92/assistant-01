@@ -2,6 +2,7 @@ import PhotosUI
 import SwiftUI
 
 /// App 背景与主题外观设置界面
+@MainActor
 struct AppBackgroundSettingsView: View {
     @ObservedObject private var manager = AppBackgroundManager.shared
     @State private var selectedPhotoItem: PhotosPickerItem?
@@ -119,7 +120,7 @@ struct AppBackgroundSettingsView: View {
                         }
                     }
                     .onChange(of: selectedPhotoItem) { _, newItem in
-                        Task {
+                        Task { @MainActor in
                             if let data = try? await newItem?.loadTransferable(type: Data.self),
                                let uiImg = UIImage(data: data) {
                                 manager.saveCustomImage(uiImg)

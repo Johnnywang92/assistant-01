@@ -101,12 +101,25 @@ public final class AppBackgroundManager: ObservableObject {
         loadCustomImage()
     }
 
-    /// 保存从相册挑选的照片到沙盒
+    /// 保存从相册挑选的照片到沙盒（自动降采样至适中尺寸，避免 4800 万像素巨幅图片导致内存飙升与 GPU 掉帧）
     public func saveCustomImage(_ image: UIImage) {
-        guard let data = image.jpegData(compressionQuality: 0.85) else { return }
+        let maxDimension: CGFloat = 1280
+        let resized: UIImage
+        if max(image.size.width, image.size.height) > maxDimension {
+            let scale = maxDimension / max(image.size.width, image.size.height)
+            let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+            let renderer = UIGraphicsImageRenderer(size: newSize)
+            resized = renderer.image { _ in
+                image.draw(in: CGRect(origin: .zero, size: newSize))
+            }
+        } else {
+            resized = image
+        }
+
+        guard let data = resized.jpegData(compressionQuality: 0.85) else { return }
         let url = getWallpaperFileURL()
         try? data.write(to: url)
-        self.customImage = image
+        self.customImage = resized
         self.currentStyle = .customImage
         Haptic.success()
     }

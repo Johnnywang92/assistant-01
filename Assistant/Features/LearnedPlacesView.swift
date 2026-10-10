@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftData
 import SwiftUI
 
@@ -5,31 +6,140 @@ import SwiftUI
 struct LearnedPlacesView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \LearnedPlace.visitCount, order: .reverse) private var places: [LearnedPlace]
+    @Query private var samples: [LocationStaySample]
+    @ObservedObject private var locationService = LocationReminderService.shared
+
     @State private var showingAddPlaceSheet = false
+    @State private var isSampling = false
+    @State private var sampleResultMessage: String?
 
     var body: some View {
         List {
+            // MARK: - 诊断与状态看板
             Section {
-                Text("助手会在完全离线状态下，根据你连接的 Wi-Fi、夜间与工作日白天的驻留规律，自主聚类学习推断哪里是「家」、哪里是「公司」。你也可以在此手动校准或添加。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "brain.head.profile")
+                            .font(.title2)
+                            .foregroundStyle(Color.accentColor)
 
-            if places.isEmpty {
-                ContentUnavailableView(
-                    "暂未学习到常驻地点",
-                    systemImage: "map",
-                    description: Text("随着日常使用与自动化情境触发，助手将自动聚合出常驻生活轨迹。")
-                )
-            } else {
-                ForEach(places) { place in
-                    NavigationLink {
-                        LearnedPlaceDetailView(place: place)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("时空画像自主学习引擎")
+                                .font(.headline)
+                            Text("完全离线运行，基于驻留时段与 Wi-Fi 启发式聚类")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Divider()
+
+                    // 指标看板
+                    HStack(spacing: 20) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("常驻地点")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("\(places.count) 处")
+                                .font(.subheadline.bold())
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("累积时空样本")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("\(samples.count) 次")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(samples.count >= 3 ? Color.green : Color.orange)
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("定位权限状态")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(authStatusTitle)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(isLocationAuthorized ? Color.green : Color.red)
+                        }
+                    }
+
+                    // 权限未就绪时的提示与跳转
+                    if !isLocationAuthorized {
+                        Button {
+                            if locationService.authorizationStatus == .notDetermined {
+                                locationService.requestWhenInUseAuthorization()
+                            } else {
+                                locationService.openSystemSettings()
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                Text(locationService.authorizationStatus == .notDetermined ? "点击授予「使用期间定位」权限" : "前往系统「设置」开启定位权限")
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                            }
+                            .font(.caption.bold())
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                            .foregroundStyle(Color.orange)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // 立即记录当前位置采样按钮
+                    Button {
+                        sampleCurrentLocation()
                     } label: {
-                        PlaceRow(place: place)
+                        HStack {
+                            if isSampling {
+                                ProgressView()
+                                    .padding(.trailing, 4)
+                            } else {
+                                Image(systemName: "location.fill")
+                            }
+                            Text(isSampling ? "正在获取当前 GPS 坐标并采样..." : "📍 立即记录当前位置为驻留样本")
+                                .font(.subheadline.bold())
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor))
+                        .foregroundStyle(.white)
+                    }
+                    .disabled(isSampling || !isLocationAuthorized)
+                    .buttonStyle(.plain)
+
+                    if let msg = sampleResultMessage {
+                        Text(msg)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity)
                     }
                 }
-                .onDelete(perform: deletePlaces)
+                .padding(.vertical, 4)
+            } footer: {
+                Text("学习规则：同一地点需累积采样 ≥ 3 次。工作日白天 (09:00~18:00) 停留概率高自动聚类为「公司」；夜间停留频率高自动聚类为「家」。每次打开 App 也会在后台静默自动采样一次。")
+            }
+
+            // MARK: - 地点列表
+            Section("已学习或添加的地点") {
+                if places.isEmpty {
+                    ContentUnavailableView(
+                        "暂未识别出常驻地点",
+                        systemImage: "building.2.slash",
+                        description: Text("当前累积样本较少（\(samples.count)/3）。你可以点击上方的「立即记录当前位置为驻留样本」，或点击右上角「+」直接将当前位置标记为公司。")
+                    )
+                } else {
+                    ForEach(places) { place in
+                        NavigationLink {
+                            LearnedPlaceDetailView(place: place)
+                        } label: {
+                            PlaceRow(place: place)
+                        }
+                    }
+                    .onDelete(perform: deletePlaces)
+                }
             }
         }
         .navigationTitle("常用地点与学习")
@@ -44,6 +154,44 @@ struct LearnedPlacesView: View {
         }
         .sheet(isPresented: $showingAddPlaceSheet) {
             AddPlaceSheet()
+        }
+    }
+
+    private var isLocationAuthorized: Bool {
+        locationService.authorizationStatus == .authorizedWhenInUse ||
+        locationService.authorizationStatus == .authorizedAlways
+    }
+
+    private var authStatusTitle: String {
+        switch locationService.authorizationStatus {
+        case .authorizedAlways: return "始终允许"
+        case .authorizedWhenInUse: return "使用期间"
+        case .denied, .restricted: return "未授权"
+        case .notDetermined: return "待授权"
+        @unknown default: return "未知"
+        }
+    }
+
+    private func sampleCurrentLocation() {
+        guard !isSampling else { return }
+        isSampling = true
+        sampleResultMessage = nil
+        Haptic.light()
+
+        Task {
+            if let coord = await locationService.requestSingleLocationSample(context: context) {
+                let engine = PlaceLearningEngine(context: context)
+                if let place = try? engine.recordObservation(coordinate: coord, timestamp: .now) {
+                    sampleResultMessage = "✅ 已成功采样坐标 (经度 \(String(format: "%.3f", coord.longitude)), 纬度 \(String(format: "%.3f", coord.latitude)))，当前归属于「\(place.name)」(累计 \(place.visitCount) 次采样)。"
+                } else {
+                    sampleResultMessage = "✅ 采样记录已录入，正在等待进一步聚类分析。"
+                }
+                Haptic.success()
+            } else {
+                sampleResultMessage = "⚠️ 获取定位失败，请确保已在系统「设置」中允许小助访问位置信息。"
+                Haptic.error()
+            }
+            isSampling = false
         }
     }
 
@@ -62,7 +210,7 @@ struct PlaceRow: View {
         HStack(spacing: 12) {
             Image(systemName: place.category.icon)
                 .font(.title2)
-                .foregroundStyle(.tint)
+                .foregroundStyle(categoryColor(for: place.category))
                 .frame(width: 36)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -70,14 +218,14 @@ struct PlaceRow: View {
                     Text(place.name)
                         .font(.headline)
                     if place.isUserConfirmed {
-                        Text("已确认")
+                        Text("手动确认")
                             .font(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(.green.opacity(0.15)))
                             .foregroundStyle(.green)
                     } else {
-                        Text("自学习推断")
+                        Text("自学习推测")
                             .font(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -87,7 +235,13 @@ struct PlaceRow: View {
                 }
 
                 HStack {
-                    Text("累计到访 \(place.visitCount) 次")
+                    Text("累计停留 \(place.visitCount) 次")
+                    if place.latitude != 0 && place.longitude != 0 {
+                        Text("· GPS已绑定")
+                    } else {
+                        Text("· 坐标未校准")
+                            .foregroundStyle(.red)
+                    }
                     if !place.associatedWiFiSSIDs.isEmpty {
                         Text("· Wi-Fi: \(place.associatedWiFiSSIDs.joined(separator: ", "))")
                     }
@@ -98,11 +252,22 @@ struct PlaceRow: View {
         }
         .padding(.vertical, 4)
     }
+
+    private func categoryColor(for cat: PlaceCategory) -> Color {
+        switch cat {
+        case .home: return .blue
+        case .company: return .indigo
+        case .parcelStation: return .orange
+        case .other: return .secondary
+        }
+    }
 }
 
 struct LearnedPlaceDetailView: View {
     @Environment(\.modelContext) private var context
     @Bindable var place: LearnedPlace
+    @State private var isUpdatingLocation = false
+    @State private var updateLocationFeedback: String?
 
     var body: some View {
         Form {
@@ -114,6 +279,38 @@ struct LearnedPlaceDetailView: View {
                     }
                 }
                 Toggle("手动确认并锁定此角色", isOn: $place.isUserConfirmed)
+            }
+
+            Section("位置坐标与校准") {
+                if place.latitude != 0 && place.longitude != 0 {
+                    LabeledContent("经纬度", value: "\(String(format: "%.4f", place.latitude)), \(String(format: "%.4f", place.longitude))")
+                    LabeledContent("有效识别半径", value: "\(Int(place.radiusMeters)) 米")
+                } else {
+                    Text("⚠️ 暂无有效 GPS 坐标，无法触发地理围栏到达与离开提醒。")
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+
+                Button {
+                    updateWithCurrentLocation()
+                } label: {
+                    HStack {
+                        if isUpdatingLocation {
+                            ProgressView()
+                                .padding(.trailing, 4)
+                        } else {
+                            Image(systemName: "location.circle.fill")
+                        }
+                        Text(isUpdatingLocation ? "正在定位并更新..." : "将当前所在位置覆盖为该地点坐标")
+                    }
+                }
+                .disabled(isUpdatingLocation)
+
+                if let msg = updateLocationFeedback {
+                    Text(msg)
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                }
             }
 
             Section("智能学习画像指标") {
@@ -147,6 +344,22 @@ struct LearnedPlaceDetailView: View {
             try? context.save()
         }
     }
+
+    private func updateWithCurrentLocation() {
+        guard !isUpdatingLocation else { return }
+        isUpdatingLocation = true
+        updateLocationFeedback = nil
+        Task {
+            if let coord = await LocationReminderService.shared.requestSingleLocationSample(context: context) {
+                place.latitude = coord.latitude
+                place.longitude = coord.longitude
+                try? context.save()
+                updateLocationFeedback = "已成功校准为当前坐标！"
+                Haptic.success()
+            }
+            isUpdatingLocation = false
+        }
+    }
 }
 
 struct AddPlaceSheet: View {
@@ -154,19 +367,57 @@ struct AddPlaceSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
-    @State private var category = PlaceCategory.home
+    @State private var category = PlaceCategory.company
     @State private var wifiSSID = ""
+    @State private var latitude: Double = 0
+    @State private var longitude: Double = 0
+    @State private var isLocating: Bool = false
+    @State private var locationAcquired: Bool = false
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("新增地点") {
-                    TextField("名称（如：家 / 科技园公司）", text: $name)
+                Section("地点分类与命名") {
                     Picker("分类角色", selection: $category) {
                         ForEach(PlaceCategory.allCases, id: \.self) { cat in
                             Label(cat.rawValue, systemImage: cat.icon).tag(cat)
                         }
                     }
+                    .onChange(of: category) { _, newCat in
+                        if name.isEmpty || name == "公司" || name == "家" || name == "常用驿站" {
+                            name = newCat.rawValue
+                        }
+                    }
+
+                    TextField("名称（如：公司 / 科技园总部）", text: $name)
+                }
+
+                Section("地理坐标") {
+                    Button {
+                        fetchCurrentLocation()
+                    } label: {
+                        HStack {
+                            if isLocating {
+                                ProgressView()
+                                    .padding(.trailing, 4)
+                            } else {
+                                Image(systemName: "location.fill")
+                            }
+                            Text(isLocating ? "正在获取当前位置..." : (locationAcquired ? "已获取当前位置 (可点击刷新)" : "📍 一键获取并填入当前 GPS 坐标"))
+                        }
+                    }
+                    .disabled(isLocating)
+
+                    if latitude != 0 && longitude != 0 {
+                        HStack {
+                            Text("经纬度坐标")
+                            Spacer()
+                            Text("\(String(format: "%.4f", latitude)), \(String(format: "%.4f", longitude))")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
                     TextField("当前连接的 Wi-Fi 名称（可选）", text: $wifiSSID)
                 }
             }
@@ -178,21 +429,52 @@ struct AddPlaceSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
+                        let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? category.rawValue : name
                         let place = LearnedPlace(
-                            name: name.isEmpty ? category.rawValue : name,
+                            name: finalName,
                             category: category,
-                            latitude: 0,
-                            longitude: 0,
+                            latitude: latitude,
+                            longitude: longitude,
+                            radiusMeters: 200,
                             associatedWiFiSSIDs: wifiSSID.isEmpty ? [] : [wifiSSID],
+                            visitCount: 1,
                             isUserConfirmed: true
                         )
                         context.insert(place)
                         try? context.save()
+                        Haptic.success()
                         dismiss()
                     }
-                    .disabled(name.isEmpty && category == .other)
                 }
             }
+            .task {
+                fetchCurrentLocation()
+            }
+        }
+    }
+
+    private func fetchCurrentLocation() {
+        guard !isLocating else { return }
+        isLocating = true
+        Task {
+            if let coord = await LocationReminderService.shared.requestSingleLocationSample(context: context) {
+                latitude = coord.latitude
+                longitude = coord.longitude
+                locationAcquired = true
+
+                if name.isEmpty {
+                    let hour = Calendar.current.component(.hour, from: .now)
+                    let isWeekend = Calendar.current.isDateInWeekend(.now)
+                    if !isWeekend && hour >= 9 && hour <= 18 {
+                        category = .company
+                        name = "公司"
+                    } else {
+                        category = .home
+                        name = "家"
+                    }
+                }
+            }
+            isLocating = false
         }
     }
 }

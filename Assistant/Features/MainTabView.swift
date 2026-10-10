@@ -8,7 +8,10 @@ struct MainTabView: View {
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @Query(filter: #Predicate<TodoItem> { $0.statusRaw == "active" }) private var activeTodos: [TodoItem]
     @State private var showVoice = false
+    @State private var showScanner = false
     @State private var autoStartListening = false
+    @AppStorage("has_completed_permission_onboarding_v1") private var hasCompletedPermissionOnboarding: Bool = false
+    @State private var showPermissionOnboarding = false
 
     var body: some View {
         ZStack {
@@ -34,14 +37,35 @@ struct MainTabView: View {
         }) {
             VoiceDialogueView(autoStartListening: autoStartListening)
         }
+        .sheet(isPresented: $showScanner) {
+            QRCodeScannerView()
+        }
+        .sheet(item: $router.pendingImportPayload) { payload in
+            TodoImportPreviewSheet(payload: payload) {
+                router.pendingImportPayload = nil
+            }
+        }
+        .sheet(isPresented: $showPermissionOnboarding) {
+            PermissionOnboardingView()
+        }
         .onChange(of: router.activeSheet) { _, newSheet in
             if newSheet == .voice {
                 autoStartListening = false
                 showVoice = true
                 router.activeSheet = nil
+            } else if newSheet == .qrScanner {
+                showScanner = true
+                router.activeSheet = nil
             }
         }
         .onAppear {
+            // 首次启动时引导用户在前置阶段完成核心权限配置，避免后续功能因权限受阻
+            if !hasCompletedPermissionOnboarding {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    showPermissionOnboarding = true
+                }
+            }
+
             // 确保当前选中的 Tab 存在于活跃列表中
             if !tabManager.activeTabs.contains(router.selectedTab) {
                 router.selectedTab = tabManager.activeTabs.first ?? .todos
@@ -81,7 +105,6 @@ struct MainTabView: View {
                 SettingsView(isSheet: false)
             }
         }
-        .themedAppBackground()
     }
 
     // MARK: - 动态角标徽标

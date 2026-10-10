@@ -61,16 +61,25 @@ struct ManualImportView: View {
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
+    @AppStorage("user_preferred_title") private var userTitle: String = "你"
     @AppStorage("floating_voice_enabled") private var floatingVoiceEnabled: Bool = true
     @AppStorage("floating_voice_norm_x") private var normX: Double = 1.0
     @AppStorage("floating_voice_norm_y") private var normY: Double = 0.68
     @AppStorage("weather_alerts_enabled") private var weatherAlertsEnabled: Bool = true
     @AppStorage("user_lifestyle_profile") private var lifestyleProfile: UserLifestyleProfile = .officeWorker
+    @AppStorage("user_off_work_hour") private var offWorkHour: Int = 18
     @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true
     @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @ObservedObject private var seniorManager = SeniorModeManager.shared
+    @ObservedObject private var reportManager = PeriodicReportManager.shared
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.modelContext) private var context
     @State private var selectedMode = AppSettings.currentMode
     @State private var voiceReplyEnabled = AppSettings.voiceReplyEnabled
+    @State private var retentionPolicy = AppSettings.dialogueRetentionPolicy
+    @State private var savedDialogueCount: Int = 0
+    @State private var showingClearDialogueAlert: Bool = false
+    @State private var showingPermissionOnboarding: Bool = false
 
     var isSheet: Bool = false
 
@@ -122,7 +131,7 @@ struct SettingsView: View {
 
                     // 快速命名推荐预设
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("推荐名称：")
+                        Text("推荐助手名：")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
 
@@ -147,10 +156,107 @@ struct SettingsView: View {
                         }
                     }
                     .padding(.vertical, 2)
+
+                    Divider()
+
+                    // 对我的称呼
+                    HStack {
+                        Text("对我的称呼")
+                        Spacer()
+                        TextField("如：老板、主人、您", text: $userTitle)
+                            .multilineTextAlignment(.trailing)
+                            .foregroundStyle(.primary)
+                            .submitLabel(.done)
+
+                        if !userTitle.isEmpty && userTitle != "你" {
+                            Button {
+                                userTitle = "你"
+                                Haptic.light()
+                            } label: {
+                                Image(systemName: "arrow.counterclockwise.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    // 快速称呼推荐预设
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("推荐称呼：")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+
+                        HStack(spacing: 8) {
+                            ForEach(["你", "您", "老板", "主人", "朋友"], id: \.self) { preset in
+                                Button {
+                                    userTitle = preset
+                                    Haptic.light()
+                                } label: {
+                                    Text(preset)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(
+                                            Capsule()
+                                                .fill(userTitle == preset ? Color.accentColor.opacity(0.18) : Color(.tertiarySystemFill))
+                                        )
+                                        .foregroundStyle(userTitle == preset ? Color.accentColor : Color.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
                 } header: {
-                    Text("助手专属定制")
+                    Text("助手与称呼定制")
                 } footer: {
-                    Text("自定义名称将即时同步至主界面标题、语音对话及系统回复中。")
+                    Text("名称与称呼支持在对话中直接通过语音说出（如“以后叫我老板”或“帮我设置”），设置将即时同步至端侧大模型、语音问候及主界面。")
+                }
+
+                // MARK: - 核心权限健康度检查
+                Section {
+                    Button {
+                        showingPermissionOnboarding = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(PermissionManager.shared.areAllCorePermissionsReady ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
+                                    .frame(width: 36, height: 36)
+
+                                Image(systemName: PermissionManager.shared.areAllCorePermissionsReady ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                                    .foregroundStyle(PermissionManager.shared.areAllCorePermissionsReady ? Color.green : Color.orange)
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("核心权限健康度与授权检查")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.primary)
+
+                                Text(PermissionManager.shared.areAllCorePermissionsReady ? "通知、定位、麦克风与相册均已完全就绪" : "有核心权限未开启，点击快速配置与补全")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            Text("\(PermissionManager.shared.readyCount) / 4 项")
+                                .font(.caption.bold())
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(PermissionManager.shared.areAllCorePermissionsReady ? Color.green.opacity(0.12) : Color.orange.opacity(0.15)))
+                                .foregroundStyle(PermissionManager.shared.areAllCorePermissionsReady ? Color.green : Color.orange)
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                } header: {
+                    Text("系统核心权限")
+                } footer: {
+                    Text("小助坚持 100% 离线端侧运作，通知、定位与语音权限将保障待办催办与常驻地点学习正常运作。")
                 }
 
                 Section {
@@ -183,6 +289,62 @@ struct SettingsView: View {
                     Text("界面与个性化定制")
                 } footer: {
                     Text("支持 8 款质感微光渐变主题、相册自选壁纸透光调节及首页底部 Tab 栏自由排序。")
+                }
+
+                // MARK: - 长辈关怀模式 (大字与无障碍)
+                Section {
+                    NavigationLink {
+                        SeniorModeSettingsView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(seniorManager.isSeniorModeEnabled ? Color.orange.opacity(0.2) : Color.orange.opacity(0.12))
+                                    .frame(width: 36, height: 36)
+
+                                Image(systemName: "figure.walk.motion")
+                                    .font(.title3)
+                                    .foregroundStyle(.orange)
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text("老年人大字关怀模式")
+                                        .font(.body.bold())
+                                        .foregroundStyle(.primary)
+
+                                    if seniorManager.isSeniorModeEnabled {
+                                        Text("已开启")
+                                            .font(.caption2.bold())
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Capsule().fill(Color.orange.opacity(0.2)))
+                                            .foregroundStyle(.orange)
+                                    }
+                                }
+
+                                Text(seniorManager.isSeniorModeEnabled ? "当前：\(seniorManager.fontScale.title) · 高对比度已启用" : "字号全局放大 35%~100%、大声朗读与防抖大触控")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+                        }
+                    }
+
+                    Toggle("快速开启大字关怀模式", isOn: $seniorManager.isSeniorModeEnabled)
+                        .tint(.orange)
+                        .onChange(of: seniorManager.isSeniorModeEnabled) { _, val in
+                            if val {
+                                Haptic.success()
+                            } else {
+                                Haptic.warning()
+                            }
+                        }
+                } header: {
+                    Text("无障碍与长辈关怀")
+                } footer: {
+                    Text("开启后全 App 文字全面放大、对比度加深，服药与快递待办支持一键大声语音播报。")
                 }
 
                 Section {
@@ -235,10 +397,105 @@ struct SettingsView: View {
                     Text("开启后可在屏幕任意边缘自由拖动悬浮球，松手自动贴边吸附，最适合单手大拇指快速开启语音对话。")
                 }
 
+                // MARK: - 对话记录与自动滚动留存 (7天 / 30天)
+                Section {
+                    Picker("对话记录保留周期", selection: $retentionPolicy) {
+                        ForEach(DialogueRetentionPolicy.allCases) { policy in
+                            Text(policy.displayName).tag(policy)
+                        }
+                    }
+                    .onChange(of: retentionPolicy) { _, newValue in
+                        AppSettings.dialogueRetentionPolicy = newValue
+                        DialogueHistoryManager.shared.cleanExpiredRecords(context: context)
+                        savedDialogueCount = DialogueHistoryManager.shared.countHistory(context: context)
+                        Haptic.light()
+                    }
+
+                    HStack {
+                        Text("本地存储对话消息")
+                        Spacer()
+                        Text("\(savedDialogueCount) 条")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if savedDialogueCount > 0 {
+                        Button(role: .destructive) {
+                            showingClearDialogueAlert = true
+                        } label: {
+                            HStack {
+                                Label("清空本地所有历史对话", systemImage: "trash")
+                                Spacer()
+                            }
+                        }
+                    }
+                } header: {
+                    Text("对话记录与自动滚动留存")
+                } footer: {
+                    Text("支持自动保留 7 天或 30 天。超期对话将在后台或 App 启动时静默自动滚动清理；提炼生成的待办事项、记账数据不受影响，永久存储在本地。")
+                }
+
+                // MARK: - 定期复盘报告 (日报 / 周报 / 月报)
+                Section {
+                    NavigationLink {
+                        PeriodicReportView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.blue.opacity(0.14))
+                                    .frame(width: 36, height: 36)
+
+                                Image(systemName: "chart.bar.doc.horizontal.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.blue)
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text("生活复盘报告 (日报·周报·月报)")
+                                        .font(.body.bold())
+                                        .foregroundStyle(.primary)
+
+                                    if reportManager.isDailyReportEnabled {
+                                        Text("日报已开启")
+                                            .font(.caption2.bold())
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Capsule().fill(Color.green.opacity(0.18)))
+                                            .foregroundStyle(.green)
+                                    }
+                                }
+
+                                Text("每日 \(reportManager.dailyTime.formatted(date: .omitted, time: .shortened)) 自动汇总待办、快递与收支账单")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+                        }
+                    }
+
+                    Toggle("每日生活日报提醒（默认开启）", isOn: $reportManager.isDailyReportEnabled)
+                        .tint(.green)
+                } header: {
+                    Text("定期复盘与成长报告")
+                } footer: {
+                    Text("默认开启每日生活日报，每天晚间为你总结今日搞定的待办与记账支出。进入后可随时查看历史周报、月报与成就评估。")
+                }
+
                 Section {
                     Picker("作息习惯与身份", selection: $lifestyleProfile) {
                         ForEach(UserLifestyleProfile.allCases) { profile in
                             Label(profile.rawValue, systemImage: profile.icon).tag(profile)
+                        }
+                    }
+
+                    if lifestyleProfile == .officeWorker {
+                        Picker("常规下班时间", selection: $offWorkHour) {
+                            ForEach(16...22, id: \.self) { h in
+                                Text("\(h):00").tag(h)
+                            }
                         }
                     }
 
@@ -248,7 +505,7 @@ struct SettingsView: View {
                 } header: {
                     Text("生活作息与情境智能感知")
                 } footer: {
-                    Text("开启后，工作日优先「工作通勤」，主要节假日与假期前夕智能置顶「出差旅行」与度假消费。零网络调用，完全本地实时推算。")
+                    Text("开启后，工作日未到下班时间保持「工作通勤」，下班后与节假日根据出行概率重排选项。零网络调用，完全本地实时推算。")
                 }
 
                 Section("智能大脑与 AI 本地模型") {
@@ -306,6 +563,22 @@ struct SettingsView: View {
                         Button("完成") { dismiss() }
                     }
                 }
+            }
+            .task {
+                savedDialogueCount = DialogueHistoryManager.shared.countHistory(context: context)
+            }
+            .alert("清空本地对话记录", isPresented: $showingClearDialogueAlert) {
+                Button("取消", role: .cancel) {}
+                Button("确认清空", role: .destructive) {
+                    DialogueHistoryManager.shared.clearAll(context: context)
+                    savedDialogueCount = 0
+                    Haptic.success()
+                }
+            } message: {
+                Text("确定要彻底清空本地保存的所有历史对话消息吗？此操作不可撤销（已提取的待办事项和账单不会受到影响）。")
+            }
+            .sheet(isPresented: $showingPermissionOnboarding) {
+                PermissionOnboardingView()
             }
         }
     }

@@ -4,6 +4,7 @@ import SwiftUI
 /// 生活档案与数字资产大厅 (Tab 3: 生活档案)
 struct LifeVaultView: View {
     @Environment(\.modelContext) private var context
+    @Query private var storedItems: [StoredItem]
     @Query private var documents: [IDDocumentItem]
     @Query private var passwords: [PasswordVaultItem]
     @Query private var anniversaries: [AnniversaryItem]
@@ -14,12 +15,24 @@ struct LifeVaultView: View {
     @Query private var places: [LearnedPlace]
     @Query private var departureItems: [DepartureCheckItem]
     @Query private var voiceMemos: [VoiceMemo]
+    @Query private var vehicles: [VehicleProfile]
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @Environment(\.colorScheme) private var colorScheme
 
     // 随身防丢未清点核心件
     private var uncheckedDepartureCount: Int {
         departureItems.filter { $0.isEssential && !$0.isChecked }.count
+    }
+
+    // 爱车需要关注补能或保养/保险/年检的数量
+    private var needCareVehicleCount: Int {
+        var count = 0
+        for v in vehicles {
+            if v.needsAttention {
+                count += 1
+            }
+        }
+        return count
     }
 
     // 最近即将到来的纪念日
@@ -46,7 +59,7 @@ struct LifeVaultView: View {
             List {
                 // 顶部快速看板统计
                 Section {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
                         NavigationLink {
                             IDDocumentVaultView()
                         } label: {
@@ -62,9 +75,23 @@ struct LifeVaultView: View {
                         .buttonStyle(.plain)
 
                         NavigationLink {
+                            ItemStorageVaultView()
+                        } label: {
+                            statPill(title: "收纳", count: "\(storedItems.count)", icon: "archivebox.fill", color: .indigo)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            VehicleManagementView()
+                        } label: {
+                            statPill(title: "爱车", count: "\(vehicles.count)", icon: "car.fill", color: .indigo, badgeCount: needCareVehicleCount)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
                             DepartureChecklistView()
                         } label: {
-                            statPill(title: "防丢", count: "\(departureItems.count)", icon: "bag.fill", color: .indigo, badgeCount: uncheckedDepartureCount)
+                            statPill(title: "防丢", count: "\(departureItems.count)", icon: "bag.fill", color: .teal, badgeCount: uncheckedDepartureCount)
                         }
                         .buttonStyle(.plain)
 
@@ -79,6 +106,13 @@ struct LifeVaultView: View {
                             HabitAndMedicationView()
                         } label: {
                             statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: .purple)
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            VoiceMemoListView()
+                        } label: {
+                            statPill(title: "录音", count: "\(voiceMemos.count)", icon: "mic.circle.fill", color: .red)
                         }
                         .buttonStyle(.plain)
                     }
@@ -158,17 +192,17 @@ struct LifeVaultView: View {
                     }
                 }
 
-                // MARK: - 3. 健康作息与环境感知
-                Section("健康作息与空间感知") {
+                // MARK: - 3. 物品收纳与空间感知
+                Section("物品收纳与空间记忆") {
                     NavigationLink {
-                        HabitAndMedicationView()
+                        ItemStorageVaultView()
                     } label: {
                         vaultRow(
-                            icon: "heart.text.square.fill",
-                            color: .purple,
-                            title: "周期家务与健康服药",
-                            subtitle: "滤芯更换、打扫卫生、定时服药打卡及智能家居联动",
-                            status: "\(habits.count) 项周期家务 | \(activeMedCount) 项服药提醒",
+                            icon: "archivebox.fill",
+                            color: .indigo,
+                            title: "物品收纳备忘",
+                            subtitle: "羽绒服、备用钥匙、工具盒，照片找物一秒定位",
+                            status: "已收录 \(storedItems.count) 件收纳物品",
                             isAlert: false
                         )
                     }
@@ -187,14 +221,43 @@ struct LifeVaultView: View {
                     }
                 }
 
-                // MARK: - 4. 随身防丢与出行装备
-                Section("随身防丢与出行装备") {
+                // MARK: - 4. 健康作息与习惯
+                Section("健康作息与生活习惯") {
+                    NavigationLink {
+                        HabitAndMedicationView()
+                    } label: {
+                        vaultRow(
+                            icon: "heart.text.square.fill",
+                            color: .purple,
+                            title: "周期家务与健康服药",
+                            subtitle: "滤芯更换、打扫卫生、定时服药打卡及智能家居联动",
+                            status: "\(habits.count) 项周期家务 | \(activeMedCount) 项服药提醒",
+                            isAlert: false
+                        )
+                    }
+                }
+
+                // MARK: - 4. 随身防丢与车务守护
+                Section("随身防丢与车务守护") {
+                    NavigationLink {
+                        VehicleManagementView()
+                    } label: {
+                        vaultRow(
+                            icon: "car.fill",
+                            color: .indigo,
+                            title: "爱车守护与车务管理",
+                            subtitle: "加油/加电周期提醒、常规保养、车险续保与年检预警",
+                            status: vehicleStatusSummary,
+                            isAlert: needCareVehicleCount > 0
+                        )
+                    }
+
                     NavigationLink {
                         DepartureChecklistView()
                     } label: {
                         vaultRow(
                             icon: "bag.fill",
-                            color: .indigo,
+                            color: .teal,
                             title: "出门防遗忘清单",
                             subtitle: "工作通勤、出差旅行、运动健身防漏带，指差四字确认",
                             status: uncheckedDepartureCount > 0 ? "⚠️ \(uncheckedDepartureCount) 件核心装备未确认" : "已收录 \(departureItems.count) 项随身装备",
@@ -212,6 +275,16 @@ struct LifeVaultView: View {
     }
 
     // MARK: - 辅助子视图
+
+    private var vehicleStatusSummary: String {
+        if vehicles.isEmpty {
+            return "未添加车辆，点击开启爱车守护"
+        } else if needCareVehicleCount > 0 {
+            return "⚠️ \(needCareVehicleCount) 辆车需关注补能或保养"
+        } else {
+            return "已守护 \(vehicles.count) 辆爱车，车况良好"
+        }
+    }
 
     private var nearestAnniversarySummary: String {
         if let next = nearestAnniversary {
