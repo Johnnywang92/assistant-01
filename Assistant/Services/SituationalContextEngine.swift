@@ -43,6 +43,13 @@ public final class SituationalContextEngine: ObservableObject {
     @AppStorage("user_lifestyle_profile") public var lifestyleProfile: UserLifestyleProfile = .officeWorker
     /// 是否开启全 App 场景智能重排（默认开启）
     @AppStorage("context_adaptive_sorting_enabled") public var isAdaptiveSortingEnabled: Bool = true
+    /// 默认下班时间（小时，默认 18:00）
+    @AppStorage("user_off_work_hour") public var offWorkHour: Int = 18
+
+    /// 出门清单持久化选中的场景类型 RawValue（"ALL" 表示全部）
+    @AppStorage("departure_selected_scene_raw") public var savedDepartureSceneRaw: String = ""
+    /// 出门清单用户上次选择该场景的时间戳
+    @AppStorage("departure_selected_scene_timestamp") public var savedDepartureSceneTimestamp: Double = 0
 
     private init() {}
 
@@ -126,40 +133,119 @@ public final class SituationalContextEngine: ObservableObject {
         return detectMajorHoliday(month: m, day: d, date: tomorrow)
     }
 
-    // MARK: - 业务输出：出门防遗忘场景动态推荐
+    // MARK: - 业务输出：出门防遗忘场景动态推荐与选择持久化
 
-    /// 根据情境给出的场景排序列表
-    public func sortedDepartureScenes() -> [DepartureScene] {
+    /// 根据时空情境、下班时段与气象预警给出的场景排序列表（严格按照可能性大小由高到低排序）
+    public func sortedDepartureScenes(at date: Date = .now) -> [DepartureScene] {
         guard isAdaptiveSortingEnabled else {
             return DepartureScene.allCases
         }
 
-        let ctx = currentContext()
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: date)
+        let ctx = currentContext(at: date)
+        var scenes: [DepartureScene]
+
         switch ctx {
         case .holidayTravel, .eveOfHoliday:
-            // 节假日或前夕：出差旅行排第一位！
-            return [.travel, .casual, .commute, .workout, .rainy]
+            // 节假日或前夕：出差旅行概率最高，其次日常休闲与运动
+            scenes = [.travel, .casual, .workout, .commute, .rainy]
 
         case .weekendLeisure:
             // 周末休闲：日常轻装/运动健身排前面
-            return [.casual, .workout, .commute, .travel, .rainy]
+            if hour >= 18 {
+                scenes = [.casual, .workout, .travel, .commute, .rainy]
+            } else {
+                scenes = [.casual, .workout, .commute, .travel, .rainy]
+            }
 
         case .workCommute:
-            // 工作日通勤：工作通勤排第一位！
-            return [.commute, .casual, .workout, .travel, .rainy]
+            // 工作日周一至周五：
+            if hour < offWorkHour {
+                // 没到下班时间：工作通勤概率最高！
+                scenes = [.commute, .casual, .workout, .travel, .rainy]
+            } else {
+                // 已过下班时间：健身运动、晚间休闲轻装概率大幅提升，超越工作通勤！
+                scenes = [.workout, .casual, .commute, .travel, .rainy]
+            }
         }
+
+        // 气象突变/预警联动：若检测到气象预警（如暴雨），将「雨雪恶劣」提升至首选前列
+        if WeatherAlertService.shared.currentBanner != nil {
+            scenes.removeAll { $0 == .rainy }
+            scenes.insert(.rainy, at: 0)
+        }
+
+        return scenes
     }
 
-    /// 当前最推荐的默认选中场景
-    public func recommendedDefaultDepartureScene() -> DepartureScene {
+    /// 当天最推荐的默认选中场景
+    public func recommendedDefaultDepartureScene(at date: Date = .now) -> DepartureScene {
         guard isAdaptiveSortingEnabled else { return .commute }
-        return sortedDepartureScenes().first ?? .commute
+        let sorted = sortedDepartureScenes(at: date)
+        // 除非恶劣天气预警，否则默认推荐非雨雪的最高概率场景
+        if WeatherAlertService.shared.currentBanner != nil {
+            return sorted.first ?? .commute
+        }
+        return sorted.first(where: { $0 != .rainy }) ?? sorted.first ?? .commute
+    }
+
+    /// 持久化记录用户对出行场景的选择
+    public func saveUserSelectedScene(_ scene: DepartureScene?) {
+        if let scene = scene {
+            savedDepartureSceneRaw = scene.rawValue
+        } else {
+            savedDepartureSceneRaw = "ALL"
+        }
+        savedDepartureSceneTimestamp = Date().timeIntervalSince1970
+    }
+
+    /// 获取当天生效的场景选择：
+    /// 1. 一天以内严格持久化记住用户的选择
+    /// 2. 如果用户选择了工作通勤，在未到下班时间前绝对不自动修改
+    /// 3. 如果是全新的一天，则使用当天的推荐场景并持久化
+    public func effectiveDepartureScene(at date: Date = .now) -> DepartureScene? {
+        let calendar = Calendar.current
+        let savedDate = Date(timeIntervalSince1970: savedDepartureSceneTimestamp)
+
+        // 判断是否在同一天内且已有保存记录
+        if savedDepartureSceneTimestamp > 0 && calendar.isDate(savedDate, inSameDayAs: date) {
+            if savedDepartureSceneRaw == "ALL" {
+                return nil
+            } else if let scene = DepartureScene(rawValue: savedDepartureSceneRaw) {
+                // 如果用户已经选择了工作，在未到下班时间前绝对不自动修改；即使过了下班时间也默认尊重用户的选择，仅提供建议与重排
+                return scene
+            }
+        }
+
+        // 新的一天，根据当天时空概率初始化推荐场景并保存
+        let defaultScene = recommendedDefaultDepartureScene(at: date)
+        saveUserSelectedScene(defaultScene)
+        return defaultScene
+    }
+
+    /// 是否应展示下班场景智能切换建议横幅：
+    /// 满足：工作日 + 已过下班时间 + 用户当前处于工作通勤场景
+    public func shouldSuggestAfterWorkSwitch(currentScene: DepartureScene?, at date: Date = .now) -> Bool {
+        guard isAdaptiveSortingEnabled else { return false }
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: date)
+        let weekday = calendar.component(.weekday, from: date)
+
+        let isWorkday = (2...6).contains(weekday)
+        let isAfterWork = hour >= offWorkHour
+        let isWorkScene = currentScene == .commute
+
+        return isWorkday && isAfterWork && isWorkScene
     }
 
     /// 在出门防遗忘视图顶部显示的智能情境徽标提示
-    public func departureContextBadge() -> (text: String, icon: String, color: Color)? {
+    public func departureContextBadge(at date: Date = .now) -> (text: String, icon: String, color: Color)? {
         guard isAdaptiveSortingEnabled else { return nil }
-        let ctx = currentContext()
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: date)
+        let ctx = currentContext(at: date)
+
         switch ctx {
         case .holidayTravel(let holiday):
             return ("\(holiday)期间 · 已智能置顶「出差旅行」清单", "airplane.departure", .purple)
@@ -168,10 +254,12 @@ public final class SituationalContextEngine: ObservableObject {
         case .weekendLeisure:
             return ("周末闲暇时光 · 优先展示日常出行与运动", "sun.max.fill", .green)
         case .workCommute(let isMorning):
-            if isMorning {
+            if hour >= offWorkHour {
+                return ("已到下班时间 · 选项已按晚间出行概率重排（推荐健身与休闲）", "moon.stars.fill", .purple)
+            } else if isMorning {
                 return ("工作日早高峰 · 优先清点工牌工位通勤装备", "briefcase.fill", .blue)
             } else {
-                return ("工作日日程中 · 优先工作通勤清单", "building.2.fill", .blue)
+                return ("工作日日间工作 · 保持工作通勤装备清点（\(offWorkHour):00 前不下班）", "building.2.fill", .blue)
             }
         }
     }

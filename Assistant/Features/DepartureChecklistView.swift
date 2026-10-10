@@ -13,6 +13,7 @@ struct DepartureChecklistView: View {
     @State private var showingAddSheet = false
     @State private var showingResetAlert = false
     @State private var hasInitializedScene = false
+    @State private var isAfterWorkSuggestionDismissed = false
 
     // 出门指差四字状态（身·手·钥·耳）
     @State private var checkedShen = false
@@ -88,11 +89,17 @@ struct DepartureChecklistView: View {
                     .padding(.bottom, 2)
                 }
 
+                // 下班智能建议横幅（仅建议与重排，绝不强行自动覆盖用户选择）
+                if contextEngine.shouldSuggestAfterWorkSwitch(currentScene: selectedScene) && !isAfterWorkSuggestionDismissed {
+                    afterWorkSuggestionBanner
+                }
+
                 // 场景横向滚动切换（根据当前时空情景动态重排）
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         Button {
                             selectedScene = nil
+                            contextEngine.saveUserSelectedScene(nil)
                             Haptic.light()
                         } label: {
                             Text("全部 (\(items.count))")
@@ -109,6 +116,7 @@ struct DepartureChecklistView: View {
                             let count = items.filter { $0.scene == scene }.count
                             Button {
                                 selectedScene = scene
+                                contextEngine.saveUserSelectedScene(scene)
                                 Haptic.light()
                             } label: {
                                 HStack(spacing: 4) {
@@ -239,13 +247,95 @@ struct DepartureChecklistView: View {
         .onAppear {
             seedDefaultsIfNeeded()
             if !hasInitializedScene {
-                selectedScene = contextEngine.recommendedDefaultDepartureScene()
+                selectedScene = contextEngine.effectiveDepartureScene()
                 hasInitializedScene = true
             }
         }
     }
 
     // MARK: - 辅助组件
+
+    // 下班时段智能建议横幅（仅建议与重排，绝不强行覆盖用户选择）
+    @ViewBuilder
+    private var afterWorkSuggestionBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "moon.stars.fill")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.purple)
+                Text("下班时段出行建议")
+                    .font(.caption.bold())
+                    .foregroundStyle(.purple)
+                Spacer()
+                Button {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                        isAfterWorkSuggestionDismissed = true
+                    }
+                    Haptic.light()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text("已到 \(contextEngine.offWorkHour):00 下班时间，当前仍保留「工作通勤」。选项已按晚间出行概率重排，今晚若有健身或聚餐休闲安排，可一键切换：")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        selectedScene = .workout
+                        contextEngine.saveUserSelectedScene(.workout)
+                    }
+                    Haptic.light()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "figure.run")
+                        Text("切至运动健身")
+                    }
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.orange.opacity(0.18)))
+                    .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        selectedScene = .casual
+                        contextEngine.saveUserSelectedScene(.casual)
+                    }
+                    Haptic.light()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bag.fill")
+                        Text("切至日常轻装")
+                    }
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.green.opacity(0.18)))
+                    .foregroundStyle(.green)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.purple.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.purple.opacity(0.2), lineWidth: 1)
+                )
+        )
+        .padding(.vertical, 2)
+    }
 
     @ViewBuilder
     private func ritualButton(title: String, sub: String, isChecked: Binding<Bool>) -> some View {
