@@ -137,18 +137,20 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         }
         defer { sourceURL.stopAccessingSecurityScopedResource() }
 
+        _ = modelsDirectory
         if FileManager.default.fileExists(atPath: localModelURL.path) {
             try FileManager.default.removeItem(at: localModelURL)
         }
 
         try FileManager.default.copyItem(at: sourceURL, to: localModelURL)
+        self.errorMessage = nil
         checkModelStatus()
         Haptic.success()
     }
 
     // MARK: - URLSessionDownloadDelegate
 
-    public func urlSession(
+    nonisolated public func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
         didWriteData bytesWritten: Int64,
@@ -164,7 +166,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
             // 计算即时下载速率 (MB/s)
             let now = Date.now
             let timeInterval = now.timeIntervalSince(self.lastSpeedCheckTime)
-            if timeInterval >= 1.0 {
+            if timeInterval >= 0.5 {
                 let bytesDiff = totalBytesWritten - self.lastSpeedBytes
                 self.downloadSpeedMBps = (Double(bytesDiff) / 1024.0 / 1024.0) / timeInterval
                 self.lastSpeedCheckTime = now
@@ -173,29 +175,44 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         }
     }
 
-    public func urlSession(
+    nonisolated public func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
+        // 重要：根据苹果 URLSession 规范，此委托方法返回后系统会立即清除临时文件（CFNetworkDownload_xxx.tmp）！
+        // 必须在此方法同步返回前，将文件从临时位置移动到持久化沙盒目录中。
+        let targetDir = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
+        let targetURL = targetDir.appendingPathComponent(Self.modelFileName)
+
+        var moveError: Error?
+        do {
+            if !FileManager.default.fileExists(atPath: targetDir.path) {
+                try FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true, attributes: nil)
+            }
+            if FileManager.default.fileExists(atPath: targetURL.path) {
+                try FileManager.default.removeItem(at: targetURL)
+            }
+            try FileManager.default.moveItem(at: location, to: targetURL)
+        } catch {
+            moveError = error
+        }
+
         Task { @MainActor in
-            do {
-                if FileManager.default.fileExists(atPath: self.localModelURL.path) {
-                    try FileManager.default.removeItem(at: self.localModelURL)
-                }
-                try FileManager.default.moveItem(at: location, to: self.localModelURL)
-                self.isDownloading = false
-                self.checkModelStatus()
-                Haptic.success()
-            } catch {
+            if let error = moveError {
                 self.errorMessage = "保存模型文件失败：\(error.localizedDescription)"
                 self.isDownloading = false
                 Haptic.error()
+            } else {
+                self.errorMessage = nil
+                self.isDownloading = false
+                self.checkModelStatus()
+                Haptic.success()
             }
         }
     }
 
-    public func urlSession(
+    nonisolated public func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
         didCompleteWithError error: Error?
