@@ -19,7 +19,10 @@ enum Persistence {
             IDDocumentItem.self,
             ExpenseRecord.self,
             DepartureCheckItem.self,
-            VoiceMemo.self
+            VoiceMemo.self,
+            VehicleProfile.self,
+            StoredItem.self,
+            DialogueMessageRecord.self
         ])
         // 存在 Application Support，覆盖安装（重签）不会丢失
         let config = ModelConfiguration(schema: schema)
@@ -67,6 +70,18 @@ enum AppSettings {
         }
     }
 
+    /// 对用户的称呼（默认："你"）
+    static var userTitle: String {
+        get {
+            let title = UserDefaults.standard.string(forKey: "user_preferred_title")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return title.isEmpty ? "你" : title
+        }
+        set {
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            UserDefaults.standard.set(trimmed.isEmpty ? "你" : trimmed, forKey: "user_preferred_title")
+        }
+    }
+
     /// 运行模式：提醒模式（默认）、安静模式、记录模式
     static var currentMode: AssistantMode {
         get {
@@ -89,5 +104,19 @@ enum AppSettings {
     static var lowDataThresholdMB: Double {
         get { UserDefaults.standard.object(forKey: "lowDataThresholdMB") as? Double ?? 1024 }
         set { UserDefaults.standard.set(newValue, forKey: "lowDataThresholdMB") }
+    }
+
+    /// 对话记录保留策略（默认保留 30 天，支持 7 天 / 30 天 / 不保留 / 永久）
+    static var dialogueRetentionPolicy: DialogueRetentionPolicy {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: "dialogue_retention_policy"),
+                  let policy = DialogueRetentionPolicy(rawValue: raw) else {
+                return .thirtyDays // 默认开启 30 天自动保留
+            }
+            return policy
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: "dialogue_retention_policy")
+        }
     }
 }

@@ -97,7 +97,7 @@ public final class TabBarManager: ObservableObject {
             return (false, "未找到该板块")
         }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-            activeTabs.remove(at: index)
+            _ = activeTabs.remove(at: index)
         }
         // 如果当前选中的 Tab 被移除了，自动切到第一个 Tab
         if NavigationRouter.shared.selectedTab == tab {

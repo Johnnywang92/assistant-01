@@ -49,16 +49,26 @@ public final class LLMInferenceService: ObservableObject {
             todoText = todos.prefix(5).map { $0.title }.joined(separator: "、")
         }
 
-        // 3. 记账开销
+        // 3. 记账开销（单次 O(N) 循环聚合计算）
         let calendar = Calendar.current
-        let records = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
-        let todayExpense = records.filter { !$0.isIncome && calendar.isDateInToday($0.date) }.reduce(0) { $0 + $1.amount }
         let currentMonth = calendar.component(.month, from: .now)
-        let monthExpense = records.filter { !$0.isIncome && calendar.component(.month, from: $0.date) == currentMonth }.reduce(0) { $0 + $1.amount }
+        let currentYear = calendar.component(.year, from: .now)
+        var todayExpense: Double = 0
+        var monthExpense: Double = 0
+        let records = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
+        for r in records where !r.isIncome {
+            if calendar.isDateInToday(r.date) {
+                todayExpense += r.amount
+            }
+            if calendar.component(.year, from: r.date) == currentYear &&
+               calendar.component(.month, from: r.date) == currentMonth {
+                monthExpense += r.amount
+            }
+        }
 
-        // 4. 临近纪念日
+        // 4. 临近纪念日 (直接 O(N) 极速取最小)
         let anniversaries = (try? context.fetch(FetchDescriptor<AnniversaryItem>())) ?? []
-        let nearestAnni = anniversaries.sorted { $0.daysUntilNext < $1.daysUntilNext }.first
+        let nearestAnni = anniversaries.min(by: { $0.daysUntilNext < $1.daysUntilNext })
         let anniText: String
         if let nearestAnni {
             anniText = "\(nearestAnni.title)（还有 \(nearestAnni.daysUntilNext) 天）"
@@ -66,10 +76,13 @@ public final class LLMInferenceService: ObservableObject {
             anniText = "无"
         }
 
+        let userTitle = AppSettings.userTitle
+
         // 组合 Qwen2.5 ChatML 格式
         let prompt = """
         <|im_start|>system
         你是专属离线个人 AI 助理「\(name)」。你运行在用户的 iPhone 设备本地。
+        当前对用户的称呼：\(userTitle)
         当前时间：\(now)
         【用户实时生活档案】：
         • 待取快递：\(parcelText)
@@ -77,7 +90,7 @@ public final class LLMInferenceService: ObservableObject {
         • 财务支出：今日消费 ¥\(String(format: "%.1f", todayExpense))，本月累计消费 ¥\(String(format: "%.1f", monthExpense))
         • 最近纪念日：\(anniText)
         【作答规则】：
-        1. 用口语化、精准、贴心的中文回答，适合语音朗读；
+        1. 用口语化、精准、贴心的中文回答，适合语音朗读；适当时称呼用户为「\(userTitle)」；
         2. 篇幅控制在 1-3 句话之内，直奔重点，严禁废话；
         3. 如涉及生活数据，根据上述真实上下文如实汇报。<|im_end|>
         <|im_start|>user

@@ -1,0 +1,108 @@
+import Foundation
+import SwiftData
+
+/// 负责对话历史记录的端侧持久化、自动滚动过期清理与检索
+@MainActor
+final class DialogueHistoryManager {
+    static let shared = DialogueHistoryManager()
+
+    private init() {}
+
+    /// 自动根据保留策略（7天 / 30天 / 不保留）清理超期记录
+    func cleanExpiredRecords(context: ModelContext) {
+        let policy = AppSettings.dialogueRetentionPolicy
+
+        switch policy {
+        case .none:
+            // 不保留模式：清理全部历史
+            clearAll(context: context)
+
+        case .sevenDays, .thirtyDays:
+            let days = policy.retentionDays
+            guard let cutoffDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) else { return }
+
+            let descriptor = FetchDescriptor<DialogueMessageRecord>(
+                predicate: #Predicate<DialogueMessageRecord> { record in
+                    record.timestamp < cutoffDate
+                }
+            )
+
+            do {
+                let expiredList = try context.fetch(descriptor)
+                guard !expiredList.isEmpty else { return }
+                for record in expiredList {
+                    context.delete(record)
+                }
+                try context.save()
+            } catch {
+                print("⚠️ 清理超期对话记录失败: \(error)")
+            }
+
+        case .forever:
+            // 永久保留，不主动清理
+            break
+        }
+    }
+
+    /// 持久化单条对话消息（若设置为「不保留」，则直接忽略）
+    func saveMessage(role: String, text: String, sessionID: UUID? = nil, context: ModelContext) {
+        guard AppSettings.dialogueRetentionPolicy != .none else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let record = DialogueMessageRecord(
+            role: role,
+            text: trimmed,
+            timestamp: .now,
+            sessionID: sessionID
+        )
+        context.insert(record)
+        do {
+            try context.save()
+        } catch {
+            print("⚠️ 保存对话记录失败: \(error)")
+        }
+    }
+
+    /// 获取最近历史对话（默认最多载入前 100 条）
+    func fetchRecentMessages(limit: Int = 100, context: ModelContext) -> [DialogueMessageRecord] {
+        guard AppSettings.dialogueRetentionPolicy != .none else { return [] }
+
+        var descriptor = FetchDescriptor<DialogueMessageRecord>(
+            sortBy: [SortDescriptor(\.timestamp, order: .forward)]
+        )
+        descriptor.fetchLimit = limit
+
+        do {
+            return try context.fetch(descriptor)
+        } catch {
+            print("⚠️ 读取对话历史失败: \(error)")
+            return []
+        }
+    }
+
+    /// 获取已保存的历史记录条数
+    func countHistory(context: ModelContext) -> Int {
+        var descriptor = FetchDescriptor<DialogueMessageRecord>()
+        descriptor.fetchLimit = 1000
+        do {
+            return try context.fetchCount(descriptor)
+        } catch {
+            return 0
+        }
+    }
+
+    /// 清空所有历史对话记录
+    func clearAll(context: ModelContext) {
+        let descriptor = FetchDescriptor<DialogueMessageRecord>()
+        do {
+            let all = try context.fetch(descriptor)
+            for item in all {
+                context.delete(item)
+            }
+            try context.save()
+        } catch {
+            print("⚠️ 清空对话记录失败: \(error)")
+        }
+    }
+}

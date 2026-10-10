@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import LocalAuthentication
 import SwiftData
 import UIKit
@@ -136,6 +137,8 @@ public final class IDDocumentItem {
 
 /// 证件照片本地沙盒持久化安全存储
 public enum IDPhotoStorage {
+    private static let thumbnailCache = NSCache<NSString, UIImage>()
+
     private static var storageDirectory: URL {
         let fileManager = FileManager.default
         let baseDir = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? URL.documentsDirectory
@@ -159,7 +162,7 @@ public enum IDPhotoStorage {
         }
     }
 
-    /// 从本地沙盒读取照片
+    /// 从本地沙盒读取完整照片
     public static func loadImage(fileName: String?) -> UIImage? {
         guard let fileName, !fileName.isEmpty else { return nil }
         let fileURL = storageDirectory.appendingPathComponent(fileName)
@@ -167,9 +170,42 @@ public enum IDPhotoStorage {
         return UIImage(contentsOfFile: fileURL.path)
     }
 
+    /// 高性能降采样读取缩略图，避免直接解码巨幅原图占用过多内存和阻塞主线程
+    public static func loadThumbnail(fileName: String?, maxPixelSize: CGFloat = 360) -> UIImage? {
+        guard let fileName, !fileName.isEmpty else { return nil }
+        let cacheKey = "\(fileName)_\(Int(maxPixelSize))" as NSString
+        if let cached = thumbnailCache.object(forKey: cacheKey) {
+            return cached
+        }
+
+        let fileURL = storageDirectory.appendingPathComponent(fileName)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+
+        let imageSourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let imageSource = CGImageSourceCreateWithURL(fileURL as CFURL, imageSourceOptions) else {
+            return nil
+        }
+
+        let downsampleOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+
+        guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions as CFDictionary) else {
+            return nil
+        }
+
+        let image = UIImage(cgImage: downsampledImage)
+        thumbnailCache.setObject(image, forKey: cacheKey)
+        return image
+    }
+
     /// 删除指定照片
     public static func deleteImage(fileName: String?) {
         guard let fileName, !fileName.isEmpty else { return }
+        thumbnailCache.removeObject(forKey: "\(fileName)_360" as NSString)
         let fileURL = storageDirectory.appendingPathComponent(fileName)
         try? FileManager.default.removeItem(at: fileURL)
     }

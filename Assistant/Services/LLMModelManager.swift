@@ -24,8 +24,8 @@ public enum LLMDownloadSource: String, CaseIterable, Identifiable {
 public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     public static let shared = LLMModelManager()
 
-    public static let modelFileName = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
-    public static let expectedSizeApproxBytes: Int64 = 986_000_000 // 约 986 MB
+    nonisolated public static let modelFileName = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+    nonisolated public static let expectedSizeApproxBytes: Int64 = 986_000_000 // 约 986 MB
 
     // 模型存储目录
     public var modelsDirectory: URL {

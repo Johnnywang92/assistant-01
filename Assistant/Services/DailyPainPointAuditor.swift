@@ -22,6 +22,8 @@ struct DailyPainPointAuditor {
         auditAnniversaries()
         auditPasswordRotations()
         auditIDDocuments()
+        auditVehicleCare()
+        AnniversaryReminderManager.shared.checkAndSendDailyNotifications(context: context)
     }
 
     /// 1. 自动续费与订阅被动扣费防范
@@ -137,6 +139,74 @@ struct DailyPainPointAuditor {
                     id: "id-doc-\(item.id.uuidString)",
                     title: "证件临期预警",
                     body: "「\(item.title)」\(statusDesc)，请记得及时换证。"
+                )
+            }
+        }
+    }
+
+    /// 6. 有车一族车辆巡检（加油/加电提醒、定期保养、车险与年检合规）
+    private func auditVehicleCare() {
+        let descriptor = FetchDescriptor<VehicleProfile>(
+            predicate: #Predicate { $0.isReminderEnabled }
+        )
+        guard let vehicles = try? context.fetch(descriptor) else { return }
+
+        for vehicle in vehicles {
+            // A. 加油 / 加电周期性提醒
+            if vehicle.daysUntilNextEnergyRefill <= 1 {
+                let verb = vehicle.powerType.energyVerb
+                let title = "🚗 爱车\(verb)提醒：\(vehicle.name)"
+                let statusText = vehicle.daysUntilNextEnergyRefill <= 0 ? "已达计划\(verb)周期" : "建议明天内补能"
+                let detail = "[\(vehicle.plateNumber)] \(statusText)，建议趁晚间低谷电价或周末出行前完成\(verb)。"
+                upsertTodo(type: .vehicleCare, title: title, detail: detail, dueAt: .now)
+
+                postThrottledNotification(
+                    id: "vehicle-energy-\(vehicle.id.uuidString)",
+                    title: "爱车\(verb)提醒",
+                    body: "「\(vehicle.name)」\(statusText)，记得及时\(verb)哦。"
+                )
+            }
+
+            // B. 定期保养预警（15天内或已超期）
+            if vehicle.needsMaintenanceSoon {
+                let days = vehicle.daysUntilNextMaintenance
+                let statusText = days < 0 ? "保养已超期 \(abs(days)) 天" : "还剩 \(days) 天到期"
+                let title = "🔧 车辆常规保养预警：\(vehicle.name)"
+                let detail = "[\(vehicle.plateNumber)] 保养周期\(statusText)，建议提前预约 4S 店/修理厂更换机油或检测三电系统。"
+                upsertTodo(type: .vehicleCare, title: title, detail: detail, dueAt: vehicle.nextMaintenanceDate)
+
+                postThrottledNotification(
+                    id: "vehicle-maint-\(vehicle.id.uuidString)",
+                    title: "爱车保养提醒",
+                    body: "「\(vehicle.name)」常规保养\(statusText)，请提前预约。"
+                )
+            }
+
+            // C. 车险到期预警（30天内）
+            if let daysLeft = vehicle.daysUntilInsuranceExpiry, let expiry = vehicle.insuranceExpiryDate, daysLeft <= 30 {
+                let statusText = daysLeft < 0 ? "车险已脱保 \(abs(daysLeft)) 天！" : "即将在 \(daysLeft) 天后到期"
+                let title = "🛡️ 车险续保预警：\(vehicle.name)"
+                let detail = "[\(vehicle.plateNumber)] \(statusText)，请提前对比商业险与交强险报价并完成续保，杜绝脱险裸奔。"
+                upsertTodo(type: .vehicleCare, title: title, detail: detail, dueAt: expiry)
+
+                postThrottledNotification(
+                    id: "vehicle-insur-\(vehicle.id.uuidString)",
+                    title: "车险续保提醒",
+                    body: "「\(vehicle.name)」车险\(statusText)，切勿脱保上路。"
+                )
+            }
+
+            // D. 车辆年检预警（60天内）
+            if let daysLeft = vehicle.daysUntilAnnualInspection, let inspectionDate = vehicle.annualInspectionDate, daysLeft <= 60 {
+                let statusText = daysLeft < 0 ? "年检已逾期 \(abs(daysLeft)) 天！" : "还剩 \(daysLeft) 天"
+                let title = "📋 车辆年检预警：\(vehicle.name)"
+                let detail = "[\(vehicle.plateNumber)] 检验有效期\(statusText)，免检车辆可在「交管12123」申领检验标志，上线车辆请提前预约检测站。"
+                upsertTodo(type: .vehicleCare, title: title, detail: detail, dueAt: inspectionDate)
+
+                postThrottledNotification(
+                    id: "vehicle-inspect-\(vehicle.id.uuidString)",
+                    title: "车辆年检预警",
+                    body: "「\(vehicle.name)」年检\(statusText)，请及时办理免检标或上线检测。"
                 )
             }
         }
