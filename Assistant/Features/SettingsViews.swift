@@ -169,7 +169,19 @@ struct SettingsView: View {
                     Text("安静模式下不发送横幅/通知声音；记录模式下只收录数据不催办。")
                 }
 
-                Section("视觉与个性化") {
+                Section("界面与个性化定制") {
+                    NavigationLink {
+                        TabBarCustomizationView()
+                    } label: {
+                        HStack {
+                            Label("首页 Tab 栏自定义", systemImage: "rectangle.bottomthird.inset.filled")
+                            Spacer()
+                            Text("\(TabBarManager.shared.activeTabs.count) / 5 个板块")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
                     NavigationLink {
                         AppBackgroundSettingsView()
                     } label: {

@@ -1,9 +1,10 @@
 import SwiftData
 import SwiftUI
 
-/// 主应用底部 Tab 栏导航 (方案 1: 待办、记账、生活档案、设置)
+/// 主应用底部 Tab 栏导航（支持用户自定义板块增删与顺序排列，最多 5 个板块）
 struct MainTabView: View {
     @ObservedObject private var router = NavigationRouter.shared
+    @ObservedObject private var tabManager = TabBarManager.shared
     @Query(filter: #Predicate<TodoItem> { $0.statusRaw == "active" }) private var activeTodos: [TodoItem]
     @State private var showVoice = false
 
@@ -13,30 +14,14 @@ struct MainTabView: View {
             AppBackgroundView()
 
             TabView(selection: $router.selectedTab) {
-                TodoListView()
-                    .tabItem {
-                        Label("待办", systemImage: "checklist")
-                    }
-                    .tag(NavigationRouter.AppTab.todos)
-                    .badge(activeTodos.isEmpty ? 0 : activeTodos.count)
-
-                ExpenseTrackerView()
-                    .tabItem {
-                        Label("记账", systemImage: "yensign.circle.fill")
-                    }
-                    .tag(NavigationRouter.AppTab.expenses)
-
-                LifeVaultView()
-                    .tabItem {
-                        Label("生活档案", systemImage: "folder.badge.person.crop")
-                    }
-                    .tag(NavigationRouter.AppTab.vault)
-
-                SettingsView(isSheet: false)
-                    .tabItem {
-                        Label("设置", systemImage: "gearshape.fill")
-                    }
-                    .tag(NavigationRouter.AppTab.settings)
+                ForEach(tabManager.activeTabs) { tab in
+                    tabContentView(for: tab)
+                        .tabItem {
+                            Label(tab.title, systemImage: tab.systemImage)
+                        }
+                        .tag(tab)
+                        .badge(badgeCount(for: tab))
+                }
             }
 
             // 单手自由拖拽吸边语音悬浮球
@@ -50,6 +35,51 @@ struct MainTabView: View {
                 showVoice = true
                 router.activeSheet = nil
             }
+        }
+        .onAppear {
+            // 确保当前选中的 Tab 存在于活跃列表中
+            if !tabManager.activeTabs.contains(router.selectedTab) {
+                router.selectedTab = tabManager.activeTabs.first ?? .todos
+            }
+        }
+    }
+
+    // MARK: - 板块内容视图分发
+
+    @ViewBuilder
+    private func tabContentView(for tab: NavigationRouter.AppTab) -> some View {
+        switch tab {
+        case .todos:
+            TodoListView()
+        case .departure:
+            NavigationStack {
+                DepartureChecklistView()
+            }
+        case .expenses:
+            ExpenseTrackerView()
+        case .vault:
+            LifeVaultView()
+        case .passwords:
+            NavigationStack {
+                PasswordVaultView()
+            }
+        case .documents:
+            NavigationStack {
+                IDDocumentVaultView()
+            }
+        case .settings:
+            SettingsView(isSheet: false)
+        }
+    }
+
+    // MARK: - 动态角标徽标
+
+    private func badgeCount(for tab: NavigationRouter.AppTab) -> Int {
+        switch tab {
+        case .todos:
+            return activeTodos.isEmpty ? 0 : activeTodos.count
+        default:
+            return 0
         }
     }
 }
