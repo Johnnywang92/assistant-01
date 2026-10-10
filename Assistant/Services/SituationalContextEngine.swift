@@ -272,6 +272,16 @@ public final class SituationalContextEngine: ObservableObject {
             return ["今天有哪些待办？", "出门防丢该带什么？", "今天花了多少钱？", "查一下待取快递", "记一下开会安排"]
         }
 
+        if let ticket = TravelTicketReminderManager.shared.activeUpcomingTicket {
+            return [
+                "查看「\(ticket.title)」购票建议",
+                "提前15天提醒我抢火车票",
+                "今天有哪些待办？",
+                "今天花了多少钱？",
+                "查一下待取快递"
+            ]
+        }
+
         let ctx = currentContext()
         switch ctx {
         case .holidayTravel(let holiday):

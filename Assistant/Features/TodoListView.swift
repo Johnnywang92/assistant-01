@@ -48,7 +48,7 @@ fileprivate struct TodoClassification {
                 done.append(item)
                 if item.isRecurring { doneRecurring.append(item) }
                 switch item.type {
-                case .general, .event: doneGenerals.append(item)
+                case .general, .event, .travelBooking: doneGenerals.append(item)
                 case .parcel, .returnParcel: doneParcels.append(item)
                 case .medication, .housework, .charging: doneLife.append(item)
                 case .subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare: doneAlerts.append(item)
@@ -58,7 +58,7 @@ fileprivate struct TodoClassification {
                 active.append(item)
                 if item.isRecurring { recurring.append(item) }
                 switch item.type {
-                case .general, .event: generals.append(item)
+                case .general, .event, .travelBooking: generals.append(item)
                 case .parcel: parcels.append(item)
                 case .returnParcel: returnParcels.append(item)
                 case .medication: medications.append(item)
@@ -93,6 +93,7 @@ struct TodoListView: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var seniorManager = SeniorModeManager.shared
     @ObservedObject private var anniversaryReminder = AnniversaryReminderManager.shared
+    @ObservedObject private var ticketReminder = TravelTicketReminderManager.shared
     @State private var showAddTodo = false
     @State private var showVoice = false
     @State private var showDone = false
@@ -103,6 +104,7 @@ struct TodoListView: View {
     @State private var selectedFilter: TodoFilterCategory = .all
     @State private var showShareSheet = false
     @State private var itemToShare: TodoItem? = nil
+    @State private var confirmingTicketInfo: UpcomingTravelTicketInfo? = nil
     @State private var prepToastMessage: String? = nil
     @State private var isReordering: Bool = false
     @State private var searchText: String = ""
@@ -169,6 +171,11 @@ struct TodoListView: View {
                 // 临近 5~7 天纪念日浪漫筹备备忘横幅（支持一键加入待办与不再提醒）
                 if let upcoming = anniversaryReminder.activeUpcoming {
                     anniversaryPrepBanner(upcoming)
+                }
+
+                // 临近节假日或出差旅游出行前购票提醒横幅（火车票提前15天、机票提前15-30天）
+                if let ticketInfo = ticketReminder.activeUpcomingTicket {
+                    travelTicketPrepBanner(ticketInfo)
                 }
 
                 Divider()
@@ -274,6 +281,11 @@ struct TodoListView: View {
                     initialSelectedIds: [item.id]
                 )
             }
+            .sheet(item: $confirmingTicketInfo) { info in
+                TravelTicketConfirmationSheet(ticketInfo: info) { count in
+                    showToast("已确认添加 \(count) 项出行前待办！🎫")
+                }
+            }
             .sheet(isPresented: $showBackgroundSettings) {
                 NavigationStack {
                     AppBackgroundSettingsView()
@@ -334,12 +346,15 @@ struct TodoListView: View {
             .task {
                 await weatherAlerts.checkAlertsIfNeeded()
                 anniversaryReminder.refreshActiveUpcoming(context: context)
+                ticketReminder.refreshUpcomingTickets(context: context)
             }
             .onAppear {
                 anniversaryReminder.refreshActiveUpcoming(context: context)
+                ticketReminder.refreshUpcomingTickets(context: context)
             }
             .onChange(of: todos) { _, _ in
                 anniversaryReminder.refreshActiveUpcoming(context: context)
+                ticketReminder.refreshUpcomingTickets(context: context)
             }
             .overlay(alignment: .bottom) {
                 if let toast = prepToastMessage {
@@ -638,6 +653,138 @@ struct TodoListView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color.pink.opacity(0.25), lineWidth: 1)
+        )
+        .padding(.horizontal)
+        .padding(.vertical, 4)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    // MARK: - 节假日与出差旅行出行前购票备忘卡片（火车票提前15天、机票提前15-30天）
+
+    @ViewBuilder
+    private func travelTicketPrepBanner(_ info: UpcomingTravelTicketInfo) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                HStack(spacing: 8) {
+                    Image(systemName: "ticket.fill")
+                        .font(.title3)
+                        .foregroundStyle(.indigo)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(info.title + (info.isHoliday ? "出行购票提醒" : "购票提醒"))
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+
+                            Text(info.stageBadgeText)
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.indigo.opacity(0.18)))
+                                .foregroundStyle(.indigo)
+                        }
+
+                        Text("出行日期 \(info.departureFormatted) · \(info.recommendationDescription)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                // 不再提醒按钮
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        ticketReminder.dismiss(for: info)
+                        showToast("已设置本周期不再提醒该出行购票")
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "bell.slash")
+                            .font(.caption2)
+                        Text("不再提醒")
+                            .font(.caption2)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color(.tertiarySystemFill)))
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // 火车票、文博景区与机票三大关键时间节点胶囊
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    Label("🚄 火车票起售：\(info.trainSaleFormatted) (提前15天)", systemImage: "train.side.front.car")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.blue.opacity(0.08)))
+                        .foregroundStyle(.blue)
+
+                    Label("🏛️ 场馆景区预约：\(info.scenicBookingFormatted) (提前7天)", systemImage: "building.columns.fill")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.purple.opacity(0.08)))
+                        .foregroundStyle(.purple)
+
+                    Label("✈️ 机票黄金预订：提前15-30天", systemImage: "airplane")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.teal.opacity(0.08)))
+                        .foregroundStyle(.teal)
+                }
+            }
+
+            // 目的地文博场馆放票规则指南提示
+            if let guide = info.destinationGuide {
+                HStack(alignment: .top, spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .font(.caption2)
+                        .foregroundStyle(.purple)
+                    Text(guide)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(.horizontal, 4)
+            }
+
+            // 用户确认式加入待办事项
+            Button {
+                confirmingTicketInfo = info
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.badge.questionmark.fill")
+                    Text("查看并确认新增待办 (3项推荐)")
+                }
+                .font(.subheadline.bold())
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .background(
+                    LinearGradient(
+                        colors: [Color.indigo, Color.blue],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .shadow(color: Color.indigo.opacity(0.25), radius: 4, y: 2)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.indigo.opacity(0.25), lineWidth: 1)
         )
         .padding(.horizontal)
         .padding(.vertical, 4)
@@ -1832,6 +1979,14 @@ struct AddTodoSheet: View {
     @State private var pickupCode: String = ""
     @State private var station: String = ""
 
+    // 出行前购票与文博景区预约确认项
+    @State private var addCompanionTickets: Bool = false
+    @State private var includeTrainReminder: Bool = true
+    @State private var includeFlightReminder: Bool = true
+    @State private var includeScenicReminder: Bool = true
+    @State private var customTrainDate: Date? = nil
+    @State private var customScenicDate: Date? = nil
+
     // 智能剪贴板侦测
     @State private var detectedClipboardText: String?
     @State private var detectedClipboardType: TodoType?
@@ -1890,9 +2045,9 @@ struct AddTodoSheet: View {
     private var availableTypesForCategory: [TodoType] {
         switch selectedCategory {
         case .all:
-            return [.general, .parcel, .medication, .housework, .charging, .subscription, .vehicleCare, .bill, .itemExpiry, .anniversary, .hydration, .event]
+            return [.general, .travelBooking, .parcel, .medication, .housework, .charging, .subscription, .vehicleCare, .bill, .itemExpiry, .anniversary, .hydration, .event]
         case .general:
-            return [.general, .event]
+            return [.general, .travelBooking, .event]
         case .recurring:
             return [.general, .medication, .housework, .charging, .hydration, .bill, .event]
         case .parcel:
@@ -1900,7 +2055,7 @@ struct AddTodoSheet: View {
         case .life:
             return [.medication, .housework, .charging, .hydration]
         case .alert:
-            return [.bill, .vehicleCare, .subscription, .itemExpiry, .anniversary, .passwordSecurity]
+            return [.bill, .travelBooking, .vehicleCare, .subscription, .itemExpiry, .anniversary, .passwordSecurity]
         }
     }
 
@@ -1950,6 +2105,8 @@ struct AddTodoSheet: View {
             return "安全提醒（如：定期轮换平台密码、更新路由器管理密码）"
         case .event:
             return "日程事项（如：周五下午团队例会、拜访重要客户）"
+        case .travelBooking:
+            return "出行与购票（如：国庆返乡高铁票、下周上海出差机票、假期旅行）"
         case .general, .data:
             return "待办名称（如：去超市买牛奶、准备工作周报、下午开会）"
         }
@@ -2045,6 +2202,15 @@ struct AddTodoSheet: View {
             return [
                 QuickSuggestion(title: "团队项目进度例会", detail: "会议室对齐本周阻塞项", defaultHourOffset: 24),
                 QuickSuggestion(title: "客户拜访洽谈", detail: "准备方案与演示文稿", defaultHourOffset: 48)
+            ]
+        case .travelBooking:
+            return [
+                QuickSuggestion(title: "抢购往返高铁票（提前15天）", detail: "12306 开售首日准点抢票并候补", defaultHourOffset: 360),
+                QuickSuggestion(title: "预订假期往返机票（提前15-30天）", detail: "比对各大航司特惠早鸟票并锁定酒店", defaultHourOffset: 720),
+                QuickSuggestion(title: "热门博物馆/特展预约（提前7天）", detail: "关注故宫、国博、省博等放票时间实名分时段预约", defaultHourOffset: 168),
+                QuickSuggestion(title: "5A景区门票/游船预约（提前7-14天）", detail: "提前分时段锁定景区入场名额与索道特展票", defaultHourOffset: 168),
+                QuickSuggestion(title: "出差往返机票预订", detail: "确认航班班次与行程报销凭证", defaultHourOffset: 120),
+                QuickSuggestion(title: "长假节假日火车票抢票", detail: "提前设置开售提醒闹钟与候补", defaultHourOffset: 360)
             ]
         default:
             return []
@@ -2315,6 +2481,112 @@ struct AddTodoSheet: View {
                             if remindBeforeMinutes == -1 {
                                 Stepper("提前 \(customRemindBeforeMinutes) 分钟", value: $customRemindBeforeMinutes, in: 1...10080, step: 5)
                             }
+
+                            if type == .travelBooking || title.contains("出差") || title.contains("旅行") || title.contains("旅游") || title.contains("度假") || title.contains("返乡") || title.contains("机票") || title.contains("车票") || title.contains("高铁") || title.contains("火车") || title.contains("博物馆") || title.contains("展览") || title.contains("景区") || title.contains("门票") || title.contains("故宫") || title.contains("国博") {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Toggle(isOn: $addCompanionTickets) {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: "ticket.fill")
+                                                .foregroundStyle(.indigo)
+                                            Text("同时添加出行前购票与预约待办")
+                                                .font(.subheadline.bold())
+                                                .foregroundStyle(.indigo)
+                                        }
+                                    }
+
+                                    let cal = Calendar.current
+                                    let trainDate = cal.date(byAdding: .day, value: -15, to: dueDate) ?? dueDate
+                                    let scenicDate = cal.date(byAdding: .day, value: -7, to: dueDate) ?? dueDate
+                                    let f: DateFormatter = {
+                                        let df = DateFormatter()
+                                        df.dateFormat = "M月d日"
+                                        return df
+                                    }()
+
+                                    if addCompanionTickets {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            HStack(alignment: .top, spacing: 6) {
+                                                Image(systemName: "exclamationmark.triangle.fill")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.orange)
+                                                Text("政策兜底提示：票务与场馆预约政策常变动，请以官方最新公告为准，可自主核对并微调提醒时间：")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            .padding(.vertical, 2)
+
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Toggle(isOn: $includeTrainReminder) {
+                                                    Label("🚄 火车票起售提醒（提前15天）", systemImage: "train.side.front.car")
+                                                        .font(.caption.bold())
+                                                }
+                                                if includeTrainReminder {
+                                                    DatePicker(
+                                                        "确认放票提醒时间",
+                                                        selection: Binding(
+                                                            get: { customTrainDate ?? trainDate },
+                                                            set: { customTrainDate = $0 }
+                                                        ),
+                                                        displayedComponents: [.date, .hourAndMinute]
+                                                    )
+                                                    .datePickerStyle(.compact)
+                                                    .font(.caption2)
+                                                }
+                                            }
+
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Toggle(isOn: $includeScenicReminder) {
+                                                    Label("🏛️ 场馆景区预约提醒（提前7天）", systemImage: "building.columns.fill")
+                                                        .font(.caption.bold())
+                                                }
+                                                if includeScenicReminder {
+                                                    DatePicker(
+                                                        "确认预约提醒时间",
+                                                        selection: Binding(
+                                                            get: { customScenicDate ?? scenicDate },
+                                                            set: { customScenicDate = $0 }
+                                                        ),
+                                                        displayedComponents: [.date, .hourAndMinute]
+                                                    )
+                                                    .datePickerStyle(.compact)
+                                                    .font(.caption2)
+                                                }
+                                            }
+
+                                            Toggle(isOn: $includeFlightReminder) {
+                                                Label("✈️ 提前15-30天 机票酒店黄金预订期", systemImage: "airplane")
+                                                    .font(.caption.bold())
+                                            }
+                                        }
+                                        .padding(.leading, 6)
+                                        .padding(.vertical, 4)
+                                    } else {
+                                        HStack(spacing: 4) {
+                                            Label("🚄 火车票：\(f.string(from: trainDate))起售（提前15天）", systemImage: "train.side.front.car")
+                                                .font(.caption2)
+                                                .foregroundStyle(.blue)
+                                        }
+                                        HStack(spacing: 4) {
+                                            Label("🏛️ 场馆景区：\(f.string(from: scenicDate))预约（提前7天）", systemImage: "building.columns.fill")
+                                                .font(.caption2)
+                                                .foregroundStyle(.purple)
+                                        }
+                                        HStack(spacing: 4) {
+                                            Label("✈️ 机票预订：提前15-30天黄金期", systemImage: "airplane")
+                                                .font(.caption2)
+                                                .foregroundStyle(.teal)
+                                        }
+                                    }
+
+                                    if let guide = TravelTicketReminderManager.detectDestinationGuide(for: title) {
+                                        Text("【放票指南】\(guide)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.purple)
+                                            .padding(.top, 2)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
                         }
 
                         Picker("重复周期", selection: $recurrenceRule) {
@@ -2408,6 +2680,52 @@ struct AddTodoSheet: View {
         )
         context.insert(item)
         TodoNotificationManager.shared.scheduleNotification(for: item)
+
+        // 用户显式勾选并确认的出行配套购票与文博景区预约待办
+        if addCompanionTickets && hasDueDate {
+            let proposed = TravelTicketReminderManager.shared.generateProposedTicketTodos(
+                title: trimmedTitle,
+                departureDate: dueDate
+            )
+            var offset = 2
+            for var p in proposed {
+                var shouldAdd = false
+                if p.categoryKey == "train" && includeTrainReminder {
+                    shouldAdd = true
+                    if let cDate = customTrainDate {
+                        p.dueAt = cDate
+                        p.isCustomized = true
+                    }
+                }
+                else if p.categoryKey == "flight" && includeFlightReminder {
+                    shouldAdd = true
+                }
+                else if p.categoryKey == "scenic" && includeScenicReminder {
+                    shouldAdd = true
+                    if let cDate = customScenicDate {
+                        p.dueAt = cDate
+                        p.isCustomized = true
+                    }
+                }
+
+                if shouldAdd {
+                    let noteSuffix = p.isCustomized ? "\n（注：预约时间已由用户核对并手动确认）" : ""
+                    let compItem = TodoItem(
+                        type: .travelBooking,
+                        status: .active,
+                        title: p.title,
+                        detail: p.detail + noteSuffix,
+                        dueAt: p.dueAt,
+                        sortOrder: minOrder - offset,
+                        remindBeforeMinutes: p.remindBeforeMinutes
+                    )
+                    context.insert(compItem)
+                    TodoNotificationManager.shared.scheduleNotification(for: compItem)
+                    offset += 1
+                }
+            }
+        }
+
         try? context.save()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         dismiss()

@@ -24,6 +24,7 @@ struct DailyPainPointAuditor {
         auditIDDocuments()
         auditVehicleCare()
         AnniversaryReminderManager.shared.checkAndSendDailyNotifications(context: context)
+        TravelTicketReminderManager.shared.checkAndSendDailyNotifications(context: context)
     }
 
     /// 1. 自动续费与订阅被动扣费防范

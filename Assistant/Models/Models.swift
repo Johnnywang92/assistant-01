@@ -13,6 +13,7 @@ enum TodoType: String, Codable, CaseIterable {
     case passwordSecurity // 密码轮换与安全提醒
     case vehicleCare      // 爱车守护（加油/加电/定期保养/车险年检）
     case returnParcel     // 网购待退货与售后寄件截止倒数
+    case travelBooking    // 出行购票提醒（火车票提前15天，机票提前15-30天）
 
     var icon: String {
         switch self {
@@ -31,6 +32,7 @@ enum TodoType: String, Codable, CaseIterable {
         case .anniversary: "gift.fill"
         case .passwordSecurity: "key.fill"
         case .vehicleCare: "car.fill"
+        case .travelBooking: "ticket.fill"
         }
     }
 
@@ -48,6 +50,7 @@ enum TodoType: String, Codable, CaseIterable {
         case .anniversary: "纪念日"
         case .passwordSecurity: "密码安全"
         case .vehicleCare: "爱车守护"
+        case .travelBooking: "出行购票"
         case .bill: "信用卡账单"
         case .event: "日程事项"
         case .data: "流量预警"

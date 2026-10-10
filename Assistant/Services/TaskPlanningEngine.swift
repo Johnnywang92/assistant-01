@@ -69,7 +69,7 @@ final class TaskPlanningEngine {
         ]
 
         let scenarioKeywords = [
-            "露营", "搬家", "出差", "旅行", "大扫除", "清洁", "分享会", "演讲",
+            "露营", "搬家", "出差", "旅行", "旅游", "度假", "回老家", "返乡", "购票", "买票", "机票", "火车票", "大扫除", "清洁", "分享会", "演讲",
             "派对", "聚会", "生日", "考研", "复习", "考试", "自驾游", "体检", "看病", "装修"
         ]
 
@@ -117,15 +117,17 @@ final class TaskPlanningEngine {
             )
         }
 
-        // 3. 出差与长途旅行
-        if text.contains("出差") || text.contains("旅行") || text.contains("旅游") || text.contains("度假") {
+        // 3. 出差、长途旅行与出行购票及文博景区预约
+        if text.contains("出差") || text.contains("旅行") || text.contains("旅游") || text.contains("度假") || text.contains("回老家") || text.contains("返乡") || text.contains("购票") || text.contains("买票") || text.contains("火车票") || text.contains("机票") || text.contains("博物馆") || text.contains("展览") || text.contains("特展") || text.contains("景区") || text.contains("门票") || text.contains("故宫") || text.contains("国博") {
             return TaskPlanningPlan(
-                topic: "出差旅行出行清单",
+                topic: "出差旅行与购票出行清单",
                 icon: "airplane.departure",
-                summary: "为你梳理了远行前必须确认的证件、随身行李及家中防丢防险步骤：",
+                summary: "为你梳理了远行前火车票/机票开售窗口期、热门文博景区预约、随身行李及安全确认步骤：",
                 subtasks: [
-                    PlannedSubtask(title: "确认车票/机票与酒店入住信息，放入行程日历", detail: "提前在线选座并准备有效身份证件", type: .event),
-                    PlannedSubtask(title: "整理洗漱衣物、充电器、随身充电宝及备用数据线", detail: "充电宝额定能量不超过 100Wh 便于登机", type: .charging),
+                    PlannedSubtask(title: "提前 15~30 天：比对预订往返机票与特惠酒店", detail: "机票黄金预订期特惠多，尽早锁定紧俏房源与折扣航班", type: .travelBooking),
+                    PlannedSubtask(title: "提前 15 天：12306 抢购/候补往返火车票", detail: "火车票开售首日定好闹钟准时抢票，未出票及时提交候补", type: .travelBooking),
+                    PlannedSubtask(title: "提前 7 天：抢约热门博物馆、特展与 5A 景区门票", detail: "故宫/国博/陕历博等通常提前7天放票（留意整点放票抢约），提前分时段实名锁定入场名额", type: .travelBooking),
+                    PlannedSubtask(title: "整理洗漱衣物、充电器、随身充电宝及备用数据线", detail: "充电宝额定能量不超过 100Wh 便于登机与安检", type: .charging),
                     PlannedSubtask(title: "备齐出行便携药盒（肠胃药、晕车药、创可贴）", detail: "随身小包携带，以备不时之需", type: .medication),
                     PlannedSubtask(title: "出门前全屋安全确认：关窗、关燃气总阀、拔下闲置插头", detail: "检查门锁与冰箱门是否密闭", type: .housework)
                 ]
