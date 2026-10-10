@@ -15,7 +15,6 @@ enum TodoFilterCategory: String, CaseIterable, Identifiable {
 struct TodoListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \TodoItem.createdAt, order: .reverse) private var todos: [TodoItem]
-    @Query(sort: \DataUsageRecord.recordedAt, order: .reverse) private var usage: [DataUsageRecord]
 
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @ObservedObject private var router = NavigationRouter.shared
@@ -130,7 +129,7 @@ struct TodoListView: View {
                 router.requestedFilter = nil
             }
             .overlay {
-                if activeTodos.isEmpty && review.isEmpty && usage.isEmpty && done.isEmpty {
+                if activeTodos.isEmpty && review.isEmpty && done.isEmpty {
                     ContentUnavailableView {
                         Label("暂无待办事项", systemImage: "list.bullet.clipboard")
                     } description: {
@@ -417,11 +416,6 @@ struct TodoListView: View {
     @ViewBuilder
     private func renderPageContent(for category: TodoFilterCategory) -> some View {
         List {
-            // 顶部流量卡片（仅在全部页面，若有流量记录）
-            if category == .all, let latest = usage.first {
-                Section { DataUsageCard(record: latest) }
-            }
-
             // 待确认事项（在全部和日常待办页面显示）
             if !review.isEmpty && (category == .all || category == .general) {
                 Section("待确认（\(review.count)）") {
@@ -783,38 +777,6 @@ struct ReviewRow: View {
     }
 }
 
-struct DataUsageCard: View {
-    let record: DataUsageRecord
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label(record.operatorName ?? "流量", systemImage: "antenna.radiowaves.left.and.right")
-                    .font(.headline)
-                Spacer()
-                Text(record.recordedAt, format: .dateTime.month().day().hour().minute())
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            if let remain = record.remainingMB {
-                Text("剩余 \(TodoFormatter.formatMB(remain))")
-                    .font(.title2.bold())
-            }
-            if let p = percent {
-                ProgressView(value: min(p, 100), total: 100)
-                    .tint(p >= 90 ? .red : p >= 70 ? .orange : .green)
-                Text(String(format: "已使用 %.0f%%", p)).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .themedRow()
-    }
-
-    private var percent: Double? {
-        if let p = record.usedPercent { return p }
-        if let u = record.usedMB, let r = record.remainingMB, u + r > 0 { return u / (u + r) * 100 }
-        return nil
-    }
-}
-
 // MARK: - 新建待办 / 智能导入弹窗
 
 struct AddTodoSheet: View {
@@ -879,7 +841,7 @@ struct AddTodoSheet: View {
                     } header: {
                         Text("粘贴短信或聊天文本")
                     } footer: {
-                        Text("系统将自动识别取件码、驿站、话费流量、信用卡账单并自动建档。可一次粘贴多条，用换行隔开。")
+                        Text("系统将自动识别取件码、驿站、重要账单并自动建档。可一次粘贴多条，用换行隔开。")
                     }
 
                     if let importResult {

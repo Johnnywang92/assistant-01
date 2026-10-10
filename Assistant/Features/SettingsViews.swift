@@ -71,7 +71,6 @@ struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedMode = AppSettings.currentMode
     @State private var voiceReplyEnabled = AppSettings.voiceReplyEnabled
-    @State private var threshold = AppSettings.lowDataThresholdMB
 
     var isSheet: Bool = false
 
@@ -281,10 +280,6 @@ struct SettingsView: View {
                         Label("快捷方式与效率指南 (操作按钮/桌面长按)", systemImage: "bolt.badge.clock.fill")
                     }
                     NavigationLink("短信自动同步快捷指令向导") { SetupGuideView() }
-                    Stepper(value: $threshold, in: 256...10240, step: 256) {
-                        LabeledContent("流量提醒阈值", value: "\(Int(threshold)) MB")
-                    }
-                    .onChange(of: threshold) { _, v in AppSettings.lowDataThresholdMB = v }
                 }
 
                 Section("数据管理与安全迁移") {
@@ -317,7 +312,7 @@ struct SettingsView: View {
 }
 
 struct SetupGuideView: View {
-    static let keywords = ["取件", "取走", "取出", "签收", "提货", "流量"]
+    static let keywords = ["取件", "取走", "取出", "签收", "提货"]
 
     var body: some View {
         List {

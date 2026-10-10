@@ -112,28 +112,16 @@ struct ImportService {
     }
 
     private func handleDataUsage(_ d: DataUsageInfo, result: inout ImportResult) throws {
+        // 静默入库留痕，不再生成「流量不足」的待办提醒
         context.insert(DataUsageRecord(operatorName: d.operatorName, remainingMB: d.remainingMB,
                                        usedMB: d.usedMB, usedPercent: d.usedPercent))
-        let low = (d.remainingMB.map { $0 < AppSettings.lowDataThresholdMB } ?? false)
-            || (d.effectiveUsedPercent.map { $0 >= 90 } ?? false)
 
+        // 清理历史遗留的流量提醒待办
         let dataType = TodoType.data.rawValue
-        let done = TodoStatus.done.rawValue
         let existing = try context.fetch(FetchDescriptor<TodoItem>(
-            predicate: #Predicate { $0.typeRaw == dataType && $0.statusRaw != done }))
-
-        guard low else {
-            // 流量恢复（如月初重置），自动关闭旧的提醒
-            existing.forEach { $0.status = .done }
-            return
-        }
-        let remainText = d.remainingMB.map { TodoFormatter.formatMB($0) } ?? "不足 10%"
-        let title = "流量剩余 \(remainText)，考虑购买流量包"
-        if let item = existing.first {
-            item.title = title
-        } else {
-            context.insert(TodoItem(type: .data, title: title, detail: d.operatorName))
-            result.added.append(title)
+            predicate: #Predicate { $0.typeRaw == dataType }))
+        for item in existing {
+            context.delete(item)
         }
     }
 
