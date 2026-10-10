@@ -63,12 +63,7 @@ struct TodoListView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle(assistantName.isEmpty ? "小助" : assistantName)
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showVoice = true } label: {
-                        Image(systemName: "waveform.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(.tint)
-                    }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { showAddTodo = true } label: {
                         Image(systemName: "plus")
                     }

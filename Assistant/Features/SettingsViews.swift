@@ -61,6 +61,9 @@ struct ManualImportView: View {
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
+    @AppStorage("floating_voice_enabled") private var floatingVoiceEnabled: Bool = true
+    @AppStorage("floating_voice_norm_x") private var normX: Double = 1.0
+    @AppStorage("floating_voice_norm_y") private var normY: Double = 0.68
     @State private var selectedMode = AppSettings.currentMode
     @State private var voiceReplyEnabled = AppSettings.voiceReplyEnabled
     @State private var threshold = AppSettings.lowDataThresholdMB
@@ -166,11 +169,32 @@ struct SettingsView: View {
                     Text("安静模式下不发送横幅/通知声音；记录模式下只收录数据不催办。")
                 }
 
-                Section("语音与播报") {
+                Section("语音与悬浮助手") {
+                    Toggle("单手贴边语音悬浮球", isOn: $floatingVoiceEnabled)
+
                     Toggle("语音对话回答时朗读 (TTS)", isOn: $voiceReplyEnabled)
                         .onChange(of: voiceReplyEnabled) { _, val in
                             AppSettings.voiceReplyEnabled = val
                         }
+
+                    if floatingVoiceEnabled {
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                normX = 1.0
+                                normY = 0.68
+                            }
+                            Haptic.light()
+                        } label: {
+                            HStack {
+                                Text("重置悬浮球位置至右下角")
+                                Spacer()
+                                Image(systemName: "arrow.counterclockwise")
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                } footer: {
+                    Text("开启后可在屏幕任意边缘自由拖动悬浮球，松手自动贴边吸附，最适合单手大拇指快速开启语音对话。")
                 }
 
                 Section("智能大脑与 AI 本地模型") {
