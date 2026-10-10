@@ -190,10 +190,22 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
             if !FileManager.default.fileExists(atPath: targetDir.path) {
                 try FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true, attributes: nil)
             }
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            var dirURL = targetDir
+            try? dirURL.setResourceValues(values)
+
             if FileManager.default.fileExists(atPath: targetURL.path) {
                 try FileManager.default.removeItem(at: targetURL)
             }
-            try FileManager.default.moveItem(at: location, to: targetURL)
+
+            // 优先使用快速移动 moveItem；若跨存储分区受限则降级 copyItem
+            do {
+                try FileManager.default.moveItem(at: location, to: targetURL)
+            } catch {
+                try FileManager.default.copyItem(at: location, to: targetURL)
+                try? FileManager.default.removeItem(at: location)
+            }
         } catch {
             moveError = error
         }
