@@ -416,6 +416,14 @@ struct ManualAddExpenseSheet: View {
     @State private var title: String = ""
     @State private var date: Date = .now
 
+    private var availableCategories: [ExpenseCategory] {
+        if isIncome {
+            return [.income, .otherIncome]
+        } else {
+            return SituationalContextEngine.shared.prioritizedExpenseCategories()
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -429,7 +437,7 @@ struct ManualAddExpenseSheet: View {
                         if income {
                             selectedCategory = .income
                         } else {
-                            selectedCategory = .food
+                            selectedCategory = availableCategories.first ?? .food
                         }
                     }
 
@@ -445,7 +453,7 @@ struct ManualAddExpenseSheet: View {
 
                 Section("分类与项目") {
                     Picker("消费分类", selection: $selectedCategory) {
-                        ForEach(ExpenseCategory.allCases.filter { isIncome ? $0.isIncome : !$0.isIncome }, id: \.self) { cat in
+                        ForEach(availableCategories, id: \.self) { cat in
                             Label(cat.rawValue, systemImage: cat.icon).tag(cat)
                         }
                     }
@@ -455,6 +463,11 @@ struct ManualAddExpenseSheet: View {
 
                 Section("记账时间") {
                     DatePicker("发生日期", selection: $date)
+                }
+            }
+            .onAppear {
+                if !isIncome {
+                    selectedCategory = availableCategories.first ?? .food
                 }
             }
             .navigationTitle(isIncome ? "记一笔收入" : "记一笔支出")

@@ -65,6 +65,8 @@ struct SettingsView: View {
     @AppStorage("floating_voice_norm_x") private var normX: Double = 1.0
     @AppStorage("floating_voice_norm_y") private var normY: Double = 0.68
     @AppStorage("weather_alerts_enabled") private var weatherAlertsEnabled: Bool = true
+    @AppStorage("user_lifestyle_profile") private var lifestyleProfile: UserLifestyleProfile = .officeWorker
+    @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true
     @State private var selectedMode = AppSettings.currentMode
     @State private var voiceReplyEnabled = AppSettings.voiceReplyEnabled
     @State private var threshold = AppSettings.lowDataThresholdMB
@@ -233,11 +235,19 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Picker("作息习惯与身份", selection: $lifestyleProfile) {
+                        ForEach(UserLifestyleProfile.allCases) { profile in
+                            Label(profile.rawValue, systemImage: profile.icon).tag(profile)
+                        }
+                    }
+
+                    Toggle("全场景人性化动态排序", isOn: $isAdaptiveSortingEnabled)
+
                     Toggle("气象预警与骤降添衣提醒", isOn: $weatherAlertsEnabled)
                 } header: {
-                    Text("智能情境与气象感知")
+                    Text("生活作息与情境智能感知")
                 } footer: {
-                    Text("开启后，遇到气象局官方严重预警（暴雨/大风/雷电等）或气温骤降超过 6°C 时，自动在首页待办顶部提供轻量提醒。零后台长驻轮询，不消耗额外电量。")
+                    Text("开启后，工作日优先「工作通勤」，主要节假日与假期前夕智能置顶「出差旅行」与度假消费。零网络调用，完全本地实时推算。")
                 }
 
                 Section("智能大脑与 AI 本地模型") {

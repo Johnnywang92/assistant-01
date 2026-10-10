@@ -5,10 +5,12 @@ import SwiftUI
 struct DepartureChecklistView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \DepartureCheckItem.createdAt) private var items: [DepartureCheckItem]
+    @ObservedObject private var contextEngine = SituationalContextEngine.shared
 
-    @State private var selectedScene: DepartureScene? = .commute
+    @State private var selectedScene: DepartureScene? = nil
     @State private var showingAddSheet = false
     @State private var showingResetAlert = false
+    @State private var hasInitializedScene = false
 
     // 出门指差四字状态（身·手·钥·耳）
     @State private var checkedShen = false
@@ -67,7 +69,24 @@ struct DepartureChecklistView: View {
 
             // MARK: - 2. 场景选择与进度看板
             Section {
-                // 场景横向滚动切换
+                // 智能情境感知徽标
+                if let badge = contextEngine.departureContextBadge() {
+                    HStack(spacing: 6) {
+                        Image(systemName: badge.icon)
+                            .font(.caption2.bold())
+                            .foregroundStyle(badge.color)
+                        Text(badge.text)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(badge.color)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(badge.color.opacity(0.12)))
+                    .padding(.bottom, 2)
+                }
+
+                // 场景横向滚动切换（根据当前时空情景动态重排）
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         Button {
@@ -84,7 +103,7 @@ struct DepartureChecklistView: View {
                         }
                         .buttonStyle(.plain)
 
-                        ForEach(DepartureScene.allCases) { scene in
+                        ForEach(contextEngine.sortedDepartureScenes()) { scene in
                             let count = items.filter { $0.scene == scene }.count
                             Button {
                                 selectedScene = scene
@@ -214,6 +233,10 @@ struct DepartureChecklistView: View {
         }
         .onAppear {
             seedDefaultsIfNeeded()
+            if !hasInitializedScene {
+                selectedScene = contextEngine.recommendedDefaultDepartureScene()
+                hasInitializedScene = true
+            }
         }
     }
 

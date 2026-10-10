@@ -21,14 +21,10 @@ struct VoiceDialogueView: View {
     @State private var isMuted: Bool = !AppSettings.voiceReplyEnabled
     @FocusState private var isInputFocused: Bool
 
-    // 快捷推荐问题
-    private let quickPrompts = [
-        "今天有哪些待办？",
-        "出门防丢该带什么？",
-        "今天花了多少钱？",
-        "查一下待取快递",
-        "记一下明天下午开会"
-    ]
+    // 快捷推荐问题（根据工作日/节假日/周末情境动态适配）
+    private var quickPrompts: [String] {
+        SituationalContextEngine.shared.dynamicVoicePrompts()
+    }
 
     var body: some View {
         NavigationStack {
