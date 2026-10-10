@@ -35,7 +35,6 @@ targets:
         ENABLE_APP_SHORTCUTS_FLEXIBLE_MATCHING: "NO"
         ENABLE_APPINTENTS_DEPLOYMENT_AWARE_PROCESSING: "NO"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        CODE_SIGN_ENTITLEMENTS: Assistant/Assistant.entitlements
     info:
       path: Assistant/Info.plist
       properties:
