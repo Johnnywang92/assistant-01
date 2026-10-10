@@ -38,41 +38,41 @@ struct DraggableVoiceFloatingBall: View {
             let currentX = min(max(baseX + dragOffset.width, minX), maxX)
             let currentY = min(max(baseY + dragOffset.height, minY), maxY)
 
-            // 悬浮球主体
-            Button {
-                // 点击直接触发语音对话（由手势和 tap 结合）
+            // 悬浮球主体 (移除 Button 避免拖动松手时触发点击事件)
+            ZStack {
+                // 背景渐变与毛玻璃投影
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.blue, Color.indigo],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: ballSize, height: ballSize)
+                    .shadow(color: Color.indigo.opacity(isDragging ? 0.45 : 0.3), radius: isDragging ? 12 : 8, y: isDragging ? 6 : 4)
+
+                // 动态微光光圈（拖拽时微放亮）
+                Circle()
+                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 1.5)
+                    .frame(width: ballSize, height: ballSize)
+
+                // 声波图标
+                Image(systemName: "waveform")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .scaleEffect(isDragging ? 1.15 : 1.0)
+            .position(x: currentX, y: currentY)
+            // 仅在明确点击时触发（位移小于 8pt 时响应）
+            .onTapGesture {
+                guard !isDragging else { return }
                 Haptic.medium()
                 showVoice = true
-            } label: {
-                ZStack {
-                    // 背景渐变与毛玻璃投影
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.blue, Color.indigo],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: ballSize, height: ballSize)
-                        .shadow(color: Color.indigo.opacity(isDragging ? 0.45 : 0.3), radius: isDragging ? 12 : 8, y: isDragging ? 6 : 4)
-
-                    // 动态微光光圈（拖拽时微放亮）
-                    Circle()
-                        .strokeBorder(Color.white.opacity(0.35), lineWidth: 1.5)
-                        .frame(width: ballSize, height: ballSize)
-
-                    // 声波图标
-                    Image(systemName: "waveform")
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-                .scaleEffect(isDragging ? 1.14 : 1.0)
             }
-            .buttonStyle(.plain)
-            .position(x: currentX, y: currentY)
-            .simultaneousGesture(
-                DragGesture(coordinateSpace: .local)
+            // 拖拽手势：设置 minimumDistance: 8，手指滑动超过 8pt 才会识别为拖拽，且绝对不会触发 onTapGesture
+            .gesture(
+                DragGesture(minimumDistance: 8, coordinateSpace: .local)
                     .onChanged { value in
                         if !isDragging {
                             isDragging = true
