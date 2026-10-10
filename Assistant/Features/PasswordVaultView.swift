@@ -60,7 +60,7 @@ struct PasswordVaultView: View {
                 Button {
                     showingGeneratorSheet = true
                 } label: {
-                    Label("随机强密码生成器", systemImage: "dice.fill")
+                    Label("逻辑记忆与强密码生成器", systemImage: "sparkles")
                 }
             }
 
@@ -209,6 +209,8 @@ struct AddPasswordSheet: View {
     @State private var category = "日常账号"
     @State private var rotateDays = 90
     @State private var notes = ""
+    @State private var mnemonicHint = ""
+    @State private var showingGeneratorSheet = false
 
     let categories = ["日常账号", "工作企业", "银行资产", "路由器设备", "其他"]
 
@@ -224,32 +226,75 @@ struct AddPasswordSheet: View {
                 }
 
                 Section("密码设置") {
-                    HStack {
-                        TextField("密码", text: $password)
-                        Button("随机生成") {
-                            password = PasswordSecurityService.generatePassword()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                    }
-
-                    if !password.isEmpty {
-                        let strength = PasswordSecurityService.evaluateStrength(password: password)
+                    VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("密码强度: \(strength.label)")
-                                .font(.caption)
-                                .foregroundStyle(strength.score >= 3 ? .green : .orange)
-                            Spacer()
-                            Text("\(password.count) 位字符")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            TextField("密码", text: $password)
+                                .font(.body.monospaced())
+
+                            Button {
+                                showingGeneratorSheet = true
+                            } label: {
+                                Label("智能生成", systemImage: "sparkles")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+
+                        if !password.isEmpty {
+                            let strength = PasswordSecurityService.evaluateStrength(password: password)
+                            let entropy = PasswordSecurityService.estimateEntropy(password: password)
+
+                            HStack(spacing: 8) {
+                                Text("强度: \(strength.label)")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(strength.score >= 3 ? .green : .orange)
+
+                                Text("· \(password.count) 位字符")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+
+                                Text("· ~\(entropy) bits 熵")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if !mnemonicHint.isEmpty {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        Image(systemName: "lightbulb.fill")
+                                            .foregroundStyle(.yellow)
+                                        Text("记忆逻辑")
+                                            .font(.caption.bold())
+                                            .foregroundStyle(.primary)
+                                        Spacer()
+                                        Button("存入备忘") {
+                                            if notes.isEmpty {
+                                                notes = mnemonicHint
+                                            } else if !notes.contains(mnemonicHint) {
+                                                notes += "\n" + mnemonicHint
+                                            }
+                                            Haptic.light()
+                                        }
+                                        .font(.caption2)
+                                        .buttonStyle(.borderless)
+                                    }
+
+                                    Text(mnemonicHint)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(10)
+                                .background(Color(.secondarySystemBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
                         }
                     }
                 }
 
                 Section("安全轮换提醒") {
                     Stepper("每 \(rotateDays) 天提醒更换", value: $rotateDays, in: 30...365, step: 30)
-                    TextField("补充安全备忘（可选）", text: $notes)
+                    TextField("补充安全备忘（可选）", text: $notes, axis: .vertical)
+                        .lineLimit(2...4)
                 }
             }
             .navigationTitle("添加密码")
@@ -273,61 +318,194 @@ struct AddPasswordSheet: View {
                     .disabled(title.isEmpty || password.isEmpty)
                 }
             }
+            .sheet(isPresented: $showingGeneratorSheet) {
+                StandaloneGeneratorSheet { generatedResult in
+                    self.password = generatedResult.password
+                    self.mnemonicHint = generatedResult.mnemonicHint
+                }
+            }
         }
     }
 }
 
+/// 逻辑记忆与高熵强密码生成器独立弹窗
 struct StandaloneGeneratorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
-    @State private var length = 16
-    @State private var includeSymbols = true
-    @State private var includeDigits = true
-    @State private var generatedPassword = PasswordSecurityService.generatePassword()
+    var onSelectPassword: ((GeneratedPasswordResult) -> Void)?
+
+    @State private var selectedMode: PasswordGenerationMode = .memorablePhrase
+    @State private var wordCount: Int = 3
+    @State private var separator: String = "-"
+    @State private var includeDigits: Bool = true
+    @State private var includeSymbols: Bool = true
+    @State private var classicLength: Int = 16
+
+    @State private var currentResult: GeneratedPasswordResult = PasswordSecurityService.generateSmartPassword()
+
+    let separatorOptions = ["-", "_", ".", "!", "#", "@"]
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("生成结果") {
-                    Text(generatedPassword)
-                        .font(.title3.monospaced().bold())
-                        .padding(.vertical, 8)
+                // 1. 生成结果与记忆口诀展示
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        // 密码文本与一键操作
+                        Text(currentResult.password)
+                            .font(.system(size: 22, weight: .bold, design: .monospaced))
+                            .textSelection(.enabled)
+                            .foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 4)
 
-                    HStack {
-                        Button("重新生成", systemImage: "arrow.clockwise") {
-                            regenerate()
+                        // 记忆逻辑卡片（重要：让用户容易记忆）
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Image(systemName: "brain.head.profile")
+                                    .foregroundStyle(.indigo)
+                                Text("记忆逻辑与口诀")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.indigo)
+                                Spacer()
+                                Text("不易破解 · 好记")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Text(currentResult.mnemonicHint)
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        Spacer()
-                        Button("复制密码", systemImage: "doc.on.doc") {
-                            UIPasteboard.general.string = generatedPassword
-                            dismiss()
+                        .padding(12)
+                        .background(Color.indigo.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                        // 密码安全指标
+                        HStack(spacing: 12) {
+                            Label("强度: \(currentResult.strengthLabel)", systemImage: "shield.lefthalf.filled")
+                                .font(.caption.bold())
+                                .foregroundStyle(currentResult.strengthScore >= 3 ? .green : .orange)
+
+                            Text("· \(currentResult.password.count) 位字符")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+
+                            Text("· 约 \(currentResult.entropyBits) 位熵")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+
+                            Spacer()
                         }
-                        .buttonStyle(.borderedProminent)
+
+                        Divider()
+
+                        // 操作按钮组
+                        HStack(spacing: 12) {
+                            Button {
+                                regenerate()
+                                Haptic.light()
+                            } label: {
+                                Label("换一个", systemImage: "arrow.clockwise")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+
+                            if let onSelect = onSelectPassword {
+                                Button {
+                                    onSelect(currentResult)
+                                    Haptic.success()
+                                    dismiss()
+                                } label: {
+                                    Label("填入密码", systemImage: "checkmark")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                            } else {
+                                Button {
+                                    UIPasteboard.general.string = currentResult.password
+                                    Haptic.success()
+                                    dismiss()
+                                } label: {
+                                    Label("复制密码", systemImage: "doc.on.doc")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
+                        }
                     }
+                    .padding(.vertical, 6)
+                } header: {
+                    Text("生成结果与记忆助记")
                 }
 
-                Section("密码规则配置") {
-                    Stepper("密码长度: \(length) 位", value: $length, in: 8...32)
-                        .onChange(of: length) { _, _ in regenerate() }
-                    Toggle("包含特殊字符 (!@#$%^&*)", isOn: $includeSymbols)
-                        .onChange(of: includeSymbols) { _, _ in regenerate() }
-                    Toggle("包含数字 (0-9)", isOn: $includeDigits)
+                // 2. 逻辑记忆生成模式切换
+                Section {
+                    Picker("生成模式", selection: $selectedMode) {
+                        ForEach(PasswordGenerationMode.allCases) { mode in
+                            Label(mode.rawValue, systemImage: mode.icon).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedMode) { _, _ in regenerate() }
+
+                    Text(selectedMode.subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("记忆模式选择")
+                }
+
+                // 3. 详细参数微调
+                Section {
+                    if selectedMode == .classicRandom {
+                        Stepper("密码长度: \(classicLength) 位", value: $classicLength, in: 8...32)
+                            .onChange(of: classicLength) { _, _ in regenerate() }
+                    } else {
+                        Stepper("词语/音节数量: \(wordCount) 组", value: $wordCount, in: 2...5)
+                            .onChange(of: wordCount) { _, _ in regenerate() }
+
+                        Picker("连接分隔符", selection: $separator) {
+                            ForEach(separatorOptions, id: \.self) { sep in
+                                Text(sep == "-" ? "- (中划线)" : (sep == "_" ? "_ (下划线)" : sep)).tag(sep)
+                            }
+                        }
+                        .onChange(of: separator) { _, _ in regenerate() }
+                    }
+
+                    Toggle("包含数字 (如年份/两位随机数)", isOn: $includeDigits)
                         .onChange(of: includeDigits) { _, _ in regenerate() }
+
+                    Toggle("包含特殊字符 (如 ! # @ $)", isOn: $includeSymbols)
+                        .onChange(of: includeSymbols) { _, _ in regenerate() }
+                } header: {
+                    Text("规则与复杂度配置")
+                } footer: {
+                    Text("💡 科学原理：人类大脑擅长记忆具象画面和语义关联，计算机暴力破解依靠指数穷举。使用 3 组自然意象词搭配符号与数字，密码熵达 50~70 bits，暴力穷举需数千万年，既固若金汤又过目不忘。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("随机强密码生成")
+            .navigationTitle("记忆强密码生成器")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+            }
+            .onAppear {
+                regenerate()
             }
         }
     }
 
     private func regenerate() {
-        generatedPassword = PasswordSecurityService.generatePassword(
-            length: length,
+        currentResult = PasswordSecurityService.generateSmartPassword(
+            mode: selectedMode,
+            wordCount: wordCount,
+            separator: separator,
             includeDigits: includeDigits,
-            includeSymbols: includeSymbols
+            includeSymbols: includeSymbols,
+            randomLength: classicLength
         )
     }
 }
