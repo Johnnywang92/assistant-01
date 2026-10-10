@@ -23,6 +23,7 @@ struct TodoListView: View {
     @State private var showVoice = false
     @State private var showDone = false
     @State private var showCompletedHistory = false
+    @State private var showBackgroundSettings = false
     @State private var selectedFilter: TodoFilterCategory = .all
 
     private var activeTodos: [TodoItem] { todos.filter { $0.status == .active } }
@@ -64,6 +65,16 @@ struct TodoListView: View {
             .background(AppBackgroundManager.shared.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
             .navigationTitle(assistantName.isEmpty ? "小助" : assistantName)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showBackgroundSettings = true
+                        Haptic.light()
+                    } label: {
+                        Image(systemName: "paintpalette")
+                            .foregroundStyle(.tint)
+                    }
+                }
+
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         showCompletedHistory = true
@@ -80,6 +91,16 @@ struct TodoListView: View {
             .sheet(isPresented: $showAddTodo) { AddTodoSheet() }
             .sheet(isPresented: $showVoice) { VoiceDialogueView() }
             .sheet(isPresented: $showCompletedHistory) { CompletedTodoHistoryView() }
+            .sheet(isPresented: $showBackgroundSettings) {
+                NavigationStack {
+                    AppBackgroundSettingsView()
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("完成") { showBackgroundSettings = false }
+                            }
+                        }
+                }
+            }
             .onChange(of: router.activeSheet) { _, newSheet in
                 guard let newSheet else { return }
                 switch newSheet {

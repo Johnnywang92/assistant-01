@@ -150,6 +150,38 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        AppBackgroundSettingsView()
+                    } label: {
+                        HStack {
+                            Label("主题与背景设置", systemImage: "paintpalette.fill")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text(AppBackgroundManager.shared.currentStyle.rawValue)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    NavigationLink {
+                        TabBarCustomizationView()
+                    } label: {
+                        HStack {
+                            Label("首页 Tab 栏自定义", systemImage: "rectangle.bottomthird.inset.filled")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text("\(TabBarManager.shared.activeTabs.count) / 5 个板块")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("界面与个性化定制")
+                } footer: {
+                    Text("支持 8 款质感微光渐变主题、相册自选壁纸透光调节及首页底部 Tab 栏自由排序。")
+                }
+
+                Section {
                     Picker("助手模式", selection: $selectedMode) {
                         ForEach(AssistantMode.allCases, id: \.self) { mode in
                             Label(mode.rawValue, systemImage: mode.icon).tag(mode)
@@ -167,32 +199,6 @@ struct SettingsView: View {
                     Text("运行模式面板")
                 } footer: {
                     Text("安静模式下不发送横幅/通知声音；记录模式下只收录数据不催办。")
-                }
-
-                Section("界面与个性化定制") {
-                    NavigationLink {
-                        TabBarCustomizationView()
-                    } label: {
-                        HStack {
-                            Label("首页 Tab 栏自定义", systemImage: "rectangle.bottomthird.inset.filled")
-                            Spacer()
-                            Text("\(TabBarManager.shared.activeTabs.count) / 5 个板块")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    NavigationLink {
-                        AppBackgroundSettingsView()
-                    } label: {
-                        HStack {
-                            Label("主题与背景设置", systemImage: "paintpalette.fill")
-                            Spacer()
-                            Text(AppBackgroundManager.shared.currentStyle.rawValue)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
                 }
 
                 Section {
