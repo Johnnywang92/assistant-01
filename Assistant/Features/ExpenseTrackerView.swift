@@ -1,6 +1,55 @@
 import SwiftData
 import SwiftUI
 
+/// 记账单次 O(N) 极速统计算法，避免多次全表重复扫描与高频 Date/Calendar 计算
+fileprivate struct ExpenseSummary {
+    var todayExpenses: Double = 0
+    var currentMonthExpenses: Double = 0
+    var currentMonthIncome: Double = 0
+    var currentMonthCategoryBreakdown: [(category: ExpenseCategory, amount: Double, ratio: Double)] = []
+
+    init(records: [ExpenseRecord], calendar: Calendar = .current, now: Date = .now) {
+        let currentYear = calendar.component(.year, from: now)
+        let currentMonth = calendar.component(.month, from: now)
+
+        var todayExp: Double = 0
+        var monthExp: Double = 0
+        var monthInc: Double = 0
+        var categoryMap: [ExpenseCategory: Double] = [:]
+
+        for record in records {
+            let isToday = calendar.isDateInToday(record.date)
+            let recYear = calendar.component(.year, from: record.date)
+            let recMonth = calendar.component(.month, from: record.date)
+            let isThisMonth = (recYear == currentYear && recMonth == currentMonth)
+
+            if record.isIncome {
+                if isThisMonth {
+                    monthInc += record.amount
+                }
+            } else {
+                if isToday {
+                    todayExp += record.amount
+                }
+                if isThisMonth {
+                    monthExp += record.amount
+                    categoryMap[record.category, default: 0] += record.amount
+                }
+            }
+        }
+
+        self.todayExpenses = todayExp
+        self.currentMonthExpenses = monthExp
+        self.currentMonthIncome = monthInc
+
+        if monthExp > 0 {
+            self.currentMonthCategoryBreakdown = categoryMap.map { cat, amount in
+                (category: cat, amount: amount, ratio: amount / monthExp)
+            }.sorted { $0.amount > $1.amount }
+        }
+    }
+}
+
 /// 智能记账本主界面
 struct ExpenseTrackerView: View {
     @Environment(\.modelContext) private var context
@@ -11,53 +60,22 @@ struct ExpenseTrackerView: View {
 
     @State private var quickInputText: String = ""
     @State private var showingManualAddSheet = false
+    @State private var recordToEdit: ExpenseRecord? = nil
     @State private var feedbackBanner: String?
     @State private var isListeningQuickVoice = false
 
     private var calendar: Calendar { .current }
 
-    // MARK: - 统计数据
-    private var todayExpenses: Double {
-        records
-            .filter { !$0.isIncome && calendar.isDateInToday($0.date) }
-            .reduce(0) { $0 + $1.amount }
+    // MARK: - 统计数据单次 O(N) 极速归集
+    private var summary: ExpenseSummary {
+        ExpenseSummary(records: records, calendar: calendar)
     }
 
-    private var currentMonthExpenses: Double {
-        let now = Date.now
-        let m = calendar.component(.month, from: now)
-        let y = calendar.component(.year, from: now)
-        return records
-            .filter { !$0.isIncome && calendar.component(.month, from: $0.date) == m && calendar.component(.year, from: $0.date) == y }
-            .reduce(0) { $0 + $1.amount }
-    }
-
-    private var currentMonthIncome: Double {
-        let now = Date.now
-        let m = calendar.component(.month, from: now)
-        let y = calendar.component(.year, from: now)
-        return records
-            .filter { $0.isIncome && calendar.component(.month, from: $0.date) == m && calendar.component(.year, from: $0.date) == y }
-            .reduce(0) { $0 + $1.amount }
-    }
-
-    // 本月各分类支出构成占比
+    private var todayExpenses: Double { summary.todayExpenses }
+    private var currentMonthExpenses: Double { summary.currentMonthExpenses }
+    private var currentMonthIncome: Double { summary.currentMonthIncome }
     private var currentMonthCategoryBreakdown: [(category: ExpenseCategory, amount: Double, ratio: Double)] {
-        let now = Date.now
-        let m = calendar.component(.month, from: now)
-        let y = calendar.component(.year, from: now)
-        let monthExpenses = records.filter {
-            !$0.isIncome && calendar.component(.month, from: $0.date) == m && calendar.component(.year, from: $0.date) == y
-        }
-        let total = monthExpenses.reduce(0) { $0 + $1.amount }
-        guard total > 0 else { return [] }
-
-        let grouped = Dictionary(grouping: monthExpenses, by: { $0.category })
-        return grouped.map { cat, items in
-            let amount = items.reduce(0) { $0 + $1.amount }
-            return (category: cat, amount: amount, ratio: amount / total)
-        }
-        .sorted { $0.amount > $1.amount }
+        summary.currentMonthCategoryBreakdown
     }
 
     private func categoryColor(_ cat: ExpenseCategory) -> Color {
@@ -238,7 +256,35 @@ struct ExpenseTrackerView: View {
                     ForEach(groupedRecords, id: \.key) { group in
                         Section(group.key) {
                             ForEach(group.items) { item in
-                                ExpenseRow(item: item)
+                                Button {
+                                    recordToEdit = item
+                                    Haptic.light()
+                                } label: {
+                                    ExpenseRow(item: item)
+                                }
+                                .buttonStyle(.plain)
+                                .swipeActions(edge: .leading) {
+                                    Button {
+                                        recordToEdit = item
+                                        Haptic.light()
+                                    } label: {
+                                        Label("编辑", systemImage: "pencil")
+                                    }
+                                    .tint(.indigo)
+                                }
+                                .contextMenu {
+                                    Button {
+                                        recordToEdit = item
+                                    } label: {
+                                        Label("编辑这笔账目", systemImage: "pencil")
+                                    }
+
+                                    Button(role: .destructive) {
+                                        deleteRecord(item)
+                                    } label: {
+                                        Label("删除这笔账目", systemImage: "trash")
+                                    }
+                                }
                             }
                             .onDelete { offsets in
                                 deleteRecords(offsets: offsets, from: group.items)
@@ -263,7 +309,10 @@ struct ExpenseTrackerView: View {
                 }
             }
             .sheet(isPresented: $showingManualAddSheet) {
-                ManualAddExpenseSheet()
+                AddOrEditExpenseSheet(recordToEdit: nil)
+            }
+            .sheet(item: $recordToEdit) { record in
+                AddOrEditExpenseSheet(recordToEdit: record)
             }
             .overlay(alignment: .bottom) {
                 if let feedback = feedbackBanner {
@@ -359,6 +408,13 @@ struct ExpenseTrackerView: View {
         }
     }
 
+    private func deleteRecord(_ item: ExpenseRecord) {
+        context.delete(item)
+        try? context.save()
+        Haptic.medium()
+        showFeedback("已删除 1 笔账目记录")
+    }
+
     private func deleteRecords(offsets: IndexSet, from items: [ExpenseRecord]) {
         for index in offsets {
             let item = items[index]
@@ -403,22 +459,34 @@ struct ExpenseRow: View {
             Text(String(format: "%@¥%.2f", item.isIncome ? "+" : "-", item.amount))
                 .font(.system(.body, design: .rounded).bold())
                 .foregroundStyle(item.isIncome ? Color.green : Color.primary)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(.tertiaryLabel))
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
     }
 }
 
-// MARK: - 手动记账备用弹窗
+// MARK: - 手动记账与编辑记录弹窗
 
-struct ManualAddExpenseSheet: View {
+struct AddOrEditExpenseSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+
+    var recordToEdit: ExpenseRecord? = nil
 
     @State private var isIncome: Bool = false
     @State private var amountString: String = ""
     @State private var selectedCategory: ExpenseCategory = .food
     @State private var title: String = ""
     @State private var date: Date = .now
+    @State private var showingDeleteConfirm = false
+
+    private var isEditing: Bool {
+        recordToEdit != nil
+    }
 
     private var availableCategories: [ExpenseCategory] {
         if isIncome {
@@ -431,6 +499,7 @@ struct ManualAddExpenseSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                // 1. 收支类型与金额
                 Section {
                     Picker("收支类型", selection: $isIncome) {
                         Text("支出").tag(false)
@@ -441,7 +510,9 @@ struct ManualAddExpenseSheet: View {
                         if income {
                             selectedCategory = .income
                         } else {
-                            selectedCategory = availableCategories.first ?? .food
+                            if selectedCategory.isIncome {
+                                selectedCategory = availableCategories.first ?? .food
+                            }
                         }
                     }
 
@@ -455,51 +526,113 @@ struct ManualAddExpenseSheet: View {
                     }
                 }
 
+                // 2. 分类与项目
                 Section("分类与项目") {
-                    Picker("消费分类", selection: $selectedCategory) {
+                    Picker("分类", selection: $selectedCategory) {
                         ForEach(availableCategories, id: \.self) { cat in
                             Label(cat.rawValue, systemImage: cat.icon).tag(cat)
                         }
                     }
 
-                    TextField("备注说明（如：聚餐、打车）", text: $title)
+                    TextField("备注说明（如：麦当劳、打车、工资）", text: $title)
                 }
 
+                // 3. 记账时间
                 Section("记账时间") {
-                    DatePicker("发生日期", selection: $date)
+                    DatePicker("发生日期与时间", selection: $date)
+                }
+
+                // 4. 编辑模式下提供删除账目入口
+                if isEditing {
+                    Section {
+                        Button(role: .destructive) {
+                            showingDeleteConfirm = true
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Label("删除这笔账目记录", systemImage: "trash")
+                                    .foregroundStyle(.red)
+                                Spacer()
+                            }
+                        }
+                    }
                 }
             }
             .onAppear {
-                if !isIncome {
-                    selectedCategory = availableCategories.first ?? .food
+                if let record = recordToEdit {
+                    isIncome = record.isIncome
+                    if record.amount.truncatingRemainder(dividingBy: 1) == 0 {
+                        amountString = String(format: "%.0f", record.amount)
+                    } else {
+                        amountString = String(format: "%.2f", record.amount)
+                    }
+                    selectedCategory = record.category
+                    title = record.title
+                    date = record.date
+                } else {
+                    if !isIncome {
+                        selectedCategory = availableCategories.first ?? .food
+                    }
                 }
             }
-            .navigationTitle(isIncome ? "记一笔收入" : "记一笔支出")
+            .navigationTitle(isEditing ? (isIncome ? "编辑收入" : "编辑支出") : (isIncome ? "记一笔收入" : "记一笔支出"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") { saveManualRecord() }
-                        .disabled((Double(amountString) ?? 0) <= 0)
+                    Button(isEditing ? "保存修改" : "保存") {
+                        saveRecord()
+                    }
+                    .disabled((Double(amountString.trimmingCharacters(in: .whitespaces)) ?? 0) <= 0)
                 }
+            }
+            .alert("确认删除账目", isPresented: $showingDeleteConfirm) {
+                Button("确认删除", role: .destructive) {
+                    deleteCurrentRecord()
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("删除后无法恢复，确认删除这笔账目明细吗？")
             }
         }
     }
 
-    private func saveManualRecord() {
-        guard let amount = Double(amountString), amount > 0 else { return }
+    private func saveRecord() {
+        guard let amount = Double(amountString.trimmingCharacters(in: .whitespaces)), amount > 0 else { return }
         let cleanTitle = title.trimmingCharacters(in: .whitespaces)
-        let record = ExpenseRecord(
-            amount: amount,
-            isIncome: isIncome,
-            category: selectedCategory,
-            title: cleanTitle.isEmpty ? selectedCategory.rawValue : cleanTitle,
-            date: date
-        )
-        context.insert(record)
+
+        if let record = recordToEdit {
+            record.amount = amount
+            record.isIncome = isIncome
+            record.category = selectedCategory
+            record.title = cleanTitle.isEmpty ? selectedCategory.rawValue : cleanTitle
+            record.date = date
+            try? context.save()
+            Haptic.success()
+        } else {
+            let record = ExpenseRecord(
+                amount: amount,
+                isIncome: isIncome,
+                category: selectedCategory,
+                title: cleanTitle.isEmpty ? selectedCategory.rawValue : cleanTitle,
+                date: date
+            )
+            context.insert(record)
+            try? context.save()
+            Haptic.success()
+        }
+        dismiss()
+    }
+
+    private func deleteCurrentRecord() {
+        guard let record = recordToEdit else { return }
+        context.delete(record)
         try? context.save()
+        Haptic.warning()
         dismiss()
     }
 }
+
+typealias ManualAddExpenseSheet = AddOrEditExpenseSheet
