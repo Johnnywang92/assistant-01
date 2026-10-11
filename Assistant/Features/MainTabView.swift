@@ -138,6 +138,8 @@ struct MainTabView: View {
             switch tab {
             case .todos:
                 TodoListView()
+            case .lifeEvents:
+                LifeEventManagementView()
             case .departure:
                 NavigationStack {
                     DepartureChecklistView()

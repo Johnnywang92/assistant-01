@@ -133,7 +133,7 @@ public final class TabBarManager: ObservableObject {
         Haptic.selection()
     }
 
-    /// 重置为默认排列（待办、出门防丢、记账、生活档案、设置）
+    /// 重置为默认排列（待办、人生大事、记账、生活档案、设置）
     public func resetToDefault() {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             activeTabs = NavigationRouter.defaultTabs

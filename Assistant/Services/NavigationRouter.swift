@@ -9,6 +9,7 @@ public final class NavigationRouter: ObservableObject {
 
     public enum AppTab: String, CaseIterable, Identifiable, Codable {
         case todos
+        case lifeEvents
         case departure
         case expenses
         case vault
@@ -22,6 +23,7 @@ public final class NavigationRouter: ObservableObject {
         public var title: String {
             switch self {
             case .todos: return "待办"
+            case .lifeEvents: return "人生大事"
             case .departure: return "出门防丢"
             case .expenses: return "记账"
             case .vault: return "生活档案"
@@ -35,6 +37,7 @@ public final class NavigationRouter: ObservableObject {
         public var systemImage: String {
             switch self {
             case .todos: return "checklist"
+            case .lifeEvents: return "sparkles"
             case .departure: return "briefcase.fill"
             case .expenses: return "yensign.circle.fill"
             case .vault: return "folder.badge.person.crop"
@@ -48,6 +51,7 @@ public final class NavigationRouter: ObservableObject {
         public var subtitle: String {
             switch self {
             case .todos: return "日常事务、快递取件与待办催办"
+            case .lifeEvents: return "订婚、婚礼、乔迁、升学宴等长期项目"
             case .departure: return "随身物品清点、防丢检查与口诀"
             case .expenses: return "日常收支账本与统计分析"
             case .vault: return "纪念日、运动、药物保健品等生活全档案"
@@ -60,7 +64,7 @@ public final class NavigationRouter: ObservableObject {
     }
 
     /// 默认启用的 5 个 Tab 板块（包含出门防遗忘）
-    public static let defaultTabs: [AppTab] = [.todos, .departure, .expenses, .vault, .settings]
+    public static let defaultTabs: [AppTab] = [.todos, .lifeEvents, .expenses, .vault, .settings]
 
     public enum ActiveSheet: String, Identifiable {
         case addTodo

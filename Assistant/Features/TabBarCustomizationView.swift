@@ -277,6 +277,7 @@ struct TabBarCustomizationView: View {
     private func colorForTab(_ tab: NavigationRouter.AppTab) -> Color {
         switch tab {
         case .todos: return .blue
+        case .lifeEvents: return .pink
         case .departure: return .indigo
         case .expenses: return .green
         case .vault: return .purple
