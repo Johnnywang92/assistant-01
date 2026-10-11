@@ -139,6 +139,31 @@ final class LifeEventPerson {
     }
 }
 
+@Model
+final class LifeEventExpense {
+    var id: UUID
+    var projectID: UUID
+    var title: String
+    var category: String
+    var amount: Double
+    var paidAmount: Double
+    var payee: String
+    var dueDate: Date?
+    var note: String
+
+    init(projectID: UUID, title: String, category: String = "其他", amount: Double, paidAmount: Double = 0, payee: String = "", dueDate: Date? = nil, note: String = "") {
+        self.id = UUID()
+        self.projectID = projectID
+        self.title = title
+        self.category = category
+        self.amount = amount
+        self.paidAmount = paidAmount
+        self.payee = payee
+        self.dueDate = dueDate
+        self.note = note
+    }
+}
+
 enum LifeEventTemplateFactory {
     @MainActor
     static func createProject(title: String, template: LifeEventTemplate, targetDate: Date, location: String?, budgetLimit: Double, in context: ModelContext) -> LifeEventProject {

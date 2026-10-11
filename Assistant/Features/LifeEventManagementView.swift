@@ -133,7 +133,9 @@ struct LifeEventProjectDetailView: View {
     @Query private var stages: [LifeEventStage]
     @Query private var tasks: [LifeEventTask]
     @Query private var people: [LifeEventPerson]
+    @Query private var expenses: [LifeEventExpense]
     @State private var showAddPerson = false
+    @State private var showAddExpense = false
     let project: LifeEventProject
 
     private var projectStages: [LifeEventStage] { stages.filter { $0.projectID == project.id }.sorted { $0.sortOrder < $1.sortOrder } }
@@ -184,6 +186,38 @@ struct LifeEventProjectDetailView: View {
                 }
                 Button("添加人物", systemImage: "person.badge.plus") { showAddPerson = true }
             }
+            Section("预算与账本") {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("已支出").font(.caption).foregroundStyle(.secondary)
+                        Text(expensesTotal, format: .currency(code: "CNY")).font(.headline)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("预算上限").font(.caption).foregroundStyle(.secondary)
+                        Text(project.budgetLimit > 0 ? project.budgetLimit.formatted(.currency(code: "CNY")) : "未设置").font(.headline)
+                    }
+                }
+                ForEach(projectExpenses) { expense in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(expense.title).font(.subheadline.weight(.medium))
+                            let remaining = max(expense.amount - expense.paidAmount, 0)
+                            let paymentStatus = expense.paidAmount >= expense.amount ? "已付清" : "待付 \(remaining.formatted(.currency(code: "CNY")))"
+                            Text([expense.category, paymentStatus].joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(expense.amount, format: .currency(code: "CNY"))
+                            .font(.subheadline.monospacedDigit())
+                    }
+                }
+                .onDelete { offsets in
+                    for index in offsets { context.delete(projectExpenses[index]) }
+                    try? context.save()
+                }
+                Button("添加开销", systemImage: "plus.circle") { showAddExpense = true }
+            }
         }
         .navigationTitle("项目详情")
         .navigationBarTitleDisplayMode(.inline)
@@ -195,10 +229,21 @@ struct LifeEventProjectDetailView: View {
         .sheet(isPresented: $showAddPerson) {
             LifeEventAddPersonView(projectID: project.id)
         }
+        .sheet(isPresented: $showAddExpense) {
+            LifeEventAddExpenseView(projectID: project.id)
+        }
     }
 
     private var projectPeople: [LifeEventPerson] {
         people.filter { $0.projectID == project.id }.sorted { $0.name < $1.name }
+    }
+
+    private var projectExpenses: [LifeEventExpense] {
+        expenses.filter { $0.projectID == project.id }.sorted { $0.title < $1.title }
+    }
+
+    private var expensesTotal: Double {
+        projectExpenses.reduce(0) { $0 + $1.paidAmount }
     }
 }
 
@@ -261,6 +306,54 @@ private struct LifeEventAddPersonView: View {
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+private struct LifeEventAddExpenseView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    let projectID: UUID
+    @State private var title = ""
+    @State private var category = "场地"
+    @State private var amount = ""
+    @State private var paidAmount = ""
+    @State private var payee = ""
+    @State private var hasDueDate = false
+    @State private var dueDate = Date.now
+
+    private let categories = ["场地", "摄影摄像", "餐饮", "服装礼服", "交通住宿", "物资", "其他"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("开销信息") {
+                    TextField("项目名称，例如：酒店定金", text: $title)
+                    Picker("分类", selection: $category) { ForEach(categories, id: \.self, content: Text.init) }
+                    TextField("总金额", text: $amount).keyboardType(.decimalPad)
+                    TextField("已付金额（定金/尾款）", text: $paidAmount).keyboardType(.decimalPad)
+                    TextField("收款方（可选）", text: $payee)
+                }
+                Section {
+                    Toggle("设置付款截止日", isOn: $hasDueDate)
+                    if hasDueDate { DatePicker("截止日", selection: $dueDate, displayedComponents: .date) }
+                }
+            }
+            .navigationTitle("添加开销")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        let total = Double(amount) ?? 0
+                        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, total > 0 else { return }
+                        context.insert(LifeEventExpense(projectID: projectID, title: title.trimmingCharacters(in: .whitespacesAndNewlines), category: category, amount: total, paidAmount: min(max(Double(paidAmount) ?? 0, 0), total), payee: payee, dueDate: hasDueDate ? dueDate : nil))
+                        try? context.save()
+                        dismiss()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (Double(amount) ?? 0) <= 0)
                 }
             }
         }
