@@ -31,7 +31,8 @@ struct TodayBriefingView: View {
     }
 
     private var visibleItems: [TodoItem] {
-        isExpanded ? Array(prioritizedItems.prefix(12)) : Array(prioritizedItems.prefix(3))
+        // 首页只保留少量重点事项；完整清单仍在待办页，避免项目多时撑满首页。
+        isExpanded ? Array(prioritizedItems.prefix(6)) : Array(prioritizedItems.prefix(3))
     }
 
     private var supplementalItems: [SupplementalAgendaItem] {
@@ -127,7 +128,7 @@ struct TodayBriefingView: View {
                     }
                 }
                 // 展开内容独立滚动，避免小屏和大字号把主页面其它内容顶出屏幕。
-                .frame(maxHeight: 300)
+                .frame(maxHeight: 220)
             }
 
             HStack {
