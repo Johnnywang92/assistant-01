@@ -12,6 +12,7 @@ struct ReminderCenterView: View {
     @Query private var subscriptions: [SubscriptionItem]
     @Query private var expiries: [ItemExpiryItem]
     @Query private var vehicles: [VehicleProfile]
+    @State private var actionRevision = 0
 
     private var reminders: [TodoItem] {
         let start = Calendar.current.startOfDay(for: .now)
@@ -38,10 +39,7 @@ struct ReminderCenterView: View {
         var result: [LifeReminder] = []
 
         for habit in habits where habit.isEnabled && habit.nextDueAt < horizon && habit.nextDueAt > start {
-            result.append(.init(id: "habit-\(habit.id)", title: habit.title, date: habit.nextDueAt, detail: "习惯", icon: "repeat", actionTitle: "完成") {
-                habit.completeOnce()
-                try? context.save()
-            })
+            result.append(makeLifeReminder(kind: .habit, sourceID: habit.id, date: habit.nextDueAt, title: habit.title, detail: "习惯", icon: "repeat"))
         }
         for medication in medications where medication.isEnabled {
             for timePoint in medication.dailyTimePoints {
@@ -51,22 +49,36 @@ struct ReminderCenterView: View {
                 comps.hour = parts[0]
                 comps.minute = parts[1]
                 guard let date = Calendar.current.date(from: comps), date >= Calendar.current.startOfDay(for: .now), date < horizon else { continue }
-                result.append(.init(id: "med-\(medication.id)-\(timePoint)", title: "服用\(medication.medName)", date: date, detail: medication.dosage, icon: "pills.fill"))
+                    result.append(makeLifeReminder(kind: .medication, sourceID: medication.id, date: date, title: "服用\(medication.medName)", detail: medication.dosage, icon: "pills.fill"))
             }
         }
         for anniversary in anniversaries where anniversary.nextAnniversaryDate > start && anniversary.nextAnniversaryDate < horizon {
-            result.append(.init(id: "anniversary-\(anniversary.id)", title: anniversary.title, date: anniversary.nextAnniversaryDate, detail: "纪念日", icon: "gift.fill"))
+            result.append(makeLifeReminder(kind: .anniversary, sourceID: anniversary.id, date: anniversary.nextAnniversaryDate, title: anniversary.title, detail: "纪念日", icon: "gift.fill"))
         }
         for subscription in subscriptions where subscription.nextBillingDate > start && subscription.nextBillingDate < horizon {
-            result.append(.init(id: "subscription-\(subscription.id)", title: "续费：\(subscription.name)", date: subscription.nextBillingDate, detail: subscription.priceString, icon: "creditcard.and.123"))
+            result.append(makeLifeReminder(kind: .subscription, sourceID: subscription.id, date: subscription.nextBillingDate, title: "续费：\(subscription.name)", detail: subscription.priceString, icon: "creditcard.and.123"))
         }
         for expiry in expiries where !expiry.isResolved && expiry.expireDate > start && expiry.expireDate < horizon {
-            result.append(.init(id: "expiry-\(expiry.id)", title: "临期：\(expiry.title)", date: expiry.expireDate, detail: expiry.category, icon: "hourglass.bottomhalf.filled"))
+            result.append(makeLifeReminder(kind: .expiry, sourceID: expiry.id, date: expiry.expireDate, title: "临期：\(expiry.title)", detail: expiry.category, icon: "hourglass.bottomhalf.filled"))
         }
         for vehicle in vehicles where vehicle.isReminderEnabled && vehicle.nextMaintenanceDate > start && vehicle.nextMaintenanceDate < horizon {
-            result.append(.init(id: "vehicle-\(vehicle.id)", title: "车辆保养：\(vehicle.name)", date: vehicle.nextMaintenanceDate, detail: "定期保养", icon: "car.fill"))
+            result.append(makeLifeReminder(kind: .vehicle, sourceID: vehicle.id, date: vehicle.nextMaintenanceDate, title: "车辆保养：\(vehicle.name)", detail: "定期保养", icon: "car.fill"))
         }
-        return result.sorted { $0.date < $1.date }
+        return result.filter { !$0.isCompleted }.sorted { $0.effectiveDate < $1.effectiveDate }
+    }
+
+    private func makeLifeReminder(kind: LifeReminderKind, sourceID: UUID, date: Date, title: String, detail: String, icon: String) -> LifeReminder {
+        let action = LifeReminderActionStore.action(kind: kind, sourceID: sourceID, occurrenceDate: date, in: context)
+        return LifeReminder(kind: kind, sourceID: sourceID, occurrenceDate: date, id: "\(kind.rawValue)-\(sourceID.uuidString)-\(date.timeIntervalSince1970)", title: title, date: date, detail: detail, icon: icon, snoozedUntil: action?.snoozedUntil, isCompleted: action?.isCompleted ?? false, onComplete: {
+            if kind == .habit, let habit = habits.first(where: { $0.id == sourceID }) { habit.completeOnce() }
+            LifeReminderActionStore.complete(kind: kind, sourceID: sourceID, occurrenceDate: date, in: context)
+            actionRevision += 1
+            Haptic.success()
+        }, onSnooze: {
+            LifeReminderActionStore.snooze(kind: kind, sourceID: sourceID, occurrenceDate: date, in: context)
+            actionRevision += 1
+            Haptic.light()
+        })
     }
 
     var body: some View {
@@ -113,13 +125,20 @@ struct ReminderCenterView: View {
 }
 
 private struct LifeReminder: Identifiable {
+    let kind: LifeReminderKind
+    let sourceID: UUID
+    let occurrenceDate: Date
     let id: String
     let title: String
     let date: Date
     let detail: String
     let icon: String
-    var actionTitle: String? = nil
-    var action: (() -> Void)? = nil
+    let snoozedUntil: Date?
+    let isCompleted: Bool
+    let onComplete: () -> Void
+    let onSnooze: () -> Void
+
+    var effectiveDate: Date { snoozedUntil ?? date }
 }
 
 private struct LifeReminderRow: View {
@@ -132,16 +151,17 @@ private struct LifeReminderRow: View {
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title).font(.subheadline.weight(.medium)).lineLimit(2)
-                Text("\(dateText(item.date)) · \(item.detail)")
+                Text("\(dateText(item.effectiveDate)) · \(item.detail)")
                     .font(.caption)
                     .foregroundStyle(item.date < .now ? .red : .secondary)
             }
             Spacer(minLength: 0)
-            if let actionTitle = item.actionTitle, let action = item.action {
-                Button(actionTitle, action: action)
-                    .font(.caption.weight(.medium))
-                    .buttonStyle(.bordered)
-            }
+            Button("完成", action: item.onComplete)
+                .font(.caption.weight(.medium))
+                .buttonStyle(.bordered)
+            Button("稍后", action: item.onSnooze)
+                .font(.caption.weight(.medium))
+                .buttonStyle(.bordered)
         }
         .padding(.vertical, 4)
     }
