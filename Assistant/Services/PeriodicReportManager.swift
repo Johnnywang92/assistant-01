@@ -8,6 +8,7 @@ enum ReportPeriodType: String, CaseIterable, Identifiable, Sendable {
     case daily = "日报"
     case weekly = "周报"
     case monthly = "月报"
+    case yearly = "年报"
 
     var id: String { rawValue }
 
@@ -16,6 +17,7 @@ enum ReportPeriodType: String, CaseIterable, Identifiable, Sendable {
         case .daily: return "calendar.day.timeline.leading"
         case .weekly: return "chart.bar.xaxis"
         case .monthly: return "calendar.badge.clock"
+        case .yearly: return "calendar"
         }
     }
 
@@ -24,6 +26,7 @@ enum ReportPeriodType: String, CaseIterable, Identifiable, Sendable {
         case .daily: return "每日晚间生活与待办复盘"
         case .weekly: return "周度执行力与财务全景回顾"
         case .monthly: return "全月成果沉淀与次月规划"
+        case .yearly: return "自然年度生活、目标与财务总览"
         }
     }
 }
@@ -99,6 +102,9 @@ struct PeriodicReportData: Identifiable {
         case .monthly:
             df.dateFormat = "yyyy年MM月"
             return "小助成果月报_\(df.string(from: targetDate))"
+        case .yearly:
+            df.dateFormat = "yyyy年"
+            return "小助自然年报_\(df.string(from: targetDate))"
         }
     }
 
@@ -416,6 +422,16 @@ final class PeriodicReportManager: ObservableObject {
             let sub = "\(start.formatted(.dateTime.month().day())) ~ \(end.formatted(.dateTime.month().day()))"
             return (start, end, title, sub)
 
+        case .yearly:
+            // 年报采用自然年：当年 1 月 1 日 00:00:00 至 12 月 31 日 23:59:59。
+            let year = cal.component(.year, from: targetDate)
+            let start = cal.date(from: DateComponents(year: year, month: 1, day: 1)) ?? cal.startOfDay(for: targetDate)
+            let nextYear = cal.date(from: DateComponents(year: year + 1, month: 1, day: 1)) ?? targetDate
+            let end = cal.date(byAdding: .second, value: -1, to: nextYear) ?? targetDate
+            let title = "(year)年 · 自然年报"
+            let sub = "(year)年1月1日 ~ (year)年12月31日"
+            return (start, end, title, sub)
+
         case .monthly:
             let comps = cal.dateComponents([.year, .month], from: targetDate)
             let start = cal.date(from: comps) ?? cal.startOfDay(for: targetDate)
@@ -489,6 +505,16 @@ final class PeriodicReportManager: ObservableObject {
                 segments.append("月度财务支出总计 ¥\(String(format: "%.2f", totalExpense))。")
             }
             segments.append("下一月度将迎来新的周期节奏，记得关注即将到期的订阅扣款与重要纪念日。")
+
+        case .yearly:
+            segments.append("这一自然年累计完成了 (completedCount) 个生活与工作目标，年度待办达成率 (Int(completionRate * 100))%。")
+            if totalExpense > 0 {
+                segments.append("全年记账支出总计 ¥(String(format: "%.2f", totalExpense))。")
+                if let top = categoryStats.first {
+                    segments.append("年度开支大头集中在「(top.category.rawValue)」（占比 (Int(top.ratio * 100))%）。")
+                }
+            }
+            segments.append("新的一年继续保持节奏，按自己的目标稳步前进。")
         }
 
         return segments.joined(separator: " ")

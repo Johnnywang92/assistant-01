@@ -414,7 +414,7 @@ struct SettingsView: View {
                     Text("到期自动清理；待办和账单不受影响。")
                 }
 
-                // MARK: - 定期复盘报告 (日报 / 周报 / 月报)
+                // MARK: - 定期复盘报告 (日报 / 周报 / 月报 / 年报)
                 Section {
                     NavigationLink {
                         PeriodicReportView()

@@ -239,7 +239,7 @@ struct TodoListView: View {
                                 showPeriodicReport = true
                                 Haptic.light()
                             } label: {
-                                Label("日报 · 周报 · 月报", systemImage: "chart.bar.doc.horizontal")
+                                Label("日报 · 周报 · 月报 · 年报", systemImage: "chart.bar.doc.horizontal")
                             }
 
                             Divider()

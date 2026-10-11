@@ -224,6 +224,8 @@ struct PeriodicReportView: View {
                 currentDate = cal.date(byAdding: .weekOfYear, value: value, to: currentDate) ?? currentDate
             case .monthly:
                 currentDate = cal.date(byAdding: .month, value: value, to: currentDate) ?? currentDate
+            case .yearly:
+                currentDate = cal.date(byAdding: .year, value: value, to: currentDate) ?? currentDate
             }
             polishedText = nil
         }
