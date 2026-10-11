@@ -238,7 +238,7 @@ public final class RecurringExpenseManager: ObservableObject {
         for i in 0..<items.count {
             guard !items[i].isPaused else { continue }
 
-            var due = items[i].nextDueDate
+            let due = items[i].nextDueDate
             // 如果到期时间已到或已过去
             if due <= now {
                 if items[i].isAutoRecord {

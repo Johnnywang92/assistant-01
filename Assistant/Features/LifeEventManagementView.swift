@@ -117,7 +117,7 @@ struct LifeEventCreateView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("创建") {
                         let name = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? selectedTemplate.rawValue : title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        LifeEventTemplateFactory.createProject(title: name, template: selectedTemplate, targetDate: targetDate, location: location.isEmpty ? nil : location, budgetLimit: Double(budget) ?? 0, in: context)
+                        _ = LifeEventTemplateFactory.createProject(title: name, template: selectedTemplate, targetDate: targetDate, location: location.isEmpty ? nil : location, budgetLimit: Double(budget) ?? 0, in: context)
                         dismiss()
                     }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedTemplate == .custom)
