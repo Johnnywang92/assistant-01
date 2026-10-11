@@ -260,6 +260,15 @@ struct LifeEventProjectDetailView: View {
                     ShareLink(item: shareText, preview: SharePreview(project.title)) {
                         Label("分享筹备摘要", systemImage: "square.and.arrow.up")
                     }
+                    ShareLink(item: familyShareText, preview: SharePreview("给家长的筹备全览")) {
+                        Label("分享给家长", systemImage: "person.2")
+                    }
+                    ShareLink(item: teamShareText, preview: SharePreview("执行分工流程")) {
+                        Label("分享给执行人员", systemImage: "person.3")
+                    }
+                    ShareLink(item: guestShareText, preview: SharePreview("宾客通知")) {
+                        Label("分享给宾客", systemImage: "envelope")
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -308,6 +317,24 @@ struct LifeEventProjectDetailView: View {
             return "- \(person.name)（\(person.role.isEmpty ? person.relationship : person.role)）：\(duty)"
         }.joined(separator: "\n")
         return "人生大事筹备摘要\n项目：\(project.title)\n目标日期：\(project.targetDate.formatted(date: .long, time: .omitted))\n进度：\(completed) / \(projectTasks.count) 项已完成\n宾客：\(confirmedGuestCount) / \(projectGuests.count) 人已确认\(peopleText.isEmpty ? "" : "\n\n人物与分工：\n\(peopleText)")"
+    }
+
+    private var familyShareText: String {
+        "给家长的筹备全览\n\n项目：\(project.title)\n日期：\(project.targetDate.formatted(date: .long, time: .omitted))\n地点：\(project.location?.isEmpty == false ? project.location! : "待定")\n预算：\(project.budgetLimit > 0 ? project.budgetLimit.formatted(.currency(code: "CNY")) : "待定")\n事项进度：已完成 \(completedCount) / \(projectTasks.count) 项\n宾客确认：\(confirmedGuestCount) / \(projectGuests.count) 人\n\n请在需要调整日期、预算或宾客时及时和我们沟通。"
+    }
+
+    private var teamShareText: String {
+        let tasksText = projectTasks.filter { !$0.isDone }.prefix(12).map { "- \($0.title)" }.joined(separator: "\n")
+        let peopleText = projectPeople.map { person in
+            "- \(person.name)：\(person.responsibility.isEmpty ? "待确认分工" : person.responsibility)\(person.phone.isEmpty ? "" : "（\(person.phone)）")"
+        }.joined(separator: "\n")
+        return "执行人员分工\n项目：\(project.title)\n目标日期：\(project.targetDate.formatted(date: .long, time: .omitted))\n\n人物与职责：\n\(peopleText.isEmpty ? "暂无分工，请先补充人物" : peopleText)\n\n待处理事项：\n\(tasksText.isEmpty ? "暂无未完成事项" : tasksText)"
+    }
+
+    private var guestShareText: String {
+        var text = "宾客通知\n\n诚邀亲友参加「\(project.title)」！\n日期：\(project.targetDate.formatted(date: .long, time: .omitted))"
+        if let location = project.location, !location.isEmpty { text += "\n地点：\(location)" }
+        return text + "\n\n请回复是否出席，方便我们安排座位和流程。期待见到你！"
     }
 }
 
