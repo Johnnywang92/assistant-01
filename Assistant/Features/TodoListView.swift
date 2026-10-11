@@ -161,9 +161,6 @@ struct TodoListView: View {
                 HomeGreetingCard(activeCount: todos.filter { $0.status == .active }.count)
                 LifeEventHomeBanner()
 
-                // 紧凑的今日摘要：只显示最重要的事项，完整安排可按需展开
-                TodayBriefingView(items: todos.filter { $0.status == .active })
-
                 // 顶部固定横向分类 Tab 栏（带指示胶囊与角标）
                 filterTabBar
 
@@ -1383,6 +1380,14 @@ struct TodoListView: View {
     @ViewBuilder
     private func renderPageContent(for category: TodoFilterCategory) -> some View {
         List {
+            // 放进列表头部，使“今日安排”可以随首页内容向上滚动，不占用固定屏幕空间。
+            Section {
+                EmptyView()
+            } header: {
+                TodayBriefingView(items: todos.filter { $0.status == .active })
+                    .textCase(nil)
+            }
+
             // 待确认事项（在全部和日常待办页面显示）
             if !review.isEmpty && (category == .all || category == .general) {
                 Section("待确认（\(review.count)）") {
