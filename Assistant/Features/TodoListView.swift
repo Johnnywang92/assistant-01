@@ -2,6 +2,8 @@ import AssistantCore
 import PhotosUI
 import SwiftData
 import SwiftUI
+import CoreLocation
+import WeatherKit
 
 enum TodoFilterCategory: String, CaseIterable, Identifiable {
     case all = "全部"
@@ -90,6 +92,7 @@ struct TodoListView: View {
     ) private var todos: [TodoItem]
 
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
+    @AppStorage("user_preferred_title") private var userTitle: String = "你"
     @AppStorage("all_tab_grouping_mode") private var isGroupedByType: Bool = false
     @ObservedObject private var router = NavigationRouter.shared
     @ObservedObject private var weatherAlerts = WeatherAlertService.shared
@@ -155,6 +158,7 @@ struct TodoListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                HomeGreetingCard(activeCount: todos.filter { $0.status == .active }.count)
                 LifeEventHomeBanner()
 
                 // 紧凑的今日摘要：只显示最重要的事项，完整安排可按需展开
@@ -1525,6 +1529,79 @@ struct TodoListView: View {
     }
 }
 
+private struct HomeGreetingCard: View {
+    let activeCount: Int
+    @State private var weatherSymbol = "cloud.sun.fill"
+    @State private var weatherText = "天气稍后更新"
+    @State private var isLoadingWeather = true
+    @AppStorage("user_preferred_title") private var userTitle: String = "你"
+
+    private var greeting: String {
+        switch Calendar.current.component(.hour, from: .now) {
+        case 5..<12: return "早上好"
+        case 12..<18: return "下午好"
+        case 18..<24: return "晚上好"
+        default: return "夜深了"
+        }
+    }
+
+    private var statusText: String {
+        if activeCount == 0 { return "现在没有什么着急的事需要处理，可以放松一下" }
+        if activeCount == 1 { return "今天还有 1 件事，按自己的节奏处理就好" }
+        return "今天还有 (activeCount) 件事，先处理最重要的一件就好"
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("\(greeting)，\(userTitle.isEmpty || userTitle == "你" ? "朋友" : userTitle)")
+                    .font(.headline.weight(.semibold))
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            VStack(spacing: 3) {
+                Image(systemName: weatherSymbol)
+                    .font(.title3)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.tint)
+                Text(weatherText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 62)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .task { await loadWeather() }
+    }
+
+    @MainActor
+    private func loadWeather() async {
+        guard isLoadingWeather else { return }
+        let manager = CLLocationManager()
+        guard let location = manager.location else {
+            isLoadingWeather = false
+            return
+        }
+        do {
+            let weather = try await WeatherService.shared.weather(for: location)
+            let current = weather.currentWeather
+            weatherSymbol = current.symbolName
+            weatherText = "\(Int(current.temperature.converted(to: .celsius).value.rounded()))°C"
+        } catch {
+            weatherText = "天气不可用"
+        }
+        isLoadingWeather = false
+    }
+}
+
 struct TodoRow: View {
     @Environment(\.modelContext) private var context
     let item: TodoItem
@@ -2096,6 +2173,8 @@ struct AddTodoSheet: View {
     @State private var qrCodeImageData: Data? = nil
     @State private var attachmentImageData: Data? = nil
     @State private var showingQRPreviewInAdd: Bool = false
+    @State private var recognizedTravelPickup: TravelPickupMetadata? = nil
+    @State private var recognizedRawText: String? = nil
 
     // 出行前购票与文博景区预约确认项
     @State private var addCompanionTickets: Bool = false
@@ -2594,6 +2673,7 @@ struct AddTodoSheet: View {
                                             qrCodePayload = nil
                                             qrCodeImageData = nil
                                             attachmentImageData = nil
+                                            recognizedTravelPickup = nil
                                         } label: {
                                             Text("清除")
                                                 .font(.caption2)
@@ -2608,6 +2688,28 @@ struct AddTodoSheet: View {
                     } header: {
                         Text(tab == 1 ? "图片 / 预约截图识别" : "快捷识图建待办")
                     }
+
+                if let pickup = recognizedTravelPickup {
+                    Section {
+                        TravelTicketPickupConfigView(
+                            pickup: Binding(
+                                get: { pickup },
+                                set: { updated in
+                                    recognizedTravelPickup = updated
+                                    title = updated.resolvedTitle
+                                    station = updated.resolvedLocation
+                                    hasDueDate = true
+                                    dueDate = updated.plannedTargetTime
+                                    detail = updated.resolvedDetail
+                                }
+                            )
+                        )
+                    } header: {
+                        Text("火车票 / 机票接人时间与汇合地点")
+                    } footer: {
+                        Text("已根据票面到站时间（\(pickup.arrivalAt.formatted(date: .omitted, time: .shortened))）扣除提前量（\(pickup.advanceMinutes)分钟），将到达「\(pickup.resolvedLocation)」的目标时间设为 \(pickup.plannedTargetTime.formatted(date: .omitted, time: .shortened))。")
+                    }
+                }
 
                 if tab == 0 {
                     // 智能剪贴板侦测卡片（极简一键填入）
@@ -2763,7 +2865,7 @@ struct AddTodoSheet: View {
                                 Stepper("提前 \(customRemindBeforeMinutes) 分钟", value: $customRemindBeforeMinutes, in: 1...10080, step: 5)
                             }
 
-                            if TravelTicketReminderManager.shouldSuggestCrossCityTickets(
+                            if recognizedTravelPickup == nil && TravelTicketReminderManager.shouldSuggestCrossCityTickets(
                                 title: title,
                                 station: station,
                                 location: station,
@@ -2976,6 +3078,8 @@ struct AddTodoSheet: View {
             let result = try await OCRService.shared.recognizeTodo(from: image)
             await MainActor.run {
                 isRecognizingImage = false
+                recognizedTravelPickup = result.travelPickup
+                recognizedRawText = result.rawText.isEmpty ? nil : result.rawText
                 title = result.title
                 type = result.type
                 if result.type == .parcel || result.type == .returnParcel {
@@ -2992,7 +3096,7 @@ struct AddTodoSheet: View {
                 if let recognizedDue = result.dueAt {
                     hasDueDate = true
                     dueDate = recognizedDue
-                    remindBeforeMinutes = 60
+                    remindBeforeMinutes = result.travelPickup != nil ? 0 : 60
                 }
                 if let recDetail = result.detail, !recDetail.isEmpty {
                     detail = recDetail
@@ -3034,6 +3138,7 @@ struct AddTodoSheet: View {
             station: trimmedStation.isEmpty ? nil : trimmedStation,
             location: trimmedStation.isEmpty ? nil : trimmedStation,
             dueAt: hasDueDate ? dueDate : nil,
+            sourceText: recognizedRawText,
             sortOrder: minOrder - 1,
             recurrenceRuleRaw: recurrenceRule == .none ? nil : recurrenceRule.rawValue,
             recurrenceIntervalDays: recurrenceRule == .custom ? customIntervalDays : recurrenceRule.dayInterval(customDays: customIntervalDays),
