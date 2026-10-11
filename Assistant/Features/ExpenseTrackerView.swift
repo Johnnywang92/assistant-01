@@ -411,14 +411,20 @@ struct ExpenseTrackerView: View {
 
     private func toggleQuickVoiceInput() {
         if isListeningQuickVoice {
+            // 让 isListening 的 onChange 回调统一接收最终识别文本并提交记账。
+            // 这里不能提前将 isListeningQuickVoice 置 false，否则回调会误以为不是一次完整录音而直接丢弃文本。
             voice.stopListening()
-            isListeningQuickVoice = false
         } else {
             Task {
                 let granted = await voice.requestPermissions()
                 if granted {
                     isListeningQuickVoice = true
-                    try? voice.startListening()
+                    do {
+                        try voice.startListening()
+                    } catch {
+                        isListeningQuickVoice = false
+                        showFeedback(error.localizedDescription)
+                    }
                 } else {
                     showFeedback("请开启麦克风与语音识别权限")
                 }
