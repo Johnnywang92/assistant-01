@@ -91,24 +91,27 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    HStack(spacing: 16) {
+                    HStack(spacing: 10) {
                         Image("AssistantAppIcon")
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                            .frame(width: 58, height: 58)
-                            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                            .frame(width: 42, height: 42)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
                             )
                             .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
 
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(assistantName.isEmpty ? "小助" : assistantName)
-                                .font(.headline)
+                                .font(.subheadline.weight(.semibold))
+                            Text("称呼：\(userTitle.isEmpty ? "你" : userTitle)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 0)
 
                     HStack {
                         Text("助手命名")
@@ -131,8 +134,8 @@ struct SettingsView: View {
                     }
 
                     // 快速命名推荐预设
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
                             ForEach(["小助", "管家", "贾维斯", "星期五", "小秘书"], id: \.self) { preset in
                                 Button {
                                     assistantName = preset
@@ -140,8 +143,8 @@ struct SettingsView: View {
                                 } label: {
                                     Text(preset)
                                         .font(.caption2)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 3)
                                         .background(
                                             Capsule()
                                                 .fill(assistantName == preset ? Color.accentColor.opacity(0.18) : Color(.tertiarySystemFill))
@@ -152,7 +155,6 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 2)
 
                     Divider()
 
@@ -178,8 +180,8 @@ struct SettingsView: View {
                     }
 
                     // 快速称呼推荐预设
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
                             ForEach(["你", "您", "老板", "主人", "朋友"], id: \.self) { preset in
                                 Button {
                                     userTitle = preset
@@ -187,8 +189,8 @@ struct SettingsView: View {
                                 } label: {
                                     Text(preset)
                                         .font(.caption2)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 4)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 3)
                                         .background(
                                             Capsule()
                                                 .fill(userTitle == preset ? Color.accentColor.opacity(0.18) : Color(.tertiarySystemFill))
@@ -199,7 +201,6 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 2)
                 } header: {
                     Text("助手与称呼")
                 }
