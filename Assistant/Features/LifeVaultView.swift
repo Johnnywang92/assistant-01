@@ -158,7 +158,7 @@ struct LifeVaultView: View {
                 // MARK: - 0. 人生大事统筹中心
                 Section("人生大事") {
                     NavigationLink {
-                        LifeEventManagementView(isEmbeddedInNavigation: true)
+                        LifeEventManagementView()
                     } label: {
                         vaultRow(
                             icon: "sparkles",
@@ -349,7 +349,7 @@ struct LifeVaultView: View {
     private func destinationView(for destination: VaultDestination) -> some View {
         switch destination {
         case .lifeEvents:
-            LifeEventManagementView(isEmbeddedInNavigation: true)
+            LifeEventManagementView()
         case .documents:
             IDDocumentVaultView()
         case .passwords:
