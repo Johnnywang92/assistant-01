@@ -1,5 +1,6 @@
 import AVFoundation
 import PhotosUI
+import SwiftData
 import SwiftUI
 
 /// 相机扫描取景器控制器 (UIKit 封装)
@@ -96,6 +97,7 @@ struct CameraScannerRepresentable: UIViewControllerRepresentable {
 /// 扫码导入二维码全屏交互页（支持实时相机取景与相册选图识别）
 struct QRCodeScannerView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
 
     @State private var scannedCode: String?
     @State private var decodedPayload: TodoSharePayload?
@@ -142,7 +144,7 @@ struct QRCodeScannerView: View {
                             }
                     }
 
-                    Text("将二维码放入框内，即可直接导入")
+                    Text("将二维码放入框内，或从相册选择预约截图导入")
                         .font(.subheadline)
                         .foregroundStyle(.white)
                         .padding(.top, 24)
@@ -225,10 +227,42 @@ struct QRCodeScannerView: View {
                 Task {
                     if let data = try? await newItem.loadTransferable(type: Data.self),
                        let uiImage = UIImage(data: data) {
-                        if let detectedCode = QRCodeService.detectQRCode(from: uiImage) {
-                            handleScannedCode(detectedCode)
+                        if let detectedCode = QRCodeService.detectQRCode(from: uiImage),
+                           let payload = QRCodeService.decodePayload(from: detectedCode) {
+                            await MainActor.run {
+                                self.decodedPayload = payload
+                                self.isShowingPreviewSheet = true
+                            }
+                        } else if let result = try? await OCRService.shared.recognizeTodo(from: uiImage),
+                                  !result.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            await MainActor.run {
+                                let minOrder = (try? context.fetch(FetchDescriptor<TodoItem>()))?.map(\.sortOrder).min() ?? 0
+                                let item = TodoItem(
+                                    type: result.type,
+                                    status: .active,
+                                    title: result.title,
+                                    detail: result.detail,
+                                    pickupCode: result.pickupCode,
+                                    station: result.station ?? result.location,
+                                    location: result.location ?? result.station,
+                                    dueAt: result.dueAt,
+                                    sourceText: result.rawText,
+                                    sortOrder: minOrder - 1,
+                                    remindBeforeMinutes: result.dueAt != nil ? 60 : 0,
+                                    qrCodePayload: result.qrCodePayload,
+                                    qrCodeImageData: result.qrCodeImageData,
+                                    attachmentImageData: result.attachmentImageData
+                                )
+                                context.insert(item)
+                                TodoNotificationManager.shared.scheduleNotification(for: item)
+                                try? context.save()
+                                Haptic.success()
+                                dismiss()
+                            }
                         } else {
-                            errorMessage = "所选图片中未检测到有效的二维码，请换一张清晰图片重试。"
+                            await MainActor.run {
+                                errorMessage = "所选图片中未检测到有效二维码或可识别的待办信息，请换一张清晰图片重试。"
+                            }
                         }
                     }
                 }
@@ -241,7 +275,7 @@ struct QRCodeScannerView: View {
             self.decodedPayload = payload
             self.isShowingPreviewSheet = true
         } else {
-            errorMessage = "该二维码非小助待办分享码，无法直接解析导入。"
+            errorMessage = "该二维码非小助待办分享码，若为门票/预约截图请点击底部「相册选图」识别导入。"
         }
     }
 
