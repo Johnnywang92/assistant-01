@@ -738,8 +738,8 @@ struct AddOrEditExpenseSheet: View {
                     title = record.title
                     date = record.date
                     receiptImageData = record.receiptImageData
-                    splitCountString = String(max(record.splitCount ?? 1, 1))
-                    splitParticipants = record.splitParticipants ?? ""
+                    splitCountString = String(max(record.splitCount, 1))
+                    splitParticipants = record.splitParticipants
                 } else {
                     if !isIncome {
                         selectedCategory = availableCategories.first ?? .food
@@ -820,13 +820,14 @@ private struct ExpenseShareView: View {
     let record: ExpenseRecord
     @State private var includeReceipt = false
 
-    private var splitCount: Int { max(record.splitCount ?? 1, 1) }
+    private var splitCount: Int { max(record.splitCount, 1) }
     private var shareText: String {
         let kind = record.isIncome ? "收入" : "支出"
         var lines = ["智能记账 · \(kind)", "项目：\(record.title)", "金额：¥\(String(format: "%.2f", record.amount))", "分类：\(record.category.rawValue)", "日期：\(record.date.formatted(date: .abbreviated, time: .shortened))"]
         if !record.isIncome && splitCount > 1 {
             lines.append("AA：\(splitCount) 人，每人 ¥\(String(format: "%.2f", record.amount / Double(splitCount)))")
-            if let participants = record.splitParticipants?.trimmingCharacters(in: .whitespacesAndNewlines), !participants.isEmpty {
+            let participants = record.splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !participants.isEmpty {
                 lines.append("参与人：\(participants)")
             }
         }

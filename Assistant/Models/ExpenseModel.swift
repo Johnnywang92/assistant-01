@@ -49,10 +49,10 @@ public final class ExpenseRecord {
     public var rawText: String              // 用户一句话输入的原文
     public var date: Date                   // 账单归属日期时间
     public var createdAt: Date
-    public var receiptImageData: Data?
-    // Optional so existing SwiftData stores can add these columns without a destructive migration.
-    public var splitCount: Int?
-    public var splitParticipants: String?
+    @Transient public var receiptImageData: Data?
+    // Kept out of the legacy ExpenseRecord schema so old stores can open safely.
+    @Transient public var splitCount: Int = 1
+    @Transient public var splitParticipants: String = ""
 
     public init(
         amount: Double,
@@ -71,8 +71,8 @@ public final class ExpenseRecord {
         self.date = date
         self.createdAt = .now
         self.receiptImageData = nil
-        self.splitCount = nil
-        self.splitParticipants = nil
+        self.splitCount = 1
+        self.splitParticipants = ""
     }
 
     public var category: ExpenseCategory {
