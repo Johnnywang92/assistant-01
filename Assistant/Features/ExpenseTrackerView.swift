@@ -1,5 +1,7 @@
 import SwiftData
 import SwiftUI
+import PhotosUI
+import UIKit
 
 /// 记账单次 O(N) 极速统计算法，避免多次全表重复扫描与高频 Date/Calendar 计算
 fileprivate struct ExpenseSummary {
@@ -66,6 +68,7 @@ struct ExpenseTrackerView: View {
     @State private var showingReceiptScanner = false
     @State private var aiExpenseInsight: String? = nil
     @State private var isAnalyzingExpenses = false
+    @State private var recordToShare: ExpenseRecord?
 
     private var calendar: Calendar { .current }
 
@@ -315,6 +318,14 @@ struct ExpenseTrackerView: View {
                                     }
                                     .tint(.indigo)
                                 }
+                                .swipeActions(edge: .trailing) {
+                                    Button {
+                                        recordToShare = item
+                                    } label: {
+                                        Label("分享", systemImage: "square.and.arrow.up")
+                                    }
+                                    .tint(.blue)
+                                }
                                 .contextMenu {
                                     Button {
                                         recordToEdit = item
@@ -326,6 +337,11 @@ struct ExpenseTrackerView: View {
                                         deleteRecord(item)
                                     } label: {
                                         Label("删除这笔账目", systemImage: "trash")
+                                    }
+                                    Button {
+                                        recordToShare = item
+                                    } label: {
+                                        Label("分享账单", systemImage: "square.and.arrow.up")
                                     }
                                 }
                             }
@@ -367,6 +383,9 @@ struct ExpenseTrackerView: View {
             }
             .sheet(item: $recordToEdit) { record in
                 AddOrEditExpenseSheet(recordToEdit: record)
+            }
+            .sheet(item: $recordToShare) { record in
+                ExpenseShareView(record: record)
             }
             .sheet(isPresented: $showingReceiptScanner) {
                 ReceiptScannerView { result, rawText in
@@ -439,6 +458,8 @@ struct ExpenseTrackerView: View {
                 rawText: text,
                 date: result.date
             )
+            record.splitCount = max(result.splitCount, 1)
+            record.splitParticipants = result.splitParticipants
             context.insert(record)
             try? context.save()
             Haptic.success()
@@ -585,6 +606,10 @@ struct AddOrEditExpenseSheet: View {
     @State private var selectedCategory: ExpenseCategory = .food
     @State private var title: String = ""
     @State private var date: Date = .now
+    @State private var receiptImageData: Data?
+    @State private var selectedReceiptItem: PhotosPickerItem?
+    @State private var splitCountString = "1"
+    @State private var splitParticipants = ""
     @State private var showingDeleteConfirm = false
 
     private var isEditing: Bool {
@@ -645,6 +670,45 @@ struct AddOrEditExpenseSheet: View {
                     DatePicker("发生日期与时间", selection: $date)
                 }
 
+                if !isIncome {
+                    Section("AA 分摊（可选）") {
+                        TextField("参与人数", text: $splitCountString).keyboardType(.numberPad)
+                        TextField("参与人姓名（可选，用逗号分隔）", text: $splitParticipants)
+                        if let amount = Double(amountString), amount > 0, let count = Int(splitCountString), count > 1 {
+                            HStack {
+                                Text("每人应付")
+                                Spacer()
+                                Text(amount / Double(count), format: .currency(code: "CNY")).fontWeight(.semibold)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Section("原始单据（可选）") {
+                        if let data = receiptImageData, let image = UIImage(data: data) {
+                            HStack {
+                                Image(uiImage: image).resizable().scaledToFill()
+                                    .frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 8))
+                                Text("已附上小票，分享时可选择发送").font(.subheadline).foregroundStyle(.secondary)
+                                Spacer()
+                                Button("移除", role: .destructive) { receiptImageData = nil; selectedReceiptItem = nil }
+                                    .font(.caption)
+                            }
+                        }
+                        PhotosPicker(selection: $selectedReceiptItem, matching: .images) {
+                            Label(receiptImageData == nil ? "选择小票或原始单据" : "更换单据", systemImage: "photo")
+                        }
+                        .onChange(of: selectedReceiptItem) { _, item in
+                            guard let item else { return }
+                            Task {
+                                if let data = try? await item.loadTransferable(type: Data.self) {
+                                    await MainActor.run { receiptImageData = data }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // 4. 编辑模式下提供删除账目入口
                 if isEditing {
                     Section {
@@ -672,6 +736,9 @@ struct AddOrEditExpenseSheet: View {
                     selectedCategory = record.category
                     title = record.title
                     date = record.date
+                    receiptImageData = record.receiptImageData
+                    splitCountString = String(max(record.splitCount, 1))
+                    splitParticipants = record.splitParticipants
                 } else {
                     if !isIncome {
                         selectedCategory = availableCategories.first ?? .food
@@ -712,6 +779,9 @@ struct AddOrEditExpenseSheet: View {
             record.category = selectedCategory
             record.title = cleanTitle.isEmpty ? selectedCategory.rawValue : cleanTitle
             record.date = date
+            record.receiptImageData = receiptImageData
+            record.splitCount = max(Int(splitCountString) ?? 1, 1)
+            record.splitParticipants = splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
             try? context.save()
             Haptic.success()
         } else {
@@ -723,6 +793,9 @@ struct AddOrEditExpenseSheet: View {
                 date: date
             )
             context.insert(record)
+            record.receiptImageData = receiptImageData
+            record.splitCount = max(Int(splitCountString) ?? 1, 1)
+            record.splitParticipants = splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
             try? context.save()
             Haptic.success()
         }
@@ -739,3 +812,66 @@ struct AddOrEditExpenseSheet: View {
 }
 
 typealias ManualAddExpenseSheet = AddOrEditExpenseSheet
+
+/// 账单分享：默认分享文字，可选择把已保存的原始小票一起发送。
+private struct ExpenseShareView: View {
+    @Environment(\.dismiss) private var dismiss
+    let record: ExpenseRecord
+    @State private var includeReceipt = false
+
+    private var splitCount: Int { max(record.splitCount, 1) }
+    private var shareText: String {
+        let kind = record.isIncome ? "收入" : "支出"
+        var lines = ["智能记账 · \(kind)", "项目：\(record.title)", "金额：¥\(String(format: "%.2f", record.amount))", "分类：\(record.category.rawValue)", "日期：\(record.date.formatted(date: .abbreviated, time: .shortened))"]
+        if !record.isIncome && splitCount > 1 {
+            lines.append("AA：\(splitCount) 人，每人 ¥\(String(format: "%.2f", record.amount / Double(splitCount)))")
+            if !record.splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                lines.append("参与人：\(record.splitParticipants)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("分享内容") {
+                    Text(shareText).font(.subheadline).textSelection(.enabled)
+                    if record.receiptImageData != nil {
+                        Toggle("附上原始单据/小票", isOn: $includeReceipt)
+                    } else {
+                        Text("这笔账单没有保存原始单据").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    ShareLink(item: shareText, preview: SharePreview("\(record.title) · ¥\(String(format: "%.2f", record.amount))")) {
+                        Label("分享账单文字", systemImage: "doc.text")
+                    }
+                    if includeReceipt, let data = record.receiptImageData, let image = UIImage(data: data) {
+                        Button {
+                            // 由系统分享面板同时发送文字和原始图片。
+                            presentShare(items: [shareText, image])
+                        } label: {
+                            Label("分享文字和原始单据", systemImage: "photo.on.rectangle.angled")
+                        }
+                    }
+                }
+            }
+            .navigationTitle("分享账单")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } } }
+        }
+    }
+
+    private func presentShare(items: [Any]) {
+        // 将 UIKit 分享面板交给当前窗口层级，避免丢失图片附件。
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              let root = scene.keyWindow?.rootViewController else { return }
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        root.present(controller, animated: true)
+    }
+}
+
+private extension UIWindowScene {
+    var keyWindow: UIWindow? { windows.first(where: { $0.isKeyWindow }) }
+}

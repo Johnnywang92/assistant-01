@@ -49,6 +49,9 @@ public final class ExpenseRecord {
     public var rawText: String              // 用户一句话输入的原文
     public var date: Date                   // 账单归属日期时间
     public var createdAt: Date
+    public var receiptImageData: Data?
+    public var splitCount: Int
+    public var splitParticipants: String
 
     public init(
         amount: Double,
@@ -66,6 +69,9 @@ public final class ExpenseRecord {
         self.rawText = rawText
         self.date = date
         self.createdAt = .now
+        self.receiptImageData = nil
+        self.splitCount = 1
+        self.splitParticipants = ""
     }
 
     public var category: ExpenseCategory {
@@ -81,6 +87,8 @@ public struct ExpenseParseResult: Equatable {
     public var category: ExpenseCategory
     public var title: String
     public var date: Date
+    public var splitCount: Int = 1
+    public var splitParticipants: String = ""
 }
 
 public enum ExpenseNaturalLanguageParser {
@@ -106,13 +114,18 @@ public enum ExpenseNaturalLanguageParser {
         // 5. 提炼项目标题
         let title = extractTitle(from: trimmed, amount: amount, isIncome: isIncome)
 
-        return ExpenseParseResult(
+        var result = ExpenseParseResult(
             amount: amount,
             isIncome: isIncome,
             category: category,
             title: title,
             date: date
         )
+        if let match = trimmed.range(of: "(?:AA|平摊|均摊|分摊)\\s*[：:]?\\s*(\\d+)\\s*(?:人|份)?", options: .regularExpression),
+           let count = Int(trimmed[match].filter(\.isNumber)), count > 1 {
+            result.splitCount = count
+        }
+        return result
     }
 
     // MARK: - 金额提取
