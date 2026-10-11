@@ -238,6 +238,18 @@ struct LifeEventProjectDetailView: View {
                         Spacer()
                     }
                     .contextMenu {
+                        Button("标记已确认", systemImage: "checkmark.circle") {
+                            guest.attendanceRaw = "yes"
+                            try? context.save()
+                        }
+                        Button("标记待确认", systemImage: "questionmark.circle") {
+                            guest.attendanceRaw = "pending"
+                            try? context.save()
+                        }
+                        Button("标记不出席", systemImage: "xmark.circle") {
+                            guest.attendanceRaw = "no"
+                            try? context.save()
+                        }
                         ShareLink(item: invitationText(for: guest), preview: SharePreview("邀请：\(guest.name)")) {
                             Label("分享邀请通知", systemImage: "paperplane")
                         }
