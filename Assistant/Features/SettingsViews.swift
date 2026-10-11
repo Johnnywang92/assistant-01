@@ -71,6 +71,7 @@ struct SettingsView: View {
     @AppStorage("user_off_work_hour") private var offWorkHour: Int = 18
     @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true
     @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @ObservedObject private var tabManager = TabBarManager.shared
     @ObservedObject private var seniorManager = SeniorModeManager.shared
     @ObservedObject private var reportManager = PeriodicReportManager.shared
     @Environment(\.colorScheme) private var colorScheme
@@ -81,6 +82,8 @@ struct SettingsView: View {
     @State private var savedDialogueCount: Int = 0
     @State private var showingClearDialogueAlert: Bool = false
     @State private var showingPermissionOnboarding: Bool = false
+    @State private var showingLifeEventTabAlert: Bool = false
+    @State private var lifeEventTabAlertMessage = ""
 
     var isSheet: Bool = false
 
@@ -270,6 +273,28 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
+                    Toggle(isOn: Binding(
+                        get: { tabManager.isTabActive(.lifeEvents) },
+                        set: { enabled in
+                            if enabled {
+                                let result = tabManager.addTab(.lifeEvents)
+                                if !result.success {
+                                    lifeEventTabAlertMessage = result.message ?? "无法开启人生大事入口"
+                                    showingLifeEventTabAlert = true
+                                }
+                            } else {
+                                let result = tabManager.removeTab(.lifeEvents)
+                                if !result.success {
+                                    lifeEventTabAlertMessage = result.message ?? "无法关闭人生大事入口"
+                                    showingLifeEventTabAlert = true
+                                }
+                            }
+                        }
+                    )) {
+                        Label("人生大事入口", systemImage: "sparkles")
+                    }
+                    .tint(.pink)
                 } header: {
                     Text("界面")
                 }
@@ -555,6 +580,11 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("确定要彻底清空本地保存的所有历史对话消息吗？此操作不可撤销（已提取的待办事项和账单不会受到影响）。")
+            }
+            .alert("无法修改入口", isPresented: $showingLifeEventTabAlert) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(lifeEventTabAlertMessage)
             }
             .sheet(isPresented: $showingPermissionOnboarding) {
                 PermissionOnboardingView()
