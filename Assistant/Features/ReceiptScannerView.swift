@@ -13,7 +13,7 @@ struct ReceiptScannerView: View {
     @State private var isProcessing = false
     @State private var errorMessage: String?
 
-    let onSave: (ExpenseParseResult, String) -> Void
+    let onSave: (ExpenseParseResult, String, Data?) -> Void
 
     var body: some View {
         NavigationStack {
@@ -83,7 +83,7 @@ struct ReceiptScannerView: View {
                         LabeledContent("项目", value: result.title)
                         LabeledContent("分类", value: result.category.rawValue)
                         Button("确认记账") {
-                            onSave(result, recognizedText)
+                            onSave(result, recognizedText, images.first?.jpegData(compressionQuality: 0.82))
                             dismiss()
                         }
                         .buttonStyle(.borderedProminent)

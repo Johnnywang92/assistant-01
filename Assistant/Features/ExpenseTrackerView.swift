@@ -388,7 +388,7 @@ struct ExpenseTrackerView: View {
                 ExpenseShareView(record: record)
             }
             .sheet(isPresented: $showingReceiptScanner) {
-                ReceiptScannerView { result, rawText in
+                ReceiptScannerView { result, rawText, receiptData in
                     let record = ExpenseRecord(
                         amount: result.amount,
                         isIncome: result.isIncome,
@@ -397,6 +397,7 @@ struct ExpenseTrackerView: View {
                         rawText: rawText,
                         date: result.date
                     )
+                    record.receiptImageData = receiptData
                     context.insert(record)
                     try? context.save()
                     showFeedback("已从小票记入 ¥\(String(format: "%.2f", result.amount))")
