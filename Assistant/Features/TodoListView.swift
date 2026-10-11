@@ -1535,6 +1535,7 @@ private struct HomeGreetingCard: View {
     @State private var weatherText = "天气稍后更新"
     @State private var isLoadingWeather = true
     @AppStorage("user_preferred_title") private var userTitle: String = "你"
+    @ObservedObject private var locationService = LocationReminderService.shared
 
     private var greeting: String {
         switch Calendar.current.component(.hour, from: .now) {
@@ -1548,7 +1549,7 @@ private struct HomeGreetingCard: View {
     private var statusText: String {
         if activeCount == 0 { return "现在没有什么着急的事需要处理，可以放松一下" }
         if activeCount == 1 { return "今天还有 1 件事，按自己的节奏处理就好" }
-        return "今天还有 (activeCount) 件事，先处理最重要的一件就好"
+        return "今天还有 \(activeCount) 件事，先处理最重要的一件就好"
     }
 
     var body: some View {
@@ -1580,16 +1581,27 @@ private struct HomeGreetingCard: View {
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .task { await loadWeather() }
+        .onChange(of: locationService.authorizationStatus) { _, _ in
+            Task { await loadWeather(force: true) }
+        }
     }
 
     @MainActor
-    private func loadWeather() async {
-        guard isLoadingWeather else { return }
-        let manager = CLLocationManager()
-        guard let location = manager.location else {
+    private func loadWeather(force: Bool = false) async {
+        guard force || isLoadingWeather else { return }
+        var location = locationService.lastKnownLocation
+        if location == nil {
+            _ = await locationService.requestSingleLocationSample(requestPermissionIfNeeded: false)
+            location = locationService.lastKnownLocation
+        }
+        guard let location else {
+            weatherText = locationService.authorizationStatus == .denied || locationService.authorizationStatus == .restricted
+                ? "请开启定位"
+                : "天气稍后更新"
             isLoadingWeather = false
             return
         }
+        isLoadingWeather = true
         do {
             let weather = try await WeatherService.shared.weather(for: location)
             let current = weather.currentWeather
