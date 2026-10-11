@@ -120,8 +120,14 @@ struct TodayBriefingView: View {
             }
 
             if isExpanded {
-                supplementalSection
-                calendarSection
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        supplementalSection
+                        calendarSection
+                    }
+                }
+                // 展开内容独立滚动，避免小屏和大字号把主页面其它内容顶出屏幕。
+                .frame(maxHeight: 300)
             }
 
             HStack {
