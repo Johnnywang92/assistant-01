@@ -64,6 +64,8 @@ struct ExpenseTrackerView: View {
     @State private var feedbackBanner: String?
     @State private var isListeningQuickVoice = false
     @State private var showingReceiptScanner = false
+    @State private var aiExpenseInsight: String? = nil
+    @State private var isAnalyzingExpenses = false
 
     private var calendar: Calendar { .current }
 
@@ -152,9 +154,32 @@ struct ExpenseTrackerView: View {
                                         .font(.caption.bold())
                                         .foregroundStyle(.secondary)
                                     Spacer()
-                                    Text("共 \(currentMonthCategoryBreakdown.count) 类别")
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
+                                    if LLMModelManager.shared.isModelDownloaded || LLMModelManager.shared.hasValidLocalGGUFFile {
+                                        Button {
+                                            analyzeExpensesWithAI()
+                                        } label: {
+                                            HStack(spacing: 3) {
+                                                if isAnalyzingExpenses {
+                                                    ProgressView().controlSize(.mini)
+                                                } else {
+                                                    Image(systemName: "sparkles")
+                                                        .font(.caption2)
+                                                }
+                                                Text(isAnalyzingExpenses ? "分析中..." : "AI 消费洞察")
+                                                    .font(.caption2.bold())
+                                            }
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 3)
+                                            .background(Capsule().fill(Color.purple.opacity(0.14)))
+                                            .foregroundStyle(.purple)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .disabled(isAnalyzingExpenses)
+                                    } else {
+                                        Text("共 \(currentMonthCategoryBreakdown.count) 类别")
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                    }
                                 }
 
                                 // 分类彩色多段胶囊条
@@ -182,6 +207,23 @@ struct ExpenseTrackerView: View {
                                                 .foregroundStyle(.secondary)
                                         }
                                     }
+                                }
+
+                                if let insight = aiExpenseInsight, !insight.isEmpty {
+                                    HStack(alignment: .top, spacing: 6) {
+                                        Image(systemName: "brain.head.profile")
+                                            .font(.caption)
+                                            .foregroundStyle(.purple)
+                                            .padding(.top, 2)
+                                        Text(insight)
+                                            .font(.caption)
+                                            .foregroundStyle(.primary.opacity(0.88))
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    .padding(10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.purple.opacity(0.08)))
+                                    .padding(.top, 2)
                                 }
                             }
                             .padding(.top, 2)
@@ -427,6 +469,34 @@ struct ExpenseTrackerView: View {
                     }
                 } else {
                     showFeedback("请开启麦克风与语音识别权限")
+                }
+            }
+        }
+    }
+
+    private func analyzeExpensesWithAI() {
+        isAnalyzingExpenses = true
+        Haptic.light()
+        let breakdownStr = currentMonthCategoryBreakdown
+            .map { "\($0.category.rawValue) ¥\(String(format: "%.0f", $0.amount))（\(Int($0.ratio * 100))%）" }
+            .joined(separator: "、")
+        let userContent = "今日支出：¥\(String(format: "%.1f", todayExpenses))；本月总支出：¥\(String(format: "%.1f", currentMonthExpenses))；本月总收入：¥\(String(format: "%.1f", currentMonthIncome))；本月分类占比：\(breakdownStr)"
+        let sys = "你是贴心的个人财务管家。请根据用户的本月消费结构，用 1 到 2 句温和、精炼的话给出消费结构点评与实用节流建议（80字以内，不要输出标题）。"
+        Task {
+            let output = await LLMInferenceService.shared.generateCustomTask(
+                systemInstruction: sys,
+                userContent: userContent,
+                maxNewTokens: 150
+            )
+            await MainActor.run {
+                isAnalyzingExpenses = false
+                if let output, !output.isEmpty {
+                    withAnimation {
+                        aiExpenseInsight = output
+                    }
+                    Haptic.success()
+                } else {
+                    showFeedback("端侧 AI 模型尚未就绪")
                 }
             }
         }

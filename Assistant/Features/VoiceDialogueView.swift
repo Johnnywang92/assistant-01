@@ -6,13 +6,14 @@ struct VoiceDialogueView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @StateObject private var voice = VoiceDialogueService.shared
+    @StateObject private var llmService = LLMInferenceService.shared
 
     /// 是否在进入页面时自动开启语音聆听录音（例如通过长按悬浮球直接唤起）
     var autoStartListening: Bool = false
 
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @AppStorage("user_preferred_title") private var userTitle: String = "你"
-    @AppStorage("voice_use_llm_engine") private var useLLMEngine: Bool = false
+    @AppStorage("voice_use_llm_engine") private var useLLMEngine: Bool = true
     @State private var dialogueHistory: [DialogueMessage] = []
     @State private var hasPermission = false
     @State private var showingManualSettingsSheet: Bool = false
@@ -145,6 +146,29 @@ struct VoiceDialogueView: View {
                                 )
                             }
 
+                            // 端侧大模型实时流式生成气泡
+                            if llmService.isGenerating {
+                                HStack {
+                                    HStack(spacing: 8) {
+                                        if llmService.currentOutput.isEmpty {
+                                            ProgressView()
+                                                .controlSize(.small)
+                                            Text(llmService.localEngineStatus)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        } else {
+                                            Text(llmService.currentOutput)
+                                                .font(.body)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                    .padding(12)
+                                    .background(RoundedRectangle(cornerRadius: 16).fill(Color(UIColor.secondarySystemGroupedBackground)))
+                                    Spacer()
+                                }
+                                .id("llm-streaming-bubble")
+                            }
+
                             // 实时转写中的文字
                             if voice.isListening && !voice.recognizedText.isEmpty {
                                 HStack {
@@ -163,6 +187,11 @@ struct VoiceDialogueView: View {
                             withAnimation {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
+                        }
+                    }
+                    .onChange(of: llmService.currentOutput) { _, _ in
+                        if llmService.isGenerating {
+                            proxy.scrollTo("llm-streaming-bubble", anchor: .bottom)
                         }
                     }
                 }
@@ -494,7 +523,7 @@ struct VoiceDialogueView: View {
                     options = result.options
                     shouldOpenManualSettings = result.triggerOpenManualSettings
                 } else if TaskPlanningEngine.shared.isPlanningQuery(trimmed),
-                          let plan = TaskPlanningEngine.shared.decomposeTask(query: trimmed) {
+                          let plan = await TaskPlanningEngine.shared.decomposeTaskWithAI(query: trimmed) {
                     reply = "\(plan.summary)\n我已将分解好的具体待办整理在下方清单卡片中，你可以预览勾选，确认后点击「一键加入待办」即可保存至 App 中。"
                     planningPlan = plan
                 } else {

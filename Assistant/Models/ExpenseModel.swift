@@ -222,26 +222,31 @@ public enum ExpenseNaturalLanguageParser {
     // MARK: - 标题提炼
     private static func extractTitle(from text: String, amount: Double, isIncome: Bool) -> String {
         var clean = text
-        // 移除修饰词与动词
+        // 移除修饰词、时间词、代词与消费动词
         let removePatterns = [
-            "记一下", "记一笔", "记录", "记账", "帮我记", "今天", "昨天", "前天", "刚刚", "中午", "早上", "晚上", "下午", "上午",
-            "花了", "付了", "用去", "支出", "消费", "共计", "为", "是"
+            "帮我记一下", "帮我记一笔", "记一下", "记一笔", "记录", "记账", "帮我记",
+            "大前天", "前天", "昨天", "昨日", "今天", "今日", "刚刚", "刚才",
+            "中午", "早上", "晚上", "下午", "上午", "夜里",
+            "一共", "总共", "累计", "大概", "差不多",
+            "花了", "花掉", "付了", "用去", "支出", "消费了", "消费", "共计", "为", "是"
         ]
         for p in removePatterns {
             clean = clean.replacingOccurrences(of: p, with: "")
         }
 
-        // 移除金额部分，如 "38元", "38块钱", "38块", "38"
-        let intVal = Int(amount)
-        let amountStrs = [
-            "\(amount)元", "\(amount)块钱", "\(amount)块", "\(amount)",
-            "\(intVal)元", "\(intVal)块钱", "\(intVal)块", "\(intVal)"
-        ]
-        for s in amountStrs {
-            clean = clean.replacingOccurrences(of: s, with: "")
+        // 移除数字金额与货币单位（如 "69.9元"、"69.9块"、"¥69.9"、"69.9"）
+        if let amtRegex = try? NSRegularExpression(pattern: "(?:\\¥|￥)?\\s*[0-9]+(?:[.．][0-9]{1,2})?\\s*(?:元|块钱|块|毛|角|RMB|rmb)?") {
+            clean = amtRegex.stringByReplacingMatches(
+                in: clean,
+                range: NSRange(clean.startIndex..., in: clean),
+                withTemplate: ""
+            )
         }
 
-        clean = clean.trimmingCharacters(in: CharacterSet(charactersIn: " ，。、,!？? "))
+        clean = clean.trimmingCharacters(in: CharacterSet(charactersIn: " ，。、,!？?元块¥￥"))
+        if clean.hasPrefix("我") {
+            clean = String(clean.dropFirst()).trimmingCharacters(in: CharacterSet(charactersIn: " ，。、,!？?的"))
+        }
         if clean.isEmpty {
             return isIncome ? "收到款项" : "日常消费"
         }

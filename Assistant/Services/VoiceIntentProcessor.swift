@@ -79,14 +79,23 @@ struct VoiceIntentProcessor {
             return queryLearnedPlaces()
         }
 
-        // 4. 意图：查账 / 查开销
-        if trimmed.contains("花了多少") || trimmed.contains("今天开销") || trimmed.contains("本月支出") || trimmed == "查账" {
-            return queryExpenses()
+        // 4. 意图：查账 / 查开销（优先于记账识别，防止包含“花了多少”等疑问句误入记账）
+        let isQuestionTone = trimmed.contains("多少") || trimmed.contains("几笔") || trimmed.contains("吗") ||
+            trimmed.contains("？") || trimmed.contains("?") || trimmed.contains("是不是") || trimmed.contains("有没有") ||
+            trimmed.contains("哪些") || trimmed.contains("什么") || trimmed.contains("查") || trimmed.contains("看")
+        let hasExpenseKeyword = trimmed.contains("开销") || trimmed.contains("支出") || trimmed.contains("消费") ||
+            trimmed.contains("花销") || trimmed.contains("账单") || trimmed.contains("账本") || trimmed.contains("记账") ||
+            trimmed.contains("花了") || trimmed.contains("花钱")
+        if trimmed == "查账" || trimmed.contains("花了多少") || trimmed.contains("消费了多少") ||
+            trimmed.contains("今天开销") || trimmed.contains("昨天开销") || trimmed.contains("本月支出") ||
+            (isQuestionTone && hasExpenseKeyword) {
+            return queryExpenses(query: trimmed)
         }
 
-        // 5. 意图：一句话记账（如 "中午吃麦当劳花了 38 块"、"打车 25 元"）
-        if let expense = ExpenseNaturalLanguageParser.parse(trimmed),
-           (trimmed.contains("花") || trimmed.contains("元") || trimmed.contains("块") || trimmed.contains("支出") || trimmed.contains("收入") || trimmed.contains("买") || trimmed.contains("付") || trimmed.contains("记账") || trimmed.contains("记一笔")) {
+        // 5. 意图：一句话记账（如 "中午吃麦当劳花了 38 块"、"昨天花了 69.9"、"打车 25 元"）
+        if !isQuestionTone,
+           let expense = ExpenseNaturalLanguageParser.parse(trimmed),
+           (trimmed.contains("花") || trimmed.contains("元") || trimmed.contains("块") || trimmed.contains("支出") || trimmed.contains("收入") || trimmed.contains("买") || trimmed.contains("付") || trimmed.contains("记账") || trimmed.contains("记一笔") || trimmed.contains("消费")) {
             return recordExpense(expense, raw: trimmed)
         }
 
@@ -223,7 +232,30 @@ struct VoiceIntentProcessor {
         return "最近的纪念日有：\(descs)。"
     }
 
+    private func formatAmount(_ amount: Double) -> String {
+        if amount.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(format: "%.0f", amount)
+        } else if (amount * 10).truncatingRemainder(dividingBy: 1) == 0 {
+            return String(format: "%.1f", amount)
+        } else {
+            return String(format: "%.2f", amount)
+        }
+    }
+
+    private func relativeDayLabel(for date: Date, calendar: Calendar = .current) -> String {
+        if calendar.isDateInToday(date) { return "今天" }
+        if calendar.isDateInYesterday(date) { return "昨天" }
+        if let twoDaysAgo = calendar.date(byAdding: .day, value: -2, to: .now),
+           calendar.isDate(date, inSameDayAs: twoDaysAgo) {
+            return "前天"
+        }
+        let m = calendar.component(.month, from: date)
+        let d = calendar.component(.day, from: date)
+        return "\(m)月\(d)日"
+    }
+
     private func recordExpense(_ parsed: ExpenseParseResult, raw: String) -> String {
+        let cal = Calendar.current
         let record = ExpenseRecord(
             amount: parsed.amount,
             isIncome: parsed.isIncome,
@@ -235,33 +267,110 @@ struct VoiceIntentProcessor {
         context.insert(record)
         try? context.save()
 
-        let amountText = String(format: parsed.amount.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", parsed.amount)
+        let dayLabel = relativeDayLabel(for: parsed.date, calendar: cal)
+        let amountText = formatAmount(parsed.amount)
+        let records = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
+        let sameDayTotal = records
+            .filter { !$0.isIncome && cal.isDate($0.date, inSameDayAs: parsed.date) }
+            .reduce(0.0) { $0 + $1.amount }
+        let currentMonth = cal.component(.month, from: .now)
+        let currentYear = cal.component(.year, from: .now)
+        let monthTotal = records
+            .filter { !$0.isIncome && cal.component(.year, from: $0.date) == currentYear && cal.component(.month, from: $0.date) == currentMonth }
+            .reduce(0.0) { $0 + $1.amount }
+
         if parsed.isIncome {
-            return "已为你记入一笔【\(parsed.category.rawValue)】入账 \(amountText) 元（\(parsed.title)）。"
+            return "已为你记入\(dayLabel)的一笔【\(parsed.category.rawValue)】入账 \(amountText) 元（\(parsed.title)）。"
         } else {
-            return "已为你记录一笔【\(parsed.category.rawValue)】支出 \(amountText) 元（\(parsed.title)）。"
+            let prefix = dayLabel == "今天" ? "已为你记录今天" : "已为你补记\(dayLabel)"
+            return "\(prefix)一笔【\(parsed.category.rawValue)】支出 \(amountText) 元（\(parsed.title)）。\(dayLabel)累计消费 \(formatAmount(sameDayTotal)) 元，本月累计支出 \(formatAmount(monthTotal)) 元。"
         }
     }
 
-    private func queryExpenses() -> String {
+    public func queryExpenses(query: String = "") -> String {
         let cal = Calendar.current
-        let records = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
+        let records = ((try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []).sorted { $0.date > $1.date }
+        let expenseRecords = records.filter { !$0.isIncome }
 
-        let todayExpenses = records.filter { !($0.isIncome) && cal.isDateInToday($0.date) }
+        if expenseRecords.isEmpty {
+            return "你目前还没有记录任何消费支出。随时对我说「中午吃饭花了35」或「昨天买了69.9」即可快速记账。"
+        }
+
+        let todayExpenses = expenseRecords.filter { cal.isDateInToday($0.date) }
         let todayTotal = todayExpenses.reduce(0.0) { $0 + $1.amount }
+
+        let yesterdayExpenses = expenseRecords.filter { cal.isDateInYesterday($0.date) }
+        let yesterdayTotal = yesterdayExpenses.reduce(0.0) { $0 + $1.amount }
+
+        let twoDaysAgo = cal.date(byAdding: .day, value: -2, to: .now) ?? .now
+        let dayBeforeYesterdayExpenses = expenseRecords.filter { cal.isDate($0.date, inSameDayAs: twoDaysAgo) }
+        let dayBeforeYesterdayTotal = dayBeforeYesterdayExpenses.reduce(0.0) { $0 + $1.amount }
+
+        let weekExpenses = expenseRecords.filter { cal.isDate($0.date, equalTo: .now, toGranularity: .weekOfYear) }
+        let weekTotal = weekExpenses.reduce(0.0) { $0 + $1.amount }
 
         let currentMonth = cal.component(.month, from: .now)
         let currentYear = cal.component(.year, from: .now)
-        let monthExpenses = records.filter {
-            !($0.isIncome) &&
+        let monthExpenses = expenseRecords.filter {
             cal.component(.month, from: $0.date) == currentMonth &&
             cal.component(.year, from: $0.date) == currentYear
         }
         let monthTotal = monthExpenses.reduce(0.0) { $0 + $1.amount }
 
-        let todayStr = String(format: "%.1f", todayTotal)
-        let monthStr = String(format: "%.1f", monthTotal)
-        return "今日已支出 \(todayStr) 元（\(todayExpenses.count) 笔），本月累计支出 \(monthStr) 元。"
+        let formatItems: ([ExpenseRecord]) -> String = { list in
+            list.prefix(3).map { item in
+                let label = item.title.isEmpty ? item.category.rawValue : item.title
+                return "\(label) \(self.formatAmount(item.amount))元"
+            }.joined(separator: "、")
+        }
+
+        // 1. 明确询问「昨天 / 昨日」
+        if query.contains("昨天") || query.contains("昨日") {
+            if yesterdayExpenses.isEmpty {
+                let todayPart = todayTotal > 0 ? "今天已消费 \(formatAmount(todayTotal)) 元" : "今天暂未记账"
+                return "你昨天没有记录任何消费支出；\(todayPart)，本月累计消费 \(formatAmount(monthTotal)) 元。"
+            } else {
+                let details = formatItems(yesterdayExpenses)
+                let todayPart = todayTotal > 0 ? "今天已消费 \(formatAmount(todayTotal)) 元" : "今天暂未消费"
+                return "你昨天共消费了 \(formatAmount(yesterdayTotal)) 元（共 \(yesterdayExpenses.count) 笔：\(details)）。\(todayPart)，本月累计消费 \(formatAmount(monthTotal)) 元。"
+            }
+        }
+
+        // 2. 明确询问「前天」
+        if query.contains("前天") {
+            if dayBeforeYesterdayExpenses.isEmpty {
+                return "你前天没有记录消费支出；本月累计消费 \(formatAmount(monthTotal)) 元。"
+            } else {
+                let details = formatItems(dayBeforeYesterdayExpenses)
+                return "你前天共消费了 \(formatAmount(dayBeforeYesterdayTotal)) 元（\(details)），本月累计消费 \(formatAmount(monthTotal)) 元。"
+            }
+        }
+
+        // 3. 明确询问「本周 / 这周 / 最近 / 近期」
+        if query.contains("本周") || query.contains("这周") || query.contains("最近") || query.contains("近期") {
+            let recentDetails = expenseRecords.prefix(3).map { item in
+                let dLabel = relativeDayLabel(for: item.date, calendar: cal)
+                let title = item.title.isEmpty ? item.category.rawValue : item.title
+                return "\(dLabel)\(title) \(formatAmount(item.amount))元"
+            }.joined(separator: "、")
+            return "你本周累计消费 \(formatAmount(weekTotal)) 元（今天 \(formatAmount(todayTotal)) 元，昨天 \(formatAmount(yesterdayTotal)) 元），最近明细：\(recentDetails)；本月累计消费 \(formatAmount(monthTotal)) 元。"
+        }
+
+        // 4. 常规查账 / 询问今天或总体消费：若今天为 0 但昨天有消费，主动突出昨天的消费明细，避免生硬只报“今天0元”
+        if todayTotal == 0 {
+            if yesterdayTotal > 0 {
+                let yesterdayDetails = formatItems(yesterdayExpenses)
+                return "你今天还没有消费记录；昨天消费了 \(formatAmount(yesterdayTotal)) 元（\(yesterdayDetails)），本月累计消费 \(formatAmount(monthTotal)) 元。"
+            } else if let latest = expenseRecords.first {
+                let latestDay = relativeDayLabel(for: latest.date, calendar: cal)
+                let latestTitle = latest.title.isEmpty ? latest.category.rawValue : latest.title
+                return "你今天和昨天暂未记账；最近一笔是\(latestDay)的「\(latestTitle)」\(formatAmount(latest.amount)) 元，本月累计消费 \(formatAmount(monthTotal)) 元。"
+            }
+        }
+
+        let todayDetails = formatItems(todayExpenses)
+        let yesterdaySuffix = yesterdayTotal > 0 ? "，昨天消费 \(formatAmount(yesterdayTotal)) 元" : ""
+        return "你今天已消费 \(formatAmount(todayTotal)) 元（\(todayExpenses.count) 笔：\(todayDetails)）\(yesterdaySuffix)，本月累计消费 \(formatAmount(monthTotal)) 元。"
     }
 
     private func queryDepartureChecklist() -> String {

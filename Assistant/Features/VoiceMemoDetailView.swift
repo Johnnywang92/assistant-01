@@ -15,6 +15,8 @@ struct VoiceMemoDetailView: View {
     @State private var showDeleteConfirm = false
     @State private var scrubbingTime: TimeInterval?
 
+    @State private var isGeneratingAISummary = false
+
     private var isCurrent: Bool { audio.playingFileName == memo.audioFileName }
     private var fileMissing: Bool { !VoiceMemoStorage.exists(memo.audioFileName) }
 
@@ -36,9 +38,34 @@ struct VoiceMemoDetailView: View {
 
             transcriptSection
 
-            if let summary = memo.summary, !summary.isEmpty {
-                Section("要点提炼") {
-                    Text(summary).font(.callout).textSelection(.enabled)
+            if memo.hasTranscription || (memo.summary != nil && !(memo.summary ?? "").isEmpty) {
+                Section {
+                    if let summary = memo.summary, !summary.isEmpty {
+                        Text(summary).font(.callout).textSelection(.enabled)
+                    } else {
+                        Text("可点击下方按钮使用端侧 AI 提炼核心要点。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if memo.hasTranscription {
+                        Button {
+                            generateAISummary()
+                        } label: {
+                            HStack(spacing: 6) {
+                                if isGeneratingAISummary {
+                                    ProgressView().controlSize(.small)
+                                    Text("端侧 AI 正在提炼要点…")
+                                } else {
+                                    Image(systemName: "sparkles")
+                                    Text("AI 端侧提炼核心要点")
+                                }
+                            }
+                            .foregroundStyle(.purple)
+                        }
+                        .disabled(isGeneratingAISummary)
+                    }
+                } header: {
+                    Text("要点提炼")
                 }
             }
 
@@ -47,10 +74,10 @@ struct VoiceMemoDetailView: View {
                     Button {
                         showTodoExtractor = true
                     } label: {
-                        Label("从录音内容提取待办", systemImage: "checklist.checked")
+                        Label("从录音内容提取待办 (支持 AI 提炼)", systemImage: "checklist.checked")
                     }
                 } footer: {
-                    Text("自动识别「明天/记得/需要/提交」等含行动意图的句子，勾选后加入待办清单。")
+                    Text("支持规则分句或调用端侧 AI 自动提炼录音中的行动事项，勾选后加入待办清单。")
                 }
             }
 
@@ -219,6 +246,31 @@ struct VoiceMemoDetailView: View {
             Text("转写文字")
         }
     }
+
+    private func generateAISummary() {
+        guard let text = memo.transcription?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return }
+        isGeneratingAISummary = true
+        Haptic.light()
+        Task {
+            let sys = "你是高效的会议与语音笔记提炼助手。请将用户的语音转写内容提炼为 2 到 4 条简明扼要的核心要点，直接输出要点内容，不要说废话。"
+            let output = await LLMInferenceService.shared.generateCustomTask(
+                systemInstruction: sys,
+                userContent: text,
+                maxNewTokens: 200
+            )
+            await MainActor.run {
+                isGeneratingAISummary = false
+                if let output, !output.isEmpty {
+                    memo.summary = output
+                    try? context.save()
+                    Haptic.success()
+                } else {
+                    errorText = "端侧 AI 模型尚未下载或未就绪，请先在「设置 → AI 模型」中下载。"
+                }
+            }
+        }
+    }
 }
 
 // MARK: - 提取待办
@@ -230,6 +282,7 @@ struct VoiceMemoTodoExtractorSheet: View {
 
     @State private var items: [Candidate] = []
     @State private var customText = ""
+    @State private var isExtractingWithAI = false
 
     struct Candidate: Identifiable {
         let id = UUID()
@@ -241,6 +294,24 @@ struct VoiceMemoTodoExtractorSheet: View {
         NavigationStack {
             List {
                 Section {
+                    Button {
+                        extractWithAI()
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isExtractingWithAI {
+                                ProgressView().controlSize(.small)
+                                Text("端侧 AI 正在从录音提炼待办…")
+                            } else {
+                                Image(systemName: "sparkles")
+                                Text("使用端侧 AI 智能提炼行动待办")
+                            }
+                        }
+                        .foregroundStyle(.purple)
+                    }
+                    .disabled(isExtractingWithAI)
+                }
+
+                Section {
                     ForEach($items) { $item in
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: item.selected ? "checkmark.circle.fill" : "circle")
@@ -251,9 +322,9 @@ struct VoiceMemoTodoExtractorSheet: View {
                         }
                     }
                 } header: {
-                    Text("识别到的句子（可编辑）")
+                    Text("识别到的待办事项（可编辑）")
                 } footer: {
-                    Text("已为含行动/时间意图的句子默认勾选。")
+                    Text("已为含行动/时间意图的事项默认勾选。")
                 }
 
                 Section("补充一条") {
@@ -291,6 +362,40 @@ struct VoiceMemoTodoExtractorSheet: View {
         guard items.isEmpty else { return }
         let all = VoiceMemoTextAnalyzer.sentences(from: memo.transcription ?? "")
         items = all.map { Candidate(text: $0, selected: VoiceMemoTextAnalyzer.looksLikeTodo($0)) }
+    }
+
+    private func extractWithAI() {
+        guard let text = memo.transcription?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return }
+        isExtractingWithAI = true
+        Haptic.light()
+        Task {
+            let sys = "你是待办事项提取助手。请从用户的语音转写文本中提取出需要执行的待办事项，每行输出一条简明待办标题（15字以内），不要输出编号或多余解释。"
+            let output = await LLMInferenceService.shared.generateCustomTask(
+                systemInstruction: sys,
+                userContent: text,
+                maxNewTokens: 180
+            )
+            await MainActor.run {
+                isExtractingWithAI = false
+                if let output, !output.isEmpty {
+                    let lines = output
+                        .components(separatedBy: .newlines)
+                        .map {
+                            $0.replacingOccurrences(
+                                of: #"^[\d一二三四五六七八九十]+[\.、\s\)\）\-•]+"#,
+                                with: "",
+                                options: .regularExpression
+                            ).trimmingCharacters(in: .whitespacesAndNewlines)
+                        }
+                        .filter { $0.count >= 2 }
+                    if !lines.isEmpty {
+                        items = lines.map { Candidate(text: $0, selected: true) }
+                        Haptic.success()
+                    }
+                }
+            }
+        }
     }
 
     private func commit() {
