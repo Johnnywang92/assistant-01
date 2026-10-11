@@ -91,6 +91,8 @@ targets:
         NSCameraUsageDescription: "需要相机权限以扫描二维码、拍摄证件和小票"
         NSPhotoLibraryAddUsageDescription: "需要相册写入权限以保存生成的待办分享卡片到相册"
         NSPhotoLibraryUsageDescription: "需要相册权限以选择壁纸、证件和小票照片"
+        NSCalendarsUsageDescription: "需要日历权限以在今日安排中显示你的日程"
+        NSCalendarsFullAccessUsageDescription: "需要完整日历权限以在今日安排中显示你的日程"
 
 schemes:
   Assistant:

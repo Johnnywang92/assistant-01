@@ -155,6 +155,9 @@ struct TodoListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                // 紧凑的今日摘要：只显示最重要的事项，完整安排可按需展开
+                TodayBriefingView(items: todos.filter { $0.status == .active })
+
                 // 顶部固定横向分类 Tab 栏（带指示胶囊与角标）
                 filterTabBar
 
