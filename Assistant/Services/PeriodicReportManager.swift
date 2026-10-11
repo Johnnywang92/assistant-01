@@ -507,11 +507,11 @@ final class PeriodicReportManager: ObservableObject {
             segments.append("下一月度将迎来新的周期节奏，记得关注即将到期的订阅扣款与重要纪念日。")
 
         case .yearly:
-            segments.append("这一自然年累计完成了 (completedCount) 个生活与工作目标，年度待办达成率 (Int(completionRate * 100))%。")
+            segments.append("这一自然年累计完成了 \(completedCount) 个生活与工作目标，年度待办达成率 \(Int(completionRate * 100))%。")
             if totalExpense > 0 {
-                segments.append("全年记账支出总计 ¥(String(format: "%.2f", totalExpense))。")
+                segments.append("全年记账支出总计 ¥\(String(format: "%.2f", totalExpense))。")
                 if let top = categoryStats.first {
-                    segments.append("年度开支大头集中在「(top.category.rawValue)」（占比 (Int(top.ratio * 100))%）。")
+                    segments.append("年度开支大头集中在「\(top.category.rawValue)」（占比 \(Int(top.ratio * 100))%）。")
                 }
             }
             segments.append("新的一年继续保持节奏，按自己的目标稳步前进。")

@@ -320,10 +320,9 @@ public final class LLMInferenceService: ObservableObject {
             object: nil,
             queue: .main
         ) { _ in
-            Task { @MainActor in
-                let service = LLMInferenceService.shared
-                guard !service.isGenerating else { return }
-                await service.unloadLocalModel()
+            Task { @MainActor [weak self] in
+                guard let self, !self.isGenerating else { return }
+                await self.unloadLocalModel()
             }
         }
         #endif
@@ -362,6 +361,7 @@ public final class LLMInferenceService: ObservableObject {
         let name = assistantName.isEmpty ? "小助" : assistantName
         let now = Date.now.formatted(date: .complete, time: .shortened)
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let queryText = q
 
         // 1. 快递信息
         let active = TodoStatus.active.rawValue
@@ -472,7 +472,9 @@ public final class LLMInferenceService: ObservableObject {
 
         // 5. 物品收纳箱（优先匹配问题关键词）
         let storedItems = (try? context.fetch(FetchDescriptor<StoredItem>())) ?? []
-        let matchedStored = storedItems.filter { q.contains($0.name) || q.contains($0.roomArea) || $0.name.contains(q) }
+        let matchedStored = storedItems.filter { [queryText] item in
+            queryText.contains(item.name) || queryText.contains(item.roomArea) || item.name.contains(queryText)
+        }
         let displayStored = matchedStored.isEmpty ? Array(storedItems.prefix(5)) : Array(matchedStored.prefix(6))
         let storageText: String = displayStored.isEmpty ? "未录入" : displayStored.map {
             "\($0.name) -> \($0.roomArea)·\($0.location)"
