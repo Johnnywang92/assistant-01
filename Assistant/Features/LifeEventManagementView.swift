@@ -138,6 +138,7 @@ struct LifeEventProjectDetailView: View {
     @State private var showAddPerson = false
     @State private var showAddExpense = false
     @State private var showAddGuest = false
+    @State private var taskToEdit: LifeEventTask?
     let project: LifeEventProject
 
     private var projectStages: [LifeEventStage] { stages.filter { $0.projectID == project.id }.sorted { $0.sortOrder < $1.sortOrder } }
@@ -166,10 +167,27 @@ struct LifeEventProjectDetailView: View {
                             try? context.save()
                             Haptic.light()
                         } label: {
-                            Label(task.title, systemImage: task.isDone ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(task.isDone ? .secondary : .primary)
+                            HStack(spacing: 8) {
+                                Label(task.title, systemImage: task.isDone ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(task.isDone ? .secondary : .primary)
+                                Spacer()
+                                if let dueDate = task.dueDate {
+                                    Text(dueDate, format: .dateTime.month().day())
+                                        .font(.caption2)
+                                        .foregroundStyle(!task.isDone && dueDate < .now ? .red : .secondary)
+                                }
+                            }
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("编辑任务", systemImage: "pencil") { taskToEdit = task }
+                            if !task.isDone {
+                                Button("标记已完成", systemImage: "checkmark.circle") {
+                                    task.statusRaw = "done"
+                                    try? context.save()
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -294,6 +312,9 @@ struct LifeEventProjectDetailView: View {
         }
         .sheet(isPresented: $showAddGuest) {
             LifeEventAddGuestView(projectID: project.id)
+        }
+        .sheet(item: $taskToEdit) { task in
+            LifeEventTaskEditView(task: task)
         }
     }
 
@@ -505,6 +526,60 @@ private struct LifeEventAddGuestView: View {
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+private struct LifeEventTaskEditView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    let task: LifeEventTask
+    @State private var title: String
+    @State private var ownerName: String
+    @State private var detail: String
+    @State private var hasDueDate: Bool
+    @State private var dueDate: Date
+
+    init(task: LifeEventTask) {
+        self.task = task
+        _title = State(initialValue: task.title)
+        _ownerName = State(initialValue: task.ownerName ?? "")
+        _detail = State(initialValue: task.detail ?? "")
+        _hasDueDate = State(initialValue: task.dueDate != nil)
+        _dueDate = State(initialValue: task.dueDate ?? .now)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("任务") {
+                    TextField("任务名称", text: $title)
+                    TextField("负责人（可选）", text: $ownerName)
+                    TextField("备注（可选）", text: $detail, axis: .vertical)
+                }
+                Section("截止时间") {
+                    Toggle("设置截止日期", isOn: $hasDueDate)
+                    if hasDueDate { DatePicker("截止日期", selection: $dueDate, displayedComponents: .date) }
+                }
+            }
+            .navigationTitle("编辑任务")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !cleanTitle.isEmpty else { return }
+                        task.title = cleanTitle
+                        task.ownerName = ownerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : ownerName
+                        task.detail = detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : detail
+                        task.dueDate = hasDueDate ? dueDate : nil
+                        try? context.save()
+                        dismiss()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
