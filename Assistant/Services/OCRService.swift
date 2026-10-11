@@ -1,7 +1,168 @@
 import AssistantCore
 import Foundation
+import SwiftUI
 import UIKit
 import Vision
+
+/// 接站/接机汇合地点类型
+public enum TravelPickupDestinationKind: String, CaseIterable, Identifiable, Sendable {
+    case stationOrAirport = "火车站/机场"
+    case subwayStation = "地铁站"
+    case customSpot = "指定上客点"
+
+    public var id: String { rawValue }
+}
+
+/// 火车票/机票截图识别出的接人（或出行）结构化元数据
+public struct TravelPickupMetadata: Sendable, Equatable {
+    public var isFlight: Bool
+    public var tripNumber: String
+    public var passengerName: String?
+    public var departureStation: String?
+    public var arrivalStation: String
+    public var departureAt: Date?
+    public var arrivalAt: Date
+    public var seatInfo: String?
+    public var gateInfo: String?
+    public var isPickupMode: Bool
+    public var destinationKind: TravelPickupDestinationKind
+    public var subwayStationName: String
+    public var customSpotName: String
+    public var advanceMinutes: Int
+
+    public init(
+        isFlight: Bool = false,
+        tripNumber: String,
+        passengerName: String? = nil,
+        departureStation: String? = nil,
+        arrivalStation: String,
+        departureAt: Date? = nil,
+        arrivalAt: Date,
+        seatInfo: String? = nil,
+        gateInfo: String? = nil,
+        isPickupMode: Bool = true,
+        destinationKind: TravelPickupDestinationKind = .stationOrAirport,
+        subwayStationName: String = "",
+        customSpotName: String = "",
+        advanceMinutes: Int? = nil
+    ) {
+        self.isFlight = isFlight
+        self.tripNumber = tripNumber
+        self.passengerName = passengerName
+        self.departureStation = departureStation
+        self.arrivalStation = arrivalStation
+        self.departureAt = departureAt
+        self.arrivalAt = arrivalAt
+        self.seatInfo = seatInfo
+        self.gateInfo = gateInfo
+        self.isPickupMode = isPickupMode
+        self.destinationKind = destinationKind
+        let cleanArr = arrivalStation.replacingOccurrences(of: "站", with: "")
+        self.subwayStationName = subwayStationName.isEmpty ? "\(cleanArr)地铁站" : subwayStationName
+        self.customSpotName = customSpotName.isEmpty ? "\(cleanArr)\(isFlight ? "机场" : "站")网约车/停车场接客点" : customSpotName
+        self.advanceMinutes = advanceMinutes ?? (isFlight ? 45 : 30)
+    }
+
+    /// 基准票面时间（接人模式按终到时间，本人出行按发车/起飞时间）
+    public var baseTicketTime: Date {
+        isPickupMode ? arrivalAt : (departureAt ?? arrivalAt)
+    }
+
+    /// 扣除提前量后的计划到达车站/机场/地铁站时间
+    public var plannedTargetTime: Date {
+        baseTicketTime.addingTimeInterval(TimeInterval(-advanceMinutes * 60))
+    }
+
+    /// 解析后的汇合/到达地点名称
+    public var resolvedLocation: String {
+        if isPickupMode {
+            switch destinationKind {
+            case .stationOrAirport:
+                if isFlight {
+                    return arrivalStation.contains("机场") || arrivalStation.contains("航站楼") || arrivalStation.contains("T1") || arrivalStation.contains("T2") || arrivalStation.contains("T3")
+                        ? arrivalStation
+                        : "\(arrivalStation)机场"
+                } else {
+                    return arrivalStation.hasSuffix("站") ? arrivalStation : "\(arrivalStation)站"
+                }
+            case .subwayStation:
+                let trimmed = subwayStationName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    let cleanArr = arrivalStation.replacingOccurrences(of: "站", with: "")
+                    return "\(cleanArr)地铁站"
+                }
+                return (trimmed.contains("地铁") || trimmed.hasSuffix("站") || trimmed.hasSuffix("口")) ? trimmed : "\(trimmed)地铁站"
+            case .customSpot:
+                let trimmed = customSpotName.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? arrivalStation : trimmed
+            }
+        } else {
+            let dep = departureStation ?? arrivalStation
+            if isFlight {
+                return dep.contains("机场") || dep.contains("航站楼") ? dep : "\(dep)机场"
+            } else {
+                return dep.hasSuffix("站") ? dep : "\(dep)站"
+            }
+        }
+    }
+
+    /// 自动生成的待办主标题
+    public var resolvedTitle: String {
+        let tripBadge = tripNumber.isEmpty ? "" : "（\(tripNumber)）"
+        if isPickupMode {
+            let personText = (passengerName?.isEmpty == false) ? passengerName! : "亲友"
+            return "去\(resolvedLocation)接\(personText)\(tripBadge)"
+        } else {
+            let tripText = tripNumber.isEmpty ? (isFlight ? "航班" : "列车") : tripNumber
+            return "乘坐 \(tripText) 前往\(arrivalStation)"
+        }
+    }
+
+    /// 自动生成的结构化详情说明
+    public var resolvedDetail: String {
+        let hmFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "HH:mm"
+            return f
+        }()
+        let arrHM = hmFormatter.string(from: arrivalAt)
+        let targetHM = hmFormatter.string(from: plannedTargetTime)
+        let depHM = departureAt.map { hmFormatter.string(from: $0) }
+
+        var parts: [String] = []
+        let tripLabel = tripNumber.isEmpty ? (isFlight ? "航班" : "列车") : tripNumber
+
+        if isPickupMode {
+            let depClause = (departureStation != nil && depHM != nil) ? "（\(departureStation!) \(depHM!) 始发）" : ""
+            parts.append("\(tripLabel) \(arrHM) 到达\(arrivalStation)\(depClause)")
+            if advanceMinutes > 0 {
+                parts.append("提前\(advanceMinutes)分钟（\(targetHM)）到\(resolvedLocation)")
+            } else {
+                parts.append("准点（\(arrHM)）到\(resolvedLocation)")
+            }
+        } else {
+            if let dep = departureStation, let dHM = depHM {
+                parts.append("\(tripLabel) \(dHM) \(dep)发车 → \(arrHM) 到\(arrivalStation)")
+            } else {
+                parts.append("\(tripLabel) 预计 \(arrHM) 到达\(arrivalStation)")
+            }
+            if advanceMinutes > 0 {
+                parts.append("提前\(advanceMinutes)分钟（\(targetHM)）到站候车")
+            }
+        }
+
+        if let p = passengerName, !p.isEmpty {
+            parts.append("乘\(isFlight ? "机" : "车")人：\(p)")
+        }
+        if let s = seatInfo, !s.isEmpty {
+            parts.append("座位：\(s)")
+        }
+        if let g = gateInfo, !g.isEmpty {
+            parts.append("\(isFlight ? "登机口" : "检票口")：\(g)")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
 
 /// 图片智能识别为待办事项的结构化结果
 struct ImageTodoRecognitionResult: Sendable {
@@ -16,6 +177,7 @@ struct ImageTodoRecognitionResult: Sendable {
     var qrCodePayload: String?
     var qrCodeImageData: Data?
     var attachmentImageData: Data?
+    var travelPickup: TravelPickupMetadata?
     var rawText: String
 
     init(
@@ -30,6 +192,7 @@ struct ImageTodoRecognitionResult: Sendable {
         qrCodePayload: String? = nil,
         qrCodeImageData: Data? = nil,
         attachmentImageData: Data? = nil,
+        travelPickup: TravelPickupMetadata? = nil,
         rawText: String = ""
     ) {
         self.title = title
@@ -43,6 +206,7 @@ struct ImageTodoRecognitionResult: Sendable {
         self.qrCodePayload = qrCodePayload
         self.qrCodeImageData = qrCodeImageData
         self.attachmentImageData = attachmentImageData
+        self.travelPickup = travelPickup
         self.rawText = rawText
     }
 }
@@ -213,6 +377,12 @@ public final class OCRService: Sendable {
         }
 
         let rawFullText = sorted.map(\.text).joined(separator: "\n")
+
+        // 0. 优先检测是否为火车票/高铁票或机票行程截图（默认推测为去车站/机场/地铁站接人，并预留提前量）
+        let defaultYear = Self.inferYear(from: sorted.map(\.text)) ?? Calendar.current.component(.year, from: .now)
+        if let ticketResult = Self.parseTravelTicketPickup(from: sorted, rawFullText: rawFullText, defaultYear: defaultYear) {
+            return ticketResult
+        }
 
         // 过滤顶部系统状态栏、底部导航按钮以及右侧海报缩略图噪点文字
         let ignoreExact: Set<String> = [
@@ -699,10 +869,520 @@ public final class OCRService: Sendable {
         return (nil, nil)
     }
 
+    // MARK: - 火车票 / 机票截图专项解析（默认推测去车站/机场/地铁站接人，并预留提前量）
+
+    private static func parseTravelTicketPickup(
+        from sorted: [RecognizedLine],
+        rawFullText: String,
+        defaultYear: Int
+    ) -> ImageTodoRecognitionResult? {
+        // 排除顶部手机状态栏（如 17:23 电量信号栏）与底部系统导航栏
+        let validLines = sorted.filter { $0.box.minY <= 0.92 && $0.box.maxY >= 0.04 }
+        guard !validLines.isEmpty else { return nil }
+
+        let trainMarkers = [
+            "乘车人", "检票口", "座位号", "列车经停站", "复兴号", "和谐号", "智能动车",
+            "变更到站", "乘车码", "12306", "二等座", "一等座", "商务座", "特等座",
+            "硬卧", "软卧", "硬座", "无座", "终到", "车次详情", "列车担当"
+        ]
+        let flightMarkers = [
+            "乘机人", "登机口", "值机", "航站楼", "行李转盘", "航班", "经济舱", "公务舱",
+            "头等舱", "计划起飞", "预计到达", "计划到达", "实际到达", "电子客票", "到达口"
+        ]
+
+        let trainScore = trainMarkers.filter { rawFullText.contains($0) }.count
+        let flightScore = flightMarkers.filter { rawFullText.contains($0) }.count
+
+        let detectedTrainNo = Self.extractTrainNumber(from: validLines, rawText: rawFullText)
+        let detectedFlightNo = Self.extractFlightNumber(from: validLines, rawText: rawFullText)
+
+        let isTrainTicket = (trainScore >= 2) || (trainScore >= 1 && detectedTrainNo != nil)
+        let isFlightTicket = !isTrainTicket && ((flightScore >= 2) || (flightScore >= 1 && detectedFlightNo != nil))
+
+        guard isTrainTicket || isFlightTicket else { return nil }
+
+        let isFlight = isFlightTicket
+        let tripNumber = (isFlight ? detectedFlightNo : detectedTrainNo) ?? detectedTrainNo ?? detectedFlightNo ?? ""
+
+        // 1. 提取票面乘车/乘机日期 (月、日、年)
+        let cal = Calendar.current
+        var ticketYear = defaultYear
+        var ticketMonth = cal.component(.month, from: .now)
+        var ticketDay = cal.component(.day, from: .now)
+
+        let dateRegex = try? NSRegularExpression(pattern: "(?:(20[2-3][0-9])[年./-])?([01]?[0-9])[月./-]([0-3]?[0-9])日?")
+        for line in validLines where line.box.minY >= 0.25 && line.box.maxY <= 0.88 {
+            let t = line.text
+            let nsRange = NSRange(location: 0, length: t.utf16.count)
+            if let m = dateRegex?.firstMatch(in: t, range: nsRange),
+               let mR = Range(m.range(at: 2), in: t),
+               let dR = Range(m.range(at: 3), in: t),
+               let month = Int(t[mR]), (1...12).contains(month),
+               let day = Int(t[dR]), (1...31).contains(day) {
+                if m.range(at: 1).location != NSNotFound,
+                   let yR = Range(m.range(at: 1), in: t),
+                   let y = Int(t[yR]) {
+                    ticketYear = y
+                }
+                ticketMonth = month
+                ticketDay = day
+                break
+            }
+        }
+
+        // 2. 提取出发时间、终到时间以及出发站、到达站
+        struct TimeObs {
+            var line: RecognizedLine
+            var hour: Int
+            var minute: Int
+            var dayOffset: Int
+        }
+
+        let standaloneTimeRegex = try? NSRegularExpression(pattern: "^([0-2]?[0-9]):([0-5][0-9])(?:\\s*\\+?([12])天?)?$")
+        let timeObsList: [TimeObs] = validLines.compactMap { line in
+            let t = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let nsRange = NSRange(location: 0, length: t.utf16.count)
+            guard let m = standaloneTimeRegex?.firstMatch(in: t, range: nsRange),
+                  let hR = Range(m.range(at: 1), in: t),
+                  let minR = Range(m.range(at: 2), in: t),
+                  let h = Int(t[hR]), (0...23).contains(h),
+                  let minute = Int(t[minR]), (0...59).contains(minute) else {
+                return nil
+            }
+            var offset = 0
+            if m.range(at: 3).location != NSNotFound,
+               let offR = Range(m.range(at: 3), in: t),
+               let offVal = Int(t[offR]) {
+                offset = offVal
+            }
+            return TimeObs(line: line, hour: h, minute: minute, dayOffset: offset)
+        }
+
+        var depTime: (hour: Int, minute: Int)? = nil
+        var arrTime: (hour: Int, minute: Int, dayOffset: Int)? = nil
+        var departureStation: String? = nil
+        var arrivalStation: String? = nil
+
+        // 策略 A：主票面左右对称的 [出发时间 -> 到达时间] 行对（如 17:00 在左，21:18 在右）
+        let leftTimes = timeObsList.filter { $0.line.box.minX < 0.36 && $0.line.box.minY > 0.38 }
+        let rightTimes = timeObsList.filter { $0.line.box.minX > 0.58 && $0.line.box.minY > 0.38 }
+
+        for lt in leftTimes {
+            if let rt = rightTimes.first(where: { abs($0.line.box.midY - lt.line.box.midY) < 0.045 }) {
+                depTime = (lt.hour, lt.minute)
+                arrTime = (rt.hour, rt.minute, rt.dayOffset)
+
+                // 在左侧时间正下方或正上方寻找出发站/机场名
+                let leftStationCandidates = validLines.filter { cand in
+                    cand.text != lt.line.text &&
+                    cand.box.minX < 0.42 &&
+                    abs(cand.box.midY - lt.line.box.midY) < 0.08
+                }
+                for cand in leftStationCandidates {
+                    if let st = Self.cleanStationOrAirportName(cand.text), !st.isEmpty {
+                        departureStation = st
+                        break
+                    }
+                }
+
+                // 在右侧时间正下方或正上方寻找终到站/机场名
+                let rightStationCandidates = validLines.filter { cand in
+                    cand.text != rt.line.text &&
+                    cand.box.minX > 0.55 &&
+                    abs(cand.box.midY - rt.line.box.midY) < 0.08
+                }
+                for cand in rightStationCandidates {
+                    if let st = Self.cleanStationOrAirportName(cand.text), !st.isEmpty {
+                        arrivalStation = st
+                        break
+                    }
+                }
+                break
+            }
+        }
+
+        // 策略 B：经停站列表中的「终到」与「始发」垂直列兜底校验
+        if let endMarker = validLines.first(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == "终到" }) {
+            let colLines = validLines.filter {
+                abs($0.box.midX - endMarker.box.midX) < 0.12 &&
+                $0.box.minY >= endMarker.box.minY &&
+                $0.box.maxY <= endMarker.box.maxY + 0.09 &&
+                $0.text != endMarker.text
+            }
+            for cl in colLines {
+                if arrTime == nil,
+                   let tm = timeObsList.first(where: { $0.line.text == cl.text && abs($0.line.box.midY - cl.box.midY) < 0.01 }) {
+                    arrTime = (tm.hour, tm.minute, tm.dayOffset)
+                } else if arrivalStation == nil,
+                          let st = Self.cleanStationOrAirportName(cl.text) {
+                    arrivalStation = st
+                }
+            }
+        }
+
+        if let startMarker = validLines.first(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == "始发" }) {
+            let colLines = validLines.filter {
+                abs($0.box.midX - startMarker.box.midX) < 0.12 &&
+                $0.box.minY >= startMarker.box.minY &&
+                $0.box.maxY <= startMarker.box.maxY + 0.09 &&
+                $0.text != startMarker.text
+            }
+            for cl in colLines {
+                if depTime == nil,
+                   let tm = timeObsList.first(where: { $0.line.text == cl.text && abs($0.line.box.midY - cl.box.midY) < 0.01 }) {
+                    depTime = (tm.hour, tm.minute)
+                } else if departureStation == nil,
+                          let st = Self.cleanStationOrAirportName(cl.text) {
+                    departureStation = st
+                }
+            }
+        }
+
+        // 若没有左右成对时间，但有至少 2 个独立时间点，取前两个分别作为出发与到达
+        if arrTime == nil && timeObsList.count >= 2 {
+            depTime = (timeObsList[0].hour, timeObsList[0].minute)
+            arrTime = (timeObsList[1].hour, timeObsList[1].minute, timeObsList[1].dayOffset)
+        } else if arrTime == nil, let singleTime = timeObsList.first {
+            arrTime = (singleTime.hour, singleTime.minute, singleTime.dayOffset)
+        }
+
+        guard let finalArrTime = arrTime else { return nil }
+        let finalArrivalStation = arrivalStation ?? (isFlight ? "机场航站楼" : "火车站")
+
+        // 3. 提取乘车人/乘机人、座位号、检票口/登机口
+        var passengerName: String? = nil
+        var seatInfo: String? = nil
+        var gateInfo: String? = nil
+
+        let passengerRegex = try? NSRegularExpression(pattern: "(?:乘车人|乘机人|旅客|姓名)[：:\\s]*([^\\s·,，(（0-9]{2,10})")
+        let seatRegex = try? NSRegularExpression(pattern: "(?:座位号|座位|席别|舱位)[：:\\s]*([^\\n]+)")
+        let gateRegex = try? NSRegularExpression(pattern: "(?:检票口|登机口|到达口|行李转盘)[^：:]*[：:\\s]*([^\\n]+)")
+
+        for line in validLines {
+            let t = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let nsRange = NSRange(location: 0, length: t.utf16.count)
+
+            if passengerName == nil,
+               let m = passengerRegex?.firstMatch(in: t, range: nsRange),
+               let r = Range(m.range(at: 1), in: t) {
+                passengerName = String(t[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if seatInfo == nil,
+               let m = seatRegex?.firstMatch(in: t, range: nsRange),
+               let r = Range(m.range(at: 1), in: t) {
+                seatInfo = String(t[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if gateInfo == nil,
+               let m = gateRegex?.firstMatch(in: t, range: nsRange),
+               let r = Range(m.range(at: 1), in: t) {
+                gateInfo = String(t[r]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        // 4. 组装出发与终到 Date（若终到时间早于出发时间，自动顺延 +1 天处理跨夜车次/红眼航班）
+        var depDate: Date? = nil
+        if let dt = depTime {
+            var depComps = DateComponents()
+            depComps.year = ticketYear
+            depComps.month = ticketMonth
+            depComps.day = ticketDay
+            depComps.hour = dt.hour
+            depComps.minute = dt.minute
+            depDate = cal.date(from: depComps)
+        }
+
+        var arrComps = DateComponents()
+        arrComps.year = ticketYear
+        arrComps.month = ticketMonth
+        arrComps.day = ticketDay
+        arrComps.hour = finalArrTime.hour
+        arrComps.minute = finalArrTime.minute
+        guard var arrDate = cal.date(from: arrComps) else { return nil }
+
+        if finalArrTime.dayOffset > 0 {
+            arrDate = cal.date(byAdding: .day, value: finalArrTime.dayOffset, to: arrDate) ?? arrDate
+        } else if let dDate = depDate, arrDate < dDate {
+            arrDate = cal.date(byAdding: .day, value: 1, to: arrDate) ?? arrDate
+        }
+
+        let pickupMeta = TravelPickupMetadata(
+            isFlight: isFlight,
+            tripNumber: tripNumber,
+            passengerName: passengerName,
+            departureStation: departureStation,
+            arrivalStation: finalArrivalStation,
+            departureAt: depDate,
+            arrivalAt: arrDate,
+            seatInfo: seatInfo,
+            gateInfo: gateInfo,
+            isPickupMode: true,
+            destinationKind: .stationOrAirport,
+            advanceMinutes: isFlight ? 45 : 30
+        )
+
+        return ImageTodoRecognitionResult(
+            title: pickupMeta.resolvedTitle,
+            type: .travelBooking,
+            dueAt: pickupMeta.plannedTargetTime,
+            station: pickupMeta.resolvedLocation,
+            location: pickupMeta.resolvedLocation,
+            pickupCode: nil,
+            detail: pickupMeta.resolvedDetail,
+            timeSlotText: nil,
+            travelPickup: pickupMeta,
+            rawText: rawFullText
+        )
+    }
+
+    private static func extractTrainNumber(from lines: [RecognizedLine], rawText: String) -> String? {
+        // 优先匹配 "G25列车经停站" 或 "G25次"
+        if let regex = try? NSRegularExpression(pattern: "\\b([GDCZTKLYS][0-9]{1,4})(?:列车|次)"),
+           let m = regex.firstMatch(in: rawText, range: NSRange(location: 0, length: rawText.utf16.count)),
+           let r = Range(m.range(at: 1), in: rawText) {
+            return String(rawText[r])
+        }
+        // 匹配独立车次行（如 "G25"）
+        guard let lineRegex = try? NSRegularExpression(pattern: "^([GDCZTKLYS][0-9]{1,4})(?:\\s|$)") else { return nil }
+        for line in lines where line.box.minY >= 0.35 && line.box.maxY <= 0.88 {
+            let t = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.contains("检票口") || t.contains("座位") || t.contains("车") { continue }
+            if let m = lineRegex.firstMatch(in: t, range: NSRange(location: 0, length: t.utf16.count)),
+               let r = Range(m.range(at: 1), in: t) {
+                return String(t[r])
+            }
+        }
+        return nil
+    }
+
+    private static func extractFlightNumber(from lines: [RecognizedLine], rawText: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: "\\b([A-Z]{2}[0-9]{3,4}|[A-Z][0-9][0-9]{3,4}|[0-9][A-Z][0-9]{3,4})\\b") else {
+            return nil
+        }
+        for line in lines where line.box.minY >= 0.30 && line.box.maxY <= 0.88 {
+            let t = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let nsRange = NSRange(location: 0, length: t.utf16.count)
+            if let m = regex.firstMatch(in: t, range: nsRange),
+               let r = Range(m.range(at: 1), in: t) {
+                let candidate = String(t[r])
+                if !candidate.hasPrefix("CR") && !candidate.hasPrefix("ID") {
+                    return candidate
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func cleanStationOrAirportName(_ raw: String) -> String? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["始发", "终到", "始", "终", "出发", "到达"] {
+            if s.hasPrefix(prefix) {
+                s = String(s.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        for suffix in [">", "〉", "》", "›", "→"] {
+            if s.hasSuffix(suffix) {
+                s = String(s.dropLast(suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        guard s.count >= 2, s.count <= 14 else { return nil }
+        let rejectWords = [
+            "历时", "小时", "分钟", "乘车", "检票", "座位", "改签", "退票", "变更",
+            "复兴号", "和谐号", "动车", "优惠", "立减", "金融", "领取", "服务",
+            "日历", "详情", "停留", "始发", "终到", "周日", "周一", "周二", "周三", "周四", "周五", "周六"
+        ]
+        if rejectWords.contains(where: { s.contains($0) }) { return nil }
+        if isDateOrTimeOnly(s) { return nil }
+        if matchesRegex(s, pattern: "^[0-9A-Za-z¥￥.\\-+]+$") { return nil }
+        return s
+    }
+
     private static func matchesRegex(_ text: String, pattern: String) -> Bool {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
         let range = NSRange(location: 0, length: text.utf16.count)
         return regex.firstMatch(in: text, range: range) != nil
+    }
+}
+
+/// 火车票 / 机票截图接人时间提前量与汇合地点（火车站/机场/地铁站）配置面板
+public struct TravelTicketPickupConfigView: View {
+    @Binding public var pickup: TravelPickupMetadata
+
+    private let advancePresets = [15, 30, 45, 60, 90, 0]
+
+    public init(pickup: Binding<TravelPickupMetadata>) {
+        self._pickup = pickup
+    }
+
+    private var subwayQuickSuggestions: [String] {
+        let base = pickup.arrivalStation.replacingOccurrences(of: "站", with: "")
+        return [
+            "\(base)地铁站",
+            "\(base)站地铁口",
+            "市中心换乘地铁站"
+        ]
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // 1. 识别到的票面行程横幅
+            HStack(spacing: 10) {
+                Image(systemName: pickup.isFlight ? "airplane.arrival" : "train.side.front.car")
+                    .font(.title3.bold())
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(Color.blue.gradient)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(pickup.tripNumber.isEmpty ? (pickup.isFlight ? "航班行程" : "高铁/火车票") : pickup.tripNumber)
+                            .font(.subheadline.bold())
+                        Text("\(pickup.departureStation ?? "始发") → \(pickup.arrivalStation)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.blue)
+                    }
+                    HStack(spacing: 6) {
+                        Text("终到：\(pickup.arrivalAt.formatted(.dateTime.month().day().hour().minute()))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        if let p = pickup.passengerName, !p.isEmpty {
+                            Text("· 乘\(pickup.isFlight ? "机" : "车")人：\(p)")
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                }
+                Spacer()
+            }
+
+            Divider()
+
+            // 2. 推测意图：去接人（默认） vs 本人出行
+            VStack(alignment: .leading, spacing: 6) {
+                Text("行程用途（上传他人车票/机票默认推测为去接人）")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker("行程用途", selection: $pickup.isPickupMode) {
+                    Text("🚗 去接人（按到站时间）").tag(true)
+                    Text("🧳 本人乘车/乘机").tag(false)
+                }
+                .pickerStyle(.segmented)
+            }
+
+            // 3. 到机场 / 火车站 / 某个地铁站的地点选择
+            if pickup.isPickupMode {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("接人汇合地点（火车站 / 机场 / 某个地铁站）")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Picker("汇合地点类型", selection: $pickup.destinationKind) {
+                        ForEach(TravelPickupDestinationKind.allCases) { kind in
+                            Text(kind.rawValue).tag(kind)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if pickup.destinationKind == .subwayStation {
+                        HStack(spacing: 6) {
+                            Image(systemName: "tram.fill.tunnel")
+                                .foregroundStyle(.teal)
+                            TextField("输入要去的地铁站（如：上海虹桥地铁站、人民广场地铁站）", text: $pickup.subwayStationName)
+                                .font(.subheadline)
+                        }
+                        .padding(8)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(subwayQuickSuggestions, id: \.self) { sug in
+                                    Button {
+                                        pickup.subwayStationName = sug
+                                        Haptic.selection()
+                                    } label: {
+                                        Text(sug)
+                                            .font(.caption2)
+                                            .padding(.horizontal, 9)
+                                            .padding(.vertical, 4)
+                                            .background(
+                                                Capsule().fill(pickup.subwayStationName == sug ? Color.teal.opacity(0.18) : Color(.tertiarySystemFill))
+                                            )
+                                            .foregroundStyle(pickup.subwayStationName == sug ? .teal : .secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    } else if pickup.destinationKind == .customSpot {
+                        HStack(spacing: 6) {
+                            Image(systemName: "car.fill")
+                                .foregroundStyle(.orange)
+                            TextField("输入具体上客点（如：P9停车场、T2到达层4号门）", text: $pickup.customSpotName)
+                                .font(.subheadline)
+                        }
+                        .padding(8)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                }
+            }
+
+            // 4. 到站/到地铁站的时间提前量设置
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(pickup.isPickupMode ? "到\(pickup.resolvedLocation)的时间提前量" : "提前到站候车余量")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("计划 \(pickup.plannedTargetTime.formatted(date: .omitted, time: .shortened)) 到达")
+                        .font(.caption.bold())
+                        .foregroundStyle(.blue)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(advancePresets, id: \.self) { mins in
+                            let isSelected = pickup.advanceMinutes == mins
+                            Button {
+                                pickup.advanceMinutes = mins
+                                Haptic.selection()
+                            } label: {
+                                Text(mins == 0 ? "准点 (\(pickup.baseTicketTime.formatted(date: .omitted, time: .shortened)))" : "提前 \(mins) 分钟")
+                                    .font(.caption.weight(isSelected ? .bold : .regular))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        Capsule().fill(isSelected ? Color.blue : Color(.tertiarySystemFill))
+                                    )
+                                    .foregroundStyle(isSelected ? .white : .primary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                Stepper(
+                    value: $pickup.advanceMinutes,
+                    in: 0...240,
+                    step: 5
+                ) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.badge.checkmark")
+                            .foregroundStyle(.blue)
+                        if pickup.advanceMinutes > 0 {
+                            Text("比\(pickup.isPickupMode ? "到站" : "发车")时间提前 **\(pickup.advanceMinutes) 分钟**（\(pickup.plannedTargetTime.formatted(date: .omitted, time: .shortened))）")
+                                .font(.caption)
+                        } else {
+                            Text("不设提前量，按票面时间（\(pickup.baseTicketTime.formatted(date: .omitted, time: .shortened))）")
+                                .font(.caption)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

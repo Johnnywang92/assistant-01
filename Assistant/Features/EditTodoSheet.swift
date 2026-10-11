@@ -31,6 +31,7 @@ struct EditTodoSheet: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isRecognizingImage: Bool = false
     @State private var showingQRPreview: Bool = false
+    @State private var recognizedTravelPickup: TravelPickupMetadata? = nil
 
     @State private var showingDeleteConfirmation: Bool = false
 
@@ -178,6 +179,27 @@ struct EditTodoSheet: View {
                     }
                 }
 
+                // 2.5 火车票/机票接人提前量与汇合地点配置
+                if recognizedTravelPickup != nil {
+                    Section {
+                        TravelTicketPickupConfigView(
+                            pickup: Binding(
+                                get: { recognizedTravelPickup! },
+                                set: { updated in
+                                    recognizedTravelPickup = updated
+                                    title = updated.resolvedTitle
+                                    station = updated.resolvedLocation
+                                    hasDueDate = true
+                                    dueDate = updated.plannedTargetTime
+                                    detail = updated.resolvedDetail
+                                }
+                            )
+                        )
+                    } header: {
+                        Label("火车票 / 机票接人与提前量", systemImage: "tram.fill.tunnel")
+                    }
+                }
+
                 // 3. 详情与备注说明
                 Section("详情与备注") {
                     TextField("补充备注/详情说明（选填）", text: $detail, axis: .vertical)
@@ -282,20 +304,37 @@ struct EditTodoSheet: View {
 
         if let recognized = try? await OCRService.shared.recognizeTodo(from: image) {
             await MainActor.run {
-                if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                recognizedTravelPickup = recognized.travelPickup
+                if recognized.travelPickup != nil {
                     title = recognized.title
-                }
-                if station.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   let loc = recognized.location ?? recognized.station {
-                    station = loc
-                }
-                if let recognizedDue = recognized.dueAt, !hasDueDate {
-                    hasDueDate = true
-                    dueDate = recognizedDue
-                }
-                if detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   let recDetail = recognized.detail {
-                    detail = recDetail
+                    // OCR 结果模型不携带待办类型；截图识别后的行程统一归为事项。
+                    type = .event
+                    if let loc = recognized.location ?? recognized.station {
+                        station = loc
+                    }
+                    if let recognizedDue = recognized.dueAt {
+                        hasDueDate = true
+                        dueDate = recognizedDue
+                    }
+                    if let recDetail = recognized.detail {
+                        detail = recDetail
+                    }
+                } else {
+                    if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        title = recognized.title
+                    }
+                    if station.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       let loc = recognized.location ?? recognized.station {
+                        station = loc
+                    }
+                    if let recognizedDue = recognized.dueAt, !hasDueDate {
+                        hasDueDate = true
+                        dueDate = recognizedDue
+                    }
+                    if detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       let recDetail = recognized.detail {
+                        detail = recDetail
+                    }
                 }
                 qrCodePayload = recognized.qrCodePayload
                 qrCodeImageData = recognized.qrCodeImageData
