@@ -152,12 +152,21 @@ final class TodoItem {
     var remindBeforeMinutes: Int = 0
     /// 通知中的“稍后提醒”只改变下次提醒时间，不改变待办截止时间。
     var reminderOverrideAt: Date?
+    /// 预约/门票/取件二维码原始载荷内容
+    var qrCodePayload: String?
+    /// 从原图精准裁剪出的预约二维码图片数据
+    @Attribute(.externalStorage)
+    var qrCodeImageData: Data?
+    /// 关联的完整订单/预约截图凭证数据
+    @Attribute(.externalStorage)
+    var attachmentImageData: Data?
 
     init(type: TodoType, status: TodoStatus = .active, title: String, detail: String? = nil,
          pickupCode: String? = nil, courier: String? = nil, station: String? = nil, location: String? = nil,
          dueAt: Date? = nil, sourceText: String? = nil, sortOrder: Int = 0,
          recurrenceRuleRaw: String? = nil, recurrenceIntervalDays: Int = 0,
-         remindBeforeMinutes: Int = 0) {
+         remindBeforeMinutes: Int = 0,
+         qrCodePayload: String? = nil, qrCodeImageData: Data? = nil, attachmentImageData: Data? = nil) {
         self.id = UUID()
         self.typeRaw = type.rawValue
         self.statusRaw = status.rawValue
@@ -174,6 +183,46 @@ final class TodoItem {
         self.recurrenceRuleRaw = recurrenceRuleRaw
         self.recurrenceIntervalDays = recurrenceIntervalDays
         self.remindBeforeMinutes = remindBeforeMinutes
+        self.qrCodePayload = qrCodePayload
+        self.qrCodeImageData = qrCodeImageData
+        self.attachmentImageData = attachmentImageData
+    }
+
+    /// 是否包含可快速调出的预约二维码或图片凭证
+    var hasQRCodeOrTicket: Bool {
+        qrCodeImageData != nil || (qrCodePayload != nil && !(qrCodePayload?.isEmpty ?? true)) || attachmentImageData != nil
+    }
+
+    /// 是否包含预约二维码
+    var hasQRCode: Bool {
+        qrCodeImageData != nil || (qrCodePayload != nil && !(qrCodePayload?.isEmpty ?? true))
+    }
+
+    /// 列表卡片精简展示标题（自动缩减冗余副标题与修饰词，兼容已存旧数据）
+    var displayConciseTitle: String {
+        OCRService.condenseEventTitle(title)
+    }
+
+    /// 列表卡片精简展示详情（去除重复日期、展期与脱敏身份证号，合并为清爽单行摘要）
+    var displayConciseDetail: String? {
+        OCRService.condenseEventDetail(detail, hasDueAt: dueAt != nil)
+    }
+
+    /// 组合场馆与详细地址展示文本
+    var displayLocationText: String? {
+        let st = station?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let loc = location?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawLoc: String? = {
+            if let st, !st.isEmpty, let loc, !loc.isEmpty {
+                if loc.contains(st) { return loc }
+                if st.contains(loc) { return st }
+                return "\(st) · \(loc)"
+            }
+            if let loc, !loc.isEmpty { return loc }
+            if let st, !st.isEmpty { return st }
+            return nil
+        }()
+        return rawLoc?.replacingOccurrences(of: "上海市", with: "")
     }
 
     var type: TodoType {

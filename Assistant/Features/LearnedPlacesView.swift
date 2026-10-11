@@ -11,6 +11,7 @@ struct LearnedPlacesView: View {
 
     @State private var showingAddPlaceSheet = false
     @State private var isSampling = false
+    @State private var isRefreshingPlaces = false
     @State private var sampleResultMessage: String?
 
     var body: some View {
@@ -26,7 +27,7 @@ struct LearnedPlacesView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("时空画像自主学习引擎")
                                 .font(.headline)
-                            Text("完全离线运行，基于驻留时段与 Wi-Fi 启发式聚类")
+                            Text("驻留时段聚类 + 真实路名反查 + 端侧 AI 角色推断")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -110,6 +111,32 @@ struct LearnedPlacesView: View {
                     .disabled(isSampling || !isLocationAuthorized)
                     .buttonStyle(.plain)
 
+                    // 智能重新聚类与地名解析按钮
+                    if !places.isEmpty {
+                        Button {
+                            reclusterAndEnrichAllPlaces(useAI: true)
+                        } label: {
+                            HStack(spacing: 6) {
+                                if isRefreshingPlaces {
+                                    ProgressView().controlSize(.small)
+                                    Text("正在合并漂移点并解析真实地名与角色…")
+                                } else {
+                                    Image(systemName: "sparkles")
+                                    Text("智能合并漂移点并推断「家 / 公司」真实地名")
+                                }
+                                Spacer()
+                            }
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .padding(.horizontal, 10)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(0.12)))
+                            .foregroundStyle(.purple)
+                        }
+                        .disabled(isRefreshingPlaces)
+                        .buttonStyle(.plain)
+                    }
+
                     if let msg = sampleResultMessage {
                         Text(msg)
                             .font(.caption2)
@@ -119,7 +146,7 @@ struct LearnedPlacesView: View {
                 }
                 .padding(.vertical, 4)
             } footer: {
-                Text("学习规则：同一地点需累积采样 ≥ 3 次。工作日白天停留概率高自动聚类为「公司」；夜间停留频率高自动聚类为「家」。")
+                Text("学习规则：相距 300 米内的漂移点自动合并并解析街道/商圈名称；晚间、清晨或周末高频驻留自动识别为「家」，工作日白天高频驻留自动识别为「公司」。")
             }
 
             // MARK: - 地点列表
@@ -155,6 +182,9 @@ struct LearnedPlacesView: View {
         .sheet(isPresented: $showingAddPlaceSheet) {
             AddPlaceSheet()
         }
+        .task {
+            await PlaceLearningEngine(context: context).refreshAndDeduplicateAllPlaces(useAI: false)
+        }
     }
 
     private var isLocationAuthorized: Bool {
@@ -172,6 +202,20 @@ struct LearnedPlacesView: View {
         }
     }
 
+    private func reclusterAndEnrichAllPlaces(useAI: Bool) {
+        guard !isRefreshingPlaces else { return }
+        isRefreshingPlaces = true
+        sampleResultMessage = nil
+        Haptic.light()
+        Task {
+            let engine = PlaceLearningEngine(context: context)
+            await engine.refreshAndDeduplicateAllPlaces(useAI: useAI)
+            sampleResultMessage = "✅ 已完成漂移点合并、街道名称反查与「家/公司」角色推断。"
+            isRefreshingPlaces = false
+            Haptic.success()
+        }
+    }
+
     private func sampleCurrentLocation() {
         guard !isSampling else { return }
         isSampling = true
@@ -181,9 +225,10 @@ struct LearnedPlacesView: View {
         Task {
             if let coord = await locationService.requestSingleLocationSample(context: context, requestPermissionIfNeeded: true) {
                 let engine = PlaceLearningEngine(context: context)
+                await engine.refreshAndDeduplicateAllPlaces(useAI: false)
                 if let place = engine.resolveCurrentPlace(wifiSSID: locationService.lastKnownWiFiSSID, coordinate: coord) {
                     let wifiText = locationService.lastKnownWiFiSSID.map { "，已记录 Wi‑Fi「\($0)」" } ?? ""
-                    sampleResultMessage = "✅ 已成功采样坐标 (经度 \(String(format: "%.3f", coord.longitude)), 纬度 \(String(format: "%.3f", coord.latitude)))，当前归属于「\(place.name)」\(wifiText)。"
+                    sampleResultMessage = "✅ 已成功采样坐标，当前归属于「\(place.name)」\(wifiText)。"
                 } else {
                     let wifiText = locationService.lastKnownWiFiSSID.map { "，已记录 Wi‑Fi「\($0)」" } ?? ""
                     sampleResultMessage = "✅ 采样记录已录入，正在等待进一步聚类分析\(wifiText)。"
@@ -210,24 +255,39 @@ struct PlaceRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: place.category.icon)
-                .font(.title2)
-                .foregroundStyle(categoryColor(for: place.category))
-                .frame(width: 36)
+            ZStack {
+                Circle()
+                    .fill(categoryColor(for: place.category).opacity(0.14))
+                    .frame(width: 40, height: 40)
+                Image(systemName: place.category.icon)
+                    .font(.headline)
+                    .foregroundStyle(categoryColor(for: place.category))
+            }
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
                     Text(place.name)
                         .font(.headline)
+                        .lineLimit(1)
+
+                    if place.category != .other {
+                        Text(place.category.rawValue)
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(categoryColor(for: place.category).opacity(0.15)))
+                            .foregroundStyle(categoryColor(for: place.category))
+                    }
+
                     if place.isUserConfirmed {
-                        Text("手动确认")
+                        Text("已锁定")
                             .font(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(Capsule().fill(.green.opacity(0.15)))
                             .foregroundStyle(.green)
                     } else {
-                        Text("自学习推测")
+                        Text("智能推断")
                             .font(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -236,16 +296,20 @@ struct PlaceRow: View {
                     }
                 }
 
-                HStack {
+                HStack(spacing: 6) {
                     Text("累计停留 \(place.visitCount) 次")
-                    if place.latitude != 0 && place.longitude != 0 {
-                        Text("· GPS已绑定")
-                    } else {
-                        Text("· 坐标未校准")
-                            .foregroundStyle(.red)
+                    if place.nightStayProbability >= 0.35 {
+                        Text("· 居家特征 \(Int(place.nightStayProbability * 100))%")
+                            .foregroundStyle(.blue)
+                    } else if place.workdayDayStayProbability >= 0.35 {
+                        Text("· 办公特征 \(Int(place.workdayDayStayProbability * 100))%")
+                            .foregroundStyle(.indigo)
+                    } else if place.latitude != 0 && place.longitude != 0 {
+                        Text("· GPS已校准")
                     }
                     if !place.associatedWiFiSSIDs.isEmpty {
                         Text("· Wi-Fi: \(place.associatedWiFiSSIDs.joined(separator: ", "))")
+                            .lineLimit(1)
                     }
                 }
                 .font(.caption)

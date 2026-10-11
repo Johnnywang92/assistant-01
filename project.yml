@@ -18,6 +18,9 @@ settings:
 packages:
   AssistantCore:
     path: Packages/AssistantCore
+  LlamaSwift:
+    url: https://github.com/mattt/llama.swift
+    from: "2.0.0"
 
 targets:
   Assistant:
@@ -27,6 +30,8 @@ targets:
       - Assistant
     dependencies:
       - package: AssistantCore
+      - package: LlamaSwift
+        product: LlamaSwift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${BUNDLE_ID}

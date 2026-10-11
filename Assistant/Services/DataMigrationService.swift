@@ -55,6 +55,9 @@ public struct TodoDTO: Codable {
     public var recurrenceIntervalDays: Int?
     public var remindBeforeMinutes: Int?
     public var reminderOverrideAt: Date?
+    public var qrCodePayload: String?
+    public var qrCodeImageData: Data?
+    public var attachmentImageData: Data?
 }
 
 public struct SubscriptionDTO: Codable {
@@ -464,7 +467,10 @@ final class DataMigrationService {
                 recurrenceRuleRaw: $0.recurrenceRuleRaw,
                 recurrenceIntervalDays: $0.recurrenceIntervalDays,
                 remindBeforeMinutes: $0.remindBeforeMinutes,
-                reminderOverrideAt: $0.reminderOverrideAt
+                reminderOverrideAt: $0.reminderOverrideAt,
+                qrCodePayload: $0.qrCodePayload,
+                qrCodeImageData: $0.qrCodeImageData,
+                attachmentImageData: $0.attachmentImageData
             )
         }
 
@@ -929,7 +935,10 @@ final class DataMigrationService {
                 sortOrder: t.sortOrder ?? 0,
                 recurrenceRuleRaw: t.recurrenceRuleRaw,
                 recurrenceIntervalDays: t.recurrenceIntervalDays ?? 0,
-                remindBeforeMinutes: t.remindBeforeMinutes ?? 0
+                remindBeforeMinutes: t.remindBeforeMinutes ?? 0,
+                qrCodePayload: t.qrCodePayload,
+                qrCodeImageData: t.qrCodeImageData,
+                attachmentImageData: t.attachmentImageData
             )
             item.id = t.id
             item.createdAt = t.createdAt

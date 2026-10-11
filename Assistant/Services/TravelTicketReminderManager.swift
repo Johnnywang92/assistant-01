@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import SwiftData
 import SwiftUI
@@ -190,18 +191,17 @@ public final class TravelTicketReminderManager: ObservableObject {
         self.activeUpcomingTicket = nil
     }
 
-    // MARK: - 扫描用户自建出行待办
+    // MARK: - 扫描用户自建出行待办（自动过滤同城活动与已预约门票）
 
     private func scanUserTravelTodos(context: ModelContext, now: Date, cal: Calendar) -> UpcomingTravelTicketInfo? {
         let activeRaw = TodoStatus.active.rawValue
-        let travelRaw = TodoType.travelBooking.rawValue
 
         let descriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate { $0.statusRaw == activeRaw }
         )
         guard let items = try? context.fetch(descriptor) else { return nil }
 
-        let travelKeywords = ["出差", "旅行", "旅游", "度假", "回老家", "返乡", "探亲", "飞往", "高铁", "火车票", "飞机", "机票", "门票", "游玩", "博物馆", "展览", "故宫", "国博", "景区"]
+        let userCity = Self.currentUserCity(context: context)
 
         for item in items {
             guard let due = item.dueAt else { continue }
@@ -211,10 +211,17 @@ public final class TravelTicketReminderManager: ObservableObject {
                 continue
             }
 
-            let isTravelType = item.typeRaw == travelRaw
-            let hasKeyword = travelKeywords.contains { item.title.contains($0) || (item.detail?.contains($0) ?? false) }
-
-            guard isTravelType || hasKeyword else { continue }
+            guard Self.shouldSuggestCrossCityTickets(
+                title: item.title,
+                station: item.station,
+                location: item.location,
+                detail: item.detail,
+                hasQRCodeOrTicket: item.hasQRCodeOrTicket,
+                type: item.type,
+                userCity: userCity
+            ) else {
+                continue
+            }
 
             let itemId = "todo_travel_\(item.id.uuidString)_\(daysUntil)"
             if isDismissed(id: itemId) || isTodoAdded(id: itemId) {
@@ -231,6 +238,139 @@ public final class TravelTicketReminderManager: ObservableObject {
             )
         }
 
+        return nil
+    }
+
+    // MARK: - 同城 vs 异地跨城判断（避免在用户所在城市看展/活动时误提示购买火车票/机票）
+
+    /// 判断某待办事项是否属于需要提前购买火车票/机票的跨城出行
+    static func shouldSuggestCrossCityTickets(
+        title: String,
+        station: String? = nil,
+        location: String? = nil,
+        detail: String? = nil,
+        hasQRCodeOrTicket: Bool = false,
+        type: TodoType = .general,
+        userCity: String? = nil
+    ) -> Bool {
+        // 1. 已经带有预约二维码或门票凭证的事项，说明用户已完成预约，不再提示购票
+        if hasQRCodeOrTicket {
+            return false
+        }
+
+        let combined = [title, station, location, detail]
+            .compactMap { $0 }
+            .joined(separator: " ")
+
+        let currentCity = userCity ?? currentUserCity(context: nil)
+
+        // 2. 若识别出事项发生城市与用户当前所在城市一致（例如用户当前在上海，活动也在上海/西岸/徐汇），无需购买火车票或机票
+        if let eventCity = detectCity(in: combined), eventCity == currentCity {
+            return false
+        }
+
+        // 3. 显式跨城出行类型或包含明确远行交通词
+        let crossCityTravelKeywords = ["出差", "旅行", "旅游", "度假", "回老家", "返乡", "探亲", "飞往", "高铁", "火车票", "飞机", "机票"]
+        let hasCrossCityKeyword = (type == .travelBooking) || crossCityTravelKeywords.contains { title.contains($0) }
+
+        if hasCrossCityKeyword {
+            return true
+        }
+
+        // 4. 若是文博/景区/展览关键词，仅当明确指向异地城市（eventCity != nil && eventCity != currentCity）时才提示购买火车票/机票
+        let scenicKeywords = ["故宫", "国博", "兵马俑", "三星堆", "莫高窟"]
+        if scenicKeywords.contains(where: { title.contains($0) }) {
+            if let eventCity = detectCity(in: combined), eventCity != currentCity {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /// 获取用户当前所在城市（优先读取实时定位坐标或常驻地点采样，默认兜底上海）
+    static func currentUserCity(context: ModelContext? = nil) -> String {
+        if let loc = CLLocationManager().location,
+           let city = cityFromCoordinate(loc.coordinate) {
+            UserDefaults.standard.set(city, forKey: "cached_user_current_city")
+            return city
+        }
+
+        if let context {
+            var sampleDesc = FetchDescriptor<LocationStaySample>(
+                sortBy: [SortDescriptor(\LocationStaySample.timestamp, order: .reverse)]
+            )
+            sampleDesc.fetchLimit = 1
+            if let latestSample = (try? context.fetch(sampleDesc))?.first,
+               let city = cityFromCoordinate(CLLocationCoordinate2D(latitude: latestSample.latitude, longitude: latestSample.longitude)) {
+                return city
+            }
+
+            if let place = (try? context.fetch(FetchDescriptor<LearnedPlace>()))?.first,
+               let city = cityFromCoordinate(CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)) {
+                return city
+            }
+        }
+
+        if let cached = UserDefaults.standard.string(forKey: "cached_user_current_city"), !cached.isEmpty {
+            return cached
+        }
+
+        return "上海"
+    }
+
+    /// 根据经纬度快速离线映射主要城市
+    private static func cityFromCoordinate(_ coord: CLLocationCoordinate2D) -> String? {
+        let lat = coord.latitude
+        let lon = coord.longitude
+        if (30.65...31.90).contains(lat) && (120.85...122.25).contains(lon) { return "上海" }
+        if (39.40...41.10).contains(lat) && (115.40...117.55).contains(lon) { return "北京" }
+        if (22.40...23.95).contains(lat) && (112.90...114.05).contains(lon) { return "广州" }
+        if (22.40...22.88).contains(lat) && (113.70...114.65).contains(lon) { return "深圳" }
+        if (29.80...30.60).contains(lat) && (119.70...120.75).contains(lon) { return "杭州" }
+        if (30.80...31.65).contains(lat) && (120.20...120.84).contains(lon) { return "苏州" }
+        if (31.60...32.60).contains(lat) && (118.30...119.25).contains(lon) { return "南京" }
+        if (30.10...31.40).contains(lat) && (103.40...104.85).contains(lon) { return "成都" }
+        if (29.90...31.30).contains(lat) && (113.70...115.10).contains(lon) { return "武汉" }
+        if (33.70...34.75).contains(lat) && (108.20...109.80).contains(lon) { return "西安" }
+        return nil
+    }
+
+    /// 从标题、场馆或地址文本中识别所属城市（含上海市各区与知名地标识别）
+    static func detectCity(in text: String) -> String? {
+        let shanghaiMarkers = [
+            "上海", "西岸", "徐汇", "浦东", "黄浦", "静安", "长宁", "普陀", "虹口", "杨浦",
+            "闵行", "宝山", "嘉定", "松江", "青浦", "奉贤", "崇明", "陆家嘴", "外滩", "张江",
+            "上博", "龙耀路"
+        ]
+        if shanghaiMarkers.contains(where: { text.contains($0) }) {
+            return "上海"
+        }
+
+        let cityMap: [(city: String, markers: [String])] = [
+            ("北京", ["北京", "故宫", "国博", "天坛", "颐和园", "朝阳区", "海淀区"]),
+            ("广州", ["广州", "粤博", "天河区", "越秀区"]),
+            ("深圳", ["深圳", "南山区", "福田区"]),
+            ("杭州", ["杭州", "西湖", "良渚"]),
+            ("苏州", ["苏州", "苏博", "拙政园"]),
+            ("南京", ["南京", "南博"]),
+            ("成都", ["成都", "三星堆"]),
+            ("西安", ["西安", "陕历博", "兵马俑"]),
+            ("武汉", ["武汉", "黄鹤楼"]),
+            ("长沙", ["长沙", "岳麓"]),
+            ("重庆", ["重庆", "洪崖洞"]),
+            ("敦煌", ["敦煌", "莫高窟"]),
+            ("洛阳", ["洛阳", "龙门石窟"]),
+            ("三亚", ["三亚"]),
+            ("厦门", ["厦门", "鼓浪屿"]),
+            ("青岛", ["青岛"])
+        ]
+
+        for entry in cityMap {
+            if entry.markers.contains(where: { text.contains($0) }) {
+                return entry.city
+            }
+        }
         return nil
     }
 

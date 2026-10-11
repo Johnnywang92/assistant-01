@@ -364,8 +364,9 @@ struct PeriodicReportView: View {
 
                 Spacer()
 
-                if LLMInferenceService.shared.remoteContextConsent &&
-                    !LLMInferenceService.shared.developerEndpoint.isEmpty {
+                if LLMModelManager.shared.isModelDownloaded ||
+                    LLMModelManager.shared.hasValidLocalGGUFFile ||
+                    (LLMInferenceService.shared.remoteContextConsent && !LLMInferenceService.shared.developerEndpoint.isEmpty) {
                     Button {
                         polishWithLLM()
                     } label: {
@@ -377,7 +378,7 @@ struct PeriodicReportView: View {
                                 Image(systemName: "brain.head.profile")
                                     .font(.caption2)
                             }
-                            Text(isPolishingWithLLM ? "思考中..." : "局域网服务润色")
+                            Text(isPolishingWithLLM ? "端侧思考中..." : "AI 深度润色")
                                 .font(.caption2.bold())
                         }
                         .padding(.horizontal, 8)
@@ -711,14 +712,18 @@ struct PeriodicReportView: View {
     }
 
     private func polishWithLLM() {
-        guard LLMModelManager.shared.isModelDownloaded else { return }
         isPolishingWithLLM = true
-        let prompt = "请作为贴心而高效的个人生活管家，基于以下数据为我写一段充满温度、鼓励人心、语言凝练的复盘金句（120字以内）：\n\(reportData.smartSummary)"
+        let sys = "你是贴心而高效的个人生活管家。请基于用户提供的周期复盘数据，写一段充满温度、鼓励人心、语言凝练的复盘总结与寄语（控制在100字以内，不要输出多余标题或符号）。"
+        let userContent = "周期：\(reportData.title)\n已完成待办：\(reportData.completedTodos.count)项，总支出：¥\(String(format: "%.1f", reportData.totalExpense))\n基础摘要：\(reportData.smartSummary)"
         Task {
-            let res = await LLMInferenceService.shared.generate(query: prompt, context: context)
+            let res = await LLMInferenceService.shared.generateCustomTask(
+                systemInstruction: sys,
+                userContent: userContent,
+                maxNewTokens: 180
+            )
             await MainActor.run {
                 isPolishingWithLLM = false
-                if !res.isEmpty {
+                if let res, !res.isEmpty {
                     polishedText = res.trimmingCharacters(in: .whitespacesAndNewlines)
                     Haptic.success()
                 }
