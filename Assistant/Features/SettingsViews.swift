@@ -492,11 +492,11 @@ struct SettingsView: View {
                         LLMModelManagementView()
                     } label: {
                         HStack {
-                        Label("模型与局域网问答", systemImage: "brain.head.profile")
+                            Label("AI 端侧大模型 (Qwen2.5)", systemImage: "brain.head.profile")
                             Spacer()
-                            Text(LLMModelManager.shared.isModelDownloaded ? "文件已下载" : "可配置")
+                            Text(LLMModelManager.shared.isModelDownloaded ? "GGUF 已就绪" : "可下载")
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(LLMModelManager.shared.isModelDownloaded ? .green : .secondary)
                         }
                     }
                 }

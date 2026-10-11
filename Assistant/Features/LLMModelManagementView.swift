@@ -71,6 +71,15 @@ struct LLMModelManagementView: View {
                             Text("约 980 MB").font(.caption.bold())
                         }
                         GridRow {
+                            Text("推理引擎").foregroundStyle(.secondary).font(.caption)
+                            Text("llama.cpp (Metal GPU)").font(.caption.bold()).foregroundStyle(.purple)
+                            Text("引擎状态").foregroundStyle(.secondary).font(.caption)
+                            Text(inferenceService.localEngineStatus)
+                                .font(.caption.bold())
+                                .foregroundStyle(inferenceService.isLocalModelLoaded ? .green : .secondary)
+                                .lineLimit(1)
+                        }
+                        GridRow {
                             Text("存储位置").foregroundStyle(.secondary).font(.caption)
                             Text("沙盒 / Documents / Models").font(.caption.monospaced()).lineLimit(1)
                         }
@@ -80,7 +89,7 @@ struct LLMModelManagementView: View {
             } header: {
                 Text("模型基础信息")
             } footer: {
-                Text("当前版本仅管理 GGUF 文件，尚未接入 iPhone 本地推理。下方问答使用规则助手；明确启用局域网服务后才会发送生活数据。")
+                Text("已接入 llama.cpp 端侧推理引擎（Apple Metal GPU 加速）。模型文件下载或导入后，所有对话问答均在 iPhone 本机离线完成，隐私数据不出设备。")
             }
 
             // MARK: - 2. 下载与文件获取控制
@@ -123,16 +132,49 @@ struct LLMModelManagementView: View {
                     }
                     .padding(.vertical, 4)
                 } else if modelManager.isModelDownloaded {
-                    HStack {
-                        Label("模型文件已安装 (\(modelManager.formattedModelSize))", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .font(.subheadline)
-                        Spacer()
-                        Button("删除", role: .destructive) {
-                            modelManager.deleteModel()
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("模型文件已安装 (\(modelManager.formattedModelSize))", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.subheadline)
+                            Spacer()
+                            Button("删除", role: .destructive) {
+                                modelManager.deleteModel()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+
+                        HStack(spacing: 10) {
+                            if inferenceService.isLocalModelLoaded {
+                                Label("Metal 显存已就绪", systemImage: "bolt.horizontal.circle.fill")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.purple)
+                                Spacer()
+                                Button("释放显存") {
+                                    Task {
+                                        await inferenceService.unloadLocalModel()
+                                        Haptic.light()
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            } else {
+                                Label("首次问答将自动映射加载至 Metal", systemImage: "cpu")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("立即预加载") {
+                                    Task {
+                                        await inferenceService.preloadLocalModel()
+                                        Haptic.success()
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.purple)
+                                .controlSize(.small)
+                            }
+                        }
                     }
                 } else {
                     Picker("极速下载节点", selection: $modelManager.selectedSource) {
@@ -204,7 +246,7 @@ struct LLMModelManagementView: View {
             }
 
             // MARK: - 3. 本地推理与问答沙盒测试
-            Section("规则助手 / 局域网问答测试") {
+            Section("llama.cpp 端侧推理沙盒测试") {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("测试提示词（将自动附带待办/快递/记账真实上下文）：")
                         .font(.caption)
@@ -240,7 +282,20 @@ struct LLMModelManagementView: View {
                         }
                     }
 
-                    if let result = testResult {
+                    if isTesting && !inferenceService.currentOutput.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("端侧实时流式输出：")
+                                .font(.caption.bold())
+                                .foregroundStyle(.purple)
+
+                            Text(inferenceService.currentOutput)
+                                .font(.callout)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemGroupedBackground)))
+                        }
+                        .padding(.top, 4)
+                    } else if let result = testResult {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("问答结果：")
                                 .font(.caption.bold())

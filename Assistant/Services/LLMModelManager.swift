@@ -74,17 +74,45 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         checkModelStatus()
     }
 
+    /// 快速同步校验本地 GGUF 模型文件头与体积是否有效（毫秒级，不阻塞主线程）
+    public var hasValidLocalGGUFFile: Bool {
+        let url = localModelURL
+        guard FileManager.default.fileExists(atPath: url.path),
+              let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value,
+              size >= 850_000_000,
+              let handle = try? FileHandle(forReadingFrom: url) else {
+            return false
+        }
+        defer { try? handle.close() }
+        guard let header = try? handle.read(upToCount: 8),
+              header.count == 8,
+              String(data: header.prefix(4), encoding: .ascii) == "GGUF" else {
+            return false
+        }
+        return true
+    }
+
     /// 检查本地模型是否存在且完整
     public func checkModelStatus() {
-        isModelDownloaded = false
         validationGeneration += 1
         let generation = validationGeneration
         let url = localModelURL
         guard FileManager.default.fileExists(atPath: url.path) else {
+            isModelDownloaded = false
             UserDefaults.standard.removeObject(forKey: validatedDigestKey)
             hasResumeData = FileManager.default.fileExists(atPath: resumeDataURL.path)
             return
         }
+
+        if hasValidLocalGGUFFile,
+           let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value {
+            self.downloadedBytes = size
+            self.totalBytes = size
+            self.isModelDownloaded = true
+        } else {
+            self.isModelDownloaded = false
+        }
+
         let expectedDigest = UserDefaults.standard.string(forKey: validatedDigestKey)
         Task.detached(priority: .utility) {
             let result = Result { try Self.validateModel(at: url) }
@@ -93,6 +121,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
                 switch result {
                 case .success(let validated):
                     if let expectedDigest, expectedDigest != validated.digest {
+                        self.isModelDownloaded = false
                         self.errorMessage = "模型文件校验值已变化，请重新导入。"
                         return
                     }
@@ -102,6 +131,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
                     self.isModelDownloaded = true
                     self.clearResumeData()
                 case .failure(let error):
+                    self.isModelDownloaded = false
                     self.errorMessage = "模型文件无效：\(error.localizedDescription)"
                 }
             }
@@ -250,6 +280,9 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         downloadTask?.cancel()
         downloadTask = nil
         clearResumeData()
+        Task {
+            await LLMInferenceService.shared.unloadLocalModel()
+        }
         try? FileManager.default.removeItem(at: localModelURL)
         UserDefaults.standard.removeObject(forKey: validatedDigestKey)
         checkModelStatus()
