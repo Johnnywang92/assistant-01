@@ -18,12 +18,14 @@ struct LifeVaultView: View {
     @Query private var vehicles: [VehicleProfile]
     @Query private var pets: [PetProfile]
     @Query private var children: [ChildProfile]
+    @Query(sort: [SortDescriptor(\LifeEventProject.targetDate, order: .forward)]) private var lifeProjects: [LifeEventProject]
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var selectedDestination: VaultDestination?
 
     private enum VaultDestination: Hashable, Identifiable {
+        case lifeEvents
         case documents
         case passwords
         case storage
@@ -73,12 +75,32 @@ struct LifeVaultView: View {
         medications.filter { $0.isEnabled }.count
     }
 
+    // 人生大事状态摘要
+    private var lifeEventsSummary: String {
+        if let first = lifeProjects.first {
+            let daysText = first.daysRemaining >= 0 ? "还有 \(first.daysRemaining) 天" : "已过 \(abs(first.daysRemaining)) 天"
+            if lifeProjects.count == 1 {
+                return "\(first.title) · \(daysText)"
+            } else {
+                return "\(first.title)（\(daysText)）等 \(lifeProjects.count) 项"
+            }
+        }
+        return "订婚结婚 · 乔迁装修 · 满月升学 · 亲友共享全流程"
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 // 顶部快速看板统计
                 Section {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
+                        Button {
+                            selectedDestination = .lifeEvents
+                        } label: {
+                            statPill(title: "人生大事", count: "\(lifeProjects.count)", icon: "sparkles", color: .orange)
+                        }
+                        .buttonStyle(.borderless)
+
                         Button {
                             selectedDestination = .documents
                         } label: {
@@ -127,18 +149,26 @@ struct LifeVaultView: View {
                             statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: .purple)
                         }
                         .buttonStyle(.borderless)
-
-                        Button {
-                            selectedDestination = .voiceMemos
-                        } label: {
-                            statPill(title: "录音", count: "\(voiceMemos.count)", icon: "mic.circle.fill", color: .red)
-                        }
-                        .buttonStyle(.borderless)
                     }
                     .padding(.vertical, 4)
                 }
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+
+                // MARK: - 0. 人生大事统筹中心
+                Section("人生大事") {
+                    NavigationLink {
+                        LifeEventManagementView(isEmbeddedInNavigation: true)
+                    } label: {
+                        vaultRow(
+                            icon: "sparkles",
+                            color: .orange,
+                            title: "人生大事筹备中心",
+                            status: lifeEventsSummary,
+                            isAlert: false
+                        )
+                    }
+                }
 
                 // MARK: - 1. 私密数字保险箱
                 Section("私密资料") {
@@ -318,6 +348,8 @@ struct LifeVaultView: View {
     @ViewBuilder
     private func destinationView(for destination: VaultDestination) -> some View {
         switch destination {
+        case .lifeEvents:
+            LifeEventManagementView(isEmbeddedInNavigation: true)
         case .documents:
             IDDocumentVaultView()
         case .passwords:
