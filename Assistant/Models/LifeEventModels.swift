@@ -164,6 +164,37 @@ final class LifeEventExpense {
     }
 }
 
+@Model
+final class LifeEventGuest {
+    var id: UUID
+    var projectID: UUID
+    var name: String
+    var relationship: String
+    var side: String
+    var phone: String
+    var tableNumber: String
+    var attendanceRaw: String
+
+    init(projectID: UUID, name: String, relationship: String = "", side: String = "", phone: String = "", tableNumber: String = "", attendanceRaw: String = "pending") {
+        self.id = UUID()
+        self.projectID = projectID
+        self.name = name
+        self.relationship = relationship
+        self.side = side
+        self.phone = phone
+        self.tableNumber = tableNumber
+        self.attendanceRaw = attendanceRaw
+    }
+
+    var attendanceTitle: String {
+        switch attendanceRaw {
+        case "yes": return "已确认"
+        case "no": return "不出席"
+        default: return "待确认"
+        }
+    }
+}
+
 enum LifeEventTemplateFactory {
     @MainActor
     static func createProject(title: String, template: LifeEventTemplate, targetDate: Date, location: String?, budgetLimit: Double, in context: ModelContext) -> LifeEventProject {

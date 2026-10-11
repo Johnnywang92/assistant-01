@@ -134,8 +134,10 @@ struct LifeEventProjectDetailView: View {
     @Query private var tasks: [LifeEventTask]
     @Query private var people: [LifeEventPerson]
     @Query private var expenses: [LifeEventExpense]
+    @Query private var guests: [LifeEventGuest]
     @State private var showAddPerson = false
     @State private var showAddExpense = false
+    @State private var showAddGuest = false
     let project: LifeEventProject
 
     private var projectStages: [LifeEventStage] { stages.filter { $0.projectID == project.id }.sorted { $0.sortOrder < $1.sortOrder } }
@@ -218,12 +220,49 @@ struct LifeEventProjectDetailView: View {
                 }
                 Button("添加开销", systemImage: "plus.circle") { showAddExpense = true }
             }
+            Section("宾客与邀请") {
+                HStack {
+                    Label("已确认", systemImage: "checkmark.circle")
+                    Spacer()
+                    Text("\(confirmedGuestCount) / \(projectGuests.count)").foregroundStyle(.secondary)
+                }
+                ForEach(projectGuests) { guest in
+                    HStack(spacing: 10) {
+                        Image(systemName: guest.attendanceRaw == "yes" ? "checkmark.circle.fill" : "person.crop.circle")
+                            .foregroundStyle(guest.attendanceRaw == "yes" ? .green : .secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(guest.name).font(.subheadline.weight(.medium))
+                            Text([guest.relationship, guest.side, guest.tableNumber.isEmpty ? "" : "桌 \(guest.tableNumber)", guest.attendanceTitle].filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .contextMenu {
+                        ShareLink(item: invitationText(for: guest), preview: SharePreview("邀请：\(guest.name)")) {
+                            Label("分享邀请通知", systemImage: "paperplane")
+                        }
+                    }
+                }
+                .onDelete { offsets in
+                    for index in offsets { context.delete(projectGuests[index]) }
+                    try? context.save()
+                }
+                Button("添加宾客", systemImage: "person.2.badge.plus") { showAddGuest = true }
+            }
         }
         .navigationTitle("项目详情")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("添加人物", systemImage: "person.badge.plus") { showAddPerson = true }
+                Menu {
+                    Button("添加人物", systemImage: "person.badge.plus") { showAddPerson = true }
+                    Button("添加宾客", systemImage: "person.2.badge.plus") { showAddGuest = true }
+                    ShareLink(item: shareText, preview: SharePreview(project.title)) {
+                        Label("分享筹备摘要", systemImage: "square.and.arrow.up")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
             }
         }
         .sheet(isPresented: $showAddPerson) {
@@ -231,6 +270,9 @@ struct LifeEventProjectDetailView: View {
         }
         .sheet(isPresented: $showAddExpense) {
             LifeEventAddExpenseView(projectID: project.id)
+        }
+        .sheet(isPresented: $showAddGuest) {
+            LifeEventAddGuestView(projectID: project.id)
         }
     }
 
@@ -244,6 +286,28 @@ struct LifeEventProjectDetailView: View {
 
     private var expensesTotal: Double {
         projectExpenses.reduce(0) { $0 + $1.paidAmount }
+    }
+
+    private var projectGuests: [LifeEventGuest] {
+        guests.filter { $0.projectID == project.id }.sorted { $0.name < $1.name }
+    }
+
+    private var confirmedGuestCount: Int { projectGuests.filter { $0.attendanceRaw == "yes" }.count }
+
+    private func invitationText(for guest: LifeEventGuest) -> String {
+        var text = "邀请：\(guest.name)\n\n诚邀你参加「\(project.title)」。\n时间：\(project.targetDate.formatted(date: .long, time: .omitted))"
+        if let location = project.location, !location.isEmpty { text += "\n地点：\(location)" }
+        text += "\n\n请回复是否出席，方便我们安排座位和流程。期待见到你！"
+        return text
+    }
+
+    private var shareText: String {
+        let completed = completedCount
+        let peopleText = projectPeople.map { person in
+            let duty = person.responsibility.isEmpty ? "待分工" : person.responsibility
+            return "- \(person.name)（\(person.role.isEmpty ? person.relationship : person.role)）：\(duty)"
+        }.joined(separator: "\n")
+        return "人生大事筹备摘要\n项目：\(project.title)\n目标日期：\(project.targetDate.formatted(date: .long, time: .omitted))\n进度：\(completed) / \(projectTasks.count) 项已完成\n宾客：\(confirmedGuestCount) / \(projectGuests.count) 人已确认\(peopleText.isEmpty ? "" : "\n\n人物与分工：\n\(peopleText)")"
     }
 }
 
@@ -354,6 +418,54 @@ private struct LifeEventAddExpenseView: View {
                         dismiss()
                     }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (Double(amount) ?? 0) <= 0)
+                }
+            }
+        }
+    }
+}
+
+private struct LifeEventAddGuestView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    let projectID: UUID
+    @State private var name = ""
+    @State private var relationship = ""
+    @State private var side = ""
+    @State private var phone = ""
+    @State private var tableNumber = ""
+    @State private var attendance = "pending"
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("宾客信息") {
+                    TextField("姓名", text: $name)
+                    TextField("关系，例如：同事、舅舅", text: $relationship)
+                    TextField("所属，例如：男方、女方", text: $side)
+                    TextField("电话（可选）", text: $phone).keyboardType(.phonePad)
+                }
+                Section("出席与礼金") {
+                    Picker("出席状态", selection: $attendance) {
+                        Text("待确认").tag("pending")
+                        Text("已确认").tag("yes")
+                        Text("不出席").tag("no")
+                    }
+                    TextField("桌号（可选）", text: $tableNumber)
+                }
+            }
+            .navigationTitle("添加宾客")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !cleanName.isEmpty else { return }
+                        context.insert(LifeEventGuest(projectID: projectID, name: cleanName, relationship: relationship, side: side, phone: phone, tableNumber: tableNumber, attendanceRaw: attendance))
+                        try? context.save()
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
