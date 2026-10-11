@@ -152,6 +152,17 @@ struct LifeEventProjectDetailView: View {
                     Text(project.title).font(.title2.bold())
                     Text(project.daysRemaining >= 0 ? "距离目标日期还有 \(project.daysRemaining) 天" : "目标日期已过去 \(abs(project.daysRemaining)) 天")
                         .foregroundStyle(project.daysRemaining < 0 ? Color.red : Color.accentColor)
+                    if let location = project.location, !location.isEmpty {
+                        Button {
+                            MapNavigationService.openDirections(to: location)
+                        } label: {
+                            Label(location, systemImage: "arrow.triangle.turn.up.right.diamond")
+                                .font(.subheadline)
+                                .foregroundStyle(.tint)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                    }
                     ProgressView(value: Double(completedCount), total: Double(max(projectTasks.count, 1)))
                     Text("已完成 \(completedCount) / \(projectTasks.count) 项")
                         .font(.caption).foregroundStyle(.secondary)

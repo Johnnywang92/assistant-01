@@ -1780,6 +1780,15 @@ struct TodoRow: View {
                                 .font(.caption)
                                 .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
                                 .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Button {
+                                MapNavigationService.openDirections(to: locText)
+                            } label: {
+                                Label("导航", systemImage: "arrow.triangle.turn.up.right.diamond")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(.tint)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
