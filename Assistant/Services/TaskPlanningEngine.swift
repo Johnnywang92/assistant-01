@@ -239,6 +239,60 @@ final class TaskPlanningEngine {
         )
     }
 
+    /// 结合端侧大模型动态拆解任务与子待办清单（若端侧模型可用则优先生成针对性步骤，否则回退模板）
+    func decomposeTaskWithAI(query: String) async -> TaskPlanningPlan? {
+        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+
+        let basePlan = decomposeTask(query: text)
+        let cleanTopic = extractCustomTopic(from: text)
+
+        let systemInstruction = """
+        你是专业的高效任务拆解助手。请将用户的目标拆解为 4 到 5 条具体、可执行的待办步骤。
+        严格按以下格式逐行输出（每行一条，不要输出编号或多余解释）：
+        步骤标题｜一句话执行要点
+        """
+        let userContent = "请拆解任务：\(text)"
+
+        if let aiOutput = await LLMInferenceService.shared.generateCustomTask(
+            systemInstruction: systemInstruction,
+            userContent: userContent,
+            maxNewTokens: 220
+        ) {
+            let lines = aiOutput
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            var parsedSubtasks: [PlannedSubtask] = []
+            for rawLine in lines {
+                let cleanedLine = rawLine.replacingOccurrences(
+                    of: #"^[\d一二三四五六七八九十]+[\.、\s\)\）\-•]+"#,
+                    with: "",
+                    options: .regularExpression
+                ).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard cleanedLine.count >= 4 else { continue }
+
+                let parts = cleanedLine.components(separatedBy: CharacterSet(charactersIn: "｜|:："))
+                let title = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? cleanedLine
+                let detail = parts.count > 1 ? parts.dropFirst().joined(separator: "：").trimmingCharacters(in: .whitespacesAndNewlines) : nil
+                guard !title.isEmpty else { continue }
+                parsedSubtasks.append(PlannedSubtask(title: title, detail: detail, type: .general))
+            }
+
+            if parsedSubtasks.count >= 2 {
+                return TaskPlanningPlan(
+                    topic: basePlan?.icon == "list.bullet.clipboard.fill" ? "\(cleanTopic) AI 规划方案" : (basePlan?.topic ?? "\(cleanTopic) AI 规划方案"),
+                    icon: basePlan?.icon ?? "sparkles",
+                    summary: "✨ 已通过端侧 AI 模型为你定制「\(cleanTopic)」的 \(parsedSubtasks.count) 步执行清单：",
+                    subtasks: Array(parsedSubtasks.prefix(6))
+                )
+            }
+        }
+
+        return basePlan
+    }
+
     /// 批量保存勾选的子任务至 SwiftData 模型
     func savePlanToTodos(plan: TaskPlanningPlan, context: ModelContext) -> Int {
         let selected = plan.subtasks.filter { $0.isSelected }

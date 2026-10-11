@@ -387,6 +387,8 @@ struct TodoShareSheet: View {
             return allTodos.filter { [.medication, .housework, .charging, .hydration].contains($0.type) }
         case .alert:
             return allTodos.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .data, .vehicleCare].contains($0.type) }
+        case .parenting:
+            return allTodos.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }
         }
     }
 
@@ -415,6 +417,8 @@ struct TodoShareSheet: View {
             return "生活作息备忘"
         case .alert:
             return "重要提醒与预警"
+        case .parenting:
+            return "亲子育儿清单"
         }
     }
 

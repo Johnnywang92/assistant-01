@@ -1,6 +1,8 @@
 import AssistantCore
+import PhotosUI
 import SwiftData
 import SwiftUI
+import UIKit
 
 /// 待办事项全功能编辑面板
 struct EditTodoSheet: View {
@@ -23,6 +25,13 @@ struct EditTodoSheet: View {
     @State private var customIntervalDays: Int
     @State private var isDone: Bool
 
+    @State private var qrCodePayload: String?
+    @State private var qrCodeImageData: Data?
+    @State private var attachmentImageData: Data?
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var isRecognizingImage: Bool = false
+    @State private var showingQRPreview: Bool = false
+
     @State private var showingDeleteConfirmation: Bool = false
 
     init(item: TodoItem) {
@@ -31,7 +40,7 @@ struct EditTodoSheet: View {
         self._type = State(initialValue: item.type)
         self._detail = State(initialValue: item.detail ?? "")
         self._pickupCode = State(initialValue: item.pickupCode ?? "")
-        self._station = State(initialValue: item.station ?? item.location ?? "")
+        self._station = State(initialValue: item.displayLocationText ?? "")
         self._courier = State(initialValue: item.courier ?? "")
         self._hasDueDate = State(initialValue: item.dueAt != nil)
         self._dueDate = State(initialValue: item.dueAt ?? (Calendar.current.date(byAdding: .hour, value: 2, to: .now) ?? .now))
@@ -41,6 +50,9 @@ struct EditTodoSheet: View {
         self._recurrenceRule = State(initialValue: rule)
         self._customIntervalDays = State(initialValue: item.recurrenceIntervalDays > 0 ? item.recurrenceIntervalDays : (rule.dayInterval() > 0 ? rule.dayInterval() : 3))
         self._isDone = State(initialValue: item.status == .done)
+        self._qrCodePayload = State(initialValue: item.qrCodePayload)
+        self._qrCodeImageData = State(initialValue: item.qrCodeImageData)
+        self._attachmentImageData = State(initialValue: item.attachmentImageData)
     }
 
     var body: some View {
@@ -56,7 +68,7 @@ struct EditTodoSheet: View {
                         }
                     }
 
-                    // 快递模式专属输入字段
+                    // 快递模式专属输入字段 vs 日程/出行地点字段
                     if type == .parcel {
                         TextField("取件码（如：3-2-104 或 5821）", text: $pickupCode)
                             .font(.body.monospaced())
@@ -71,16 +83,108 @@ struct EditTodoSheet: View {
                         TextField("寄件方式/网点（选填，如：顺丰上门取件、驿站代寄）", text: $station)
 
                         TextField("寄件快递（选填，如：顺丰速运、京东生鲜）", text: $courier)
+                    } else {
+                        HStack(spacing: 8) {
+                            Image(systemName: "mappin.and.ellipse")
+                                .foregroundStyle(.secondary)
+                            TextField("场馆 / 地点（选填，如：西岸国际会展中心）", text: $station)
+                        }
                     }
                 }
 
-                // 2. 详情与备注说明
+                // 2. 预约二维码与凭证截图
+                Section("预约二维码与图片凭证") {
+                    if qrCodeImageData != nil || (qrCodePayload != nil && !(qrCodePayload?.isEmpty ?? true)) || attachmentImageData != nil {
+                        HStack(spacing: 14) {
+                            if let qrData = qrCodeImageData, let uiImg = UIImage(data: qrData) {
+                                Image(uiImage: uiImg)
+                                    .interpolation(.none)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 68, height: 68)
+                                    .padding(4)
+                                    .background(Color.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+                            } else if let payload = qrCodePayload, let genImg = QRCodeService.generateQRCode(from: payload, targetSize: 200) {
+                                Image(uiImage: genImg)
+                                    .interpolation(.none)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 68, height: 68)
+                                    .padding(4)
+                                    .background(Color.white)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else if let attachData = attachmentImageData, let uiImg = UIImage(data: attachData) {
+                                Image(uiImage: uiImg)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 68, height: 68)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(qrCodeImageData != nil || qrCodePayload != nil ? "已关联预约核销二维码" : "已关联订单截图凭证")
+                                    .font(.subheadline.bold())
+                                if let code = qrCodePayload, !code.isEmpty {
+                                    Text("核销码：\(code)")
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                HStack(spacing: 10) {
+                                    Button {
+                                        showingQRPreview = true
+                                        Haptic.medium()
+                                    } label: {
+                                        Label("全屏亮码", systemImage: "qrcode.viewfinder")
+                                            .font(.caption.bold())
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.small)
+
+                                    Button(role: .destructive) {
+                                        qrCodePayload = nil
+                                        qrCodeImageData = nil
+                                        attachmentImageData = nil
+                                        Haptic.light()
+                                    } label: {
+                                        Text("移除")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        HStack {
+                            if isRecognizingImage {
+                                ProgressView()
+                                    .padding(.trailing, 4)
+                            }
+                            Label(
+                                qrCodeImageData != nil || attachmentImageData != nil ? "重新选择预约截图并提取" : "从相册选择预约截图 / 二维码",
+                                systemImage: "photo.badge.plus"
+                            )
+                        }
+                    }
+                    .onChange(of: selectedPhotoItem) { _, newItem in
+                        guard let newItem else { return }
+                        Task { await loadAndRecognizePhoto(newItem) }
+                    }
+                }
+
+                // 3. 详情与备注说明
                 Section("详情与备注") {
                     TextField("补充备注/详情说明（选填）", text: $detail, axis: .vertical)
                         .lineLimit(2...5)
                 }
 
-                // 3. 提醒时间与重复周期
+                // 4. 提醒时间与重复周期
                 Section("提醒与时间") {
                     Toggle("设置截止/提醒时间", isOn: $hasDueDate)
                         .onChange(of: hasDueDate) { _, enabled in
@@ -117,12 +221,12 @@ struct EditTodoSheet: View {
                     }
                 }
 
-                // 4. 状态切换
+                // 5. 状态切换
                 Section("完成状态") {
                     Toggle("标记为已完成", isOn: $isDone)
                 }
 
-                // 5. 危险操作区
+                // 6. 危险操作区
                 Section {
                     Button(role: .destructive) {
                         showingDeleteConfirmation = true
@@ -148,6 +252,17 @@ struct EditTodoSheet: View {
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+            .sheet(isPresented: $showingQRPreview) {
+                TodoQRCodeQuickSheet(
+                    title: title,
+                    locationText: station.isEmpty ? nil : station,
+                    dueAt: hasDueDate ? dueDate : nil,
+                    detail: detail.isEmpty ? nil : detail,
+                    qrCodePayload: qrCodePayload,
+                    qrCodeImageData: qrCodeImageData,
+                    attachmentImageData: attachmentImageData
+                )
+            }
             .alert("确定删除该事项？", isPresented: $showingDeleteConfirmation) {
                 Button("删除", role: .destructive) {
                     deleteItem()
@@ -155,6 +270,37 @@ struct EditTodoSheet: View {
                 Button("取消", role: .cancel) {}
             } message: {
                 Text("删除后将无法恢复。")
+            }
+        }
+    }
+
+    private func loadAndRecognizePhoto(_ pickerItem: PhotosPickerItem) async {
+        await MainActor.run { isRecognizingImage = true }
+        defer { Task { @MainActor in isRecognizingImage = false } }
+        guard let data = try? await pickerItem.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else { return }
+
+        if let recognized = try? await OCRService.shared.recognizeTodo(from: image) {
+            await MainActor.run {
+                if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    title = recognized.title
+                }
+                if station.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   let loc = recognized.location ?? recognized.station {
+                    station = loc
+                }
+                if let recognizedDue = recognized.dueAt, !hasDueDate {
+                    hasDueDate = true
+                    dueDate = recognizedDue
+                }
+                if detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   let recDetail = recognized.detail {
+                    detail = recDetail
+                }
+                qrCodePayload = recognized.qrCodePayload
+                qrCodeImageData = recognized.qrCodeImageData
+                attachmentImageData = recognized.attachmentImageData
+                Haptic.success()
             }
         }
     }
@@ -177,6 +323,9 @@ struct EditTodoSheet: View {
         item.reminderOverrideAt = nil
         item.recurrenceRule = recurrenceRule
         item.recurrenceIntervalDays = recurrenceRule == .custom ? customIntervalDays : recurrenceRule.dayInterval(customDays: customIntervalDays)
+        item.qrCodePayload = qrCodePayload
+        item.qrCodeImageData = qrCodeImageData
+        item.attachmentImageData = attachmentImageData
 
         let wasNotDone = (item.status != .done)
         if isDone && wasNotDone {
@@ -201,5 +350,252 @@ struct EditTodoSheet: View {
         try? context.save()
         Haptic.warning()
         dismiss()
+    }
+}
+
+// MARK: - 预约二维码 / 门票凭证一键极速亮码弹窗
+
+struct TodoQRCodeQuickSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let title: String
+    let locationText: String?
+    let dueAt: Date?
+    let detail: String?
+    let qrCodePayload: String?
+    let qrCodeImageData: Data?
+    let attachmentImageData: Data?
+
+    @State private var displayMode: Int = 0 // 0: 预约二维码, 1: 原图凭证
+    @State private var previousBrightness: CGFloat = UIScreen.main.brightness
+    @State private var isCopiedCode: Bool = false
+    @State private var isCopiedLocation: Bool = false
+
+    init(item: TodoItem) {
+        self.title = item.displayConciseTitle
+        self.locationText = item.displayLocationText
+        self.dueAt = item.dueAt
+        self.detail = item.displayConciseDetail
+        self.qrCodePayload = item.qrCodePayload
+        self.qrCodeImageData = item.qrCodeImageData
+        self.attachmentImageData = item.attachmentImageData
+        let hasQR = item.qrCodeImageData != nil || (item.qrCodePayload != nil && !(item.qrCodePayload?.isEmpty ?? true))
+        self._displayMode = State(initialValue: hasQR ? 0 : 1)
+    }
+
+    init(
+        title: String,
+        locationText: String? = nil,
+        dueAt: Date? = nil,
+        detail: String? = nil,
+        qrCodePayload: String? = nil,
+        qrCodeImageData: Data? = nil,
+        attachmentImageData: Data? = nil
+    ) {
+        self.title = title
+        self.locationText = locationText
+        self.dueAt = dueAt
+        self.detail = detail
+        self.qrCodePayload = qrCodePayload
+        self.qrCodeImageData = qrCodeImageData
+        self.attachmentImageData = attachmentImageData
+        let hasQR = qrCodeImageData != nil || (qrCodePayload != nil && !(qrCodePayload?.isEmpty ?? true))
+        self._displayMode = State(initialValue: hasQR ? 0 : 1)
+    }
+
+    private var hasBothQRAndOriginal: Bool {
+        (qrCodeImageData != nil || (qrCodePayload != nil && !(qrCodePayload?.isEmpty ?? true))) && attachmentImageData != nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 18) {
+                    // 1. 顶部模式切换（核销二维码 vs 完整原图）
+                    if hasBothQRAndOriginal {
+                        Picker("展示方式", selection: $displayMode) {
+                            Text("预约核销二维码").tag(0)
+                            Text("查看原图凭证").tag(1)
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal)
+                    }
+
+                    // 2. 票券式高对比度核销卡片
+                    VStack(spacing: 16) {
+                        // 事项标题与时间地点头部
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "ticket.fill")
+                                    .foregroundStyle(.blue)
+                                Text("预约 / 入场凭证")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.blue)
+                                Spacer()
+                                HStack(spacing: 4) {
+                                    Image(systemName: "sun.max.fill")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                    Text("已提亮屏幕")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            Text(title)
+                                .font(.title3.bold())
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            if let dueAt {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "calendar.badge.clock")
+                                        .foregroundStyle(.orange)
+                                    Text(dueAt.formatted(date: .complete, time: .shortened))
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                }
+                            }
+
+                            if let loc = locationText, !loc.isEmpty {
+                                HStack(alignment: .top, spacing: 6) {
+                                    Image(systemName: "mappin.and.ellipse")
+                                        .foregroundStyle(.red)
+                                        .padding(.top, 2)
+                                    Text(loc)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                    Spacer(minLength: 4)
+                                    Button {
+                                        UIPasteboard.general.string = loc
+                                        Haptic.light()
+                                        withAnimation { isCopiedLocation = true }
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                                            withAnimation { isCopiedLocation = false }
+                                        }
+                                    } label: {
+                                        Text(isCopiedLocation ? "已复制" : "复制地址")
+                                            .font(.caption2.bold())
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Capsule().fill(Color.blue.opacity(0.12)))
+                                            .foregroundStyle(.blue)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Divider()
+
+                        // 核心二维码 / 原图展示区
+                        if displayMode == 0 {
+                            VStack(spacing: 12) {
+                                if let qrData = qrCodeImageData, let croppedUIImage = UIImage(data: qrData) {
+                                    Image(uiImage: croppedUIImage)
+                                        .interpolation(.none)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 250, height: 250)
+                                        .padding(14)
+                                        .background(Color.white)
+                                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+                                } else if let payload = qrCodePayload,
+                                          let generatedImage = QRCodeService.generateQRCode(from: payload, targetSize: 520) {
+                                    Image(uiImage: generatedImage)
+                                        .interpolation(.none)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 250, height: 250)
+                                        .padding(14)
+                                        .background(Color.white)
+                                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                        .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
+                                }
+
+                                if let payload = qrCodePayload, !payload.isEmpty {
+                                    HStack(spacing: 8) {
+                                        Text(payload)
+                                            .font(.callout.monospaced().bold())
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(1)
+
+                                        Button {
+                                            UIPasteboard.general.string = payload
+                                            Haptic.light()
+                                            withAnimation { isCopiedCode = true }
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                                                withAnimation { isCopiedCode = false }
+                                            }
+                                        } label: {
+                                            HStack(spacing: 3) {
+                                                Image(systemName: isCopiedCode ? "checkmark" : "doc.on.doc")
+                                                Text(isCopiedCode ? "已复制" : "复制码号")
+                                            }
+                                            .font(.caption2.bold())
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 6)
+                        } else if let attachData = attachmentImageData, let fullImage = UIImage(data: attachData) {
+                            Image(uiImage: fullImage)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+
+                        // 底部附加信息（活动时间段、票种、实名信息等）
+                        if let detail, !detail.isEmpty {
+                            Divider()
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("预约详情")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.secondary)
+                                Text(detail)
+                                    .font(.footnote)
+                                    .foregroundStyle(.primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .padding(20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color(.secondarySystemGroupedBackground))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
+                    .padding(.horizontal)
+                }
+                .padding(.vertical, 12)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("预约二维码凭证")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+            .onAppear {
+                previousBrightness = UIScreen.main.brightness
+                if UIScreen.main.brightness < 0.9 {
+                    UIScreen.main.brightness = 0.95
+                }
+            }
+            .onDisappear {
+                UIScreen.main.brightness = previousBrightness
+            }
+        }
     }
 }

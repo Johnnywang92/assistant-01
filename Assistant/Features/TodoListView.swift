@@ -1,4 +1,5 @@
 import AssistantCore
+import PhotosUI
 import SwiftData
 import SwiftUI
 
@@ -1533,6 +1534,7 @@ struct TodoRow: View {
     @State private var ringOpacity: Double = 0.0
     @State private var isShowingShareSheet: Bool = false
     @State private var isShowingEditSheet: Bool = false
+    @State private var isShowingQRCodeSheet: Bool = false
 
     private var isEffectivelyDone: Bool {
         item.status == .done || isAnimatingCompletion
@@ -1733,14 +1735,15 @@ struct TodoRow: View {
                             .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
                     }
 
-                    if let detail = item.detail, !detail.isEmpty {
+                    if let detail = item.displayConciseDetail, !detail.isEmpty {
                         Text(detail)
-                            .font(.subheadline)
+                            .font(.footnote)
                             .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
-                            .padding(.leading, seniorManager.isSeniorModeEnabled ? 36 : 32)
+                            .lineLimit(2)
+                            .lineSpacing(2)
                     }
                 } else {
-                    HStack(spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
                                 .fill(typeColor.opacity(isEffectivelyDone ? 0.08 : 0.16))
@@ -1749,18 +1752,38 @@ struct TodoRow: View {
                                 .font(.caption.bold())
                                 .foregroundStyle(isEffectivelyDone ? .secondary : typeColor)
                         }
+                        .padding(.top, 1)
 
-                        Text(item.title)
-                            .font(.body.weight(isEffectivelyDone ? .regular : (seniorManager.isHighContrastEnabled ? .bold : .medium)))
+                        Text(item.displayConciseTitle)
+                            .font(.body.weight(isEffectivelyDone ? .regular : (seniorManager.isHighContrastEnabled ? .bold : .semibold)))
                             .strikethrough(isEffectivelyDone)
                             .foregroundStyle(isEffectivelyDone ? .secondary : .primary)
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Spacer(minLength: 6)
+
+                        rowTrailingButtons
                     }
 
-                    if let detail = item.detail, !detail.isEmpty {
+                    if let locText = item.displayLocationText, !locText.isEmpty {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Image(systemName: "mappin.and.ellipse")
+                                .font(.caption2)
+                                .foregroundStyle(.red.opacity(0.85))
+                            Text(locText)
+                                .font(.caption)
+                                .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    if let detail = item.displayConciseDetail, !detail.isEmpty {
                         Text(detail)
-                            .font(.subheadline)
+                            .font(.footnote)
                             .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
-                            .padding(.leading, seniorManager.isSeniorModeEnabled ? 36 : 32)
+                            .lineLimit(2)
+                            .lineSpacing(3)
                     }
                 }
 
@@ -1768,10 +1791,15 @@ struct TodoRow: View {
                     if let due = item.dueAt {
                         HStack(spacing: 4) {
                             Image(systemName: "calendar.badge.clock")
-                            Text("截止: \(due.formatted(date: .numeric, time: .shortened))")
+                            Text(due.formatted(date: .numeric, time: .shortened))
                         }
                         .font(.caption2)
+                        .fixedSize(horizontal: true, vertical: false)
                         .foregroundStyle(due < .now && !isEffectivelyDone ? Color.red : (seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.7) : Color.secondary))
+                    } else {
+                        Text(item.createdAt, format: .relative(presentation: .named))
+                            .font(.caption2)
+                            .foregroundStyle(Color.primary.opacity(seniorManager.isHighContrastEnabled ? 0.65 : 0.4))
                     }
 
                     if item.isRecurring {
@@ -1780,6 +1808,7 @@ struct TodoRow: View {
                             Text(item.recurrenceSummaryText)
                         }
                         .font(.caption2.bold())
+                        .fixedSize(horizontal: true, vertical: false)
                         .foregroundStyle(isEffectivelyDone ? Color.secondary : Color.blue)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -1788,62 +1817,32 @@ struct TodoRow: View {
                         )
                     }
 
-                    Text(item.createdAt, format: .relative(presentation: .named))
-                        .font(.caption2)
-                        .foregroundStyle(Color.primary.opacity(seniorManager.isHighContrastEnabled ? 0.65 : 0.4))
+                    Spacer(minLength: 0)
+
+                    if item.type == .parcel || item.type == .returnParcel {
+                        rowTrailingButtons
+                    }
                 }
-                .padding(.leading, (item.type == .parcel || item.type == .returnParcel) ? 0 : (seniorManager.isSeniorModeEnabled ? 36 : 32))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture {
                 isShowingEditSheet = true
                 Haptic.light()
             }
-
-            Spacer(minLength: 4)
-
-            // 长辈关怀：专属一键清晰大声朗读按钮
-            if seniorManager.isVoiceBroadcastEnabled {
-                Button {
-                    let speechText: String = {
-                        if item.type == .parcel, let code = item.pickupCode {
-                            let station = item.location ?? item.station ?? ""
-                            return "快递取件码：\(code)，\(item.title)。\(station)"
-                        } else if item.type == .returnParcel {
-                            let codeStr = item.pickupCode.map { "，寄件码：\($0)" } ?? ""
-                            return "退货待办：\(item.title)\(codeStr)。\(item.detail ?? "")"
-                        } else {
-                            let detail = item.detail ?? ""
-                            return "\(item.title)。\(detail)"
-                        }
-                    }()
-
-                    if seniorManager.isSpeaking && seniorManager.currentSpeakingId == item.id.uuidString {
-                        seniorManager.stopSpeaking()
-                    } else {
-                        seniorManager.speakSenior(text: speechText, id: item.id.uuidString)
-                        Haptic.light()
-                    }
-                } label: {
-                    let isCurrentSpeaking = seniorManager.isSpeaking && seniorManager.currentSpeakingId == item.id.uuidString
-                    Image(systemName: isCurrentSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2")
-                        .font(seniorManager.isSeniorModeEnabled ? .title3.bold() : .caption)
-                        .foregroundStyle(isCurrentSpeaking ? Color.orange : (seniorManager.isSeniorModeEnabled ? Color.orange : Color.secondary.opacity(0.7)))
-                        .frame(width: seniorManager.isSeniorModeEnabled ? 42 : 28, height: seniorManager.isSeniorModeEnabled ? 42 : 28)
-                        .background(
-                            Circle()
-                                .fill(isCurrentSpeaking ? Color.orange.opacity(0.2) : (seniorManager.isSeniorModeEnabled ? Color.orange.opacity(0.12) : Color.clear))
-                        )
-                }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-            }
         }
         .opacity(isEffectivelyDone ? 0.6 : 1.0)
         .animation(.easeInOut(duration: 0.25), value: isEffectivelyDone)
         .animation(.easeInOut(duration: 0.2), value: item.status)
-        .padding(.vertical, 3)
+        .padding(.vertical, 5)
         .contextMenu {
+            if item.hasQRCodeOrTicket {
+                Button("出示预约二维码 / 凭证", systemImage: "qrcode.viewfinder") {
+                    isShowingQRCodeSheet = true
+                    Haptic.medium()
+                }
+            }
+
             Button("编辑事项", systemImage: "pencil") {
                 isShowingEditSheet = true
                 Haptic.light()
@@ -1892,6 +1891,9 @@ struct TodoRow: View {
                 isShowingShareSheet = true
                 Haptic.light()
             }
+        }
+        .sheet(isPresented: $isShowingQRCodeSheet) {
+            TodoQRCodeQuickSheet(item: item)
         }
         .sheet(isPresented: $isShowingShareSheet) {
             TodoShareSheet(
@@ -1950,6 +1952,65 @@ struct TodoRow: View {
         }
         .themedRow()
     }
+
+    @ViewBuilder
+    private var rowTrailingButtons: some View {
+        HStack(spacing: 6) {
+            if item.hasQRCodeOrTicket {
+                Button {
+                    isShowingQRCodeSheet = true
+                    Haptic.medium()
+                } label: {
+                    Image(systemName: item.hasQRCode ? "qrcode" : "photo")
+                        .font(seniorManager.isSeniorModeEnabled ? .title3.bold() : .subheadline.bold())
+                        .foregroundStyle(.blue)
+                        .frame(width: seniorManager.isSeniorModeEnabled ? 38 : 30, height: seniorManager.isSeniorModeEnabled ? 38 : 30)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.blue.opacity(0.12))
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("快速调出预约二维码")
+            }
+
+            if seniorManager.isVoiceBroadcastEnabled {
+                Button {
+                    let speechText: String = {
+                        if item.type == .parcel, let code = item.pickupCode {
+                            let station = item.location ?? item.station ?? ""
+                            return "快递取件码：\(code)，\(item.displayConciseTitle)。\(station)"
+                        } else if item.type == .returnParcel {
+                            let codeStr = item.pickupCode.map { "，寄件码：\($0)" } ?? ""
+                            return "退货待办：\(item.displayConciseTitle)\(codeStr)。\(item.displayConciseDetail ?? "")"
+                        } else {
+                            let detail = item.displayConciseDetail ?? ""
+                            return "\(item.displayConciseTitle)。\(detail)"
+                        }
+                    }()
+
+                    if seniorManager.isSpeaking && seniorManager.currentSpeakingId == item.id.uuidString {
+                        seniorManager.stopSpeaking()
+                    } else {
+                        seniorManager.speakSenior(text: speechText, id: item.id.uuidString)
+                        Haptic.light()
+                    }
+                } label: {
+                    let isCurrentSpeaking = seniorManager.isSpeaking && seniorManager.currentSpeakingId == item.id.uuidString
+                    Image(systemName: isCurrentSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2")
+                        .font(seniorManager.isSeniorModeEnabled ? .title3.bold() : .caption)
+                        .foregroundStyle(isCurrentSpeaking ? Color.orange : (seniorManager.isSeniorModeEnabled ? Color.orange : Color.secondary.opacity(0.7)))
+                        .frame(width: seniorManager.isSeniorModeEnabled ? 38 : 26, height: seniorManager.isSeniorModeEnabled ? 38 : 26)
+                        .background(
+                            Circle()
+                                .fill(isCurrentSpeaking ? Color.orange.opacity(0.2) : (seniorManager.isSeniorModeEnabled ? Color.orange.opacity(0.12) : Color.clear))
+                        )
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+            }
+        }
+    }
 }
 
 struct ReviewRow: View {
@@ -1997,7 +2058,7 @@ struct AddTodoSheet: View {
 
     let initialCategory: TodoFilterCategory
 
-    @State private var tab: Int = 0 // 0: 手动新建, 1: 智能识别导入
+    @State private var tab: Int = 0 // 0: 手动新建, 1: 短信/图片智能导入
     @State private var selectedCategory: TodoFilterCategory
 
     // 手动新建表单
@@ -2012,6 +2073,15 @@ struct AddTodoSheet: View {
     @State private var customIntervalDays: Int = 3
     @State private var pickupCode: String = ""
     @State private var station: String = ""
+
+    // 图片/预约截图识别状态
+    @State private var selectedPhotoItem: PhotosPickerItem? = nil
+    @State private var isRecognizingImage: Bool = false
+    @State private var imageRecognitionError: String? = nil
+    @State private var qrCodePayload: String? = nil
+    @State private var qrCodeImageData: Data? = nil
+    @State private var attachmentImageData: Data? = nil
+    @State private var showingQRPreviewInAdd: Bool = false
 
     // 出行前购票与文博景区预约确认项
     @State private var addCompanionTickets: Bool = false
@@ -2390,12 +2460,140 @@ struct AddTodoSheet: View {
                 Section {
                     Picker("添加模式", selection: $tab) {
                         Text("手动新建").tag(0)
-                        Text("短信/文本智能导入").tag(1)
+                        Text("短信/图片智能导入").tag(1)
                     }
                     .pickerStyle(.segmented)
                 }
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 2, leading: 2, bottom: 4, trailing: 2))
+
+                // 图片/预约截图识别与二维码提取区（手动新建与智能导入均支持）
+                Section {
+                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                        HStack(spacing: 10) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.blue.opacity(0.14))
+                                    .frame(width: 36, height: 36)
+                                if isRecognizingImage {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "photo.badge.plus")
+                                        .font(.body.bold())
+                                        .foregroundStyle(.blue)
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(isRecognizingImage ? "正在识别时间、地点与预约二维码…" : "从相册选择预约截图 / 门票 / 取件图")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.primary)
+                                    Text("自动提取事件名称、活动时间、场馆地址与核销二维码")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .onChange(of: selectedPhotoItem) { _, newItem in
+                            guard let newItem else { return }
+                            Task { await loadAndRecognizePhoto(newItem) }
+                        }
+
+                        if UIPasteboard.general.hasImages {
+                            Button {
+                                if let clipImg = UIPasteboard.general.image {
+                                    Task { await recognizeFromUIImage(clipImg) }
+                                }
+                            } label: {
+                                Label("识别剪贴板中的截图", systemImage: "doc.on.clipboard.fill")
+                                    .font(.subheadline)
+                            }
+                        }
+
+                        if let err = imageRecognitionError {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+
+                        // 已识别出的预约二维码与原图凭证预览卡片
+                        if qrCodeImageData != nil || (qrCodePayload != nil && !(qrCodePayload?.isEmpty ?? true)) || attachmentImageData != nil {
+                            HStack(spacing: 12) {
+                                if let qrData = qrCodeImageData, let uiImg = UIImage(data: qrData) {
+                                    Image(uiImage: uiImg)
+                                        .interpolation(.none)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 64, height: 64)
+                                        .padding(4)
+                                        .background(Color.white)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+                                } else if let payload = qrCodePayload, let genImg = QRCodeService.generateQRCode(from: payload, targetSize: 200) {
+                                    Image(uiImage: genImg)
+                                        .interpolation(.none)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 64, height: 64)
+                                        .padding(4)
+                                        .background(Color.white)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                } else if let attachData = attachmentImageData, let uiImg = UIImage(data: attachData) {
+                                    Image(uiImage: uiImg)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 64, height: 64)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "checkmark.seal.fill")
+                                            .foregroundStyle(.green)
+                                            .font(.caption)
+                                        Text(qrCodeImageData != nil || qrCodePayload != nil ? "已提取预约二维码" : "已关联截图凭证")
+                                            .font(.subheadline.bold())
+                                    }
+                                    if let payload = qrCodePayload, !payload.isEmpty {
+                                        Text("码号：\(payload)")
+                                            .font(.caption2.monospaced())
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    HStack(spacing: 8) {
+                                        Button {
+                                            showingQRPreviewInAdd = true
+                                            Haptic.light()
+                                        } label: {
+                                            Label("预览亮码", systemImage: "qrcode.viewfinder")
+                                                .font(.caption2.bold())
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.mini)
+
+                                        Button(role: .destructive) {
+                                            qrCodePayload = nil
+                                            qrCodeImageData = nil
+                                            attachmentImageData = nil
+                                        } label: {
+                                            Text("清除")
+                                                .font(.caption2)
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.mini)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    } header: {
+                        Text(tab == 1 ? "图片 / 预约截图识别" : "快捷识图建待办")
+                    }
 
                 if tab == 0 {
                     // 智能剪贴板侦测卡片（极简一键填入）
@@ -2477,7 +2675,7 @@ struct AddTodoSheet: View {
                     }
 
                     // 3. 待办内容填写与高频快捷胶囊
-                    Section("待办内容") {
+                    Section("待办内容与地点") {
                         TextField(contextualPlaceholder, text: $title)
 
                         // 常用快捷预设横向滑动标签
@@ -2509,7 +2707,7 @@ struct AddTodoSheet: View {
                             }
                         }
 
-                        // 快递/退货模式专属快捷输入字段
+                        // 快递/退货模式专属快捷输入字段 vs 日程场馆地点
                         if type == .parcel {
                             TextField("取件码（如：3-2-104 或 5821）", text: $pickupCode)
                                 .font(.body.monospaced())
@@ -2520,6 +2718,12 @@ struct AddTodoSheet: View {
                                 .font(.body.monospaced())
 
                             TextField("寄件方式/网点（选填，如：顺丰上门取件、驿站代寄）", text: $station)
+                        } else {
+                            HStack(spacing: 6) {
+                                Image(systemName: "mappin.and.ellipse")
+                                    .foregroundStyle(.red.opacity(0.8))
+                                TextField("场馆 / 地点（选填，如：西岸国际会展中心）", text: $station)
+                            }
                         }
                     }
 
@@ -2545,7 +2749,14 @@ struct AddTodoSheet: View {
                                 Stepper("提前 \(customRemindBeforeMinutes) 分钟", value: $customRemindBeforeMinutes, in: 1...10080, step: 5)
                             }
 
-                            if type == .travelBooking || title.contains("出差") || title.contains("旅行") || title.contains("旅游") || title.contains("度假") || title.contains("返乡") || title.contains("机票") || title.contains("车票") || title.contains("高铁") || title.contains("火车") || title.contains("博物馆") || title.contains("展览") || title.contains("景区") || title.contains("门票") || title.contains("故宫") || title.contains("国博") {
+                            if TravelTicketReminderManager.shouldSuggestCrossCityTickets(
+                                title: title,
+                                station: station,
+                                location: station,
+                                detail: detail,
+                                hasQRCodeOrTicket: qrCodeImageData != nil || qrCodePayload != nil || attachmentImageData != nil,
+                                type: type
+                            ) {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Toggle(isOn: $addCompanionTickets) {
                                         HStack(spacing: 5) {
@@ -2673,7 +2884,7 @@ struct AddTodoSheet: View {
                         TextEditor(text: $importText)
                             .frame(minHeight: 140)
                     } header: {
-                        Text("粘贴短信或聊天文本")
+                        Text("或粘贴短信 / 聊天文本")
                     } footer: {
                         Text("系统将自动识别取件码、驿站、重要账单并自动建档。可一次粘贴多条，用换行隔开。")
                     }
@@ -2709,8 +2920,81 @@ struct AddTodoSheet: View {
                     }
                 }
             }
+            .sheet(isPresented: $showingQRPreviewInAdd) {
+                TodoQRCodeQuickSheet(
+                    title: title.isEmpty ? "预约凭证预览" : title,
+                    locationText: station.isEmpty ? nil : station,
+                    dueAt: hasDueDate ? dueDate : nil,
+                    detail: detail.isEmpty ? nil : detail,
+                    qrCodePayload: qrCodePayload,
+                    qrCodeImageData: qrCodeImageData,
+                    attachmentImageData: attachmentImageData
+                )
+            }
             .onAppear {
                 checkClipboard()
+            }
+        }
+    }
+
+    private func loadAndRecognizePhoto(_ pickerItem: PhotosPickerItem) async {
+        await MainActor.run {
+            isRecognizingImage = true
+            imageRecognitionError = nil
+        }
+        guard let data = try? await pickerItem.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else {
+            await MainActor.run {
+                isRecognizingImage = false
+                imageRecognitionError = "无法读取所选图片，请重试"
+            }
+            return
+        }
+        await recognizeFromUIImage(image)
+    }
+
+    private func recognizeFromUIImage(_ image: UIImage) async {
+        await MainActor.run {
+            isRecognizingImage = true
+            imageRecognitionError = nil
+        }
+        do {
+            let result = try await OCRService.shared.recognizeTodo(from: image)
+            await MainActor.run {
+                isRecognizingImage = false
+                title = result.title
+                type = result.type
+                if result.type == .parcel || result.type == .returnParcel {
+                    selectedCategory = .parcel
+                } else {
+                    selectedCategory = .general
+                }
+                if let code = result.pickupCode, !code.isEmpty {
+                    pickupCode = code
+                }
+                if let loc = result.location ?? result.station, !loc.isEmpty {
+                    station = loc
+                }
+                if let recognizedDue = result.dueAt {
+                    hasDueDate = true
+                    dueDate = recognizedDue
+                    remindBeforeMinutes = 60
+                }
+                if let recDetail = result.detail, !recDetail.isEmpty {
+                    detail = recDetail
+                }
+                qrCodePayload = result.qrCodePayload
+                qrCodeImageData = result.qrCodeImageData
+                attachmentImageData = result.attachmentImageData
+                withAnimation {
+                    tab = 0
+                }
+                Haptic.success()
+            }
+        } catch {
+            await MainActor.run {
+                isRecognizingImage = false
+                imageRecognitionError = "图片识别出错：\(error.localizedDescription)"
             }
         }
     }
@@ -2739,7 +3023,10 @@ struct AddTodoSheet: View {
             sortOrder: minOrder - 1,
             recurrenceRuleRaw: recurrenceRule == .none ? nil : recurrenceRule.rawValue,
             recurrenceIntervalDays: recurrenceRule == .custom ? customIntervalDays : recurrenceRule.dayInterval(customDays: customIntervalDays),
-            remindBeforeMinutes: remindBeforeMinutes == -1 ? customRemindBeforeMinutes : remindBeforeMinutes
+            remindBeforeMinutes: remindBeforeMinutes == -1 ? customRemindBeforeMinutes : remindBeforeMinutes,
+            qrCodePayload: qrCodePayload,
+            qrCodeImageData: qrCodeImageData,
+            attachmentImageData: attachmentImageData
         )
         context.insert(item)
         TodoNotificationManager.shared.scheduleNotification(for: item)
