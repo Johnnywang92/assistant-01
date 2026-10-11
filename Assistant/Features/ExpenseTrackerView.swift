@@ -344,20 +344,22 @@ struct ExpenseTrackerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 14) {
-                        Button {
-                            showingReceiptScanner = true
-                        } label: {
-                            Image(systemName: "doc.viewfinder")
-                        }
-                        .accessibilityLabel("拍小票记账")
-
+                    Menu {
                         Button {
                             showingManualAddSheet = true
                         } label: {
-                            Image(systemName: "plus")
+                            Label("手动记一笔", systemImage: "pencil")
                         }
+
+                        Button {
+                            showingReceiptScanner = true
+                        } label: {
+                            Label("拍小票记账", systemImage: "doc.viewfinder")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
                     }
+                    .accessibilityLabel("新增记账")
                 }
             }
             .sheet(isPresented: $showingManualAddSheet) {

@@ -215,6 +215,15 @@ struct TodoListView: View {
                     } else {
                         Menu {
                             Button {
+                                showAddTodo = true
+                                Haptic.light()
+                            } label: {
+                                Label("新建待办", systemImage: "plus")
+                            }
+
+                            Divider()
+
+                            Button {
                                 router.activeSheet = .qrScanner
                                 Haptic.light()
                             } label: {
@@ -251,19 +260,10 @@ struct TodoListView: View {
                                 Label("更换背景与主题", systemImage: "paintpalette")
                             }
                         } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.body)
-                        }
-                        .accessibilityLabel("更多功能")
-
-                        Button {
-                            showAddTodo = true
-                            Haptic.light()
-                        } label: {
                             Image(systemName: "plus")
                                 .font(.body.weight(.semibold))
                         }
-                        .accessibilityLabel("新建待办")
+                        .accessibilityLabel("新增待办或更多功能")
                     }
                 }
             }
