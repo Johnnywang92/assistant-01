@@ -428,8 +428,8 @@ final class PeriodicReportManager: ObservableObject {
             let start = cal.date(from: DateComponents(year: year, month: 1, day: 1)) ?? cal.startOfDay(for: targetDate)
             let nextYear = cal.date(from: DateComponents(year: year + 1, month: 1, day: 1)) ?? targetDate
             let end = cal.date(byAdding: .second, value: -1, to: nextYear) ?? targetDate
-            let title = "(year)年 · 自然年报"
-            let sub = "(year)年1月1日 ~ (year)年12月31日"
+            let title = "\(year)年 · 自然年报"
+            let sub = "\(year)年1月1日 ~ \(year)年12月31日"
             return (start, end, title, sub)
 
         case .monthly:
