@@ -116,6 +116,29 @@ final class LifeEventTask {
     var isDone: Bool { statusRaw == "done" }
 }
 
+@Model
+final class LifeEventPerson {
+    var id: UUID
+    var projectID: UUID
+    var name: String
+    var role: String
+    var relationship: String
+    var phone: String
+    var responsibility: String
+    var side: String
+
+    init(projectID: UUID, name: String, role: String, relationship: String = "", phone: String = "", responsibility: String = "", side: String = "") {
+        self.id = UUID()
+        self.projectID = projectID
+        self.name = name
+        self.role = role
+        self.relationship = relationship
+        self.phone = phone
+        self.responsibility = responsibility
+        self.side = side
+    }
+}
+
 enum LifeEventTemplateFactory {
     @MainActor
     static func createProject(title: String, template: LifeEventTemplate, targetDate: Date, location: String?, budgetLimit: Double, in context: ModelContext) -> LifeEventProject {

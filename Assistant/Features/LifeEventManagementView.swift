@@ -132,6 +132,8 @@ struct LifeEventProjectDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Query private var stages: [LifeEventStage]
     @Query private var tasks: [LifeEventTask]
+    @Query private var people: [LifeEventPerson]
+    @State private var showAddPerson = false
     let project: LifeEventProject
 
     private var projectStages: [LifeEventStage] { stages.filter { $0.projectID == project.id }.sorted { $0.sortOrder < $1.sortOrder } }
@@ -167,9 +169,101 @@ struct LifeEventProjectDetailView: View {
                     }
                 }
             }
+            Section("人物与分工") {
+                if projectPeople.isEmpty {
+                    Text("添加双方父母、亲友或供应商，明确每个人负责的事情。")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                } else {
+                    ForEach(projectPeople) { person in
+                        LifeEventPersonRow(person: person)
+                    }
+                    .onDelete { offsets in
+                        for index in offsets { context.delete(projectPeople[index]) }
+                        try? context.save()
+                    }
+                }
+                Button("添加人物", systemImage: "person.badge.plus") { showAddPerson = true }
+            }
         }
         .navigationTitle("项目详情")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("添加人物", systemImage: "person.badge.plus") { showAddPerson = true }
+            }
+        }
+        .sheet(isPresented: $showAddPerson) {
+            LifeEventAddPersonView(projectID: project.id)
+        }
+    }
+
+    private var projectPeople: [LifeEventPerson] {
+        people.filter { $0.projectID == project.id }.sorted { $0.name < $1.name }
+    }
+}
+
+private struct LifeEventPersonRow: View {
+    let person: LifeEventPerson
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.title3).foregroundStyle(.pink)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(person.name).font(.subheadline.weight(.medium))
+                    if !person.role.isEmpty { Text(person.role).font(.caption).foregroundStyle(.secondary) }
+                }
+                if !person.responsibility.isEmpty {
+                    Text(person.responsibility).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                } else if !person.phone.isEmpty {
+                    Text(person.phone).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+        }
+    }
+}
+
+private struct LifeEventAddPersonView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    let projectID: UUID
+    @State private var name = ""
+    @State private var role = ""
+    @State private var relationship = ""
+    @State private var phone = ""
+    @State private var responsibility = ""
+    @State private var side = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("基本信息") {
+                    TextField("姓名", text: $name)
+                    TextField("角色，例如：伴郎、酒店经理", text: $role)
+                    TextField("关系，例如：男方父亲、朋友", text: $relationship)
+                    TextField("电话", text: $phone).keyboardType(.phonePad)
+                }
+                Section("分工") {
+                    TextField("负责事项", text: $responsibility, axis: .vertical)
+                    TextField("所属，例如：男方、女方、供应商", text: $side)
+                }
+            }
+            .navigationTitle("添加人物")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        context.insert(LifeEventPerson(projectID: projectID, name: name.trimmingCharacters(in: .whitespacesAndNewlines), role: role, relationship: relationship, phone: phone, responsibility: responsibility, side: side))
+                        try? context.save()
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
     }
 }
 

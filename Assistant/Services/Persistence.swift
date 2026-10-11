@@ -46,6 +46,7 @@ enum Persistence {
             ,LifeEventProject.self
             ,LifeEventStage.self
             ,LifeEventTask.self
+            ,LifeEventPerson.self
         ])
         // 存在 Application Support，覆盖安装（重签）不会丢失
         let config = ModelConfiguration(schema: schema)
