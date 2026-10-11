@@ -319,10 +319,11 @@ public final class LLMInferenceService: ObservableObject {
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
             queue: .main
-        ) { _ in
-            Task { @MainActor [weak self] in
-                guard let self, !self.isGenerating else { return }
-                await self.unloadLocalModel()
+        ) { [weak self] _ in
+            guard let service = self else { return }
+            Task { @MainActor [weak service] in
+                guard let service, !service.isGenerating else { return }
+                await service.unloadLocalModel()
             }
         }
         #endif
