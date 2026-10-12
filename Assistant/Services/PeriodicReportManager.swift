@@ -54,6 +54,9 @@ struct PeriodicReportData: Identifiable {
     let completedTodos: [TodoItem]
     let createdTodos: [TodoItem]
     let pendingTodos: [TodoItem]
+    let dueTodayTodos: [TodoItem]
+    let overdueTodos: [TodoItem]
+    let tomorrowTodos: [TodoItem]
     let completionRate: Double
     let parcelCount: Int
 
@@ -311,8 +314,24 @@ final class PeriodicReportManager: ObservableObject {
         // 在时间跨度内新创建的事项
         let createdInPeriod = allTodos.filter { $0.createdAt >= startDate && $0.createdAt <= endDate }
 
-        // 截止当前仍未完成的活跃事项
-        let pendingInPeriod = allTodos.filter { $0.status == .active }
+        // 当前仍未完成的活跃事项；日报只纳入今天真正需要处理的事项，避免远期活动拉低完成率。
+        let nextDayStart = cal.date(byAdding: .day, value: 1, to: startDate) ?? endDate
+        let dayAfterNextStart = cal.date(byAdding: .day, value: 2, to: startDate) ?? nextDayStart
+        let dueTodayTodos = allTodos.filter { todo in
+            guard todo.status == .active, let due = todo.dueAt else { return false }
+            return due >= startDate && due <= endDate
+        }
+        let overdueTodos = allTodos.filter { todo in
+            guard todo.status == .active, let due = todo.dueAt else { return false }
+            return due < startDate
+        }
+        let tomorrowTodos = allTodos.filter { todo in
+            guard todo.status == .active, let due = todo.dueAt else { return false }
+            return due >= nextDayStart && due < dayAfterNextStart
+        }
+        let pendingInPeriod = period == .daily
+            ? dueTodayTodos + overdueTodos
+            : allTodos.filter { $0.status == .active }
 
         let parcelCount = allTodos.filter { todo in
             (todo.type == .parcel || todo.type == .returnParcel) &&
@@ -320,7 +339,9 @@ final class PeriodicReportManager: ObservableObject {
              (todo.createdAt >= startDate && todo.createdAt <= endDate))
         }.count
 
-        let totalTargetCount = completedInPeriod.count + pendingInPeriod.count
+        let totalTargetCount = period == .daily
+            ? completedInPeriod.count + dueTodayTodos.count
+            : completedInPeriod.count + pendingInPeriod.count
         let completionRate = totalTargetCount > 0 ? Double(completedInPeriod.count) / Double(totalTargetCount) : (completedInPeriod.isEmpty ? 0.0 : 1.0)
 
         // 2. 查询消费支出账单
@@ -357,7 +378,8 @@ final class PeriodicReportManager: ObservableObject {
         }.count
 
         // 4. 下一周期前瞻 (在 endDate 之后最近 7 天内到期或未完成的待办)
-        let futureLimit = cal.date(byAdding: .day, value: period == .monthly ? 15 : 7, to: endDate) ?? endDate
+        let futureDays = period == .daily ? 3 : (period == .monthly ? 15 : 7)
+        let futureLimit = cal.date(byAdding: .day, value: futureDays, to: endDate) ?? endDate
         let upcomingTodos = allTodos.filter { todo in
             guard todo.status == .active, let due = todo.dueAt else { return false }
             return due > endDate && due <= futureLimit
@@ -386,6 +408,9 @@ final class PeriodicReportManager: ObservableObject {
             completedTodos: completedInPeriod,
             createdTodos: createdInPeriod,
             pendingTodos: pendingInPeriod,
+            dueTodayTodos: dueTodayTodos,
+            overdueTodos: overdueTodos,
+            tomorrowTodos: tomorrowTodos,
             completionRate: completionRate,
             parcelCount: parcelCount,
             totalExpense: totalExpense,

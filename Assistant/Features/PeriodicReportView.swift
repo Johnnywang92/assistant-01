@@ -39,6 +39,11 @@ struct PeriodicReportView: View {
                     // 3. 核心指标与成就总览大卡片
                     heroMetricsCard
 
+                    // 日报优先回答“今天还有什么要处理”
+                    if selectedPeriod == .daily {
+                        dailyActionSummaryCard
+                    }
+
                     // 4. AI 智能复盘解读卡片
                     smartSummaryCard
 
@@ -349,6 +354,60 @@ struct PeriodicReportView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var dailyActionSummaryCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("今天需要关注", systemImage: "exclamationmark.circle.fill")
+                .font(.subheadline.bold())
+
+            HStack(spacing: 8) {
+                actionMetric(title: "已逾期", count: reportData.overdueTodos.count, color: .red)
+                actionMetric(title: "今天到期", count: reportData.dueTodayTodos.count, color: .orange)
+                actionMetric(title: "明天到期", count: reportData.tomorrowTodos.count, color: .blue)
+            }
+
+            if let next = reportData.overdueTodos.first ?? reportData.dueTodayTodos.first ?? reportData.tomorrowTodos.first {
+                HStack(spacing: 8) {
+                    Image(systemName: next.type.icon)
+                        .foregroundStyle(.tint)
+                    Text(L10n.tr(next.title))
+                        .font(.subheadline)
+                        .lineLimit(1)
+                    Spacer()
+                    Text((reportData.overdueTodos.contains(where: { $0.id == next.id }) ? "尽快处理" : "优先安排"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("今天和明天没有临近截止事项，按当前节奏推进即可。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func actionMetric(title: String, count: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(count)")
+                .font(.title3.bold())
+                .foregroundStyle(color)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     // MARK: - 4. AI 智能复盘解读卡片

@@ -33,7 +33,7 @@ struct TodayBriefingView: View {
         let start = calendar.startOfDay(for: .now)
         // “今日安排”只展示逾期、今天和未来三天内的事项，避免十几天后的活动过早打扰。
         let horizon = calendar.date(byAdding: .day, value: 4, to: start) ?? .distantFuture
-        items
+        return items
             .filter { item in
                 guard item.status == .active else { return false }
                 guard let date = item.reminderOverrideAt ?? item.dueAt else { return true }
