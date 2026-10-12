@@ -22,15 +22,15 @@ public final class NavigationRouter: ObservableObject {
 
         public var title: String {
             switch self {
-            case .todos: return "待办"
-            case .lifeEvents: return "人生大事"
-            case .departure: return "出门防丢"
-            case .expenses: return "记账"
-            case .vault: return "生活档案"
-            case .passwords: return "密码箱"
-            case .documents: return "证件卡包"
-            case .memos: return "语音备忘"
-            case .settings: return "设置"
+            case .todos: return L10n.tr("待办")
+            case .lifeEvents: return L10n.tr("人生大事")
+            case .departure: return L10n.tr("出门防丢")
+            case .expenses: return L10n.tr("记账")
+            case .vault: return L10n.tr("生活档案")
+            case .passwords: return L10n.tr("密码箱")
+            case .documents: return L10n.tr("证件卡包")
+            case .memos: return L10n.tr("语音备忘")
+            case .settings: return L10n.tr("设置")
             }
         }
 
@@ -50,15 +50,15 @@ public final class NavigationRouter: ObservableObject {
 
         public var subtitle: String {
             switch self {
-            case .todos: return "日常事务、快递取件与待办催办"
-            case .lifeEvents: return "订婚、婚礼、乔迁、升学宴等长期项目"
-            case .departure: return "随身物品清点、防丢检查与口诀"
-            case .expenses: return "日常收支账本与统计分析"
-            case .vault: return "纪念日、运动、药物保健品等生活全档案"
-            case .passwords: return "高强度账号密码离线保险箱"
-            case .documents: return "身份证、护照、驾驶证重要卡包"
-            case .memos: return "离线随身录音、倍速回放与转写提取待办"
-            case .settings: return "主题壁纸、单手悬浮球与偏好设置"
+            case .todos: return L10n.tr("日常事务、快递取件与待办催办")
+            case .lifeEvents: return L10n.tr("订婚、婚礼、乔迁、升学宴等长期项目")
+            case .departure: return L10n.tr("随身物品清点、防丢检查与口诀")
+            case .expenses: return L10n.tr("日常收支账本与统计分析")
+            case .vault: return L10n.tr("纪念日、运动、药物保健品等生活全档案")
+            case .passwords: return L10n.tr("高强度账号密码离线保险箱")
+            case .documents: return L10n.tr("身份证、护照、驾驶证重要卡包")
+            case .memos: return L10n.tr("离线随身录音、倍速回放与转写提取待办")
+            case .settings: return L10n.tr("主题壁纸、单手悬浮球与偏好设置")
             }
         }
     }
@@ -81,9 +81,15 @@ public final class NavigationRouter: ObservableObject {
     @Published public var selectedTab: AppTab = .todos
     @Published public var activeSheet: ActiveSheet?
     @Published public var requestedFilter: String?
+    @Published public var focusedTodoID: UUID?
     @Published public var pendingImportPayload: TodoSharePayload?
 
     private init() {}
+
+    public func focusTodo(_ id: UUID) {
+        selectedTab = .todos
+        focusedTodoID = id
+    }
 
     /// 处理 URL Scheme 跳转 (assistant://...)
     public func handleURL(_ url: URL) {
@@ -155,36 +161,36 @@ public final class NavigationRouter: ObservableObject {
         let items: [UIApplicationShortcutItem] = [
             UIApplicationShortcutItem(
                 type: "assistant.action.voice",
-                localizedTitle: "语音对话",
-                localizedSubtitle: "快速唤起离线语音交互",
+                localizedTitle: L10n.tr("语音对话"),
+                localizedSubtitle: L10n.tr("快速唤起离线语音交互"),
                 icon: UIApplicationShortcutIcon(systemImageName: "waveform.circle.fill"),
                 userInfo: nil
             ),
             UIApplicationShortcutItem(
                 type: "assistant.action.add_todo",
-                localizedTitle: "新建待办",
-                localizedSubtitle: "快速记录日程备忘",
+                localizedTitle: L10n.tr("新建待办"),
+                localizedSubtitle: L10n.tr("快速记录日程备忘"),
                 icon: UIApplicationShortcutIcon(systemImageName: "plus.circle.fill"),
                 userInfo: nil
             ),
             UIApplicationShortcutItem(
                 type: "assistant.action.expense",
-                localizedTitle: "一句话记账",
-                localizedSubtitle: "语音或打字自动记账",
+                localizedTitle: L10n.tr("一句话记账"),
+                localizedSubtitle: L10n.tr("语音或打字自动记账"),
                 icon: UIApplicationShortcutIcon(systemImageName: "yensign.circle.fill"),
                 userInfo: nil
             ),
             UIApplicationShortcutItem(
                 type: "assistant.action.parcels",
-                localizedTitle: "待取快递",
-                localizedSubtitle: "快速查看全部取件码",
+                localizedTitle: L10n.tr("待取快递"),
+                localizedSubtitle: L10n.tr("快速查看全部取件码"),
                 icon: UIApplicationShortcutIcon(systemImageName: "shippingbox.fill"),
                 userInfo: nil
             ),
             UIApplicationShortcutItem(
                 type: "assistant.action.id_vault",
-                localizedTitle: "证件保险箱",
-                localizedSubtitle: "重要证照安全查阅",
+                localizedTitle: L10n.tr("证件保险箱"),
+                localizedSubtitle: L10n.tr("重要证照安全查阅"),
                 icon: UIApplicationShortcutIcon(systemImageName: "person.text.rectangle.fill"),
                 userInfo: nil
             )
@@ -228,6 +234,12 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let userInfo = notification.request.content.userInfo
+        if let type = userInfo["type"] as? String, type == "todo",
+           let idString = userInfo["todoId"] as? String,
+           let id = UUID(uuidString: idString) {
+            Task { @MainActor in NavigationRouter.shared.focusTodo(id) }
+        }
         completionHandler([.banner, .sound, .badge])
     }
 
@@ -244,6 +256,9 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
                 NavigationRouter.shared.activeSheet = .periodicReport
             }
         } else if let type = userInfo["type"] as? String, type == "todo" {
+            if let idString = userInfo["todoId"] as? String, let id = UUID(uuidString: idString) {
+                Task { @MainActor in NavigationRouter.shared.focusTodo(id) }
+            }
             let context = Persistence.shared.mainContext
             TodoNotificationManager.shared.handleNotificationResponse(response, context: context)
         }
