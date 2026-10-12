@@ -232,6 +232,24 @@ struct DepartureChecklistView: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                // 把当前清点项推上灵动岛与 Apple Watch 智能叠放，抬腕逐项确认
+                Button {
+                    LiveActivityService.endDepartureActivities()
+                    let sceneName = selectedScene.map { $0.displayName } ?? "全部物品"
+                    if LiveActivityService.startDepartureChecklist(
+                        sceneName: sceneName,
+                        items: filteredItems
+                    ) {
+                        Haptic.success()
+                    } else {
+                        Haptic.warning()
+                    }
+                } label: {
+                    Image(systemName: "platter.filled.top.iphone")
+                }
+                .accessibilityLabel("把出门清点推上灵动岛")
+            }
         }
         .sheet(isPresented: $showingAddSheet) {
             AddDepartureCheckItemSheet(defaultScene: selectedScene ?? .commute)

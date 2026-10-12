@@ -11,6 +11,12 @@ struct AssistantApp: App {
     @StateObject private var seniorManager = SeniorModeManager.shared
     @StateObject private var langManager = LanguageManager.shared
 
+    init() {
+        // 注册小组件/实时活动桥接钩子：AppIntent 在主应用进程（Siri、操作按钮、快捷指令）
+        // 执行时直连 SwiftData；扩展进程执行时走 App Group 指令队列。
+        WidgetBridge.appHook = WidgetSnapshotSyncController.shared
+    }
+
     private var isAppLocked: Bool {
         lockManager.isAppLockEnabled && lockManager.hasPasscode && lockManager.isLocked
     }
@@ -41,7 +47,11 @@ struct AssistantApp: App {
                 try? PasswordVaultCrypto.migrateLegacyRecords(context: Persistence.shared.mainContext)
                 router.registerDynamicShortcuts()
                 TodoNotificationManager.shared.registerCategories()
+                // 取件销号通知的「已取件 / 全部取齐」按钮，抬腕即可点
+                PickupCheckoutService.registerCategory()
                 TodoNotificationManager.shared.syncAllTodoNotifications(context: Persistence.shared.mainContext)
+                // 刷新桌面小组件/锁屏组件共享快照，并对账扩展侧产生的指令
+                WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext)
                 ExpiryReminder.schedule()
                 PeriodicReportManager.shared.scheduleNotifications()
             }
@@ -77,6 +87,9 @@ struct AssistantApp: App {
                     // 5. 执行对话记录超期自动滚动清理 (7天/30天自动保留)
                     DialogueHistoryManager.shared.cleanExpiredRecords(context: context)
 
+                    // 5.1 如果用户在 App 里手动勾掉了已上岛的包裹，同步撤掉手腕上的销号通知
+                    PickupCheckoutService.reconcile(context: context)
+
                     // 6. 前台低功耗单次位置采样，自动喂入常驻地点自主学习引擎
                     _ = await LocationReminderService.shared.requestSingleLocationSample(context: context)
 
@@ -88,9 +101,14 @@ struct AssistantApp: App {
 
                     // 9. 巡检查验固定周期支出并自动入账
                     RecurringExpenseManager.shared.processDueRecurringExpenses(in: context)
+
+                    // 10. 对账扩展侧（小组件/手表卡片）产生的指令并刷新共享快照
+                    WidgetSnapshotSyncController.shared.processPendingCommands(context: context)
                 }
             } else if phase == .background {
                 lockManager.appDidEnterBackground()
+                // 回后台前把最新数据写入共享快照，供桌面/锁屏组件读取
+                WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext)
             }
         }
     }

@@ -32,10 +32,17 @@ targets:
     platform: iOS
     sources:
       - Assistant
+      - WidgetShared
     dependencies:
       - package: AssistantCore
       - package: LlamaSwift
         product: LlamaSwift
+      - target: AssistantWidgetExtension
+    entitlements:
+      path: Assistant/Assistant.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.yifanwang.assistant01
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${BUNDLE_ID}
@@ -47,6 +54,8 @@ targets:
     info:
       path: Assistant/Info.plist
       properties:
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
         CFBundleDisplayName: 小助
         CFBundleDevelopmentRegion: zh-Hans
         CFBundleLocalizations:
@@ -101,10 +110,35 @@ targets:
         NSCalendarsUsageDescription: "需要日历权限以在今日安排中显示你的日程"
         NSCalendarsFullAccessUsageDescription: "需要完整日历权限以在今日安排中显示你的日程"
 
+  AssistantWidgetExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - WidgetShared
+      - AssistantWidgetExtension
+    entitlements:
+      path: AssistantWidgetExtension/AssistantWidgetExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.yifanwang.assistant01
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yifanwang.assistant01.widgets
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SKIP_INSTALL: "YES"
+    info:
+      path: AssistantWidgetExtension/Info.plist
+      properties:
+        CFBundleDisplayName: 小助小组件
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
 schemes:
   Assistant:
     build:
       targets:
         Assistant: all
+        AssistantWidgetExtension: all
     run:
       config: Debug

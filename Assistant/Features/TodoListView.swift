@@ -1964,6 +1964,8 @@ struct TodoRow: View {
                             ringOpacity = 0.0
                         }
                         try? context.save()
+                        // 同步桌面/锁屏组件快照（含技能练习的「今日已打卡」状态）
+                        WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
                     }
                 } else {
                     // 反选/恢复为未完成
@@ -2244,6 +2246,20 @@ struct TodoRow: View {
                 Button("出示预约二维码 / 凭证", systemImage: "qrcode.viewfinder") {
                     isShowingQRCodeSheet = true
                     Haptic.medium()
+                }
+            }
+
+            // 一键把取件码/行程倒计时推上灵动岛，并自动同步到 Apple Watch 智能叠放
+            if item.status == .active,
+               item.type == .parcel || item.type == .returnParcel || item.type == .travelBooking || item.type == .event {
+                Button("🏝️ 上灵动岛（同步手表）", systemImage: "platter.filled.top.iphone") {
+                    let started: Bool
+                    if item.type == .travelBooking || item.type == .event {
+                        started = LiveActivityService.startTravelActivity(for: item)
+                    } else {
+                        started = LiveActivityService.startPickupActivity(for: [item])
+                    }
+                    if started { Haptic.success() } else { Haptic.warning() }
                 }
             }
 

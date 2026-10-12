@@ -269,12 +269,19 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
                 NavigationRouter.shared.selectedTab = .todos
                 NavigationRouter.shared.activeSheet = .periodicReport
             }
+        } else if let type = userInfo["type"] as? String, type == "pickup" {
+            // 手腕/锁屏上点「已取件」：销号、推进到下一件或收起销号通知
+            let context = Persistence.shared.mainContext
+            PickupCheckoutService.handle(response, context: context)
+            WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
         } else if let type = userInfo["type"] as? String, type == "todo" {
             if let idString = userInfo["todoId"] as? String, let id = UUID(uuidString: idString) {
                 Task { @MainActor in NavigationRouter.shared.focusTodo(id) }
             }
             let context = Persistence.shared.mainContext
             TodoNotificationManager.shared.handleNotificationResponse(response, context: context)
+            // 通知快捷操作（完成/推迟）落库后同步刷新桌面组件共享快照
+            WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
         }
         completionHandler()
     }
