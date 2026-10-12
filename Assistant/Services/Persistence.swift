@@ -16,8 +16,94 @@ enum Persistence {
             .filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 
+    /// 主库文件路径（默认配置的 default.store）。供文件层维护（如密码迁移后的残留清理）使用。
+    static var storeURL: URL? {
+        guard let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return nil }
+        return directory.appendingPathComponent("default.store")
+    }
+
     static let shared: ModelContainer = {
-        let schema = Schema([
+        do {
+            return try openStore()
+        } catch {
+            // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
+            storedRecoveryError = Self.diagnose(openError: error)
+            let memSchema = Schema(AssistantSchemaV2.models)
+            if let memContainer = try? ModelContainer(for: memSchema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
+                return memContainer
+            }
+            fatalError("无法打开数据库或恢复页: \(error)")
+        }
+    }()
+
+    /// 带版本化迁移打开持久库。
+    /// 旧库（V1）经 lightweight 阶段自动升级到 V2；**任何失败都不动磁盘文件**，
+    /// 由调用方走恢复页导出原库。详见 `AssistantMigrationPlan`。
+    private static func openStore() throws -> ModelContainer {
+        let schema = Schema(AssistantSchemaV2.models)
+        let config = ModelConfiguration(schema: schema)
+        #if DEBUG
+        Self.assertSchemaCoverage()
+        #endif
+        return try ModelContainer(for: schema, migrationPlan: AssistantMigrationPlan.self, configurations: config)
+    }
+
+    /// 打开失败时生成可诊断的错误描述：附带库文件路径与体积，
+    /// 让恢复页能引导用户导出原文件，而不是只显示一句「打不开」。
+    private static func diagnose(openError: Error) -> String {
+        var lines: [String] = [openError.localizedDescription]
+        let files = storeFiles
+        if !files.isEmpty {
+            lines.append("数据库文件：")
+            for url in files {
+                let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+                lines.append("• \(url.lastPathComponent)（\(size / 1024) KB）")
+            }
+            lines.append("路径：\(files[0].deletingLastPathComponent().path)")
+        }
+        lines.append("原文件未被修改，可通过下方导出备份后重建数据库。")
+        return lines.joined(separator: "\n")
+    }
+
+    /// V1 的每个模型必须仍在 V2 中：轻量迁移只能加字段/加模型，
+    /// 删模型会让旧库升级后静默丢表。DEBUG 下断言，发布构建不增开销。
+    private static func assertSchemaCoverage() {
+        let v1 = Set(AssistantSchemaV1.models.map { String(describing: $0) })
+        let v2 = Set(AssistantSchemaV2.models.map { String(describing: $0) })
+        let missing = v1.subtracting(v2)
+        assert(missing.isEmpty, "V1 模型从 V2 消失，旧库升级会丢数据：\(missing.sorted())")
+    }
+}
+
+/// Schema V1：初始发布版本（2026-10-10 首个提交）的 13 个模型。
+/// 之后只做加法：新增字段带默认值、新增模型——因此 V1→V2 走 lightweight 迁移即可，
+/// 不需要自定义迁移阶段。**新增用户可见模型时只改 V2，不要动 V1。**
+enum AssistantSchemaV1: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        [
+            TodoItem.self,
+            RawMessage.self,
+            DataUsageRecord.self,
+            LearnedPlace.self,
+            LocationStaySample.self,
+            PeriodicHabit.self,
+            MedicationPlan.self,
+            SubscriptionItem.self,
+            ItemExpiryItem.self,
+            AnniversaryItem.self,
+            PasswordVaultItem.self,
+            IDDocumentItem.self,
+            ExpenseRecord.self
+        ]
+    }
+}
+
+/// Schema V2：当前版本。历次加法（车辆/收纳/对话/宠物/儿童/生活事件/技能路径等）后的全集。
+enum AssistantSchemaV2: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        [
             TodoItem.self,
             RawMessage.self,
             DataUsageRecord.self,
@@ -42,27 +128,34 @@ enum Persistence {
             ChildMilestoneRecord.self,
             ChildHealthVisitRecord.self,
             ChildVaccinationRecord.self,
-            LifeReminderAction.self
-            ,LifeEventProject.self
-            ,LifeEventStage.self
-            ,LifeEventTask.self
-            ,LifeEventPerson.self
-            ,LifeEventExpense.self
-            ,LifeEventGuest.self
-        ])
-        // 存在 Application Support，覆盖安装（重签）不会丢失
-        let config = ModelConfiguration(schema: schema)
-        do {
-            return try ModelContainer(for: schema, configurations: config)
-        } catch {
-            // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
-            storedRecoveryError = error.localizedDescription
-            if let memContainer = try? ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
-                return memContainer
-            }
-            fatalError("无法打开数据库或恢复页: \(error)")
-        }
-    }()
+            LifeReminderAction.self,
+            LifeEventProject.self,
+            LifeEventStage.self,
+            LifeEventTask.self,
+            LifeEventPerson.self,
+            LifeEventExpense.self,
+            LifeEventGuest.self,
+            OmniboxTransaction.self,
+            SkillPath.self,
+            SkillStage.self,
+            SkillPracticeLog.self
+        ]
+    }
+}
+
+/// 显式版本化迁移计划。**不要再回到「打不开就删库重建」**——
+/// 旧代码首次失败即删 default.store，用户数据直接蒸发；现在失败走恢复页导出原库。
+enum AssistantMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] {
+        [AssistantSchemaV1.self, AssistantSchemaV2.self]
+    }
+
+    static var stages: [MigrationStage] {
+        // V1→V2 全是「加字段（带默认值）+ 加模型」，系统 lightweight 迁移可完成。
+        // 若未来出现不兼容变更（删字段/改类型），在此插自定义阶段，
+        // 并把 V2 的该字段改回可选或提供默认值——不要静默丢数据。
+        [.lightweight(fromVersion: AssistantSchemaV1.self, toVersion: AssistantSchemaV2.self)]
+    }
 }
 
 enum AppSettings {

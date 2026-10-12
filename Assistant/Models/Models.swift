@@ -20,6 +20,7 @@ enum TodoType: String, Codable, CaseIterable, Hashable {
     case childMilestone   // 亲子育儿里程碑
     case childHealth      // 亲子育儿健康随访
     case pet              // 宠物照护
+    case skillLearning    // 技能学习路径的阶段任务与练习打卡
 
     var icon: String {
         switch self {
@@ -45,6 +46,7 @@ enum TodoType: String, Codable, CaseIterable, Hashable {
         case .childMilestone: "sparkles"
         case .childHealth: "cross.case.fill"
         case .pet: "pawprint.fill"
+        case .skillLearning: "book.fill"
         }
     }
 
@@ -72,6 +74,7 @@ enum TodoType: String, Codable, CaseIterable, Hashable {
         case .bill: "信用卡账单"
         case .event: "日程事项"
         case .data: "流量预警"
+        case .skillLearning: "技能学习"
         }
         return L10n.tr(raw)
     }
@@ -210,13 +213,23 @@ final class TodoItem {
     /// 关联的完整订单/预约截图凭证数据
     @Attribute(.externalStorage)
     var attachmentImageData: Data?
+    /// 归属的学习路径 ID（软关联，旧数据为 nil）
+    var skillPathID: UUID?
+    /// 归属的学习阶段序号（仅当 skillPathID 非空时有效）
+    var skillStageIndex: Int = 0
+    /// 是否为学习路径中的周期性练习打卡任务
+    var isSkillPractice: Bool = false
+    /// 该条打卡的预估投入分钟数
+    var skillPracticeMinutes: Int = 0
 
     init(type: TodoType, status: TodoStatus = .active, title: String, detail: String? = nil,
          pickupCode: String? = nil, courier: String? = nil, station: String? = nil, location: String? = nil,
          dueAt: Date? = nil, sourceText: String? = nil, sortOrder: Int = 0,
          recurrenceRuleRaw: String? = nil, recurrenceIntervalDays: Int = 0,
          remindBeforeMinutes: Int = 0,
-         qrCodePayload: String? = nil, qrCodeImageData: Data? = nil, attachmentImageData: Data? = nil) {
+         qrCodePayload: String? = nil, qrCodeImageData: Data? = nil, attachmentImageData: Data? = nil,
+         skillPathID: UUID? = nil, skillStageIndex: Int = 0,
+         isSkillPractice: Bool = false, skillPracticeMinutes: Int = 0) {
         self.id = UUID()
         self.typeRaw = type.rawValue
         self.statusRaw = status.rawValue
@@ -236,6 +249,10 @@ final class TodoItem {
         self.qrCodePayload = qrCodePayload
         self.qrCodeImageData = qrCodeImageData
         self.attachmentImageData = attachmentImageData
+        self.skillPathID = skillPathID
+        self.skillStageIndex = skillStageIndex
+        self.isSkillPractice = isSkillPractice
+        self.skillPracticeMinutes = skillPracticeMinutes
     }
 
     /// 是否包含可快速调出的预约二维码或图片凭证
@@ -340,6 +357,18 @@ final class TodoItem {
         self.status = .done
         TodoNotificationManager.shared.cancelNotification(for: self.id)
 
+        // 学习路径的练习打卡：写一条流水，供连续天数与投入时长统计重算
+        if isSkillPractice, let pathID = skillPathID {
+            context.insert(
+                SkillPracticeLog(
+                    pathID: pathID,
+                    stageIndex: skillStageIndex,
+                    practicedAt: .now,
+                    minutes: skillPracticeMinutes
+                )
+            )
+        }
+
         guard isRecurring else { return nil }
 
         let nextDue = nextRecurringDueDate(from: .now)
@@ -357,7 +386,12 @@ final class TodoItem {
             sortOrder: self.sortOrder,
             recurrenceRuleRaw: self.recurrenceRuleRaw,
             recurrenceIntervalDays: self.recurrenceIntervalDays,
-            remindBeforeMinutes: self.remindBeforeMinutes
+            remindBeforeMinutes: self.remindBeforeMinutes,
+            // 学习路径关联必须随下一期一起复制，否则打卡一次后新待办会脱离原路径
+            skillPathID: self.skillPathID,
+            skillStageIndex: self.skillStageIndex,
+            isSkillPractice: self.isSkillPractice,
+            skillPracticeMinutes: self.skillPracticeMinutes
         )
         context.insert(nextItem)
         TodoNotificationManager.shared.scheduleNotification(for: nextItem)
