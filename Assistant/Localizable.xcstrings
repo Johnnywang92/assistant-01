@@ -1432,6 +1432,16 @@
         }
       }
     },
+    "%@ · %lld 分钟" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$lld 分钟"
+          }
+        }
+      }
+    },
     "%@ · ¥%@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1773,6 +1783,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@，%lld 项"
+          }
+        }
+      }
+    },
+    "%@，进度 %lld%%，连续打卡 %lld 天" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@，进度 %2$lld%%，连续打卡 %3$lld 天"
           }
         }
       }
@@ -2373,6 +2393,16 @@
     "%lld 笔" : {
 
     },
+    "%lld 阶段 · %lld 周" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 阶段 · %2$lld 周"
+          }
+        }
+      }
+    },
     "%lld 项待办" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2458,6 +2488,16 @@
         }
       }
     },
+    "%lld. %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld. %2$@"
+          }
+        }
+      }
+    },
     "%lld/%lld" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2521,6 +2561,9 @@
           }
         }
       }
+    },
+    "• 偏好设置: %lld 项（名称/语言/背景/预算/报告推送等）" : {
+
     },
     "• 原始消息: %@ | 位置采样: %@" : {
       "extractionState" : "manual",
@@ -2671,6 +2714,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "• 原始消息: %lld | 位置采样: %lld"
+          }
+        }
+      }
+    },
+    "• 学习路径: %lld 条 | 阶段: %lld | 打卡: %lld 次" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "• 学习路径: %1$lld 条 | 阶段: %2$lld | 打卡: %3$lld 次"
           }
         }
       }
@@ -10707,6 +10760,9 @@
         }
       }
     },
+    "今日练习" : {
+
+    },
     "今晚" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11559,6 +11615,9 @@
           }
         }
       }
+    },
+    "例如：Python、英语、马拉松" : {
+
     },
     "例如：共2件、防尘袋包装、密码是1234" : {
       "extractionState" : "manual",
@@ -13041,6 +13100,9 @@
           }
         }
       }
+    },
+    "共 %lld 个阶段，当前展开第一阶段" : {
+
     },
     "共 %lld 类别" : {
       "extractionState" : "manual",
@@ -21256,6 +21318,9 @@
         }
       }
     },
+    "学习成长" : {
+
+    },
     "学习规则：相距 300 米内的漂移点自动合并并解析街道/商圈名称；晚间、清晨或周末高频驻留自动识别为「家」，工作日白天高频驻留自动识别为「公司」。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21272,6 +21337,18 @@
           }
         }
       }
+    },
+    "学习路径" : {
+
+    },
+    "学习路径已开启" : {
+
+    },
+    "学习路径把一项技能拆成四个阶段，先只展开当前阶段；通关后自动解锁下一阶段。练习打卡是重复待办，每天会提醒。" : {
+
+    },
+    "学什么" : {
+
     },
     "学生" : {
       "extractionState" : "manual",
@@ -24923,6 +25000,9 @@
         }
       }
     },
+    "已完成与已暂停" : {
+
+    },
     "已完成事项" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -25061,6 +25141,9 @@
           }
         }
       }
+    },
+    "已开启学习路径" : {
+
     },
     "已开启语音出声朗读，之后回答时我会为你清晰读出来。" : {
       "extractionState" : "manual",
@@ -25956,6 +26039,9 @@
           }
         }
       }
+    },
+    "已通关" : {
+
     },
     "已逾期" : {
       "extractionState" : "manual",
@@ -26891,6 +26977,12 @@
           }
         }
       }
+    },
+    "开启学习路径" : {
+
+    },
+    "开启学习路径，写入第一阶段任务" : {
+
     },
     "开启展示「记所想，助所行」双语标语与扫码导入角标" : {
       "extractionState" : "manual",
@@ -27852,6 +27944,12 @@
           }
         }
       }
+    },
+    "当前阶段任务" : {
+
+    },
+    "当前阶段还没有任务" : {
+
     },
     "当标记为此事项完成时，系统将自动按「%@」生成下一期事项。" : {
       "extractionState" : "manual",
@@ -29123,6 +29221,9 @@
         }
       }
     },
+    "想学吉他、Python、英语或健身？说一句「我想学 Python，每天半小时」就能自动拆出分阶段的练习计划。" : {
+
+    },
     "想记一笔什么？例如：咖啡 18 元" : {
 
     },
@@ -29891,6 +29992,9 @@
         }
       }
     },
+    "手动新建一条" : {
+
+    },
     "手动添加待办" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30475,6 +30579,9 @@
         }
       }
     },
+    "投入与周期" : {
+
+    },
     "折叠雨伞" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30661,6 +30768,9 @@
           }
         }
       }
+    },
+    "拆解预览" : {
+
     },
     "拍一张" : {
       "extractionState" : "manual",
@@ -33362,6 +33472,9 @@
           }
         }
       }
+    },
+    "新建学习路径" : {
+
     },
     "新建待办" : {
       "extractionState" : "manual",
@@ -36272,6 +36385,9 @@
         }
       }
     },
+    "未解锁" : {
+
+    },
     "未设截止时间" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -36404,6 +36520,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "本人身份证"
+          }
+        }
+      }
+    },
+    "本周 %lld/%lld 分钟 · 打卡 %lld 次" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "本周 %1$lld/%2$lld 分钟 · 打卡 %3$lld 次"
           }
         }
       }
@@ -37249,6 +37375,9 @@
           }
         }
       }
+    },
+    "标记为完成" : {
+
     },
     "标记为已完成" : {
       "extractionState" : "manual",
@@ -38542,6 +38671,16 @@
         }
       }
     },
+    "每%@ · %lld 分钟" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "每%1$@ · %2$lld 分钟"
+          }
+        }
+      }
+    },
     "每2天（隔天）" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -38677,6 +38816,12 @@
           }
         }
       }
+    },
+    "每周 %lld 分钟" : {
+
+    },
+    "每周 150 分钟以内按每天打卡安排，超过则改为隔天一次，保证单次练习时长不低于 20 分钟。" : {
+
     },
     "每周定时复盘全周目标达成率、分类开支大头与下周重点日程预告。" : {
       "extractionState" : "manual",
@@ -43725,6 +43870,12 @@
         }
       }
     },
+    "目标" : {
+
+    },
+    "目标：%@" : {
+
+    },
     "目标事项" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -45726,6 +45877,16 @@
         }
       }
     },
+    "第 %lld 阶段 · %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "第 %1$lld 阶段 · %2$@"
+          }
+        }
+      }
+    },
     "第一声清晰地喊出爸/妈" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -45827,6 +45988,9 @@
           }
         }
       }
+    },
+    "第一阶段 · %@" : {
+
     },
     "筹备" : {
       "extractionState" : "manual",
@@ -46567,6 +46731,9 @@
           }
         }
       }
+    },
+    "练习记录" : {
+
     },
     "终到：%@" : {
       "extractionState" : "manual",
@@ -53274,6 +53441,9 @@
         }
       }
     },
+    "还没有学习路径" : {
+
+    },
     "还没有语音备忘" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -53361,6 +53531,12 @@
           }
         }
       }
+    },
+    "进行中" : {
+
+    },
+    "进行中 · 计划 %lld 天" : {
+
     },
     "进行中的人生大事" : {
       "extractionState" : "manual",
@@ -53480,6 +53656,9 @@
           }
         }
       }
+    },
+    "连续 %lld 天" : {
+
     },
     "连续安睡 6~8 小时以上，给全家人带来高质量睡眠的奇迹夜晚。" : {
       "extractionState" : "manual",
@@ -53722,7 +53901,7 @@
         }
       }
     },
-    "选择小号组件显示待取快递码或今日支出" : {
+    "选择小号组件显示待取快递码、今日支出或今日练习" : {
 
     },
     "选择小票或原始单据" : {
@@ -53826,6 +54005,9 @@
           }
         }
       }
+    },
+    "通关标准：%@" : {
+
     },
     "速干毛巾与换洗衣物" : {
       "extractionState" : "manual",
@@ -55002,6 +55184,9 @@
           }
         }
       }
+    },
+    "阶段" : {
+
     },
     "阿里通义千问端侧大模型" : {
       "extractionState" : "manual",
@@ -56191,6 +56376,9 @@
           }
         }
       }
+    },
+    "预计 %lld 周" : {
+
     },
     "预订假期往返机票（提前15-30天）" : {
       "extractionState" : "manual",
