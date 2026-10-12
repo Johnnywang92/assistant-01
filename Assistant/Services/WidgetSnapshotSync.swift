@@ -102,11 +102,21 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
     // MARK: - 指令对账（扩展 → 主应用）
 
     func processPendingCommands(context: ModelContext) {
-        let commands = WidgetSnapshotStore.drainCommands()
-        guard !commands.isEmpty else { return }
-        WidgetSnapshotStore.clearCommands()
+        var didProcess = false
+        // 有界兜底循环：对账期间扩展可能继续入队，处理完再重读一轮
+        for _ in 0..<3 {
+            let commands = WidgetSnapshotStore.drainCommands()
+            guard !commands.isEmpty else { break }
+            processCommandBatch(commands, context: context)
+            didProcess = true
+        }
+        if didProcess {
+            try? context.save()
+            refreshSnapshot(context: context)
+        }
+    }
 
-        var expenseDelta: Double = 0
+    private func processCommandBatch(_ commands: [WidgetCommand], context: ModelContext) {
         for command in commands {
             switch command {
             case .completeTodo(let id):
@@ -122,18 +132,14 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
                 toggleDepartureInDB(id: id, isChecked: isChecked, context: context)
 
             case .quickAddExpense(let text):
-                expenseDelta += quickAddExpenseInDB(text: text, context: context)
+                _ = quickAddExpenseInDB(text: text, context: context)
 
             case .quickAddTodo(let text):
                 quickAddTodoInDB(text: text, context: context)
             }
         }
-
-        try? context.save()
-        refreshSnapshot(context: context)
-
-        // 若刚入账，同步修正快照中的今日支出（refreshSnapshot 已包含最新值，此处仅兜底）
-        _ = expenseDelta
+        // 先落库后只摘除已处理前缀；处理期间新入队的指令留在队尾等下轮
+        WidgetSnapshotStore.removeProcessedPrefix(commands)
     }
 
     private func completeInDB(id: UUID, context: ModelContext) {

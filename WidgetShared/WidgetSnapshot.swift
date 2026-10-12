@@ -145,6 +145,20 @@ public enum WidgetSnapshotStore {
         defaults?.removeObject(forKey: WidgetBridgeConstants.commandsKey)
     }
 
+    /// 对账完成后只摘除已处理的前缀：队列仅由扩展侧 append，处理期间新入队的指令留在队尾等下轮对账。
+    /// 避免旧版「先整表 clear 再处理」在 drain ↔ clear 窗口内丢失并发写入的指令。
+    public static func removeProcessedPrefix(_ processed: [WidgetCommand]) {
+        guard let defaults else { return }
+        let current = drainCommands()
+        guard current.count > processed.count else {
+            clearCommands()
+            return
+        }
+        if let data = try? JSONEncoder().encode(Array(current.dropFirst(processed.count))) {
+            defaults.set(data, forKey: WidgetBridgeConstants.commandsKey)
+        }
+    }
+
     // MARK: - 扩展侧本地快照突变（让桌面组件即时反映操作，主应用稍后对账）
 
     public static func applyCompletionLocally(id: UUID) {
