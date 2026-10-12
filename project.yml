@@ -61,8 +61,6 @@ targets:
         CFBundleLocalizations:
           - zh-Hans
           - en
-        UIFileSharingEnabled: true
-        LSSupportsOpeningDocumentsInPlace: true
         UILaunchScreen: {}
         UIRequiresFullScreen: true
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
