@@ -62,12 +62,14 @@ struct VoiceIntentProcessor {
 
     private func processCore(trimmed: String) async -> String {
         let lower = trimmed.lowercased()
-        // 0. 意图：查日报 / 周报 / 月报 / 今日复盘
-        if trimmed.contains("日报") || trimmed.contains("周报") || trimmed.contains("月报") || trimmed.contains("年报") || trimmed.contains("年度总结") || trimmed.contains("本年总结") || trimmed.contains("复盘") || trimmed.contains("今天总结") || trimmed.contains("今日总结") || trimmed.contains("本周总结") || trimmed.contains("本月总结")
-            || lower.contains("daily report") || lower.contains("weekly report") || lower.contains("monthly report") || lower.contains("annual report") || lower.contains("yearly report") || lower.contains("today's summary") {
+        // 0. 意图：查日报 / 周报 / 月报 / 季报 / 年报
+        if trimmed.contains("日报") || trimmed.contains("周报") || trimmed.contains("月报") || trimmed.contains("季报") || trimmed.contains("年报") || trimmed.contains("年度总结") || trimmed.contains("本年总结") || trimmed.contains("季度总结") || trimmed.contains("复盘") || trimmed.contains("今天总结") || trimmed.contains("今日总结") || trimmed.contains("本周总结") || trimmed.contains("本月总结") || trimmed.contains("本季总结")
+            || lower.contains("daily report") || lower.contains("weekly report") || lower.contains("monthly report") || lower.contains("quarterly report") || lower.contains("annual report") || lower.contains("yearly report") || lower.contains("today's summary") {
             let period: ReportPeriodType = {
                 if trimmed.contains("年报") || trimmed.contains("年度") || trimmed.contains("本年") || lower.contains("annual") || lower.contains("yearly") {
                     return .yearly
+                } else if trimmed.contains("季报") || trimmed.contains("季度") || trimmed.contains("本季") || lower.contains("quarterly") {
+                    return .quarterly
                 } else if trimmed.contains("月报") || trimmed.contains("本月") || lower.contains("monthly") {
                     return .monthly
                 } else if trimmed.contains("周报") || trimmed.contains("本周") || lower.contains("weekly") {
