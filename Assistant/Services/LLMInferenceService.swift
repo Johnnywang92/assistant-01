@@ -332,8 +332,7 @@ public final class LLMInferenceService: ObservableObject {
     /// 预加载本地 GGUF 模型至 Metal / 内存
     public func preloadLocalModel() async {
         let manager = LLMModelManager.shared
-        manager.checkModelStatus()
-        guard manager.isModelDownloaded else {
+        guard await manager.validateModelStatusAndWait() else {
             localEngineStatus = "未下载 GGUF 模型"
             isLocalModelLoaded = false
             return
@@ -597,7 +596,7 @@ public final class LLMInferenceService: ObservableObject {
         maxNewTokens: Int = 256
     ) async -> String? {
         let modelManager = LLMModelManager.shared
-        modelManager.checkModelStatus()
+        let modelReady = await modelManager.validateModelStatusAndWait()
 
         let chatMLPrompt = """
         <|im_start|>system
@@ -607,7 +606,7 @@ public final class LLMInferenceService: ObservableObject {
         <|im_start|>assistant
         """
 
-        if modelManager.isModelDownloaded || modelManager.hasValidLocalGGUFFile {
+        if modelReady {
             isGenerating = true
             currentOutput = ""
             defer { isGenerating = false }
@@ -721,8 +720,8 @@ public final class LLMInferenceService: ObservableObject {
 
         // 1. 优先检查本地 GGUF 模型文件是否已下载，执行真正的端侧 llama.cpp 推理
         let modelManager = LLMModelManager.shared
-        modelManager.checkModelStatus()
-        if modelManager.isModelDownloaded {
+        let modelReady = await modelManager.validateModelStatusAndWait()
+        if modelReady {
             let prompt = buildPrompt(query: query, context: context, actionExecutionNote: sideEffectNote)
             localEngineStatus = isLocalModelLoaded ? "正在端侧推理 (Metal)..." : "正在加载 GGUF 模型..."
             do {

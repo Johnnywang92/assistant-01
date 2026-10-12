@@ -10,6 +10,8 @@ public enum LLMDownloadSource: String, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
 
+    public var displayName: String { L10n.tr(rawValue) }
+
     public var downloadURL: URL {
         switch self {
         case .modelScope:
@@ -122,7 +124,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
                 case .success(let validated):
                     if let expectedDigest, expectedDigest != validated.digest {
                         self.isModelDownloaded = false
-                        self.errorMessage = "模型文件校验值已变化，请重新导入。"
+                        self.errorMessage = L10n.tr("模型文件校验值已变化，请重新导入。")
                         return
                     }
                     UserDefaults.standard.set(validated.digest, forKey: self.validatedDigestKey)
@@ -132,11 +134,52 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
                     self.clearResumeData()
                 case .failure(let error):
                     self.isModelDownloaded = false
-                    self.errorMessage = "模型文件无效：\(error.localizedDescription)"
+                    self.errorMessage = L10n.choose("模型文件无效：\(error.localizedDescription)", "Invalid model file: \(error.localizedDescription)")
                 }
             }
         }
         hasResumeData = FileManager.default.fileExists(atPath: resumeDataURL.path)
+    }
+
+    /// 等待完整校验结束后返回模型是否可用。加载前调用此方法，避免后台 SHA-256 校验尚未完成时误判为未下载。
+    public func validateModelStatusAndWait() async -> Bool {
+        validationGeneration += 1
+        let generation = validationGeneration
+        let url = localModelURL
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            isModelDownloaded = false
+            UserDefaults.standard.removeObject(forKey: validatedDigestKey)
+            hasResumeData = FileManager.default.fileExists(atPath: resumeDataURL.path)
+            return false
+        }
+
+        let result = await Task.detached(priority: .utility) {
+            Result { try Self.validateModel(at: url) }
+        }.value
+
+        guard generation == validationGeneration else { return isModelDownloaded }
+        hasResumeData = FileManager.default.fileExists(atPath: resumeDataURL.path)
+
+        switch result {
+        case .success(let validated):
+            if let expectedDigest = UserDefaults.standard.string(forKey: validatedDigestKey),
+               expectedDigest != validated.digest {
+                isModelDownloaded = false
+                errorMessage = "模型文件校验值已变化，请重新导入。"
+                return false
+            }
+            UserDefaults.standard.set(validated.digest, forKey: validatedDigestKey)
+            downloadedBytes = validated.size
+            totalBytes = validated.size
+            isModelDownloaded = true
+            clearResumeData()
+            return true
+        case .failure(let error):
+            isModelDownloaded = false
+            errorMessage = "模型文件无效：\(error.localizedDescription)"
+            return false
+        }
     }
 
     nonisolated private static func validateModel(at url: URL) throws -> (size: Int64, digest: String) {
@@ -164,8 +207,8 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         case invalidSize, invalidHeader
         var errorDescription: String? {
             switch self {
-            case .invalidSize: "文件体积与预期模型不符。"
-            case .invalidHeader: "文件不是支持的 GGUF 格式。"
+            case .invalidSize: L10n.tr("文件体积与预期模型不符。")
+            case .invalidHeader: L10n.tr("文件不是支持的 GGUF 格式。")
             }
         }
     }
@@ -200,7 +243,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         if isModelDownloaded {
             return formatter.string(fromByteCount: downloadedBytes)
         }
-        return "约 986 MB"
+        return L10n.tr("约 986 MB")
     }
 
     /// 开启或继续模型下载（支持断点续传）
