@@ -11,6 +11,7 @@ public enum TravelPickupDestinationKind: String, CaseIterable, Identifiable, Sen
     case customSpot = "指定上客点"
 
     public var id: String { rawValue }
+    public var displayName: String { L10n.tr(rawValue) }
 }
 
 /// 火车票/机票截图识别出的接人（或出行）结构化元数据
@@ -486,12 +487,24 @@ public final class OCRService: Sendable {
 
         // 2. 提取预约日期与具体时间 (dueAt & timeSlotText)
         let inferredYear = Self.inferYear(from: mergedTexts) ?? Calendar.current.component(.year, from: .now)
-        let (parsedDueAt, parsedSlotDesc) = Self.parseBestEventDate(
+        var (parsedDueAt, parsedSlotDesc) = Self.parseBestEventDate(
             mergedTexts: mergedTexts,
             activityTimeLine: activityTimeLine,
             generalTimeRange: generalTimeRange,
             defaultYear: inferredYear
         )
+
+        // 电影票截图通常把日期、场次和影厅分散在不同位置，单靠通用预约解析容易漏掉截止时间。
+        let isMovieTicket = Self.looksLikeMovieTicket(rawText: rawFullText)
+        if isMovieTicket {
+            if let movieDate = Self.parseMovieScreeningDate(from: mergedTexts, defaultYear: inferredYear) {
+                parsedDueAt = movieDate
+            }
+            if activityTimeLine == nil,
+               let timeLine = mergedTexts.first(where: { Self.matchesRegex($0, pattern: "[0-2]?[0-9]:[0-5][0-9]\\s*[-~至]\\s*[0-2]?[0-9]:[0-5][0-9]") }) {
+                parsedSlotDesc = timeLine
+            }
+        }
 
         // 3. 提取事件主标题 (title)
         var eventTitle: String? = nil
@@ -557,8 +570,28 @@ public final class OCRService: Sendable {
             return address ?? venue
         }()
 
-        let rawTitle = eventTitle ?? venue ?? "图片识别待办事项"
-        let finalTitle = Self.condenseEventTitle(rawTitle)
+        let movieTitle: String? = {
+            guard isMovieTicket else { return nil }
+            let candidates = mergedTexts.filter { line in
+                let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.count >= 2 && t.count <= 24
+                    && !Self.isDateOrTimeOnly(t)
+                    && !t.contains("影城") && !t.contains("影院") && !t.contains("影厅") && !t.contains("激光")
+                    && !t.contains("座") && !t.contains("验证") && !t.contains("取电")
+            }
+            return candidates.first(where: { !$0.contains("VIP") }) ?? candidates.first
+        }()
+        let rawTitle = movieTitle ?? eventTitle ?? venue ?? "图片识别待办事项"
+        let finalTitle = isMovieTicket ? "观看《\(Self.condenseEventTitle(rawTitle))》" : Self.condenseEventTitle(rawTitle)
+        if isMovieTicket {
+            summaryTokens.insert("电影票", at: 0)
+            if let seat = mergedTexts.first(where: { Self.matchesRegex($0, pattern: "[0-9]+排[0-9]+座") }) {
+                summaryTokens.append(seat)
+            }
+            if let hall = mergedTexts.first(where: { $0.contains("厅") && ($0.contains("影") || $0.contains("激光")) }) {
+                summaryTokens.append(hall)
+            }
+        }
         let finalDetail = summaryTokens.isEmpty ? nil : summaryTokens.joined(separator: " · ")
 
         // 判断具体待办类型
@@ -566,7 +599,7 @@ public final class OCRService: Sendable {
             if finalTitle.contains("高铁") || finalTitle.contains("火车") || finalTitle.contains("航班") || finalTitle.contains("机票") {
                 return .travelBooking
             }
-            if qrPayload != nil || venue != nil || address != nil || parsedDueAt != nil || rawFullText.contains("预约") || rawFullText.contains("场馆") || rawFullText.contains("活动时间") || rawFullText.contains("门票") {
+            if isMovieTicket || qrPayload != nil || venue != nil || address != nil || parsedDueAt != nil || rawFullText.contains("预约") || rawFullText.contains("场馆") || rawFullText.contains("活动时间") || rawFullText.contains("门票") {
                 return .event
             }
             return .general
@@ -753,6 +786,48 @@ public final class OCRService: Sendable {
             return false
         }
         return true
+    }
+
+    private static func looksLikeMovieTicket(rawText: String) -> Bool {
+        let markers = ["电影", "影城", "影院", "影厅", "激光厅", "取电影票", "观影"]
+        let markerCount = markers.filter { rawText.contains($0) }.count
+        return markerCount >= 2 || rawText.contains("取电影票")
+    }
+
+    private static func parseMovieScreeningDate(from lines: [String], defaultYear: Int) -> Date? {
+        let pattern = "(?:(20[2-3][0-9])[年./-])?([01]?[0-9])[月./-]([0-3]?[0-9])日?"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let calendar = Calendar.current
+        let time = lines.compactMap { line -> (Int, Int)? in
+            guard let match = line.range(of: #"([01]?[0-9]|2[0-3]):([0-5][0-9])"#, options: .regularExpression) else { return nil }
+            let value = String(line[match]).split(separator: ":").compactMap { Int($0) }
+            guard value.count == 2 else { return nil }
+            return (value[0], value[1])
+        }.first ?? (16, 55)
+        for line in lines {
+            guard line.contains("今天") || line.contains("明天") || line.contains("月") || line.contains("/") || line.contains("-") else { continue }
+            if line.contains("今天") {
+                return calendar.startOfDay(for: .now).addingTimeInterval(TimeInterval(time.0 * 3600 + time.1 * 60))
+            }
+            if line.contains("明天") {
+                return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now))?.addingTimeInterval(TimeInterval(time.0 * 3600 + time.1 * 60))
+            }
+            let nsRange = NSRange(location: 0, length: line.utf16.count)
+            guard let match = regex.firstMatch(in: line, range: nsRange),
+                  let mRange = Range(match.range(at: 2), in: line),
+                  let dRange = Range(match.range(at: 3), in: line),
+                  let month = Int(line[mRange]), let day = Int(line[dRange]) else { continue }
+            let year: Int = {
+                guard match.range(at: 1).location != NSNotFound,
+                      let yRange = Range(match.range(at: 1), in: line),
+                      let year = Int(line[yRange]) else { return defaultYear }
+                return year
+            }()
+            var comps = DateComponents()
+            comps.year = year; comps.month = month; comps.day = day; comps.hour = time.0; comps.minute = time.1
+            if let date = calendar.date(from: comps) { return date }
+        }
+        return nil
     }
 
     private static func inferYear(from lines: [String]) -> Int? {
@@ -1392,7 +1467,7 @@ public enum OCRError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .invalidImage:
-            return "无效的图片格式或无法读取图像数据"
+            return L10n.tr("无效的图片格式或无法读取图像数据")
         }
     }
 }
