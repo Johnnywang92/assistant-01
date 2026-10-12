@@ -106,6 +106,9 @@
         }
       }
     },
+    "-¥%@" : {
+
+    },
     "— %@" : {
 
     },
@@ -1406,6 +1409,19 @@
         }
       }
     },
+    "%@" : {
+
+    },
+    "%@ – %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ – %2$@"
+          }
+        }
+      }
+    },
     "%@ · %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2300,6 +2316,9 @@
         }
       }
     },
+    "%lld 件" : {
+
+    },
     "%lld 处" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2350,6 +2369,9 @@
           }
         }
       }
+    },
+    "%lld 笔" : {
+
     },
     "%lld 项待办" : {
       "extractionState" : "manual",
@@ -4594,6 +4616,9 @@
         }
       }
     },
+    "+¥%@" : {
+
+    },
     "| 类别 | 金额 (元) | 笔数 | 占比 |" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5206,6 +5231,9 @@
         }
       }
     },
+    "🏝️ 上灵动岛（同步手表）" : {
+
+    },
     "🐾 毛孩子体外驱虫提醒" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5392,6 +5420,9 @@
           }
         }
       }
+    },
+    "💡 二手交易如何影响实际持有成本" : {
+
     },
     "💡 提示：您也可以在 Mac 上下载好 `qwen2.5-1.5b-instruct-q4_k_m.gguf` 后，通过 AirDrop 发送至 iPhone「文件」App，或通过访达连线拖入本 App 的「Models」目录。" : {
       "extractionState" : "manual",
@@ -6197,6 +6228,16 @@
     },
     "¥%@" : {
 
+    },
+    "¥%@%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "¥%1$@%2$@"
+          }
+        }
+      }
     },
     "¥15/月" : {
       "extractionState" : "manual",
@@ -8055,6 +8096,9 @@
         }
       }
     },
+    "上期支出" : {
+
+    },
     "上海" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8616,6 +8660,9 @@
         }
       }
     },
+    "不关联" : {
+
+    },
     "不再提醒" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8666,6 +8713,9 @@
           }
         }
       }
+    },
+    "不常用的物品转卖为二手后，在此记录回血金额：实际持有成本 = 累计投入 − 转卖所得，持有天数截至转卖日。" : {
+
     },
     "不弹出任何横幅通知或声音，静默提取和归档所有信息与待办。" : {
       "extractionState" : "manual",
@@ -9755,6 +9805,9 @@
         }
       }
     },
+    "二手购入" : {
+
+    },
     "五一假期" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10455,6 +10508,9 @@
         }
       }
     },
+    "今天还可以安心花" : {
+
+    },
     "今天还有 1 件事，按自己的节奏处理就好" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10508,6 +10564,9 @@
           }
         }
       }
+    },
+    "今日安心花" : {
+
     },
     "今日安排 · %lld" : {
 
@@ -13204,6 +13263,9 @@
         }
       }
     },
+    "关联收纳物品（可选）" : {
+
+    },
     "关联车辆" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13550,6 +13612,9 @@
         }
       }
     },
+    "内容" : {
+
+    },
     "再次确认 PIN 码" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13634,6 +13699,9 @@
           }
         }
       }
+    },
+    "最高日均" : {
+
     },
     "写给家属与长辈的贴心提示" : {
       "extractionState" : "manual",
@@ -17857,6 +17925,9 @@
         }
       }
     },
+    "合计" : {
+
+    },
     "同时添加出行前购票与预约待办" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18006,6 +18077,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "后续暂无紧迫截止的待办，节奏轻松"
+          }
+        }
+      }
+    },
+    "含 %lld 笔关联记账投入 ¥%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "含 %1$lld 笔关联记账投入 ¥%2$@"
           }
         }
       }
@@ -18315,6 +18396,9 @@
           }
         }
       }
+    },
+    "周期回顾 · 与上期对比" : {
+
     },
     "周期家务" : {
       "extractionState" : "manual",
@@ -18707,6 +18791,9 @@
         }
       }
     },
+    "回血 ¥%@" : {
+
+    },
     "团队项目进度例会" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18757,6 +18844,9 @@
           }
         }
       }
+    },
+    "固定支出 ¥%@" : {
+
     },
     "固定支出已自动记账" : {
       "extractionState" : "manual",
@@ -18961,6 +19051,9 @@
           }
         }
       }
+    },
+    "在出门清点实时活动中逐项确认随身物品" : {
+
     },
     "在微信中长按聊天文字点击「复制」，然后轻敲手机背面两下，即可离线提取并弹出通知" : {
       "extractionState" : "manual",
@@ -19234,6 +19327,9 @@
         }
       }
     },
+    "基于本期真实数据" : {
+
+    },
     "基本信息" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19281,6 +19377,19 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "填入密码"
+          }
+        }
+      }
+    },
+    "填写购入价格后，自动计算持有天数与日均持有成本；记账时可把保养、配件等后续投入关联到该物品。二手购入的物品买入价更低，日均成本起点也更低。" : {
+
+    },
+    "增长最快：**%@** ¥%@ → ¥%@（+¥%@）" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "增长最快：**%1$@** ¥%2$@ → ¥%3$@（+¥%4$@）"
           }
         }
       }
@@ -20611,6 +20720,15 @@
         }
       }
     },
+    "如 3500" : {
+
+    },
+    "如 5000" : {
+
+    },
+    "如 6999" : {
+
+    },
     "如：加满 95 号汽油 / 国家电网快充" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21478,6 +21596,16 @@
         }
       }
     },
+    "完成事项：本期 %lld 项 · 上期 %lld 项" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "完成事项：本期 %1$lld 项 · 上期 %2$lld 项"
+          }
+        }
+      }
+    },
     "完成事项清单（%@）" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21545,6 +21673,9 @@
           }
         }
       }
+    },
+    "完成待办" : {
+
     },
     "完成待办后将自动归档至此处" : {
       "extractionState" : "manual",
@@ -21920,6 +22051,9 @@
         }
       }
     },
+    "实时活动不可用" : {
+
+    },
     "实机效果预览" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21936,6 +22070,9 @@
           }
         }
       }
+    },
+    "实际持有成本 = 累计投入 − 转卖回血：不常用的物品转卖为二手后，闲置期间的持有天数不再摊高日均成本，净成本被回血金额直接摊薄；二手购入的物品买入价更低，日均成本从一开始就低于全新购入。" : {
+
     },
     "宠物" : {
       "extractionState" : "manual",
@@ -23212,6 +23349,9 @@
         }
       }
     },
+    "将一条待办或快递取件标记为已完成，并同步灵动岛与 Apple Watch" : {
+
+    },
     "将二维码放入框内，或从相册选择预约截图导入" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -23398,6 +23538,9 @@
           }
         }
       }
+    },
+    "小助速览" : {
+
     },
     "小朋友" : {
       "extractionState" : "manual",
@@ -23707,6 +23850,9 @@
           }
         }
       }
+    },
+    "展开今日时间轴" : {
+
     },
     "展开查看" : {
       "extractionState" : "manual",
@@ -24150,6 +24296,9 @@
         }
       }
     },
+    "已使用 %lld%%" : {
+
+    },
     "已保存中断前进度，无需从头下载" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -24302,6 +24451,9 @@
           }
         }
       }
+    },
+    "已出发" : {
+
     },
     "已切换为「不保留 (即用即走)」，离开对话界面即刻释放，保障极致隐私与零存储占用。" : {
       "extractionState" : "manual",
@@ -24509,6 +24661,9 @@
           }
         }
       }
+    },
+    "已取消确认" : {
+
     },
     "已复制" : {
       "extractionState" : "manual",
@@ -24748,6 +24903,9 @@
         }
       }
     },
+    "已完成 ✓" : {
+
+    },
     "已完成：" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -24849,6 +25007,9 @@
           }
         }
       }
+    },
+    "已带上 ✓" : {
+
     },
     "已开启" : {
       "extractionState" : "manual",
@@ -25540,6 +25701,9 @@
         }
       }
     },
+    "已结束护航，一路顺利 🚄" : {
+
+    },
     "已脱保 %@ 天！" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -25642,6 +25806,12 @@
         }
       }
     },
+    "已记录，打开小助后确认详情" : {
+
+    },
+    "已记录，打开小助后自动入账" : {
+
+    },
     "已记录的地点" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -25726,6 +25896,12 @@
           }
         }
       }
+    },
+    "已超支" : {
+
+    },
+    "已转卖" : {
+
     },
     "已达驱虫周期（30天）" : {
       "extractionState" : "manual",
@@ -26903,6 +27079,9 @@
         }
       }
     },
+    "弹性预算 ¥%@" : {
+
+    },
     "强度: %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27515,6 +27694,9 @@
         }
       }
     },
+    "当前时间" : {
+
+    },
     "当前本地数据档案" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27531,6 +27713,9 @@
           }
         }
       }
+    },
+    "当前没有护航中的行程" : {
+
     },
     "当前离线语音识别器不可用" : {
       "extractionState" : "manual",
@@ -27923,6 +28108,9 @@
         }
       }
     },
+    "待办ID" : {
+
+    },
     "待办不仅支持快递，还涵盖日常日程、服药提醒、周期家务与防扣款预警。\n点击右上角 ➕ 快速添加。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28093,6 +28281,9 @@
         }
       }
     },
+    "待取快递上岛" : {
+
+    },
     "待取快递包裹" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28109,6 +28300,9 @@
           }
         }
       }
+    },
+    "待取快递码" : {
+
     },
     "待授权" : {
       "extractionState" : "manual",
@@ -28381,6 +28575,9 @@
           }
         }
       }
+    },
+    "快递上岛" : {
+
     },
     "快递与退货" : {
       "extractionState" : "manual",
@@ -28925,6 +29122,9 @@
           }
         }
       }
+    },
+    "想记一笔什么？例如：咖啡 18 元" : {
+
     },
     "感冒药" : {
       "extractionState" : "manual",
@@ -30031,6 +30231,9 @@
         }
       }
     },
+    "扣除固定支出后，本月弹性可用约 ¥%@" : {
+
+    },
     "执照/证书页" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30234,6 +30437,9 @@
           }
         }
       }
+    },
+    "把出门清点推上灵动岛" : {
+
     },
     "把既往用药盒拍好照存在手机相册" : {
       "extractionState" : "manual",
@@ -30591,6 +30797,9 @@
           }
         }
       }
+    },
+    "持有 %lld 天" : {
+
     },
     "持有人姓名" : {
       "extractionState" : "manual",
@@ -32142,6 +32351,12 @@
         }
       }
     },
+    "撤销转卖记录" : {
+
+    },
+    "播报所有待取快递的取件码，并推送到灵动岛与 Apple Watch 智能叠放" : {
+
+    },
     "播放" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -32481,6 +32696,9 @@
           }
         }
       }
+    },
+    "收起时间轴" : {
+
     },
     "放回充电盒充满" : {
       "extractionState" : "manual",
@@ -33621,6 +33839,9 @@
         }
       }
     },
+    "日均持有成本速览" : {
+
+    },
     "日常" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34338,6 +34559,12 @@
         }
       }
     },
+    "昨日省下 ¥%@ 已滚入 💰" : {
+
+    },
+    "是否已带上" : {
+
+    },
     "是否正在充电" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34371,6 +34598,9 @@
           }
         }
       }
+    },
+    "显示内容" : {
+
     },
     "显示器" : {
       "extractionState" : "manual",
@@ -34762,6 +34992,9 @@
           }
         }
       }
+    },
+    "暂无固定周期支出，可在「生活档案 → 固定支出」中添加房租、订阅等" : {
+
     },
     "暂无宠物待办，可添加喂食、驱虫、洗护或就医提醒。" : {
       "extractionState" : "manual",
@@ -35392,6 +35625,18 @@
         }
       }
     },
+    "月预算" : {
+
+    },
+    "月预算 ¥%@" : {
+
+    },
+    "月预算执行" : {
+
+    },
+    "月预算设置" : {
+
+    },
     "有一项待办尚未完成，请解锁后查看。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35800,6 +36045,9 @@
         }
       }
     },
+    "未找到清单项" : {
+
+    },
     "未找到相关物品" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35816,6 +36064,9 @@
           }
         }
       }
+    },
+    "未找到该待办" : {
+
     },
     "未找到该板块" : {
       "extractionState" : "manual",
@@ -36208,6 +36459,9 @@
         }
       }
     },
+    "本月弹性预算已超支 ¥%@，今天尽量少花" : {
+
+    },
     "本月支出" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -36258,6 +36512,9 @@
           }
         }
       }
+    },
+    "本期支出" : {
+
     },
     "本机私有存储" : {
       "extractionState" : "manual",
@@ -36904,6 +37161,9 @@
           }
         }
       }
+    },
+    "查看或编辑月度预算" : {
+
     },
     "查看生活纪念日" : {
       "extractionState" : "manual",
@@ -39557,6 +39817,9 @@
         }
       }
     },
+    "没能识别金额，请打开小助手动记账" : {
+
+    },
     "河南" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -40644,6 +40907,9 @@
           }
         }
       }
+    },
+    "清单项ID" : {
+
     },
     "清新自然薄荷绿意，舒缓双眼" : {
       "extractionState" : "manual",
@@ -42141,6 +42407,9 @@
         }
       }
     },
+    "物品日均持有成本" : {
+
+    },
     "物理防呆仪式" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -42582,6 +42851,12 @@
           }
         }
       }
+    },
+    "环比 -%lld%%" : {
+
+    },
+    "环比 +%lld%%" : {
+
     },
     "现在最该做什么" : {
       "extractionState" : "manual",
@@ -44462,6 +44737,9 @@
         }
       }
     },
+    "确认随身物品" : {
+
+    },
     "确认预算与入住日期" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -46264,6 +46542,15 @@
         }
       }
     },
+    "累计投入" : {
+
+    },
+    "累计投入 ¥%@" : {
+
+    },
+    "累计投入 Top %lld" : {
+
+    },
     "累计驻留记录" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -46433,6 +46720,9 @@
           }
         }
       }
+    },
+    "结束行程护航实时活动" : {
+
     },
     "结果" : {
       "extractionState" : "manual",
@@ -47420,6 +47710,9 @@
         }
       }
     },
+    "自动扣除的固定支出（月均）" : {
+
+    },
     "自动推算体内外驱虫、联苗狂犬与日常洗澡清洁周期" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -48253,6 +48546,9 @@
         }
       }
     },
+    "行动建议" : {
+
+    },
     "行李箱" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -48797,6 +49093,9 @@
         }
       }
     },
+    "要记什么事？" : {
+
+    },
     "见详情" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -48966,6 +49265,9 @@
           }
         }
       }
+    },
+    "计入物品投入" : {
+
     },
     "计划" : {
       "extractionState" : "manual",
@@ -49851,6 +50153,9 @@
         }
       }
     },
+    "设定月度弹性预算" : {
+
+    },
     "设置" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -50020,6 +50325,9 @@
           }
         }
       }
+    },
+    "设置起床与下班时间" : {
+
     },
     "设置轻点背面 (Back Tap)" : {
       "extractionState" : "manual",
@@ -50922,6 +51230,12 @@
         }
       }
     },
+    "说一句话快速创建一条待办，例如：明天下午三点取快递" : {
+
+    },
+    "说一句话快速记一笔账，例如：咖啡 18 元" : {
+
+    },
     "请先勾选待办事宜" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -50938,6 +51252,9 @@
           }
         }
       }
+    },
+    "请先打开小助，再重试取件码上岛" : {
+
     },
     "请再次输入以确认" : {
       "extractionState" : "manual",
@@ -51517,6 +51834,15 @@
         }
       }
     },
+    "购入价格" : {
+
+    },
+    "购入信息（选填）" : {
+
+    },
+    "购入日期" : {
+
+    },
     "购物消费" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -51721,6 +52047,19 @@
         }
       }
     },
+    "距月底 %lld 天" : {
+
+    },
+    "距月底 %lld 天，今天起日均还可以花 ¥%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "距月底 %1$lld 天，今天起日均还可以花 ¥%2$@"
+          }
+        }
+      }
+    },
     "距离出行不足7天，目的地热门博物馆与景区门票已开放分时段预约，请提前锁定入场名额。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -51739,6 +52078,9 @@
       }
     },
     "距离目标日期还有 %lld 天" : {
+
+    },
+    "跟踪物品" : {
 
     },
     "路由器管理" : {
@@ -52114,6 +52456,18 @@
           }
         }
       }
+    },
+    "转卖回血" : {
+
+    },
+    "转卖回血（选填）" : {
+
+    },
+    "转卖所得" : {
+
+    },
+    "转卖日期" : {
+
     },
     "轮渡" : {
       "extractionState" : "manual",
@@ -52778,6 +53132,9 @@
         }
       }
     },
+    "还可以安心花" : {
+
+    },
     "还有 %@ 件核心物品未确认！" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -52933,6 +53290,9 @@
           }
         }
       }
+    },
+    "这笔支出将计入对应物品的累计投入，日均持有成本随之更新。" : {
+
     },
     "这笔账单没有保存原始单据" : {
       "extractionState" : "manual",
@@ -53362,6 +53722,9 @@
         }
       }
     },
+    "选择小号组件显示待取快递码或今日支出" : {
+
+    },
     "选择小票或原始单据" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -53480,6 +53843,9 @@
           }
         }
       }
+    },
+    "速览内容" : {
+
     },
     "速递" : {
       "extractionState" : "manual",
@@ -54722,6 +55088,16 @@
         }
       }
     },
+    "降温最明显：**%@** ¥%@ → ¥%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "降温最明显：**%1$@** ¥%2$@ → ¥%3$@"
+          }
+        }
+      }
+    },
     "降雪" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55554,6 +55930,12 @@
           }
         }
       }
+    },
+    "预算低于固定支出月额，请调高预算或精简固定支出" : {
+
+    },
+    "预算指本月弹性消费上限。房租、订阅等固定支出会自动扣除，不再占预算。" : {
+
     },
     "预约" : {
       "extractionState" : "manual",

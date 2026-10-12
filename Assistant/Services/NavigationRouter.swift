@@ -74,6 +74,7 @@ public final class NavigationRouter: ObservableObject {
         case idVault
         case settings
         case qrScanner
+        case omnibox
 
         public var id: String { rawValue }
     }
@@ -83,6 +84,8 @@ public final class NavigationRouter: ObservableObject {
     @Published public var requestedFilter: String?
     @Published public var focusedTodoID: UUID?
     @Published public var pendingImportPayload: TodoSharePayload?
+    /// 万能投喂口的剪贴板预填充载荷（由投喂口消费后置 nil）
+    @Published public var omniboxPrefill: OmniboxPayload?
 
     private init() {}
 
@@ -129,6 +132,8 @@ public final class NavigationRouter: ObservableObject {
             requestedFilter = "快递"
         case "settings":
             selectedTab = .settings
+        case "omnibox", "drop", "feed":
+            activeSheet = .omnibox
         default:
             break
         }
@@ -151,6 +156,8 @@ public final class NavigationRouter: ObservableObject {
             selectedTab = .vault
         case "assistant.action.departure":
             selectedTab = .departure
+        case "assistant.action.omnibox":
+            activeSheet = .omnibox
         default:
             break
         }
@@ -192,6 +199,13 @@ public final class NavigationRouter: ObservableObject {
                 localizedTitle: L10n.tr("证件保险箱"),
                 localizedSubtitle: L10n.tr("重要证照安全查阅"),
                 icon: UIApplicationShortcutIcon(systemImageName: "person.text.rectangle.fill"),
+                userInfo: nil
+            ),
+            UIApplicationShortcutItem(
+                type: "assistant.action.omnibox",
+                localizedTitle: L10n.tr("万能投喂口"),
+                localizedSubtitle: L10n.tr("丢进文字或截图，自动记账、建待办"),
+                icon: UIApplicationShortcutIcon(systemImageName: "tray.and.arrow.down.fill"),
                 userInfo: nil
             )
         ]

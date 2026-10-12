@@ -10,8 +10,12 @@ struct MainTabView: View {
     @Query(filter: #Predicate<TodoItem> { $0.statusRaw == "active" }) private var activeTodos: [TodoItem]
     @State private var showVoice = false
     @State private var showScanner = false
+    @State private var showOmnibox = false
+    @State private var showClipboardReadError = false
     @State private var autoStartListening = false
     @ObservedObject private var voice = VoiceDialogueService.shared
+    @ObservedObject private var clipboard = ClipboardIngestionService.shared
+    @Environment(\.scenePhase) private var scenePhase
     @State private var directVoiceStatus = ""
     @State private var isDirectVoiceConversation = false
     @AppStorage("has_completed_permission_onboarding_v1") private var hasCompletedPermissionOnboarding: Bool = false
@@ -32,6 +36,24 @@ struct MainTabView: View {
                         .badge(badgeCount(for: tab))
                 }
             }
+
+            // 剪贴板新内容提示条（检测到截图/复制文字后回到 App 时从顶部滑入）
+            VStack {
+                if let suggestion = clipboard.suggestion {
+                    ClipboardSuggestionBanner(
+                        suggestion: suggestion,
+                        onIngest: { ingestClipboard(suggestion) },
+                        onOpenManual: {
+                            clipboard.markHandled(suggestion.changeCount)
+                            router.activeSheet = .omnibox
+                        },
+                        onDismiss: { clipboard.markHandled(suggestion.changeCount) }
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                Spacer()
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: clipboard.suggestion)
 
             // 单手自由拖拽吸边语音悬浮球（支持单击唤起、长按直启语音输入）
             DraggableVoiceFloatingBall(showVoice: $showVoice, autoStartListening: $autoStartListening) {
@@ -63,6 +85,10 @@ struct MainTabView: View {
             QRCodeScannerView()
                 .environment(\.locale, LanguageManager.shared.locale)
         }
+        .sheet(isPresented: $showOmnibox) {
+            OmniboxView()
+                .environment(\.locale, LanguageManager.shared.locale)
+        }
         .sheet(item: $router.pendingImportPayload) { payload in
             TodoImportPreviewSheet(payload: payload) {
                 router.pendingImportPayload = nil
@@ -80,6 +106,9 @@ struct MainTabView: View {
                 router.activeSheet = nil
             } else if newSheet == .qrScanner {
                 showScanner = true
+                router.activeSheet = nil
+            } else if newSheet == .omnibox {
+                showOmnibox = true
                 router.activeSheet = nil
             }
         }
@@ -110,6 +139,39 @@ struct MainTabView: View {
                 router.selectedTab = tabManager.activeTabs.first ?? .todos
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            // 回到前台：检测剪贴板是否有新内容（截图/复制文字）
+            guard phase == .active else { return }
+            handleClipboardOnActive()
+        }
+        .alert(L10n.tr("无法读取剪贴板"), isPresented: $showClipboardReadError) {
+            Button(L10n.tr("好"), role: .cancel) {}
+        } message: {
+            Text(L10n.tr("可能未获授权。可打开投喂口，用「一键粘贴」手动带入"))
+        }
+    }
+
+    // MARK: - 剪贴板投喂（检测 → 引导 → 自动分流）
+
+    private func handleClipboardOnActive() {
+        clipboard.checkOnBecomeActive()
+        // 自动投喂开启时：跳过提示条直接进入投喂口（读取内容时系统会弹一次粘贴授权）
+        guard clipboard.autoIngestEnabled,
+              let suggestion = clipboard.suggestion,
+              suggestion.kind != .unsupported else { return }
+        ingestClipboard(suggestion)
+    }
+
+    private func ingestClipboard(_ suggestion: ClipboardIngestionService.Suggestion) {
+        Haptic.selection()
+        guard let payload = clipboard.resolvePayload() else {
+            // 用户拒绝粘贴授权或内容为空：保留提示条，引导手动路径
+            showClipboardReadError = true
+            return
+        }
+        router.omniboxPrefill = payload
+        router.activeSheet = .omnibox
+        clipboard.markHandled(suggestion.changeCount)
     }
 
     private func startDirectVoiceConversation() {
