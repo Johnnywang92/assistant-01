@@ -22,7 +22,7 @@ public final class NavigationRouter: ObservableObject {
 
         public var title: String {
             switch self {
-            case .todos: return L10n.tr("待办")
+            case .todos: return L10n.tr("首页")
             case .lifeEvents: return L10n.tr("人生大事")
             case .departure: return L10n.tr("出门防丢")
             case .expenses: return L10n.tr("记账")
@@ -36,7 +36,7 @@ public final class NavigationRouter: ObservableObject {
 
         public var systemImage: String {
             switch self {
-            case .todos: return "checklist"
+            case .todos: return "house.fill"
             case .lifeEvents: return "sparkles"
             case .departure: return "briefcase.fill"
             case .expenses: return "yensign.circle.fill"
@@ -50,7 +50,7 @@ public final class NavigationRouter: ObservableObject {
 
         public var subtitle: String {
             switch self {
-            case .todos: return L10n.tr("日常事务、快递取件与待办催办")
+            case .todos: return L10n.tr("待办、快递取件与每日安排总览")
             case .lifeEvents: return L10n.tr("订婚、婚礼、乔迁、升学宴等长期项目")
             case .departure: return L10n.tr("随身物品清点、防丢检查与口诀")
             case .expenses: return L10n.tr("日常收支账本与统计分析")
