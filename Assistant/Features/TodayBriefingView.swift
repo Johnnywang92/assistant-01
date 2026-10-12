@@ -16,10 +16,29 @@ struct TodayBriefingView: View {
     let items: [TodoItem]
     @State private var isExpanded = false
     @State private var showReminderCenter = false
+    @AppStorage("today_briefing_dismissed_date") private var dismissedDateKey = ""
+
+    private var isDismissedToday: Bool {
+        let components = calendar.dateComponents([.year, .month, .day], from: .now)
+        return dismissedDateKey == "\(components.year ?? 0)-\(components.month ?? 0)-\(components.day ?? 0)"
+    }
+
+    private func dismissForToday() {
+        let components = calendar.dateComponents([.year, .month, .day], from: .now)
+        dismissedDateKey = "\(components.year ?? 0)-\(components.month ?? 0)-\(components.day ?? 0)"
+        Haptic.light()
+    }
 
     private var prioritizedItems: [TodoItem] {
+        let start = calendar.startOfDay(for: .now)
+        // “今日安排”只展示逾期、今天和未来三天内的事项，避免十几天后的活动过早打扰。
+        let horizon = calendar.date(byAdding: .day, value: 4, to: start) ?? .distantFuture
         items
-            .filter { $0.status == .active }
+            .filter { item in
+                guard item.status == .active else { return false }
+                guard let date = item.reminderOverrideAt ?? item.dueAt else { return true }
+                return date < horizon
+            }
             .sorted { lhs, rhs in
                 switch (lhs.reminderOverrideAt ?? lhs.dueAt, rhs.reminderOverrideAt ?? rhs.dueAt) {
                 case let (l?, r?): return l < r
@@ -84,11 +103,28 @@ struct TodayBriefingView: View {
     }
 
     var body: some View {
+        if isDismissedToday {
+            EmptyView()
+        } else {
+            briefingContent
+        }
+    }
+
+    private var briefingContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Label(summaryTitle, systemImage: "sparkles")
+                Label(L10n.tr(summaryTitle), systemImage: "sparkles")
                     .font(.headline)
                 Spacer()
+                Button {
+                    dismissForToday()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("关闭今日安排")
                 Button(isExpanded ? "收起" : "今日安排 · \(prioritizedItems.count)") {
                     withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
                     if isExpanded {
@@ -161,11 +197,13 @@ struct TodayBriefingView: View {
     }
 
     private var reminderCountText: String {
+        let start = calendar.startOfDay(for: .now)
+        let horizon = calendar.date(byAdding: .day, value: 4, to: start) ?? .distantFuture
         let count = prioritizedItems.filter { item in
             guard let due = item.dueAt else { return false }
-            return due < (calendar.date(byAdding: .day, value: 7, to: .now) ?? .distantFuture)
+            return due < horizon
         }.count
-        return count == 0 ? "未来 7 天暂无定时待办" : "未来 7 天 \(count) 项"
+        return count == 0 ? "未来 3 天暂无定时待办" : "未来 3 天 \(count) 项"
     }
 
     @ViewBuilder
@@ -185,7 +223,7 @@ struct TodayBriefingView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 52, alignment: .leading)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(item.title)
+                        Text(L10n.tr(item.title))
                             .font(.subheadline)
                             .lineLimit(1)
                         Text(item.detail)
@@ -291,7 +329,7 @@ private struct TodayBriefingRow: View {
                         .font(.caption)
                         .foregroundStyle(due < .now ? .red : .secondary)
                 } else if let detail = item.displayConciseDetail, !detail.isEmpty {
-                    Text(detail)
+                    Text(L10n.tr(detail))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
