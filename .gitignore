@@ -6,4 +6,5 @@ DerivedData/
 xcuserdata/
 scripts/config.local
 Assistant/Info.plist
+.workbuddy/
 *.litertlm
