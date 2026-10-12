@@ -28,6 +28,15 @@ struct VoiceIntentProcessor {
             return settingResult
         }
 
+        // 学习某项技能：走学习路径拆解（必须先于通用规划，否则会被平铺清单模板吃掉）
+        if SkillPathPlanner.isLearningQuery(trimmed),
+           let draft = SkillPathPlanner.build(query: trimmed) {
+            return VoiceIntentResult(
+                reply: L10n.tr(draft.summaryText),
+                skillPlan: draft
+            )
+        }
+
         // 检查是否命中任务规划与待办拆解意图
         if TaskPlanningEngine.shared.isPlanningQuery(trimmed),
            let plan = TaskPlanningEngine.shared.decomposeTask(query: trimmed) {

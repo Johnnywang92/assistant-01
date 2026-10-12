@@ -84,6 +84,7 @@ fileprivate struct TodoClassification {
                 if item.isRecurring { doneRecurring.append(item) }
                 switch item.type {
                 case .general, .event, .travelBooking: doneGenerals.append(item)
+                case .skillLearning: doneGenerals.append(item)
                 case .parcel, .returnParcel: doneParcels.append(item)
                 case .medication, .housework, .exercise, .charging: doneLife.append(item)
                 case .subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare: doneAlerts.append(item)
@@ -94,6 +95,7 @@ fileprivate struct TodoClassification {
                 if item.isRecurring { recurring.append(item) }
                 switch item.type {
                 case .general, .event, .travelBooking: generals.append(item)
+                case .skillLearning: generals.append(item)
                 case .parcel: parcels.append(item)
                 case .returnParcel: returnParcels.append(item)
                 case .medication: medications.append(item)
@@ -195,6 +197,7 @@ struct TodoListView: View {
         case .childVaccine, .childGrowth, .childMilestone, .childHealth: return .parenting
         case .pet: return .pet
         case .general, .event, .travelBooking: return .general
+        case .skillLearning: return .general
         case .data: return .all
         }
     }
@@ -2657,6 +2660,8 @@ struct AddTodoSheet: View {
             return "健康随访（如：宝宝儿保复查）"
         case .pet:
             return "宠物事项（如：喂食、驱虫、洗护或宠物就医）"
+        case .skillLearning:
+            return "学习任务（如：练 20 分钟和弦切换、读完第 3 章并做笔记）"
         case .general, .data:
             return "待办名称（如：去超市买牛奶、准备工作周报、下午开会）"
         }

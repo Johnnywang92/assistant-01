@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 
@@ -142,6 +143,9 @@ struct VoiceDialogueView: View {
                                     },
                                     onDiscardPlan: {
                                         handleDiscardPlan(messageId: msg.id)
+                                    },
+                                    onSaveSkillPlan: { draft in
+                                        handleSaveSkillPlan(messageId: msg.id, draft: draft)
                                     }
                                 )
                             }
@@ -515,6 +519,7 @@ struct VoiceDialogueView: View {
             var options: [DialogueActionOption]? = nil
             var shouldOpenManualSettings: Bool = false
             var planningPlan: TaskPlanningPlan? = nil
+            var skillPlan: SkillPathDraft? = nil
 
             if useLLMEngine {
                 // 如果输入命中设置，优先使用 ConversationSettingsEngine 确保零延迟与选项卡片呈现
@@ -523,6 +528,10 @@ struct VoiceDialogueView: View {
                     reply = result.reply
                     options = result.options
                     shouldOpenManualSettings = result.triggerOpenManualSettings
+                } else if SkillPathPlanner.isLearningQuery(trimmed),
+                          let draft = SkillPathPlanner.build(query: trimmed) {
+                    reply = draft.summaryText
+                    skillPlan = draft
                 } else if TaskPlanningEngine.shared.isPlanningQuery(trimmed),
                           let plan = await TaskPlanningEngine.shared.decomposeTaskWithAI(query: trimmed) {
                     reply = "\(plan.summary)\n我已将分解好的具体待办整理在下方清单卡片中，你可以预览勾选，确认后点击「一键加入待办」即可保存至 App 中。"
@@ -537,9 +546,10 @@ struct VoiceDialogueView: View {
                 options = result.options
                 shouldOpenManualSettings = result.triggerOpenManualSettings
                 planningPlan = result.planningPlan
+                skillPlan = result.skillPlan
             }
 
-            let assistantMsg = DialogueMessage(role: .assistant, text: reply, options: options, planningPlan: planningPlan)
+            let assistantMsg = DialogueMessage(role: .assistant, text: reply, options: options, planningPlan: planningPlan, skillPlan: skillPlan)
             dialogueHistory.append(assistantMsg)
             DialogueHistoryManager.shared.saveMessage(role: "assistant", text: reply, sessionID: currentSessionID, context: context)
 
@@ -612,6 +622,27 @@ struct VoiceDialogueView: View {
         }
     }
 
+    private func handleSaveSkillPlan(messageId: UUID, draft: SkillPathDraft) {
+        let path = SkillPathManager.shared.save(draft: draft, context: context)
+        // 新路径立即进入桌面/锁屏「今日练习」快照
+        WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
+        if let idx = dialogueHistory.firstIndex(where: { $0.id == messageId }) {
+            var updated = dialogueHistory[idx]
+            updated.isSkillPlanSaved = true
+            dialogueHistory[idx] = updated
+        }
+        let firstStageName = draft.stages.first?.name ?? "启动期"
+        let text = "已开启学习路径「\(path.title)」，共 \(draft.stages.count) 个阶段、约 \(draft.totalWeeks) 周。"
+            + "第一阶段「\(firstStageName)」的 \(draft.stages.first?.tasks.count ?? 0) 条任务已写入待办，"
+            + "练习打卡会每天自动提醒。可在「生活 → 学习路径」查看进度。"
+        let successMsg = DialogueMessage(role: .assistant, text: text)
+        dialogueHistory.append(successMsg)
+        DialogueHistoryManager.shared.saveMessage(role: "assistant", text: text, sessionID: currentSessionID, context: context)
+        if !isMuted {
+            voice.speak(text: "已开启学习路径，第一阶段的任务已写入待办。")
+        }
+    }
+
     private func handleDiscardPlan(messageId: UUID) {
         let discardMsg = DialogueMessage(
             role: .assistant,
@@ -633,6 +664,8 @@ struct DialogueMessage: Identifiable {
     var timestamp: Date = .now
     var options: [DialogueActionOption]? = nil
     var planningPlan: TaskPlanningPlan? = nil
+    var skillPlan: SkillPathDraft? = nil
+    var isSkillPlanSaved: Bool = false
 }
 
 struct DialogueBubble: View {
@@ -640,6 +673,7 @@ struct DialogueBubble: View {
     var onSelectOption: ((DialogueActionOption) -> Void)? = nil
     var onSavePlan: ((TaskPlanningPlan) -> Void)? = nil
     var onDiscardPlan: (() -> Void)? = nil
+    var onSaveSkillPlan: ((SkillPathDraft) -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -669,6 +703,13 @@ struct DialogueBubble: View {
                             onSavePlan?(savedPlan)
                         } onDiscard: {
                             onDiscardPlan?()
+                        }
+                    }
+
+                    // 技能学习路径卡片（如果存在）
+                    if let draft = message.skillPlan {
+                        SkillPlanCardView(draft: draft, isSaved: message.isSkillPlanSaved) { savedDraft in
+                            onSaveSkillPlan?(savedDraft)
                         }
                     }
 
@@ -870,6 +911,135 @@ struct PlanningTaskCardView: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(Color.primary.opacity(0.08), lineWidth: 0.8)
                 )
+        )
+    }
+}
+
+/// 技能学习路径卡片：四阶段概览 + 第一阶段任务预览
+struct SkillPlanCardView: View {
+    let draft: SkillPathDraft
+    var isSaved: Bool = false
+    var onStart: (SkillPathDraft) -> Void
+
+    private var firstStage: PlannedSkillStage? { draft.stages.first }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: draft.category.icon)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.accentColor)
+
+                Text(draft.title)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Text("\(draft.stages.count) 阶段 · \(draft.totalWeeks) 周")
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                    .foregroundStyle(Color.accentColor)
+            }
+
+            Text("目标：\(draft.goal)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // 四阶段概览条
+            HStack(spacing: 4) {
+                ForEach(draft.stages) { stage in
+                    VStack(spacing: 2) {
+                        Text("\(stage.index + 1)")
+                            .font(.caption2.bold())
+                        Text(stage.name)
+                            .font(.caption2)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(stage.index == 0 ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.05))
+                    )
+                    .foregroundStyle(stage.index == 0 ? Color.accentColor : Color.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("共 \(draft.stages.count) 个阶段，当前展开第一阶段")
+
+            Divider()
+
+            if let stage = firstStage {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("第一阶段 · \(stage.name)")
+                        .font(.caption.bold())
+                        .foregroundStyle(.primary)
+
+                    Text("通关标准：\(stage.acceptance)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    ForEach(stage.tasks) { task in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: task.kind == .practice ? "repeat" : "flag.fill")
+                                .font(.caption)
+                                .foregroundStyle(task.kind == .practice ? Color.orange : Color.accentColor)
+                                .padding(.top, 2)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(task.title)
+                                    .font(.caption)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if let detail = task.detail {
+                                    Text(detail)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                if task.kind == .practice {
+                                    Text("每\(task.recurrenceDays == 1 ? "天" : " \(task.recurrenceDays) 天") · \(task.minutes) 分钟")
+                                        .font(.caption2)
+                                        .foregroundStyle(Color.orange)
+                                }
+                            }
+                            Spacer()
+                        }
+                    }
+                }
+            }
+
+            Button {
+                Haptic.light()
+                onStart(draft)
+            } label: {
+                HStack {
+                    Image(systemName: isSaved ? "checkmark.circle.fill" : "play.fill")
+                    Text(isSaved ? "已开启学习路径" : "开启学习路径")
+                        .font(.subheadline.bold())
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .background(Capsule().fill(isSaved ? Color.green.opacity(0.18) : Color.accentColor))
+                .foregroundStyle(isSaved ? Color.green : Color.white)
+            }
+            .buttonStyle(.plain)
+            .disabled(isSaved)
+            .accessibilityLabel(isSaved ? "学习路径已开启" : "开启学习路径，写入第一阶段任务")
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(UIColor.tertiarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.25), lineWidth: 0.8)
         )
     }
 }

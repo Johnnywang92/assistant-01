@@ -19,10 +19,12 @@ struct LifeVaultView: View {
     @Query private var pets: [PetProfile]
     @Query private var children: [ChildProfile]
     @Query(sort: [SortDescriptor(\LifeEventProject.targetDate, order: .forward)]) private var lifeProjects: [LifeEventProject]
+    @Query private var skillPaths: [SkillPath]
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var selectedDestination: VaultDestination?
+    @ObservedObject private var router = NavigationRouter.shared
 
     private enum VaultDestination: Hashable, Identifiable {
         case lifeEvents
@@ -36,6 +38,7 @@ struct LifeVaultView: View {
         case voiceMemos
         case pets
         case children
+        case skillPaths
 
         var id: Self { self }
     }
@@ -86,6 +89,18 @@ struct LifeVaultView: View {
             }
         }
         return "订婚结婚 · 乔迁装修 · 满月升学 · 亲友共享全流程"
+    }
+
+    // 学习路径摘要
+    private var skillPathsSummary: String {
+        let active = skillPaths.filter { $0.status == .active }
+        if active.isEmpty { return "学吉他 · 学 Python · 练口语，自动拆成阶段计划" }
+        let total = skillPaths.count
+        if let first = active.first {
+            let stageText = "第 \(first.currentStageIndex + 1) 阶段"
+            return total == 1 ? "\(first.title) · \(stageText)" : "\(first.title)（\(stageText)）等 \(total) 条"
+        }
+        return "\(total) 条学习路径"
     }
 
     var body: some View {
@@ -236,6 +251,21 @@ struct LifeVaultView: View {
                     }
                 }
 
+                // MARK: - 2.5 技能学习路径
+                Section("学习成长") {
+                    NavigationLink {
+                        SkillPathListView()
+                    } label: {
+                        vaultRow(
+                            icon: "book.fill",
+                            color: .purple,
+                            title: "技能学习路径",
+                            status: skillPathsSummary,
+                            isAlert: false
+                        )
+                    }
+                }
+
                 // MARK: - 3. 物品收纳与空间感知
                 Section("物品与地点") {
                     NavigationLink {
@@ -340,6 +370,13 @@ struct LifeVaultView: View {
             .navigationDestination(item: $selectedDestination) { destination in
                 destinationView(for: destination)
             }
+            // 深链（如小组件「今日练习」点击）：直接推入技能学习路径列表
+            .onChange(of: router.requestedSkillPathList) { _, requested in
+                if requested {
+                    selectedDestination = .skillPaths
+                    router.requestedSkillPathList = false
+                }
+            }
         }
     }
 
@@ -370,6 +407,8 @@ struct LifeVaultView: View {
             PetManagementView()
         case .children:
             ChildManagementView()
+        case .skillPaths:
+            SkillPathListView()
         }
     }
 

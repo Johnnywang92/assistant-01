@@ -86,6 +86,8 @@ public final class NavigationRouter: ObservableObject {
     @Published public var pendingImportPayload: TodoSharePayload?
     /// 万能投喂口的剪贴板预填充载荷（由投喂口消费后置 nil）
     @Published public var omniboxPrefill: OmniboxPayload?
+    /// 深链触发：切到生活档案后直接推入技能学习路径列表（由 LifeVaultView 消费后置 false）
+    @Published public var requestedSkillPathList: Bool = false
 
     private init() {}
 
@@ -121,6 +123,9 @@ public final class NavigationRouter: ObservableObject {
             selectedTab = .expenses
         case "vault", "id-vault", "ids":
             selectedTab = .vault
+        case "skills", "skill", "learning", "practice":
+            selectedTab = .vault
+            requestedSkillPathList = true
         case "passwords", "password":
             selectedTab = .passwords
         case "documents", "document", "cards":

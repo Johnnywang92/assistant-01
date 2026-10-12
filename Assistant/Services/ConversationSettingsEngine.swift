@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import UIKit
+import AssistantCore
 
 /// 对话选项动作类型
 public enum OptionActionType: Hashable, Equatable, Sendable {
@@ -41,17 +42,20 @@ struct VoiceIntentResult: Equatable {
     var options: [DialogueActionOption]?
     var triggerOpenManualSettings: Bool
     var planningPlan: TaskPlanningPlan?
+    var skillPlan: SkillPathDraft?
 
     init(
         reply: String,
         options: [DialogueActionOption]? = nil,
         triggerOpenManualSettings: Bool = false,
-        planningPlan: TaskPlanningPlan? = nil
+        planningPlan: TaskPlanningPlan? = nil,
+        skillPlan: SkillPathDraft? = nil
     ) {
         self.reply = L10n.tr(reply)
         self.options = options
         self.triggerOpenManualSettings = triggerOpenManualSettings
         self.planningPlan = planningPlan
+        self.skillPlan = skillPlan
     }
 }
 
