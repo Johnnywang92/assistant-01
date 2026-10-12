@@ -4,6 +4,8 @@
 #      scripts/reinstall.sh --generate # 只生成 Xcode 工程
 set -euo pipefail
 
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
 ROOT="${0:A:h:h}"
 cd "$ROOT"
 
@@ -20,6 +22,7 @@ xcodegen generate --quiet
 [[ "${1:-}" == "--generate" ]] && { echo "已生成 Assistant.xcodeproj"; exit 0; }
 
 BUILD_DIR="$ROOT/build"
+mkdir -p "$BUILD_DIR"
 echo "▶ 编译中…"
 xcodebuild \
   -project Assistant.xcodeproj \
@@ -34,4 +37,6 @@ xcodebuild \
 APP="$BUILD_DIR/Build/Products/Release-iphoneos/Assistant.app"
 echo "▶ 安装到设备 ${DEVICE_ID}…"
 xcrun devicectl device install app --device "$DEVICE_ID" "$APP"
+date +%s > "$BUILD_DIR/.last_renew_timestamp"
 echo "✅ 安装完成，签名有效期至 $(date -v+7d '+%m月%d日 %H:%M')"
+
