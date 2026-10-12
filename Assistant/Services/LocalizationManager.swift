@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import SwiftUI
 
@@ -51,7 +52,7 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
 public final class LanguageManager: ObservableObject {
     public static let shared = LanguageManager()
 
-    public nonisolated static let storageKey = "app_language_preference"
+    public nonisolated static let storageKey = AssistantSettingsKeys.languagePreference
 
     @Published public var selectedLanguage: AppLanguage {
         didSet {

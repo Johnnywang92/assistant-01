@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import SwiftData
 
@@ -50,3 +51,7 @@ public final class PasswordVaultItem {
         return usedDays >= rotateCycleDays
     }
 }
+
+/// 遵循 Core 的迁移协议：`PasswordVaultCipher.migrate` 就地升级明文记录。
+/// 协议只要求 `passwordEncrypted` 可读写——不把整个模型暴露给 Core。
+extension PasswordVaultItem: PasswordVaultRecord {}

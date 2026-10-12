@@ -165,6 +165,14 @@ struct DataMigrationView: View {
                             .font(.caption)
                         Text("• 原始消息: \(summary.rawMessageCount) | 位置采样: \(summary.locationSampleCount)")
                             .font(.caption)
+                        if summary.skillPathCount > 0 || summary.practiceLogCount > 0 {
+                            Text("• 学习路径: \(summary.skillPathCount) 条 | 阶段: \(summary.skillStageCount) | 打卡: \(summary.practiceLogCount) 次")
+                                .font(.caption)
+                        }
+                        if summary.settingsKeyCount > 0 {
+                            Text("• 偏好设置: \(summary.settingsKeyCount) 项（名称/语言/背景/预算/报告推送等）")
+                                .font(.caption)
+                        }
 
                         Divider()
 

@@ -137,6 +137,26 @@ public final class AppBackgroundManager: ObservableObject {
         }
     }
 
+    /// 备份导出：读取自定义壁纸文件字节（无自定义壁纸时返回 nil）
+    public var customImageFileData: Data? {
+        try? Data(contentsOf: getWallpaperFileURL())
+    }
+
+    /// 备份导入：写回自定义壁纸并按磁盘最新状态重载内存态
+    public func restoreCustomImage(data: Data) {
+        let url = getWallpaperFileURL()
+        try? data.write(to: url)
+        reloadFromDefaults()
+    }
+
+    /// 从 UserDefaults 与磁盘重载内存态（备份导入设置后调用，避免单例持有旧值）
+    public func reloadFromDefaults() {
+        currentStyleRaw = UserDefaults.standard.string(forKey: styleKey) ?? AppBackgroundStyle.system.rawValue
+        blurRadius = UserDefaults.standard.object(forKey: blurKey) as? Double ?? 8.0
+        dimOpacity = UserDefaults.standard.object(forKey: dimKey) as? Double ?? 0.25
+        loadCustomImage()
+    }
+
     private func loadCustomImage() {
         let url = getWallpaperFileURL()
         if let data = try? Data(contentsOf: url), let img = UIImage(data: data) {

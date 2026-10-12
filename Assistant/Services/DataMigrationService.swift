@@ -3,6 +3,7 @@ import CommonCrypto
 import Foundation
 import SwiftData
 import UIKit
+import AssistantCore
 
 /// 备份与迁移数据包协议版本
 public struct BackupPackage: Codable {
@@ -32,6 +33,12 @@ public struct BackupPackage: Codable {
     public var dialogueRecords: [DialogueRecordDTO]?
     public var rawMessages: [RawMessageDTO]?
     public var locationSamples: [LocationSampleDTO]?
+    /// 技能学习路径（含阶段与打卡流水；旧版备份为 nil）
+    public var skillPaths: [SkillPathDTO]?
+    public var skillStages: [SkillStageDTO]?
+    public var practiceLogs: [SkillPracticeLogDTO]?
+    /// 用户偏好设置快照（旧版备份为 nil；收录原则见 AssistantCore 的 AssistantSettingsKeys）
+    public var settings: SettingsSnapshotDTO?
 }
 
 // MARK: - DTO 模型定义
@@ -58,6 +65,11 @@ public struct TodoDTO: Codable {
     public var qrCodePayload: String?
     public var qrCodeImageData: Data?
     public var attachmentImageData: Data?
+    // 技能学习路径关联（旧备份为 nil）
+    public var skillPathID: UUID?
+    public var skillStageIndex: Int?
+    public var isSkillPractice: Bool?
+    public var skillPracticeMinutes: Int?
 }
 
 public struct SubscriptionDTO: Codable {
@@ -155,6 +167,7 @@ public struct ExpenseDTO: Codable {
     public var rawText: String
     public var date: Date
     public var createdAt: Date
+    public var linkedItemID: UUID?
 }
 
 public struct IDDocumentDTO: Codable {
@@ -222,6 +235,11 @@ public struct StoredItemDTO: Codable {
     public var roomArea: String
     public var notes: String?
     public var imageData: Data?
+    public var purchasePrice: Double?
+    public var purchaseDate: Date?
+    public var isSecondHand: Bool?
+    public var resalePrice: Double?
+    public var resoldDate: Date?
     public var createdAt: Date
     public var updatedAt: Date
 }
@@ -253,6 +271,43 @@ public struct LocationSampleDTO: Codable {
     public var isWeekend: Bool
 }
 
+public struct SkillPathDTO: Codable {
+    public var id: UUID
+    public var title: String
+    public var categoryRaw: String
+    public var goal: String
+    public var weeklyMinutes: Int
+    public var totalWeeks: Int
+    public var startedAt: Date
+    public var statusRaw: String
+    public var currentStageIndex: Int
+    public var lastPracticedAt: Date?
+    public var practiceStreakDays: Int
+    public var practiceCount: Int
+}
+
+public struct SkillStageDTO: Codable {
+    public var id: UUID
+    public var pathID: UUID
+    public var index: Int
+    public var name: String
+    public var acceptance: String
+    public var plannedDays: Int
+    public var isUnlocked: Bool
+    public var isCompleted: Bool
+    public var completedAt: Date?
+    /// 未展开阶段的任务模板（base64 JSON，与模型端一致）
+    public var tasksJSON: String
+}
+
+public struct SkillPracticeLogDTO: Codable {
+    public var id: UUID
+    public var pathID: UUID
+    public var stageIndex: Int
+    public var practicedAt: Date
+    public var minutes: Int
+}
+
 // MARK: - 备份解析报告
 
 public struct BackupInspectionSummary: Identifiable {
@@ -278,13 +333,18 @@ public struct BackupInspectionSummary: Identifiable {
     public var dialogueCount: Int = 0
     public var rawMessageCount: Int = 0
     public var locationSampleCount: Int = 0
+    public var skillPathCount: Int = 0
+    public var skillStageCount: Int = 0
+    public var practiceLogCount: Int = 0
+    public var settingsKeyCount: Int = 0
     public var isEncryptedWithPIN: Bool = false
 
     public var totalItems: Int {
         todoCount + subscriptionCount + itemExpiryCount + anniversaryCount +
         habitCount + medicationCount + placeCount + passwordCount + usageRecordCount +
         expenseCount + documentCount + departureItemCount + voiceMemoCount +
-        vehicleCount + storedItemCount + dialogueCount + rawMessageCount + locationSampleCount
+        vehicleCount + storedItemCount + dialogueCount + rawMessageCount + locationSampleCount +
+        skillPathCount + skillStageCount + practiceLogCount + settingsKeyCount
     }
 }
 
@@ -326,10 +386,12 @@ public enum MigrationCryptoError: LocalizedError {
 }
 
 /// 端到端 AES-256-GCM 加密迁移数据包封套
+/// 密钥派生与加密封装在 `AssistantCore.BackupEnvelopeCrypto`（纯函数、有单测覆盖），
+/// 这里只保留封套的数据结构与版本号。
 public struct EncryptedBackupEnvelope: Codable {
     public static let magicTag = "ASSISTANT_ENCRYPTED_MIGRATION"
-    public static let currentVersion = 2
-    public static let defaultIterations = 310_000
+    public static let currentVersion = BackupEnvelopeCrypto.currentVersion
+    public static let defaultIterations = BackupEnvelopeCrypto.defaultIterations
 
     public var magic: String
     public var version: Int
@@ -455,6 +517,9 @@ final class DataMigrationService {
         let dialogueRecords = try context.fetch(FetchDescriptor<DialogueMessageRecord>())
         let rawMessages = try context.fetch(FetchDescriptor<RawMessage>())
         let locationSamples = try context.fetch(FetchDescriptor<LocationStaySample>())
+        let skillPaths = try context.fetch(FetchDescriptor<SkillPath>())
+        let skillStages = try context.fetch(FetchDescriptor<SkillStage>())
+        let practiceLogs = try context.fetch(FetchDescriptor<SkillPracticeLog>())
 
         let todoDTOs = todos.map {
             TodoDTO(
@@ -470,7 +535,11 @@ final class DataMigrationService {
                 reminderOverrideAt: $0.reminderOverrideAt,
                 qrCodePayload: $0.qrCodePayload,
                 qrCodeImageData: $0.qrCodeImageData,
-                attachmentImageData: $0.attachmentImageData
+                attachmentImageData: $0.attachmentImageData,
+                skillPathID: $0.skillPathID,
+                skillStageIndex: $0.skillStageIndex,
+                isSkillPractice: $0.isSkillPractice,
+                skillPracticeMinutes: $0.skillPracticeMinutes
             )
         }
 
@@ -548,7 +617,8 @@ final class DataMigrationService {
             ExpenseDTO(
                 id: $0.id, amount: $0.amount, isIncome: $0.isIncome,
                 categoryRaw: $0.categoryRaw, title: $0.title,
-                rawText: $0.rawText, date: $0.date, createdAt: $0.createdAt
+                rawText: $0.rawText, date: $0.date, createdAt: $0.createdAt,
+                linkedItemID: $0.linkedItemID
             )
         }
 
@@ -613,7 +683,10 @@ final class DataMigrationService {
         }
         let storedItemDTOs = storedItems.map { item in
             StoredItemDTO(id: item.id, name: item.name, location: item.location, roomArea: item.roomArea,
-                          notes: item.notes, imageData: item.imageData, createdAt: item.createdAt, updatedAt: item.updatedAt)
+                          notes: item.notes, imageData: item.imageData,
+                          purchasePrice: item.purchasePrice, purchaseDate: item.purchaseDate,
+                          isSecondHand: item.isSecondHand, resalePrice: item.resalePrice, resoldDate: item.resoldDate,
+                          createdAt: item.createdAt, updatedAt: item.updatedAt)
         }
         let dialogueDTOs = dialogueRecords.map { record in
             DialogueRecordDTO(id: record.id, roleRaw: record.roleRaw, text: record.text,
@@ -627,6 +700,33 @@ final class DataMigrationService {
             LocationSampleDTO(id: sample.id, latitude: sample.latitude, longitude: sample.longitude,
                               wifiSSID: sample.wifiSSID, timestamp: sample.timestamp,
                               hourOfDay: sample.hourOfDay, isWeekend: sample.isWeekend)
+        }
+
+        let skillPathDTOs = skillPaths.map { p in
+            SkillPathDTO(
+                id: p.id, title: p.title, categoryRaw: p.categoryRaw,
+                goal: p.goal, weeklyMinutes: p.weeklyMinutes, totalWeeks: p.totalWeeks,
+                startedAt: p.startedAt, statusRaw: p.statusRaw,
+                currentStageIndex: p.currentStageIndex, lastPracticedAt: p.lastPracticedAt,
+                practiceStreakDays: p.practiceStreakDays, practiceCount: p.practiceCount
+            )
+        }
+
+        let skillStageDTOs = skillStages.map { s in
+            SkillStageDTO(
+                id: s.id, pathID: s.pathID, index: s.index,
+                name: s.name, acceptance: s.acceptance,
+                plannedDays: s.plannedDays, isUnlocked: s.isUnlocked,
+                isCompleted: s.isCompleted, completedAt: s.completedAt,
+                tasksJSON: s.tasksJSON
+            )
+        }
+
+        let practiceLogDTOs = practiceLogs.map { log in
+            SkillPracticeLogDTO(
+                id: log.id, pathID: log.pathID, stageIndex: log.stageIndex,
+                practicedAt: log.practicedAt, minutes: log.minutes
+            )
         }
 
         let metadata = BackupPackage.Metadata(
@@ -655,60 +755,88 @@ final class DataMigrationService {
             storedItems: storedItemDTOs,
             dialogueRecords: dialogueDTOs,
             rawMessages: rawMessageDTOs,
-            locationSamples: locationDTOs
+            locationSamples: locationDTOs,
+            skillPaths: skillPathDTOs,
+            skillStages: skillStageDTOs,
+            practiceLogs: practiceLogDTOs,
+            settings: collectSettingsSnapshot()
         )
     }
 
-    /// 从 PIN 码与盐值派生 AES-256 密钥
-    private static func deriveLegacyKey(pin: String, salt: Data) -> SymmetricKey {
-        let pinData = Data(pin.utf8)
-        let inputKey = SymmetricKey(data: pinData)
-        return HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: inputKey,
-            salt: salt,
-            info: Data("assistant.data.migration.aes256".utf8),
-            outputByteCount: 32
-        )
-    }
+    // MARK: - 偏好设置快照
 
-    private static func deriveKey(pin: String, salt: Data, iterations: Int) throws -> SymmetricKey {
-        guard (100_000...2_000_000).contains(iterations) else { throw MigrationCryptoError.corruptedData }
-        var derived = Data(count: 32)
-        let status = pin.withCString { password in
-            salt.withUnsafeBytes { saltBytes in
-                derived.withUnsafeMutableBytes { keyBytes in
-                    CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2), password, pin.utf8.count,
-                                       saltBytes.bindMemory(to: UInt8.self).baseAddress, salt.count,
-                                       CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), UInt32(iterations),
-                                       keyBytes.bindMemory(to: UInt8.self).baseAddress, 32)
-                }
+    /// 按白名单收集用户偏好。只读 `object(forKey:) != nil` 的键，
+    /// 避免把「用户从未设置、用默认值兜底」的键也写进备份（否则还原会覆盖新设备的合理默认）。
+    private func collectSettingsSnapshot() -> SettingsSnapshotDTO {
+        let defaults = UserDefaults.standard
+        var entries: [String: SettingsValue] = [:]
+
+        for key in AssistantSettingsKeys.stringKeys where defaults.object(forKey: key) != nil {
+            entries[key] = .string(defaults.string(forKey: key) ?? "")
+        }
+        for key in AssistantSettingsKeys.boolKeys where defaults.object(forKey: key) != nil {
+            entries[key] = .bool(defaults.bool(forKey: key))
+        }
+        for key in AssistantSettingsKeys.intKeys where defaults.object(forKey: key) != nil {
+            entries[key] = .int(defaults.integer(forKey: key))
+        }
+        for key in AssistantSettingsKeys.doubleKeys where defaults.object(forKey: key) != nil {
+            entries[key] = .double(defaults.double(forKey: key))
+        }
+        for key in AssistantSettingsKeys.dataKeys where defaults.object(forKey: key) != nil {
+            if let data = defaults.data(forKey: key) {
+                entries[key] = .data(data)
             }
         }
-        guard status == kCCSuccess else { throw MigrationCryptoError.corruptedData }
-        return SymmetricKey(data: derived)
+
+        return SettingsSnapshotDTO(
+            entries: entries,
+            wallpaperImageData: AppBackgroundManager.shared.customImageFileData
+        )
+    }
+
+    /// 还原偏好设置（仅覆盖策略调用：合并策略保留本机设置，只搬数据不改行为）。
+    /// 写盘后必须让各单例重载，否则内存里还是旧值。
+    private func applySettingsSnapshot(_ snapshot: SettingsSnapshotDTO) {
+        snapshot.apply(to: UserDefaults.standard)
+
+        if let imageData = snapshot.wallpaperImageData {
+            AppBackgroundManager.shared.restoreCustomImage(data: imageData)
+        } else {
+            AppBackgroundManager.shared.reloadFromDefaults()
+            // 备份里没有壁纸字节却标记了自定义图片：样式回落系统，
+            // 避免设置页显示「自定义照片」而实际渲染的是系统底色
+            if AppBackgroundManager.shared.currentStyle == .customImage,
+               AppBackgroundManager.shared.customImage == nil {
+                AppBackgroundManager.shared.currentStyle = .system
+            }
+        }
+        TabBarManager.shared.reloadFromDefaults()
+
+        // 语言走 setter：同步 AppleLanguages 与本地化缓存，并刷新桌面快捷菜单
+        if case .string(let raw)? = snapshot.entries[AssistantSettingsKeys.languagePreference],
+           let language = AppLanguage(rawValue: raw) {
+            LanguageManager.shared.selectedLanguage = language
+        }
     }
 
     /// 必须使用 PIN 码加密导出全量备份数据包
     public func exportEncryptedArchive(pin: String, hint: String? = nil) throws -> (data: Data, filename: String) {
         let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard cleanPin.count >= 8 && cleanPin.count <= 64 else {
-            throw MigrationCryptoError.pinTooShort
-        }
+        // 口令长度与 KDF 参数由 Core 校验（8–64 位、迭代 10 万–200 万）
+        try BackupEnvelopeCrypto.validatePin(cleanPin)
 
         let package = try buildBackupPackage()
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let packageData = try encoder.encode(package)
 
-        // 生成 32 字节高熵随机盐
-        let salt = SymmetricKey(size: .bits256)
-        let saltData = salt.withUnsafeBytes { Data($0) }
-
-        let symmetricKey = try Self.deriveKey(pin: cleanPin, salt: saltData, iterations: EncryptedBackupEnvelope.defaultIterations)
-        let sealedBox = try AES.GCM.seal(packageData, using: symmetricKey)
-        guard let combined = sealedBox.combined else {
-            throw MigrationCryptoError.corruptedData
-        }
+        // 每份备份独立 32 字节高熵随机盐（同一口令的两份备份密文也不同）
+        let saltData = BackupEnvelopeCrypto.makeSalt()
+        let combined = try BackupEnvelopeCrypto.seal(
+            packageData, pin: cleanPin, salt: saltData,
+            iterations: EncryptedBackupEnvelope.defaultIterations
+        )
 
         let envelope = EncryptedBackupEnvelope(
             saltBase64: saltData.base64EncodedString(),
@@ -761,6 +889,10 @@ final class DataMigrationService {
             dialogueCount: package.dialogueRecords?.count ?? 0,
             rawMessageCount: package.rawMessages?.count ?? 0,
             locationSampleCount: package.locationSamples?.count ?? 0,
+            skillPathCount: package.skillPaths?.count ?? 0,
+            skillStageCount: package.skillStages?.count ?? 0,
+            practiceLogCount: package.practiceLogs?.count ?? 0,
+            settingsKeyCount: package.settings?.itemCount ?? 0,
             isEncryptedWithPIN: isEncryptedWithPIN
         )
     }
@@ -795,27 +927,30 @@ final class DataMigrationService {
             throw MigrationCryptoError.corruptedData
         }
 
-        let symmetricKey: SymmetricKey
-        if envelope.version == 1 {
-            symmetricKey = Self.deriveLegacyKey(pin: cleanPin, salt: saltData)
-        } else if envelope.version == EncryptedBackupEnvelope.currentVersion {
-            symmetricKey = try Self.deriveKey(pin: cleanPin, salt: saltData, iterations: envelope.iterations ?? EncryptedBackupEnvelope.defaultIterations)
-        } else {
-            throw MigrationCryptoError.corruptedData
-        }
-
+        let decryptedData: Data
         do {
-            let sealedBox = try AES.GCM.SealedBox(combined: combinedData)
-            let decryptedData = try AES.GCM.open(sealedBox, using: symmetricKey)
-
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            let package = try decoder.decode(BackupPackage.self, from: decryptedData)
-            let summary = buildSummary(package: package, isEncryptedWithPIN: true)
-            return (package, summary)
-        } catch {
-            throw MigrationCryptoError.invalidPin
+            // 版本分发在 Core：v1 走旧版 HKDF 兼容路径，v2+ 走 PBKDF2（含迭代边界校验）
+            decryptedData = try BackupEnvelopeCrypto.openPayload(
+                version: envelope.version,
+                payload: combinedData,
+                pin: cleanPin,
+                salt: saltData,
+                iterations: envelope.iterations
+            )
+        } catch let error as BackupEnvelopeCrypto.BackupCryptoError {
+            // 映射到迁移层错误码：口令错/被篡改/版本不支持/参数非法各有明确提示
+            switch error {
+            case .pinOutOfRange: throw MigrationCryptoError.pinTooShort
+            case .invalidIterations, .unsupportedVersion, .derivationFailed: throw MigrationCryptoError.corruptedData
+            case .authenticationFailed: throw MigrationCryptoError.invalidPin
+            }
         }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let package = try decoder.decode(BackupPackage.self, from: decryptedData)
+        let summary = buildSummary(package: package, isEncryptedWithPIN: true)
+        return (package, summary)
     }
 
     /// 校验并预览备份文件内容
@@ -864,6 +999,23 @@ final class DataMigrationService {
         try requireUniqueIDs(package.dialogueRecords?.map(\.id) ?? [])
         try requireUniqueIDs(package.rawMessages?.map(\.id) ?? [])
         try requireUniqueIDs(package.locationSamples?.map(\.id) ?? [])
+        try requireUniqueIDs(package.skillPaths?.map(\.id) ?? [])
+        try requireUniqueIDs(package.skillStages?.map(\.id) ?? [])
+        try requireUniqueIDs(package.practiceLogs?.map(\.id) ?? [])
+
+        // 阶段与打卡流水必须挂到已备份的路径上，否则还原后成孤儿数据
+        if let stages = package.skillStages {
+            let pathIDs = Set(package.skillPaths?.map(\.id) ?? [])
+            guard stages.allSatisfy({ pathIDs.contains($0.pathID) }) else {
+                throw MigrationCryptoError.corruptedData
+            }
+        }
+        if let logs = package.practiceLogs {
+            let pathIDs = Set(package.skillPaths?.map(\.id) ?? [])
+            guard logs.allSatisfy({ pathIDs.contains($0.pathID) }) else {
+                throw MigrationCryptoError.corruptedData
+            }
+        }
 
         for document in package.documents ?? [] {
             if let data = document.frontImageData, UIImage(data: data) == nil {
@@ -911,6 +1063,9 @@ final class DataMigrationService {
             try context.delete(model: DialogueMessageRecord.self)
             try context.delete(model: RawMessage.self)
             try context.delete(model: LocationStaySample.self)
+            try context.delete(model: SkillPath.self)
+            try context.delete(model: SkillStage.self)
+            try context.delete(model: SkillPracticeLog.self)
         }
 
         var details: [String] = []
@@ -938,7 +1093,11 @@ final class DataMigrationService {
                 remindBeforeMinutes: t.remindBeforeMinutes ?? 0,
                 qrCodePayload: t.qrCodePayload,
                 qrCodeImageData: t.qrCodeImageData,
-                attachmentImageData: t.attachmentImageData
+                attachmentImageData: t.attachmentImageData,
+                skillPathID: t.skillPathID,
+                skillStageIndex: t.skillStageIndex ?? 0,
+                isSkillPractice: t.isSkillPractice ?? false,
+                skillPracticeMinutes: t.skillPracticeMinutes ?? 0
             )
             item.id = t.id
             item.createdAt = t.createdAt
@@ -1116,6 +1275,7 @@ final class DataMigrationService {
                 date: ex.date
             )
             item.id = ex.id
+            item.linkedItemID = ex.linkedItemID
             item.createdAt = ex.createdAt
             context.insert(item)
             restoredExpenses += 1
@@ -1243,7 +1403,10 @@ final class DataMigrationService {
         for s in package.storedItems ?? [] {
             if strategy == .merge && existingStoredIDs.contains(s.id) { continue }
             let item = StoredItem(name: s.name, location: s.location, roomArea: s.roomArea,
-                                  notes: s.notes, imageData: s.imageData)
+                                  notes: s.notes, imageData: s.imageData,
+                                  purchasePrice: s.purchasePrice, purchaseDate: s.purchaseDate,
+                                  isSecondHand: s.isSecondHand ?? false,
+                                  resalePrice: s.resalePrice, resoldDate: s.resoldDate)
             item.id = s.id
             item.createdAt = s.createdAt
             item.updatedAt = s.updatedAt
@@ -1293,7 +1456,80 @@ final class DataMigrationService {
         details.append("位置采样: \(restoredSamples) 项")
         totalRestored += restoredSamples
 
+        // 17. 技能学习路径（先路径 → 再阶段 → 最后打卡流水，保证软关联完整）
+        let existingPathIDs = Set(try context.fetch(FetchDescriptor<SkillPath>()).map(\.id))
+        var restoredPaths = 0
+        for p in package.skillPaths ?? [] {
+            if strategy == .merge && existingPathIDs.contains(p.id) { continue }
+            let item = SkillPath(
+                title: p.title,
+                category: SkillCategory(rawValue: p.categoryRaw) ?? .generic,
+                goal: p.goal,
+                weeklyMinutes: p.weeklyMinutes,
+                totalWeeks: p.totalWeeks,
+                startedAt: p.startedAt
+            )
+            item.id = p.id
+            item.statusRaw = p.statusRaw
+            item.currentStageIndex = p.currentStageIndex
+            item.lastPracticedAt = p.lastPracticedAt
+            item.practiceStreakDays = p.practiceStreakDays
+            item.practiceCount = p.practiceCount
+            context.insert(item)
+            restoredPaths += 1
+        }
+        details.append("学习路径: \(restoredPaths) 条")
+        totalRestored += restoredPaths
+
+        let existingStageIDs = Set(try context.fetch(FetchDescriptor<SkillStage>()).map(\.id))
+        var restoredStages = 0
+        for s in package.skillStages ?? [] {
+            if strategy == .merge && existingStageIDs.contains(s.id) { continue }
+            let item = SkillStage(
+                pathID: s.pathID,
+                index: s.index,
+                name: s.name,
+                acceptance: s.acceptance,
+                plannedDays: s.plannedDays,
+                isUnlocked: s.isUnlocked
+            )
+            item.id = s.id
+            item.isCompleted = s.isCompleted
+            item.completedAt = s.completedAt
+            // 直接保留原始 base64 模板，避免解码再编码造成表示漂移
+            item.tasksJSON = s.tasksJSON
+            context.insert(item)
+            restoredStages += 1
+        }
+        details.append("学习阶段: \(restoredStages) 个")
+        totalRestored += restoredStages
+
+        let existingLogIDs = Set(try context.fetch(FetchDescriptor<SkillPracticeLog>()).map(\.id))
+        var restoredLogs = 0
+        for l in package.practiceLogs ?? [] {
+            if strategy == .merge && existingLogIDs.contains(l.id) { continue }
+            let item = SkillPracticeLog(
+                pathID: l.pathID,
+                stageIndex: l.stageIndex,
+                practicedAt: l.practicedAt,
+                minutes: l.minutes
+            )
+            item.id = l.id
+            context.insert(item)
+            restoredLogs += 1
+        }
+        details.append("练习打卡: \(restoredLogs) 次")
+        totalRestored += restoredLogs
+
+        // 18. 偏好设置（仅覆盖策略：合并策略只搬数据，不改本机行为）。
+        // 放在 context.save() 之后：UserDefaults 无法随 context.rollback() 回滚，
+        // 必须等数据库落库成功再动设置，避免「库回滚了、偏好却已写盘」的不一致。
         try context.save()
+        if strategy == .overwrite, let settings = package.settings {
+            applySettingsSnapshot(settings)
+            details.append("偏好设置: \(settings.itemCount) 项")
+            totalRestored += settings.itemCount
+        }
         return RestoreResultSummary(restoredCount: totalRestored, details: details)
         } catch {
             context.rollback()

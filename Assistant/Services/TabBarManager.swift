@@ -12,13 +12,18 @@ public final class TabBarManager: ObservableObject {
     private let userDefaultsKey = "custom_home_tabs_order_v1"
 
     /// 当前展示在首页 Tab 栏上的板块列表（严格保持用户自定义顺序）
-    @Published public var activeTabs: [NavigationRouter.AppTab] {
+    @Published public var activeTabs: [NavigationRouter.AppTab] = NavigationRouter.defaultTabs {
         didSet {
             save()
         }
     }
 
     private init() {
+        reloadFromDefaults()
+    }
+
+    /// 从 UserDefaults 重载 Tab 配置（备份导入设置后调用，避免单例持有旧值）
+    public func reloadFromDefaults() {
         if let data = UserDefaults.standard.data(forKey: userDefaultsKey),
            let saved = try? JSONDecoder().decode([NavigationRouter.AppTab].self, from: data),
            !saved.isEmpty {
