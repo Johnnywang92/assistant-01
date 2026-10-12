@@ -221,6 +221,11 @@ struct TodoListView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 HomeGreetingCard(activeCount: todos.filter { $0.status == .active }.count)
+                // 万能投喂口固定入口：丢进文字/截图，自动记账、建待办、存收集箱
+                OmniboxEntryCard {
+                    Haptic.light()
+                    router.activeSheet = .omnibox
+                }
                 LifeEventHomeBanner()
 
                 // 顶部固定横向分类 Tab 栏（带指示胶囊与角标）
@@ -1720,6 +1725,45 @@ private struct HomeGreetingCard: View {
             weatherText = "天气不可用"
         }
         isLoadingWeather = false
+    }
+}
+
+/// 首页固定入口卡：万能投喂口（文字 / 小票截图丢进来，自动记账、建待办、存收集箱）
+private struct OmniboxEntryCard: View {
+    var onOpen: () -> Void
+
+    var body: some View {
+        Button {
+            onOpen()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "tray.and.arrow.down.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(Color.purple))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L10n.tr("万能投喂口"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(L10n.tr("丢进文字、小票截图，自动记账、建待办、存收集箱"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
