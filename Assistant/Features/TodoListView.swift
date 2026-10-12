@@ -278,6 +278,9 @@ struct TodoListView: View {
             }
             .sheet(isPresented: $showVoice) { VoiceDialogueView() }
             .sheet(isPresented: $showCompletedHistory) { CompletedTodoHistoryView() }
+            .sheet(isPresented: $showPeriodicReport) {
+                PeriodicReportView(initialPeriod: .daily)
+            }
             .sheet(isPresented: $showPeriodicReport) { PeriodicReportView() }
             .sheet(isPresented: $showShareSheet) {
                 TodoShareSheet(
@@ -319,6 +322,8 @@ struct TodoListView: View {
                     showAddTodo = true
                 case .voice:
                     showVoice = true
+                case .periodicReport:
+                    showPeriodicReport = true
                 default:
                     break
                 }

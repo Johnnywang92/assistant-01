@@ -549,6 +549,7 @@ final class PeriodicReportManager: ObservableObject {
             content.body = "今日待办完成情况与消费账单已复盘完毕，点击查看今日专属总结。"
             content.sound = .default
             content.categoryIdentifier = "PERIODIC_REPORT"
+            content.userInfo = ["type": "periodic-report", "period": "daily"]
 
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComps, repeats: true)
             let req = UNNotificationRequest(identifier: "periodic-report-daily", content: content, trigger: trigger)

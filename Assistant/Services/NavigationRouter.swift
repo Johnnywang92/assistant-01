@@ -69,6 +69,7 @@ public final class NavigationRouter: ObservableObject {
     public enum ActiveSheet: String, Identifiable {
         case addTodo
         case voice
+        case periodicReport
         case expense
         case idVault
         case settings
@@ -237,7 +238,12 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let userInfo = response.notification.request.content.userInfo
-        if let type = userInfo["type"] as? String, type == "todo" {
+        if let type = userInfo["type"] as? String, type == "periodic-report" {
+            Task { @MainActor in
+                NavigationRouter.shared.selectedTab = .todos
+                NavigationRouter.shared.activeSheet = .periodicReport
+            }
+        } else if let type = userInfo["type"] as? String, type == "todo" {
             let context = Persistence.shared.mainContext
             TodoNotificationManager.shared.handleNotificationResponse(response, context: context)
         }
