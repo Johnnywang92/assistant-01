@@ -164,6 +164,8 @@ struct TodoListView: View {
     @State private var prepToastMessage: String? = nil
     @State private var isReordering: Bool = false
     @State private var searchText: String = ""
+    @State private var showOverdueTriage = false
+    @AppStorage("overdue_triage_last_date") private var lastTriageDateKey = ""
 
     // MARK: - 单次 O(N) 极速分类缓存（彻底消除视图树重复全表遍历）
     private var classified: TodoClassification {
@@ -198,6 +200,29 @@ struct TodoListView: View {
     }
 
     private var activeTodos: [TodoItem] { classified.active }
+
+    /// 逾期事项：截止时间已过且仍未完成（与 TodayBriefingView 的逾期口径一致）
+    private var overdueTodos: [TodoItem] {
+        todos.filter { item in
+            guard item.status == .active, let due = item.dueAt else { return false }
+            return due < .now
+        }
+        .sorted { ($0.dueAt ?? .now) < ($1.dueAt ?? .now) }
+    }
+
+    /// 早间逾期清道夫：每天首次进入待办页时，若有逾期事项则弹出发牌器
+    private func maybePresentOverdueTriage() {
+        let comps = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+        let key = "\(comps.year ?? 0)-\(comps.month ?? 0)-\(comps.day ?? 0)"
+        guard lastTriageDateKey != key, !overdueTodos.isEmpty else { return }
+        lastTriageDateKey = key
+        // 延迟弹出，避免抢在页面转场动画与其他首次弹窗之前
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            if !showOverdueTriage {
+                showOverdueTriage = true
+            }
+        }
+    }
     private var review: [TodoItem] { classified.review }
     private var done: [TodoItem] { classified.done }
     private var recurring: [TodoItem] { classified.recurring }
@@ -323,6 +348,12 @@ struct TodoListView: View {
             }
             .sheet(isPresented: $showAddTodo) {
                 AddTodoSheet(initialCategory: selectedFilter)
+            }
+            .sheet(isPresented: $showOverdueTriage) {
+                OverdueTriageSheet(items: overdueTodos)
+            }
+            .onAppear {
+                maybePresentOverdueTriage()
             }
             .sheet(isPresented: $showVoice) { VoiceDialogueView() }
             .sheet(isPresented: $showCompletedHistory) { CompletedTodoHistoryView() }
@@ -1471,8 +1502,13 @@ struct TodoListView: View {
             Section {
                 EmptyView()
             } header: {
-                TodayBriefingView(items: todos.filter { $0.status == .active })
-                    .textCase(nil)
+                VStack(spacing: 4) {
+                    TodayBriefingView(items: todos.filter { $0.status == .active })
+                    // Structured 式今日时间轴：起床/下班锚点 + 日程 + 定时待办 + 打卡，
+                    // 自动标出空闲时段，一眼判断"今天塞不塞得下一件新事"。
+                    DayTimelineView(items: todos.filter { $0.status == .active })
+                }
+                .textCase(nil)
             }
 
             // 待确认事项（在全部和日常待办页面显示）
