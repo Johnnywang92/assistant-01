@@ -5,7 +5,7 @@ import SwiftUI
 import CoreLocation
 import WeatherKit
 
-enum TodoFilterCategory: String, CaseIterable, Identifiable {
+enum TodoFilterCategory: String, CaseIterable, Identifiable, Hashable {
     case all = "全部"
     case general = "待办"
     case recurring = "周期"
@@ -13,8 +13,37 @@ enum TodoFilterCategory: String, CaseIterable, Identifiable {
     case life = "生活"
     case alert = "预警"
     case parenting = "育儿"
+    case pet = "宠物"
 
     var id: String { rawValue }
+}
+
+enum TodoCategoryPreferences {
+    private static let key = "todo_home_category_order_v1"
+
+    static func load() -> [TodoFilterCategory] {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let rawValues = try? JSONDecoder().decode([String].self, from: data) else {
+            return TodoFilterCategory.allCases
+        }
+        var categories = rawValues.compactMap { TodoFilterCategory(rawValue: $0) }.uniqued()
+        if !categories.contains(.all) { categories.insert(.all, at: 0) }
+        return categories
+    }
+
+    static func save(_ categories: [TodoFilterCategory]) {
+        let rawValues = categories.map(\.rawValue)
+        if let data = try? JSONEncoder().encode(rawValues) {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
+    }
 }
 
 /// 待办单次 O(N) 极速分类存储，避免视图每次刷新时连续发起十余次全量数组 filter
@@ -36,6 +65,7 @@ fileprivate struct TodoClassification {
     var passwordTodos: [TodoItem] = []
     var vehicleTodos: [TodoItem] = []
     var parentingTodos: [TodoItem] = []
+    var petTodos: [TodoItem] = []
     var others: [TodoItem] = []
 
     var doneGenerals: [TodoItem] = []
@@ -75,10 +105,28 @@ fileprivate struct TodoClassification {
                 case .passwordSecurity: passwordTodos.append(item)
                 case .vehicleCare: vehicleTodos.append(item)
                 case .childVaccine, .childGrowth, .childMilestone, .childHealth: parentingTodos.append(item)
+                case .pet: petTodos.append(item)
                 default: others.append(item)
                 }
             }
         }
+        // 所有活跃分组统一按“紧急性 60% + 重要性 40%”排序，sortOrder 仅作为同分时的手动顺序。
+        TodoPriority.sort(&active)
+        TodoPriority.sort(&recurring)
+        TodoPriority.sort(&generals)
+        TodoPriority.sort(&parcels)
+        TodoPriority.sort(&returnParcels)
+        TodoPriority.sort(&medications)
+        TodoPriority.sort(&chargings)
+        TodoPriority.sort(&houseworks)
+        TodoPriority.sort(&subscriptions)
+        TodoPriority.sort(&expiries)
+        TodoPriority.sort(&anniversaries)
+        TodoPriority.sort(&passwordTodos)
+        TodoPriority.sort(&vehicleTodos)
+        TodoPriority.sort(&parentingTodos)
+        TodoPriority.sort(&petTodos)
+        TodoPriority.sort(&others)
     }
 }
 
@@ -106,10 +154,11 @@ struct TodoListView: View {
     @State private var showDone = false
     @State private var showCompletedHistory = false
     @State private var showPeriodicReport = false
-    @State private var showBackgroundSettings = false
     @State private var showSeniorSettings = false
     @State private var selectedFilter: TodoFilterCategory = .all
-    @State private var showShareSheet = false
+    @State private var highlightedTodoID: UUID?
+    @State private var homeCategories: [TodoFilterCategory] = TodoCategoryPreferences.load()
+    @State private var showCategoryCustomization = false
     @State private var itemToShare: TodoItem? = nil
     @State private var confirmingTicketInfo: UpcomingTravelTicketInfo? = nil
     @State private var prepToastMessage: String? = nil
@@ -136,6 +185,18 @@ struct TodoListView: View {
         return fields.contains { $0?.localizedCaseInsensitiveContains(query) == true }
     }
 
+    private func category(for item: TodoItem) -> TodoFilterCategory {
+        switch item.type {
+        case .parcel, .returnParcel: return .parcel
+        case .medication, .charging, .housework, .exercise, .hydration: return .life
+        case .subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare: return .alert
+        case .childVaccine, .childGrowth, .childMilestone, .childHealth: return .parenting
+        case .pet: return .pet
+        case .general, .event, .travelBooking: return .general
+        case .data: return .all
+        }
+    }
+
     private var activeTodos: [TodoItem] { classified.active }
     private var review: [TodoItem] { classified.review }
     private var done: [TodoItem] { classified.done }
@@ -154,6 +215,7 @@ struct TodoListView: View {
     private var vehicleTodos: [TodoItem] { classified.vehicleTodos }
     private var otherActive: [TodoItem] { classified.others }
     private var parentingTodos: [TodoItem] { classified.parentingTodos }
+    private var petTodos: [TodoItem] { classified.petTodos }
 
     var body: some View {
         NavigationStack {
@@ -193,13 +255,37 @@ struct TodoListView: View {
                     .opacity(bgManager.isCustomBackgroundActive ? 0.35 : 1.0)
 
                 // 支持横向滑动的分页容器
-                TabView(selection: $selectedFilter) {
-                    ForEach(TodoFilterCategory.allCases) { category in
-                        renderPageContent(for: category)
-                            .tag(category)
+                ScrollViewReader { proxy in
+                    TabView(selection: $selectedFilter) {
+                        ForEach(homeCategories) { category in
+                            renderPageContent(for: category)
+                                .tag(category)
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .onChange(of: router.focusedTodoID) { _, id in
+                        guard let id else { return }
+                        highlightedTodoID = id
+                        withAnimation(.easeInOut(duration: 0.35)) {
+                            proxy.scrollTo(id, anchor: .center)
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                            if highlightedTodoID == id {
+                                highlightedTodoID = nil
+                                if router.focusedTodoID == id { router.focusedTodoID = nil }
+                            }
+                        }
+                    }
+                    .onAppear {
+                        if let id = router.focusedTodoID {
+                            DispatchQueue.main.async {
+                                withAnimation(.easeInOut(duration: 0.35)) {
+                                    proxy.scrollTo(id, anchor: .center)
+                                }
+                            }
+                        }
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
             }
             .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
             .themedAppBackground()
@@ -219,57 +305,14 @@ struct TodoListView: View {
                                 .foregroundStyle(.tint)
                         }
                     } else {
-                        Menu {
-                            Button {
-                                showAddTodo = true
-                                Haptic.light()
-                            } label: {
-                                Label("新建待办", systemImage: "plus")
-                            }
-
-                            Divider()
-
-                            Button {
-                                router.activeSheet = .qrScanner
-                                Haptic.light()
-                            } label: {
-                                Label("扫码导入", systemImage: "qrcode.viewfinder")
-                            }
-
-                            Button {
-                                showShareSheet = true
-                                Haptic.light()
-                            } label: {
-                                Label("分享待办清单", systemImage: "square.and.arrow.up")
-                            }
-
-                            Button {
-                                showCompletedHistory = true
-                                Haptic.light()
-                            } label: {
-                                Label("已完成历史记录", systemImage: "clock.arrow.circlepath")
-                            }
-
-                            Button {
-                                showPeriodicReport = true
-                                Haptic.light()
-                            } label: {
-                                Label("日报 · 周报 · 月报 · 年报", systemImage: "chart.bar.doc.horizontal")
-                            }
-
-                            Divider()
-
-                            Button {
-                                showBackgroundSettings = true
-                                Haptic.light()
-                            } label: {
-                                Label("更换背景与主题", systemImage: "paintpalette")
-                            }
+                        Button {
+                            showAddTodo = true
+                            Haptic.light()
                         } label: {
                             Image(systemName: "plus")
                                 .font(.body.weight(.semibold))
                         }
-                        .accessibilityLabel("新增待办或更多功能")
+                        .accessibilityLabel("新建待办")
                     }
                 }
             }
@@ -280,13 +323,6 @@ struct TodoListView: View {
             .sheet(isPresented: $showCompletedHistory) { CompletedTodoHistoryView() }
             .sheet(isPresented: $showPeriodicReport) {
                 PeriodicReportView(initialPeriod: .daily)
-            }
-            .sheet(isPresented: $showPeriodicReport) { PeriodicReportView() }
-            .sheet(isPresented: $showShareSheet) {
-                TodoShareSheet(
-                    allTodos: todos,
-                    initialCategory: selectedFilter
-                )
             }
             .sheet(item: $itemToShare) { item in
                 TodoShareSheet(
@@ -300,19 +336,18 @@ struct TodoListView: View {
                     showToast("已确认添加 \(count) 项出行前待办！🎫")
                 }
             }
-            .sheet(isPresented: $showBackgroundSettings) {
-                NavigationStack {
-                    AppBackgroundSettingsView()
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("完成") { showBackgroundSettings = false }
-                            }
-                        }
-                }
-            }
             .sheet(isPresented: $showSeniorSettings) {
                 NavigationStack {
                     SeniorModeSettingsView()
+                }
+            }
+            .sheet(isPresented: $showCategoryCustomization) {
+                TodoCategoryCustomizationView(categories: homeCategories) { updated in
+                    homeCategories = updated
+                    TodoCategoryPreferences.save(updated)
+                    if !updated.contains(selectedFilter) {
+                        selectedFilter = .all
+                    }
                 }
             }
             .onChange(of: router.activeSheet) { _, newSheet in
@@ -332,9 +367,14 @@ struct TodoListView: View {
             .onChange(of: router.requestedFilter) { _, filterName in
                 guard let filterName else { return }
                 if let cat = TodoFilterCategory.allCases.first(where: { $0.rawValue == filterName }) {
-                    selectedFilter = cat
+                    selectedFilter = homeCategories.contains(cat) ? cat : .all
                 }
                 router.requestedFilter = nil
+            }
+            .onChange(of: router.focusedTodoID) { _, id in
+                guard let id, let item = todos.first(where: { $0.id == id }) else { return }
+                let target = category(for: item)
+                selectedFilter = homeCategories.contains(target) ? target : .all
             }
             .onChange(of: searchText) { _, query in
                 if !query.isEmpty { selectedFilter = .all }
@@ -367,6 +407,11 @@ struct TodoListView: View {
             .onAppear {
                 anniversaryReminder.refreshActiveUpcoming(context: context)
                 ticketReminder.refreshUpcomingTickets(context: context)
+                if let id = router.focusedTodoID, let item = todos.first(where: { $0.id == id }) {
+                    let target = category(for: item)
+                    selectedFilter = homeCategories.contains(target) ? target : .all
+                    highlightedTodoID = id
+                }
             }
             .onChange(of: todos) { _, _ in
                 anniversaryReminder.refreshActiveUpcoming(context: context)
@@ -374,7 +419,7 @@ struct TodoListView: View {
             }
             .overlay(alignment: .bottom) {
                 if let toast = prepToastMessage {
-                    Text(toast)
+                    Text(L10n.tr(toast))
                         .font(.footnote.bold())
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -1059,6 +1104,9 @@ struct TodoListView: View {
         if !parentingTodos.isEmpty {
             renderParentingSection()
         }
+        if !petTodos.isEmpty {
+            renderPetSection()
+        }
         if !otherActive.isEmpty {
             Section("其它事项（\(otherActive.count)）") {
                 ForEach(otherActive) { item in
@@ -1324,6 +1372,25 @@ struct TodoListView: View {
         }
     }
 
+    @ViewBuilder
+    private func renderPetSection() -> some View {
+        Section("宠物照护（\(petTodos.count)）") {
+            if petTodos.isEmpty {
+                Text("暂无宠物待办，可添加喂食、驱虫、洗护或就医提醒。")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(petTodos) { item in
+                    TodoRow(item: item,
+                            onMoveToTop: { moveItemToTop(item, within: petTodos) },
+                            onMoveUp: { moveItemUp(item, within: petTodos) },
+                            onMoveDown: { moveItemDown(item, within: petTodos) },
+                            onEnterReorder: { withAnimation { isReordering = true } })
+                }
+                .onMove { from, to in reorder(items: petTodos, fromOffsets: from, toOffset: to) }
+            }
+        }
+    }
+
     // MARK: - 页面与顶部 Tab 栏组件
 
     @ViewBuilder
@@ -1331,7 +1398,7 @@ struct TodoListView: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(TodoFilterCategory.allCases) { category in
+                    ForEach(homeCategories) { category in
                         let isSelected = selectedFilter == category
                         let count = badgeCount(for: category)
 
@@ -1342,7 +1409,7 @@ struct TodoListView: View {
                             Haptic.selection()
                         } label: {
                             HStack(spacing: 4) {
-                                Text(category.rawValue)
+                                Text(L10n.tr(category.rawValue))
                                     .font(.subheadline)
                                     .fontWeight(isSelected ? .bold : .medium)
 
@@ -1371,6 +1438,16 @@ struct TodoListView: View {
                         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                         .id(category)
                     }
+                    Button {
+                        showCategoryCustomization = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.subheadline.bold())
+                            .frame(width: 44, height: 44)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemBackground)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("定制首页分类")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
@@ -1416,6 +1493,8 @@ struct TodoListView: View {
                 renderAlertSection()
             case .parenting:
                 renderParentingSection()
+            case .pet:
+                renderPetSection()
             }
 
             // 已完成事项（显式可折叠卡片 + 归档入口）
@@ -1504,6 +1583,7 @@ struct TodoListView: View {
         case .life: return medications.count + houseworks.count + chargings.count
         case .alert: return subscriptions.count + expiries.count + anniversaries.count + passwordTodos.count + vehicleTodos.count
         case .parenting: return parentingTodos.count
+        case .pet: return petTodos.count
         }
     }
 
@@ -1516,6 +1596,7 @@ struct TodoListView: View {
         case .life: return .green
         case .alert: return .red
         case .parenting: return .pink
+        case .pet: return .orange
         }
     }
 
@@ -1535,6 +1616,8 @@ struct TodoListView: View {
             return done.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare].contains($0.type) }
         case .parenting:
             return done.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }
+        case .pet:
+            return done.filter { $0.type == .pet }
         }
     }
 }
@@ -1567,23 +1650,30 @@ private struct HomeGreetingCard: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("\(greeting)，\(userTitle.isEmpty || userTitle == "你" ? "朋友" : userTitle)")
                     .font(.headline.weight(.semibold))
-                Text(statusText)
+                Text(L10n.tr(statusText))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            VStack(spacing: 3) {
-                Image(systemName: weatherSymbol)
-                    .font(.title3)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.tint)
-                Text(weatherText)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            Button {
+                Haptic.light()
+                Task { await loadWeather(force: true, requestPermission: true) }
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: weatherSymbol)
+                        .font(.title3)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.tint)
+                    Text(weatherText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(minWidth: 62)
+                .contentShape(Rectangle())
             }
-            .frame(minWidth: 62)
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -1597,30 +1687,133 @@ private struct HomeGreetingCard: View {
     }
 
     @MainActor
-    private func loadWeather(force: Bool = false) async {
+    private func loadWeather(force: Bool = false, requestPermission: Bool = false) async {
         guard force || isLoadingWeather else { return }
+
+        if let cached = WeatherAlertService.shared.cachedWeatherSnapshot, weatherText == "天气稍后更新" {
+            weatherSymbol = cached.symbolName
+            weatherText = "\(cached.conditionDescription) \(cached.formattedTemperature)"
+        }
+
         var location = locationService.lastKnownLocation
         if location == nil {
-            _ = await locationService.requestSingleLocationSample(requestPermissionIfNeeded: false)
+            _ = await locationService.requestSingleLocationSample(requestPermissionIfNeeded: requestPermission)
             location = locationService.lastKnownLocation
         }
         guard let location else {
-            weatherText = locationService.authorizationStatus == .denied || locationService.authorizationStatus == .restricted
-                ? "请开启定位"
-                : "天气稍后更新"
+            if let cached = WeatherAlertService.shared.cachedWeatherSnapshot {
+                weatherSymbol = cached.symbolName
+                weatherText = "\(cached.conditionDescription) \(cached.formattedTemperature)"
+            } else {
+                weatherText = locationService.authorizationStatus == .denied || locationService.authorizationStatus == .restricted
+                    ? "请开启定位"
+                    : "点击获取天气"
+            }
             isLoadingWeather = false
             return
         }
         isLoadingWeather = true
-        do {
-            let weather = try await WeatherService.shared.weather(for: location)
-            let current = weather.currentWeather
-            weatherSymbol = current.symbolName
-            weatherText = "\(Int(current.temperature.converted(to: .celsius).value.rounded()))°C"
-        } catch {
+        if let snapshot = await WeatherAlertService.shared.fetchCurrentWeather(for: location) {
+            weatherSymbol = snapshot.symbolName
+            weatherText = "\(snapshot.conditionDescription) \(snapshot.formattedTemperature)"
+        } else {
             weatherText = "天气不可用"
         }
         isLoadingWeather = false
+    }
+}
+
+private struct TodoCategoryCustomizationView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var categories: [TodoFilterCategory]
+    let onSave: ([TodoFilterCategory]) -> Void
+
+    init(categories: [TodoFilterCategory], onSave: @escaping ([TodoFilterCategory]) -> Void) {
+        self._categories = State(initialValue: categories)
+        self.onSave = onSave
+    }
+
+    private var hiddenCategories: [TodoFilterCategory] {
+        TodoFilterCategory.allCases.filter { !categories.contains($0) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("首页显示顺序") {
+                    ForEach(categories) { category in
+                        HStack(spacing: 10) {
+                            Image(systemName: categoryIcon(category))
+                                .foregroundStyle(categoryColor(category))
+                                .frame(width: 24)
+                            Text(L10n.tr(category.rawValue))
+                            Spacer()
+                            if category == .all {
+                                Text("固定")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .onMove { from, to in
+                        categories.move(fromOffsets: from, toOffset: to)
+                    }
+                    .onDelete { offsets in
+                        categories.remove(atOffsets: offsets)
+                        if !categories.contains(.all) { categories.insert(.all, at: 0) }
+                    }
+                }
+
+                if !hiddenCategories.isEmpty {
+                    Section("添加分类") {
+                        ForEach(hiddenCategories) { category in
+                            Button {
+                                categories.append(category)
+                            } label: {
+                                Label(L10n.tr(category.rawValue), systemImage: categoryIcon(category))
+                            }
+                        }
+                    }
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("定制首页分类")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") {
+                        onSave(categories)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func categoryIcon(_ category: TodoFilterCategory) -> String {
+        switch category {
+        case .all: return "square.grid.2x2.fill"
+        case .general: return "checkmark.circle"
+        case .recurring: return "repeat"
+        case .parcel: return "shippingbox.fill"
+        case .life: return "heart.fill"
+        case .alert: return "exclamationmark.triangle.fill"
+        case .parenting: return "figure.and.child.holdinghands"
+        case .pet: return "pawprint.fill"
+        }
+    }
+
+    private func categoryColor(_ category: TodoFilterCategory) -> Color {
+        switch category {
+        case .all: return .secondary
+        case .general: return .blue
+        case .recurring: return .indigo
+        case .parcel: return .orange
+        case .life: return .green
+        case .alert: return .red
+        case .parenting: return .pink
+        case .pet: return .orange
+        }
     }
 }
 
@@ -1632,6 +1825,7 @@ struct TodoRow: View {
     var onMoveDown: (() -> Void)? = nil
     var onEnterReorder: (() -> Void)? = nil
     @ObservedObject private var seniorManager = SeniorModeManager.shared
+    @ObservedObject private var router = NavigationRouter.shared
     @State private var isCopied: Bool = false
     @State private var isAnimatingCompletion: Bool = false
     @State private var ringScale: CGFloat = 0.5
@@ -1642,6 +1836,10 @@ struct TodoRow: View {
 
     private var isEffectivelyDone: Bool {
         item.status == .done || isAnimatingCompletion
+    }
+
+    private var isNotificationFocused: Bool {
+        router.focusedTodoID == item.id
     }
 
     private var typeColor: Color {
@@ -1659,6 +1857,7 @@ struct TodoRow: View {
         case .vehicleCare: return .indigo
         case .exercise: return .green
         case .childVaccine, .childGrowth, .childMilestone, .childHealth: return .pink
+        case .pet: return .orange
         default: return .secondary
         }
     }
@@ -1763,7 +1962,7 @@ struct TodoRow: View {
                         return item.location ?? item.station
                     }()
                     if let text = [item.courier, placeText].compactMap({ $0 }).joined(separator: " · ") as String?, !text.isEmpty {
-                        Text(text)
+                        Text(L10n.tr(text))
                             .font(.subheadline)
                             .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
                     }
@@ -1778,7 +1977,7 @@ struct TodoRow: View {
                                 .foregroundStyle(isEffectivelyDone ? Color.secondary : Color.indigo)
                         }
 
-                        Text(item.title)
+                        Text(L10n.tr(item.title))
                             .font(.body.weight(isEffectivelyDone ? .regular : (seniorManager.isHighContrastEnabled ? .bold : .medium)))
                             .strikethrough(isEffectivelyDone)
                             .foregroundStyle(isEffectivelyDone ? .secondary : .primary)
@@ -1840,7 +2039,7 @@ struct TodoRow: View {
                     }
 
                     if let detail = item.displayConciseDetail, !detail.isEmpty {
-                        Text(detail)
+                        Text(L10n.tr(detail))
                             .font(.footnote)
                             .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
                             .lineLimit(2)
@@ -1892,7 +2091,7 @@ struct TodoRow: View {
                     }
 
                     if let detail = item.displayConciseDetail, !detail.isEmpty {
-                        Text(detail)
+                        Text(L10n.tr(detail))
                             .font(.footnote)
                             .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
                             .lineLimit(2)
@@ -1944,6 +2143,18 @@ struct TodoRow: View {
                 Haptic.light()
             }
         }
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isNotificationFocused ? Color.orange.opacity(0.20) : .clear)
+                .overlay {
+                    if isNotificationFocused {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.orange.opacity(0.75), lineWidth: 2)
+                    }
+                }
+        )
+        .animation(.easeInOut(duration: 0.25), value: isNotificationFocused)
+        .id(item.id)
         .opacity(isEffectivelyDone ? 0.6 : 1.0)
         .animation(.easeInOut(duration: 0.25), value: isEffectivelyDone)
         .animation(.easeInOut(duration: 0.2), value: item.status)
@@ -2252,6 +2463,10 @@ struct AddTodoSheet: View {
             defaultType = .childVaccine
             defaultHasDueDate = true
             defaultDue = Calendar.current.date(byAdding: .day, value: 3, to: .now) ?? .now
+        case .pet:
+            defaultType = .pet
+            defaultHasDueDate = true
+            defaultDue = Calendar.current.date(byAdding: .day, value: 1, to: .now) ?? .now
         }
 
         self._type = State(initialValue: defaultType)
@@ -2268,7 +2483,7 @@ struct AddTodoSheet: View {
     private var availableTypesForCategory: [TodoType] {
         switch selectedCategory {
         case .all:
-            return [.general, .travelBooking, .parcel, .medication, .housework, .exercise, .charging, .subscription, .vehicleCare, .bill, .itemExpiry, .anniversary, .hydration, .event, .childVaccine, .childGrowth, .childMilestone, .childHealth]
+            return [.general, .travelBooking, .parcel, .medication, .housework, .exercise, .charging, .subscription, .vehicleCare, .bill, .itemExpiry, .anniversary, .hydration, .event, .childVaccine, .childGrowth, .childMilestone, .childHealth, .pet]
         case .general:
             return [.general, .travelBooking, .event]
         case .recurring:
@@ -2281,6 +2496,8 @@ struct AddTodoSheet: View {
             return [.bill, .travelBooking, .vehicleCare, .subscription, .itemExpiry, .anniversary, .passwordSecurity]
         case .parenting:
             return [.childVaccine, .childGrowth, .childMilestone, .childHealth]
+        case .pet:
+            return [.pet]
         }
     }
 
@@ -2291,7 +2508,7 @@ struct AddTodoSheet: View {
         if !candidates.contains(type) {
             type = candidates.first ?? .general
         }
-        if newCat == .life || newCat == .alert || newCat == .recurring || newCat == .parenting {
+        if newCat == .life || newCat == .alert || newCat == .recurring || newCat == .parenting || newCat == .pet {
             hasDueDate = true
             if newCat == .recurring && recurrenceRule == .none {
                 recurrenceRule = .weekly
@@ -2342,6 +2559,8 @@ struct AddTodoSheet: View {
             return "成长里程碑（如：记录宝宝第一次走路）"
         case .childHealth:
             return "健康随访（如：宝宝儿保复查）"
+        case .pet:
+            return "宠物事项（如：喂食、驱虫、洗护或宠物就医）"
         case .general, .data:
             return "待办名称（如：去超市买牛奶、准备工作周报、下午开会）"
         }
@@ -2460,6 +2679,13 @@ struct AddTodoSheet: View {
             return [QuickSuggestion(title: "记录宝宝成长里程碑", detail: "记下发生日期、场景和当时的心情", defaultHourOffset: nil)]
         case .childHealth:
             return [QuickSuggestion(title: "宝宝儿保复查", detail: "带好既往测量记录和就诊资料", defaultHourOffset: 168)]
+        case .pet:
+            return [
+                QuickSuggestion(title: "给宠物喂食", detail: "准备好每日粮食和饮水", defaultHourOffset: 8),
+                QuickSuggestion(title: "宠物驱虫", detail: "按周期完成体内外驱虫", defaultHourOffset: 720),
+                QuickSuggestion(title: "预约宠物洗护", detail: "确认时间并准备牵引绳或航空箱", defaultHourOffset: 72),
+                QuickSuggestion(title: "宠物就医复查", detail: "带好病历、用药记录和检查结果", defaultHourOffset: 48)
+            ]
         default:
             return []
         }
@@ -2600,7 +2826,7 @@ struct AddTodoSheet: View {
                             }
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(isRecognizingImage ? "正在识别时间、地点与预约二维码…" : "从相册选择预约截图 / 门票 / 取件图")
+                                Text(isRecognizingImage ? "正在识别时间、地点与票务信息…" : "从相册选择电影票 / 门票 / 预约截图 / 取件图")
                                     .font(.subheadline.bold())
                                     .foregroundStyle(.primary)
                                     Text("自动提取事件名称、活动时间、场馆地址与核销二维码")
@@ -2631,7 +2857,7 @@ struct AddTodoSheet: View {
                         }
 
                         if let err = imageRecognitionError {
-                            Text(err)
+                            Text(L10n.tr(err))
                                 .font(.caption)
                                 .foregroundStyle(.red)
                         }
@@ -2789,7 +3015,7 @@ struct AddTodoSheet: View {
                             set: { onCategoryChanged($0) }
                         )) {
                             ForEach(TodoFilterCategory.allCases) { cat in
-                                Text(cat.rawValue).tag(cat)
+                                Text(L10n.tr(cat.rawValue)).tag(cat)
                             }
                         }
                         .pickerStyle(.segmented)
@@ -2829,7 +3055,7 @@ struct AddTodoSheet: View {
                                                 Image(systemName: "plus.circle.fill")
                                                     .font(.system(size: 11))
                                                     .foregroundStyle(.tint)
-                                                Text(s.title)
+                                                Text(L10n.tr(s.title))
                                                     .font(.caption)
                                                     .foregroundStyle(.primary)
                                             }
@@ -3003,7 +3229,7 @@ struct AddTodoSheet: View {
 
                         Picker("重复周期", selection: $recurrenceRule) {
                             ForEach(TodoRecurrenceRule.allCases) { rule in
-                                Label(rule.rawValue, systemImage: rule.icon).tag(rule)
+                                Label(L10n.tr(rule.rawValue), systemImage: rule.icon).tag(rule)
                             }
                         }
 

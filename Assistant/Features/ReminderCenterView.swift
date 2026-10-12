@@ -25,6 +25,9 @@ struct ReminderCenterView: View {
                 return reminderDate < horizon
             }
             .sorted {
+                let leftScore = TodoPriority.score(for: $0)
+                let rightScore = TodoPriority.score(for: $1)
+                if leftScore != rightScore { return leftScore > rightScore }
                 switch ($0.reminderOverrideAt ?? $0.dueAt, $1.reminderOverrideAt ?? $1.dueAt) {
                 case let (l?, r?): return l < r
                 case (_?, nil): return true
@@ -116,8 +119,8 @@ struct ReminderCenterView: View {
         Haptic.success()
     }
 
-    private func snooze(_ item: TodoItem) {
-        item.reminderOverrideAt = Calendar.current.date(byAdding: .hour, value: 1, to: .now)
+    private func snooze(_ item: TodoItem, interval: TimeInterval) {
+        item.reminderOverrideAt = Date.now.addingTimeInterval(interval)
         TodoNotificationManager.shared.scheduleNotification(for: item)
         try? context.save()
         Haptic.light()
@@ -150,7 +153,7 @@ private struct LifeReminderRow: View {
                 .foregroundStyle(.tint)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.title).font(.subheadline.weight(.medium)).lineLimit(2)
+                Text(L10n.tr(item.title)).font(.subheadline.weight(.medium)).lineLimit(2)
                 Text("\(dateText(item.effectiveDate)) · \(item.detail)")
                     .font(.caption)
                     .foregroundStyle(item.date < .now ? .red : .secondary)
@@ -176,7 +179,7 @@ private struct LifeReminderRow: View {
 private struct ReminderCenterRow: View {
     let item: TodoItem
     let onComplete: (TodoItem) -> Void
-    let onSnooze: (TodoItem) -> Void
+    let onSnooze: (TodoItem, TimeInterval) -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -199,10 +202,24 @@ private struct ReminderCenterRow: View {
                 }
             }
             Spacer(minLength: 0)
-            Button("稍后") { onSnooze(item) }
-                .font(.caption.weight(.medium))
-                .buttonStyle(.bordered)
-                .accessibilityLabel("将\(item.title)推迟一小时")
+            Menu {
+                Button("10 分钟后") { onSnooze(item, 10 * 60) }
+                Button("1 小时后") { onSnooze(item, 60 * 60) }
+                Button("明早 9 点") {
+                    var components = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+                    components.day = (components.day ?? 0) + 1
+                    components.hour = 9
+                    components.minute = 0
+                    if let date = Calendar.current.date(from: components) {
+                        onSnooze(item, date.timeIntervalSinceNow)
+                    }
+                }
+            } label: {
+                Text("稍后")
+                    .font(.caption.weight(.medium))
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("推迟\(item.title)的提醒")
         }
         .padding(.vertical, 4)
     }

@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum TodoType: String, Codable, CaseIterable {
+enum TodoType: String, Codable, CaseIterable, Hashable {
     case parcel, data, bill, event, general
     case medication    // 吃药提醒
     case charging      // 手机/耳机/手表充电提醒
@@ -19,6 +19,7 @@ enum TodoType: String, Codable, CaseIterable {
     case childGrowth      // 亲子育儿成长测量
     case childMilestone   // 亲子育儿里程碑
     case childHealth      // 亲子育儿健康随访
+    case pet              // 宠物照护
 
     var icon: String {
         switch self {
@@ -43,11 +44,12 @@ enum TodoType: String, Codable, CaseIterable {
         case .childGrowth: "chart.xyaxis.line"
         case .childMilestone: "sparkles"
         case .childHealth: "cross.case.fill"
+        case .pet: "pawprint.fill"
         }
     }
 
     var displayName: String {
-        switch self {
+        let raw: String = switch self {
         case .general: "日常待办"
         case .parcel: "快递取件"
         case .returnParcel: "退货寄件"
@@ -66,10 +68,12 @@ enum TodoType: String, Codable, CaseIterable {
         case .childGrowth: "成长测量"
         case .childMilestone: "成长里程碑"
         case .childHealth: "健康随访"
+        case .pet: "宠物照护"
         case .bill: "信用卡账单"
         case .event: "日程事项"
         case .data: "流量预警"
         }
+        return L10n.tr(raw)
     }
 }
 
@@ -78,6 +82,52 @@ enum TodoStatus: String, Codable {
     case pendingReview
     case active
     case done
+}
+
+/// 待办排序采用“紧急性 60% + 重要性 40%”。分数只用于排序，不改变用户设置的截止时间。
+enum TodoPriority {
+    static func score(for item: TodoItem, now: Date = .now) -> Int {
+        urgencyScore(for: item, now: now) * 6 + importanceScore(for: item) * 4
+    }
+
+    static func sort(_ items: inout [TodoItem], now: Date = .now) {
+        items.sort {
+            let left = score(for: $0, now: now)
+            let right = score(for: $1, now: now)
+            if left != right { return left > right }
+            switch ($0.dueAt, $1.dueAt) {
+            case let (l?, r?) where l != r: return l < r
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default: return $0.sortOrder < $1.sortOrder
+            }
+        }
+    }
+
+    /// 截止时间越近，紧急性越高；逾期事项始终位于最前。
+    private static func urgencyScore(for item: TodoItem, now: Date) -> Int {
+        guard let due = item.dueAt else { return 15 }
+        let hours = due.timeIntervalSince(now) / 3600
+        if hours < 0 { return 100 }
+        if hours <= 2 { return 95 }
+        if hours <= 24 { return 80 }
+        if hours <= 72 { return 60 }
+        if hours <= 168 { return 35 }
+        return 15
+    }
+
+    /// 重要性由事项类型和标题中的风险词推断，涉及健康、财务、安全和硬截止日期的事项更重要。
+    private static func importanceScore(for item: TodoItem) -> Int {
+        let highImportance: Set<TodoType> = [.medication, .bill, .itemExpiry, .passwordSecurity, .childVaccine, .childHealth, .returnParcel]
+        let mediumImportance: Set<TodoType> = [.event, .travelBooking, .subscription, .vehicleCare, .parcel, .childGrowth, .childMilestone, .pet]
+        var score: Int = highImportance.contains(item.type) ? 90 : (mediumImportance.contains(item.type) ? 60 : 35)
+        let text = item.title + " " + (item.detail ?? "")
+        let criticalWords = ["必须", "紧急", "还款", "缴费", "截止", "逾期", "疫苗", "用药", "证件", "安全"]
+        if criticalWords.contains(where: { text.localizedCaseInsensitiveContains($0) }) {
+            score = min(100, score + 20)
+        }
+        return score
+    }
 }
 
 /// 待办重复周期规则
@@ -119,9 +169,9 @@ public enum TodoRecurrenceRule: String, Codable, CaseIterable, Identifiable {
     public func displayLabel(customDays: Int = 1) -> String {
         switch self {
         case .custom:
-            return "每\(max(1, customDays))天"
+            return L10n.tr("每\(max(1, customDays))天")
         default:
-            return rawValue
+            return L10n.tr(rawValue)
         }
     }
 }
@@ -261,9 +311,9 @@ final class TodoItem {
 
     var recurrenceSummaryText: String {
         if recurrenceRule == .custom {
-            return "每\(max(1, recurrenceIntervalDays))天"
+            return L10n.tr("每\(max(1, recurrenceIntervalDays))天")
         }
-        return recurrenceRule.rawValue
+        return L10n.tr(recurrenceRule.rawValue)
     }
 
     /// 计算下一次循环的截止时间

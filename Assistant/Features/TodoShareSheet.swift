@@ -74,7 +74,7 @@ struct TodoShareCardView: View {
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(theme.secondaryTextColor)
 
-                    Text(title)
+                    Text(L10n.tr(title))
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .foregroundStyle(theme.textColor)
                 }
@@ -123,7 +123,7 @@ struct TodoShareCardView: View {
                                 .foregroundStyle(item.status == .done ? Color.green : Color.secondary.opacity(0.6))
 
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(item.title)
+                                Text(L10n.tr(item.title))
                                     .font(.system(size: 15, weight: .medium))
                                     .foregroundStyle(item.status == .done ? theme.secondaryTextColor : theme.textColor)
                                     .strikethrough(item.status == .done)
@@ -275,7 +275,7 @@ struct TodoQRCodeCardView: View {
 
             // 清单标题与条目统计
             VStack(spacing: 4) {
-                Text(title)
+                Text(L10n.tr(title))
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(Color.primary)
 
@@ -389,6 +389,8 @@ struct TodoShareSheet: View {
             return allTodos.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .data, .vehicleCare].contains($0.type) }
         case .parenting:
             return allTodos.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }
+        case .pet:
+            return allTodos.filter { $0.type == .pet }
         }
     }
 
@@ -406,19 +408,21 @@ struct TodoShareSheet: View {
     private var dynamicCardTitle: String {
         switch selectedCategory {
         case .all:
-            return "我的生活清单"
+            return L10n.tr("我的生活清单")
         case .general:
-            return "日常待办清单"
+            return L10n.tr("日常待办清单")
         case .recurring:
-            return "周期待办清单"
+            return L10n.tr("周期待办清单")
         case .parcel:
-            return "快递与退货清单"
+            return L10n.tr("快递与退货清单")
         case .life:
-            return "生活作息备忘"
+            return L10n.tr("生活作息备忘")
         case .alert:
-            return "重要提醒与预警"
+            return L10n.tr("重要提醒与预警")
         case .parenting:
-            return "亲子育儿清单"
+            return L10n.tr("亲子育儿清单")
+        case .pet:
+            return L10n.tr("宠物照护")
         }
     }
 
@@ -443,7 +447,7 @@ struct TodoShareSheet: View {
                     // 0. 分享形式切换：面对面二维码 vs 海报长图卡片
                     Picker("分享形式", selection: $shareFormat) {
                         ForEach(ShareFormatMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                            Text(L10n.tr(mode.rawValue)).tag(mode)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -504,7 +508,7 @@ struct TodoShareSheet: View {
                                 Spacer()
                                 Picker("卡片配色", selection: $selectedTheme) {
                                     ForEach(ShareCardTheme.allCases) { t in
-                                        Text(t.rawValue).tag(t)
+                                        Text(L10n.tr(t.rawValue)).tag(t)
                                     }
                                 }
                                 .pickerStyle(.segmented)
@@ -689,7 +693,7 @@ struct TodoShareSheet: View {
             }
             .overlay(alignment: .bottom) {
                 if let toastMessage {
-                    Text(toastMessage)
+                    Text(L10n.tr(toastMessage))
                         .font(.footnote.bold())
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -720,7 +724,7 @@ struct TodoShareSheet: View {
                     Haptic.selection()
                 } label: {
                     HStack(spacing: 4) {
-                        Text(cat.rawValue)
+                        Text(L10n.tr(cat.rawValue))
                             .font(.subheadline)
                             .fontWeight(isSelected ? .bold : .medium)
 
@@ -778,7 +782,7 @@ struct TodoShareSheet: View {
             if candidateItems.isEmpty {
                 HStack {
                     Spacer()
-                    Text("当前「\(selectedCategory.rawValue)」分类下暂无事项")
+                    Text("当前「\(L10n.tr(selectedCategory.rawValue))」分类下暂无事项")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 12)
@@ -804,7 +808,7 @@ struct TodoShareSheet: View {
                                     .font(.title3)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.title)
+                                    Text(L10n.tr(item.title))
                                         .font(.subheadline)
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
