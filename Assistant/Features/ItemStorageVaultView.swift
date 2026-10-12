@@ -6,6 +6,7 @@ import SwiftUI
 struct ItemStorageVaultView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \StoredItem.updatedAt, order: .reverse) private var allItems: [StoredItem]
+    @Query private var allExpenseRecords: [ExpenseRecord]
 
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @State private var searchText: String = ""
@@ -15,6 +16,35 @@ struct ItemStorageVaultView: View {
     @State private var previewImageData: Data? = nil
 
     private let roomAreas = ["全部", "玄关", "主卧", "次卧", "客厅", "书房", "阳台", "储物间", "厨房"]
+
+    /// 关联记账金额归集：itemID -> 该物品累计投入（购入价之外的后继投入）
+    private var linkedTotals: [UUID: Double] {
+        var totals: [UUID: Double] = [:]
+        for record in allExpenseRecords where !record.isIncome {
+            if let itemID = record.linkedItemID {
+                totals[itemID, default: 0] += record.amount
+            }
+        }
+        return totals
+    }
+
+    /// 已录入成本数据的物品摘要（用于顶部速览）
+    private var costTrackedSummaries: [(item: StoredItem, summary: ItemCostSummary)] {
+        let totals = linkedTotals
+        return allItems.compactMap { item in
+            let summary = ItemCostCalculator.summary(
+                purchasePrice: item.purchasePrice,
+                purchaseDate: item.purchaseDate,
+                fallbackStartDate: item.createdAt,
+                linkedExpenseTotal: totals[item.id] ?? 0,
+                isSecondHand: item.isSecondHand,
+                resalePrice: item.resalePrice,
+                resoldDate: item.resoldDate
+            )
+            return summary.isTracked ? (item, summary) : nil
+        }
+        .sorted { $0.summary.dailyCost > $1.summary.dailyCost }
+    }
 
     private var filteredItems: [StoredItem] {
         allItems.filter { item in
@@ -85,7 +115,57 @@ struct ItemStorageVaultView: View {
                 .padding(.vertical, 4)
             }
 
-            // 2. 物品清单列表
+            // 2. 持有成本速览（有成本数据的物品才显示）
+            if !costTrackedSummaries.isEmpty {
+                Section("日均持有成本速览") {
+                    let totalValue = costTrackedSummaries.reduce(0.0) { $0 + $1.summary.totalCost }
+                    let totalResale = costTrackedSummaries.reduce(0.0) { $0 + $1.summary.resalePrice }
+                    let topItem = costTrackedSummaries[0]
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("跟踪物品")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("\(costTrackedSummaries.count) 件")
+                                .font(.system(.subheadline, design: .rounded).bold())
+                                .foregroundStyle(.indigo)
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("累计投入")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(String(format: "¥%.0f", totalValue))
+                                .font(.system(.subheadline, design: .rounded).bold())
+                                .foregroundStyle(.indigo)
+                        }
+                        if totalResale > 0 {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("转卖回血")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(String(format: "¥%.0f", totalResale))
+                                    .font(.system(.subheadline, design: .rounded).bold())
+                                    .foregroundStyle(.green)
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("最高日均")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("\(topItem.item.name)")
+                                .font(.caption.bold())
+                                .lineLimit(1)
+                            Text(String(format: "¥%.1f/天", topItem.summary.dailyCost))
+                                .font(.system(.subheadline, design: .rounded).bold())
+                                .foregroundStyle(.orange)
+                        }
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            // 3. 物品清单列表
             if filteredItems.isEmpty {
                 Section {
                     ContentUnavailableView {
@@ -106,7 +186,7 @@ struct ItemStorageVaultView: View {
             } else {
                 Section("收纳明细 (\(filteredItems.count))") {
                     ForEach(filteredItems) { item in
-                        StoredItemRow(item: item, onPreviewImage: { data in
+                        StoredItemRow(item: item, linkedExpenseTotal: linkedTotals[item.id] ?? 0, onPreviewImage: { data in
                             previewImageData = data
                         })
                         .contentShape(Rectangle())
@@ -189,7 +269,20 @@ struct ItemStorageVaultView: View {
 
 private struct StoredItemRow: View {
     let item: StoredItem
+    var linkedExpenseTotal: Double = 0
     var onPreviewImage: ((Data) -> Void)? = nil
+
+    private var costSummary: ItemCostSummary {
+        ItemCostCalculator.summary(
+            purchasePrice: item.purchasePrice,
+            purchaseDate: item.purchaseDate,
+            fallbackStartDate: item.createdAt,
+            linkedExpenseTotal: linkedExpenseTotal,
+            isSecondHand: item.isSecondHand,
+            resalePrice: item.resalePrice,
+            resoldDate: item.resoldDate
+        )
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -232,6 +325,24 @@ private struct StoredItemRow: View {
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color.indigo.opacity(0.14)))
                         .foregroundStyle(.indigo)
+
+                    if item.isSecondHand {
+                        Text("二手购入")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.teal.opacity(0.14)))
+                            .foregroundStyle(.teal)
+                    }
+
+                    if costSummary.isResold {
+                        Text("已转卖")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.green.opacity(0.14)))
+                            .foregroundStyle(.green)
+                    }
                 }
 
                 HStack(spacing: 4) {
@@ -248,6 +359,19 @@ private struct StoredItemRow: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
+                }
+
+                // 日均持有成本（已录入购入价或有关联投入时显示）
+                if costSummary.isTracked {
+                    if costSummary.isResold {
+                        Text(String(format: "持有 %d 天 · 回血 ¥%.0f · 净成本 ¥%.2f（净日均 ¥%.1f/天）", costSummary.daysHeld, costSummary.resalePrice, costSummary.netCost, costSummary.netDailyCost))
+                            .font(.caption2.bold())
+                            .foregroundStyle(.green)
+                    } else {
+                        Text(String(format: "已使用 %d 天 · 日均 ¥%.1f/天", costSummary.daysHeld, costSummary.dailyCost))
+                            .font(.caption2.bold())
+                            .foregroundStyle(.orange)
+                    }
                 }
             }
 
@@ -275,6 +399,47 @@ struct AddOrEditStoredItemSheet: View {
     @State private var notes: String = ""
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
+    @State private var purchasePriceString: String = ""
+    @State private var purchaseDate: Date = .now
+    @State private var isSecondHand: Bool = false
+    @State private var resalePriceString: String = ""
+    @State private var resoldDate: Date = .now
+
+    // 编辑模式：关联记账投入归集
+    @State private var linkedExpenseTotal: Double = 0
+    @State private var linkedExpenseCount: Int = 0
+
+    private var parsedPurchasePrice: Double? {
+        let value = Double(purchasePriceString.replacingOccurrences(of: "，", with: ".").replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)) ?? 0
+        return value > 0 ? value : nil
+    }
+
+    private var parsedResalePrice: Double? {
+        let value = Double(resalePriceString.replacingOccurrences(of: "，", with: ".").replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)) ?? 0
+        return value > 0 ? value : nil
+    }
+
+    private var liveCostSummary: ItemCostSummary {
+        guard let item = itemToEdit else {
+            return ItemCostCalculator.summary(
+                purchasePrice: parsedPurchasePrice,
+                purchaseDate: purchaseDate,
+                fallbackStartDate: .now,
+                isSecondHand: isSecondHand,
+                resalePrice: parsedResalePrice,
+                resoldDate: parsedResalePrice != nil ? resoldDate : nil
+            )
+        }
+        return ItemCostCalculator.summary(
+            purchasePrice: parsedPurchasePrice ?? item.purchasePrice,
+            purchaseDate: item.purchaseDate ?? (parsedPurchasePrice == nil ? nil : purchaseDate),
+            fallbackStartDate: item.createdAt,
+            linkedExpenseTotal: linkedExpenseTotal,
+            isSecondHand: isSecondHand,
+            resalePrice: parsedResalePrice ?? item.resalePrice,
+            resoldDate: parsedResalePrice != nil ? resoldDate : item.resoldDate
+        )
+    }
 
     private let roomAreas = ["玄关", "主卧", "次卧", "客厅", "书房", "储物间", "阳台", "厨房", "卫生间"]
     private let commonItemSuggestions = ["备用钥匙", "冬季羽绒服", "露营户外帐篷", "发票与保修卡", "五金工具箱", "重要证件原件", "换季床单被罩", "行李箱"]
@@ -288,6 +453,19 @@ struct AddOrEditStoredItemSheet: View {
             self._location = State(initialValue: item.location)
             self._notes = State(initialValue: item.notes ?? "")
             self._selectedImageData = State(initialValue: item.imageData)
+            if let price = item.purchasePrice {
+                self._purchasePriceString = State(initialValue: price.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", price) : String(format: "%.2f", price))
+            }
+            if let date = item.purchaseDate {
+                self._purchaseDate = State(initialValue: date)
+            }
+            self._isSecondHand = State(initialValue: item.isSecondHand)
+            if let resale = item.resalePrice {
+                self._resalePriceString = State(initialValue: resale.truncatingRemainder(dividingBy: 1) == 0 ? String(format: "%.0f", resale) : String(format: "%.2f", resale))
+            }
+            if let date = item.resoldDate {
+                self._resoldDate = State(initialValue: date)
+            }
         }
     }
 
@@ -398,11 +576,95 @@ struct AddOrEditStoredItemSheet: View {
                     }
                 }
 
+                // 3.5 购入信息（选填，打通记账计算日均持有成本）
+                Section {
+                    HStack {
+                        Text("购入价格")
+                            .foregroundStyle(.secondary)
+                        TextField("如 6999", text: $purchasePriceString)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                        Text("¥")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if parsedPurchasePrice != nil || (itemToEdit?.purchasePrice != nil) {
+                        DatePicker("购入日期", selection: $purchaseDate, displayedComponents: .date)
+                        Toggle("二手购入", isOn: $isSecondHand)
+                    }
+
+                    if liveCostSummary.isTracked {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if liveCostSummary.isResold {
+                                Text(String(format: "转卖回血 ¥%.0f · 净成本 ¥%.2f · 净日均 ¥%.1f/天", liveCostSummary.resalePrice, liveCostSummary.netCost, liveCostSummary.netDailyCost))
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.green)
+                            } else {
+                                Text(String(format: "已使用 %d 天 · 累计投入 ¥%.2f · 日均 ¥%.1f/天", liveCostSummary.daysHeld, liveCostSummary.totalCost, liveCostSummary.dailyCost))
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.orange)
+                            }
+                            if let milestone = liveCostSummary.milestoneText {
+                                Text(L10n.tr(milestone))
+                                    .font(.caption)
+                                    .foregroundStyle(liveCostSummary.isResold ? .green : .orange)
+                            }
+                            if itemToEdit != nil && linkedExpenseCount > 0 {
+                                Text("含 \(linkedExpenseCount) 笔关联记账投入 ¥\(String(format: "%.2f", linkedExpenseTotal))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                } header: {
+                    Text("购入信息（选填）")
+                } footer: {
+                    Text("填写购入价格后，自动计算持有天数与日均持有成本；记账时可把保养、配件等后续投入关联到该物品。二手购入的物品买入价更低，日均成本起点也更低。")
+                }
+
+                // 3.6 转卖回血（选填，闲置出二手后记录实际净持有成本）
+                Section {
+                    HStack {
+                        Text("转卖所得")
+                            .foregroundStyle(.secondary)
+                        TextField("如 3500", text: $resalePriceString)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                        Text("¥")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if parsedResalePrice != nil {
+                        DatePicker("转卖日期", selection: $resoldDate, displayedComponents: .date)
+                    }
+
+                    if let item = itemToEdit, item.resoldDate != nil, parsedResalePrice == nil, item.resalePrice != nil {
+                        Button(role: .destructive) {
+                            resalePriceString = ""
+                            item.resalePrice = nil
+                            item.resoldDate = nil
+                            item.updatedAt = .now
+                            try? context.save()
+                        } label: {
+                            Label("撤销转卖记录", systemImage: "arrow.uturn.backward")
+                                .font(.subheadline)
+                        }
+                    }
+                } header: {
+                    Text("转卖回血（选填）")
+                } footer: {
+                    Text("不常用的物品转卖为二手后，在此记录回血金额：实际持有成本 = 累计投入 − 转卖所得，持有天数截至转卖日。")
+                }
+
                 // 4. 补充说明
                 Section("补充备注（选填）") {
                     TextField("例如：共2件、防尘袋包装、密码是1234", text: $notes, axis: .vertical)
                         .lineLimit(2...4)
                 }
+            }
+            .onAppear {
+                loadLinkedExpenses()
             }
             .navigationTitle(itemToEdit == nil ? "新建收纳备忘" : "编辑收纳备忘")
             .navigationBarTitleDisplayMode(.inline)
@@ -420,6 +682,16 @@ struct AddOrEditStoredItemSheet: View {
         }
     }
 
+    /// 编辑模式下归集该物品的关联记账投入
+    private func loadLinkedExpenses() {
+        guard let item = itemToEdit else { return }
+        let descriptor = FetchDescriptor<ExpenseRecord>()
+        let records = (try? context.fetch(descriptor)) ?? []
+        let linked = records.filter { !$0.isIncome && $0.linkedItemID == item.id }
+        linkedExpenseTotal = linked.reduce(0) { $0 + $1.amount }
+        linkedExpenseCount = linked.count
+    }
+
     private func saveItem() {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -431,6 +703,11 @@ struct AddOrEditStoredItemSheet: View {
             existing.location = trimmedLocation
             existing.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
             existing.imageData = selectedImageData
+            existing.purchasePrice = parsedPurchasePrice
+            existing.purchaseDate = parsedPurchasePrice != nil ? purchaseDate : existing.purchaseDate
+            existing.isSecondHand = isSecondHand
+            existing.resalePrice = parsedResalePrice
+            existing.resoldDate = parsedResalePrice != nil ? resoldDate : existing.resoldDate
             existing.updatedAt = .now
         } else {
             let newItem = StoredItem(
@@ -438,7 +715,12 @@ struct AddOrEditStoredItemSheet: View {
                 location: trimmedLocation,
                 roomArea: roomArea,
                 notes: trimmedNotes.isEmpty ? nil : trimmedNotes,
-                imageData: selectedImageData
+                imageData: selectedImageData,
+                purchasePrice: parsedPurchasePrice,
+                purchaseDate: parsedPurchasePrice != nil ? purchaseDate : nil,
+                isSecondHand: isSecondHand,
+                resalePrice: parsedResalePrice,
+                resoldDate: parsedResalePrice != nil ? resoldDate : nil
             )
             context.insert(newItem)
         }

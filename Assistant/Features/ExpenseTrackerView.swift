@@ -141,6 +141,10 @@ struct ExpenseTrackerView: View {
     var body: some View {
         NavigationStack {
             List {
+                // 0. 今日安心花动态额度（设置了月预算后显示）
+                SafeToSpendCard(records: records)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+
                 // 1. 统计卡片与本月支出构成胶囊条
                 Section {
                     VStack(alignment: .leading, spacing: 14) {
@@ -429,8 +433,7 @@ struct ExpenseTrackerView: View {
     }
 
     // MARK: - 统计卡片辅助视图
-    private func statCard(title: String, amount: Double, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private func statCard(title: String, amount: Double, color: Color) -> some View {        VStack(alignment: .leading, spacing: 4) {
             Text(L10n.tr(title))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -549,6 +552,193 @@ struct ExpenseTrackerView: View {
     }
 }
 
+// MARK: - 今日安心花动态额度卡片
+
+/// 「今日安心花（Safe-to-Spend）」：月预算扣除固定周期支出后，
+/// 按距月底剩余天数均摊出今日可用额度；昨天花剩的钱自动滚入今天。
+struct SafeToSpendCard: View {
+    let records: [ExpenseRecord]
+    @ObservedObject private var recurringManager = RecurringExpenseManager.shared
+    @State private var showingBudgetSheet = false
+
+    private var result: SafeToSpendResult? {
+        let input = SafeToSpendCalculator.inputFromRecords(
+            records: records,
+            fixedMonthlyTotal: recurringManager.monthlyEstimatedTotal
+        )
+        let computed = SafeToSpendCalculator.compute(input: input)
+        return computed.isEnabled ? computed : nil
+    }
+
+    /// 一次性 O(N) 归集安心花所需的账本快照（逻辑统一在 SafeToSpendCalculator.inputFromRecords）
+    static func buildInput(records: [ExpenseRecord], fixedMonthlyTotal: Double) -> SafeToSpendInput {
+        SafeToSpendCalculator.inputFromRecords(records: records, fixedMonthlyTotal: fixedMonthlyTotal)
+    }
+
+    var body: some View {
+        if let result {
+            Button {
+                showingBudgetSheet = true
+                Haptic.light()
+            } label: {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Label("今日安心花", systemImage: "shield.lefthalf.filled")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("距月底 \(result.daysLeft) 天")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    if result.isOverBudget {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                            Text("本月弹性预算已超支 ¥\(String(format: "%.0f", -result.remainingThisMonth))，今天尽量少花")
+                                .font(.subheadline)
+                                .foregroundStyle(.red)
+                        }
+                    } else {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("还可以安心花")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text(String(format: "¥%.0f", result.safeToSpendToday))
+                                .font(.system(.largeTitle, design: .rounded).bold())
+                                .foregroundStyle(result.safeToSpendToday > 0 ? .green : .orange)
+                                .contentTransition(.numericText())
+                        }
+                    }
+
+                    // 弹性预算消耗进度条
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color(.tertiarySystemFill))
+                            Capsule()
+                                .fill(result.isOverBudget ? Color.red : Color.green)
+                                .frame(width: min(1, result.spentRatio) * geo.size.width)
+                        }
+                    }
+                    .frame(height: 6)
+
+                    HStack(spacing: 12) {
+                        Text("月预算 ¥\(String(format: "%.0f", BudgetSettings.monthlyBudget))")
+                        Text("固定支出 ¥\(String(format: "%.0f", recurringManager.monthlyEstimatedTotal))")
+                        if result.savedYesterday >= 0.5 {
+                            Text("昨日省下 ¥\(String(format: "%.0f", result.savedYesterday)) 已滚入 💰")
+                                .foregroundStyle(.green)
+                        }
+                        Spacer()
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("查看或编辑月度预算")
+            .sheet(isPresented: $showingBudgetSheet) {
+                BudgetEditSheet()
+            }
+        }
+    }
+}
+
+// MARK: - 月预算设置弹窗
+
+struct BudgetEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var recurringManager = RecurringExpenseManager.shared
+    @State private var budgetText: String = ""
+
+    private var disposableBudget: Double {
+        let budget = Double(budgetText) ?? 0
+        return budget - recurringManager.monthlyEstimatedTotal
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    HStack {
+                        Text("月预算")
+                            .foregroundStyle(.secondary)
+                        TextField("如 5000", text: $budgetText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .font(.system(.title3, design: .rounded).bold())
+                        Text("¥")
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("预算指本月弹性消费上限。房租、订阅等固定支出会自动扣除，不再占预算。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("设定月度弹性预算")
+                } footer: {
+                    if disposableBudget > 0 {
+                        Text("扣除固定支出后，本月弹性可用约 ¥\(String(format: "%.0f", disposableBudget))")
+                    } else if Double(budgetText) ?? 0 > 0 {
+                        Text("预算低于固定支出月额，请调高预算或精简固定支出")
+                    }
+                }
+
+                Section("自动扣除的固定支出（月均）") {
+                    let active = recurringManager.items.filter { !$0.isPaused }
+                    if active.isEmpty {
+                        Text("暂无固定周期支出，可在「生活档案 → 固定支出」中添加房租、订阅等")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(active) { item in
+                            HStack {
+                                Text(item.title)
+                                    .font(.subheadline)
+                                Spacer()
+                                Text("¥\(String(format: "%.0f", item.monthlyEquivalentAmount))\(item.cycle.displayUnit)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        HStack {
+                            Text("合计").bold()
+                            Spacer()
+                            Text("¥\(String(format: "%.0f", recurringManager.monthlyEstimatedTotal))")
+                                .bold()
+                                .foregroundStyle(.indigo)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("月预算设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        BudgetSettings.monthlyBudget = Double(budgetText) ?? 0
+                        Haptic.success()
+                        dismiss()
+                    }
+                    .disabled((Double(budgetText) ?? 0) < 0)
+                }
+            }
+            .onAppear {
+                let budget = BudgetSettings.monthlyBudget
+                budgetText = budget > 0 ? String(format: "%.0f", budget) : ""
+            }
+        }
+    }
+}
+
 // MARK: - 单笔明细行视图
 
 struct ExpenseRow: View {
@@ -599,6 +789,7 @@ struct ExpenseRow: View {
 struct AddOrEditExpenseSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Query(sort: \StoredItem.name) private var storedItems: [StoredItem]
 
     var recordToEdit: ExpenseRecord? = nil
 
@@ -612,6 +803,7 @@ struct AddOrEditExpenseSheet: View {
     @State private var splitCountString = "1"
     @State private var splitParticipants = ""
     @State private var showingDeleteConfirm = false
+    @State private var linkedItemID: UUID? = nil
 
     private var isEditing: Bool {
         recordToEdit != nil
@@ -664,6 +856,23 @@ struct AddOrEditExpenseSheet: View {
                     }
 
                     TextField("备注说明（如：麦当劳、打车、工资）", text: $title)
+                }
+
+                // 2.5 关联收纳物品（计入该物品的日均持有成本）
+                if !isIncome && !storedItems.isEmpty {
+                    Section("关联收纳物品（可选）") {
+                        Picker("计入物品投入", selection: $linkedItemID) {
+                            Text("不关联").tag(UUID?.none)
+                            ForEach(storedItems) { item in
+                                Text(item.name).tag(UUID?.some(item.id))
+                            }
+                        }
+                        if linkedItemID != nil {
+                            Text("这笔支出将计入对应物品的累计投入，日均持有成本随之更新。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 // 3. 记账时间
@@ -738,6 +947,7 @@ struct AddOrEditExpenseSheet: View {
                     title = record.title
                     date = record.date
                     receiptImageData = record.receiptImageData
+                    linkedItemID = record.linkedItemID
                     splitCountString = String(max(record.splitCount, 1))
                     splitParticipants = record.splitParticipants
                 } else {
@@ -781,6 +991,7 @@ struct AddOrEditExpenseSheet: View {
             record.title = cleanTitle.isEmpty ? selectedCategory.rawValue : cleanTitle
             record.date = date
             record.receiptImageData = receiptImageData
+            record.linkedItemID = linkedItemID
             record.splitCount = max(Int(splitCountString) ?? 1, 1)
             record.splitParticipants = splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
             try? context.save()
@@ -795,6 +1006,7 @@ struct AddOrEditExpenseSheet: View {
             )
             context.insert(record)
             record.receiptImageData = receiptImageData
+            record.linkedItemID = linkedItemID
             record.splitCount = max(Int(splitCountString) ?? 1, 1)
             record.splitParticipants = splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
             try? context.save()

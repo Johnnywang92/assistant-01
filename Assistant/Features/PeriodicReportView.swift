@@ -44,14 +44,39 @@ struct PeriodicReportView: View {
                         dailyActionSummaryCard
                     }
 
+                    // 日报：今日安心花动态额度（仅查看当天且已设月预算时显示）
+                    if selectedPeriod == .daily, let sts = reportData.safeToSpend {
+                        safeToSpendReportCard(sts)
+                    }
+
                     // 4. AI 智能复盘解读卡片
                     smartSummaryCard
+
+                    // 4.5 行动建议卡片（基于真实数据的可执行提示）
+                    if !reportData.suggestions.isEmpty {
+                        suggestionsCard
+                    }
 
                     // 5. 待办完成成果清单卡片
                     todosAccomplishedCard
 
                     // 6. 财务支出结构卡片
                     expensesBreakdownCard
+
+                    // 月/季/年报：周期回顾（与上期环比对比）
+                    if reportData.comparison != nil {
+                        periodReviewCard
+                    }
+
+                    // 月报：月预算执行概览
+                    if selectedPeriod == .monthly, let bo = reportData.budgetOverview {
+                        budgetOverviewCard(bo)
+                    }
+
+                    // 月报/季报/年报：物品日均持有成本榜
+                    if selectedPeriod == .monthly || selectedPeriod == .quarterly || selectedPeriod == .yearly, !reportData.itemCostEntries.isEmpty {
+                        itemCostReportCard
+                    }
 
                     // 7. 下期前瞻与备忘卡片
                     upcomingOutlookCard
@@ -229,6 +254,8 @@ struct PeriodicReportView: View {
                 currentDate = cal.date(byAdding: .weekOfYear, value: value, to: currentDate) ?? currentDate
             case .monthly:
                 currentDate = cal.date(byAdding: .month, value: value, to: currentDate) ?? currentDate
+            case .quarterly:
+                currentDate = cal.date(byAdding: .month, value: value * 3, to: currentDate) ?? currentDate
             case .yearly:
                 currentDate = cal.date(byAdding: .year, value: value, to: currentDate) ?? currentDate
             }
@@ -468,6 +495,68 @@ struct PeriodicReportView: View {
         )
     }
 
+    // MARK: - 4.5 行动建议卡片
+
+    private var suggestionsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("行动建议", systemImage: "target")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text("基于本期真实数据")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            VStack(spacing: 8) {
+                ForEach(reportData.suggestions) { suggestion in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: suggestion.icon)
+                            .font(.subheadline.bold())
+                            .foregroundStyle(suggestionColor(suggestion.tone))
+                            .frame(width: 22)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(suggestion.title)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+
+                            Text(suggestion.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineSpacing(3)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(suggestionColor(suggestion.tone).opacity(0.08))
+                    )
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func suggestionColor(_ tone: ReportSuggestion.Tone) -> Color {
+        switch tone {
+        case .urgent: return .red
+        case .action: return .orange
+        case .positive: return .green
+        }
+    }
+
     // MARK: - 5. 待办完成成果清单卡片
 
     private var todosAccomplishedCard: some View {
@@ -671,6 +760,346 @@ struct PeriodicReportView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 今日安心花卡片（日报）
+
+    private func safeToSpendReportCard(_ sts: SafeToSpendResult) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("今日安心花", systemImage: "shield.lefthalf.filled")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text("距月底 \(sts.daysLeft) 天")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            if sts.isOverBudget {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    Text("本月弹性预算已超支 ¥\(String(format: "%.0f", -sts.remainingThisMonth))，今天尽量少花")
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("今天还可以安心花")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(String(format: "¥%.0f", sts.safeToSpendToday))
+                        .font(.system(.title, design: .rounded).bold())
+                        .foregroundStyle(.green)
+                }
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color(.tertiarySystemFill))
+                    Capsule()
+                        .fill(sts.isOverBudget ? Color.red : Color.green)
+                        .frame(width: geo.size.width * CGFloat(min(max(sts.spentRatio, 0), 1)))
+                }
+            }
+            .frame(height: 6)
+
+            HStack(spacing: 12) {
+                Text("弹性预算 ¥\(String(format: "%.0f", sts.disposableBudget))")
+                if sts.savedYesterday >= 0.5 {
+                    Text("昨日省下 ¥\(String(format: "%.0f", sts.savedYesterday)) 已滚入 💰")
+                        .foregroundStyle(.green)
+                }
+                Spacer()
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.green.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 周期回顾卡片（月/季/年报：与上一等长周期环比）
+
+    private var periodReviewCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("周期回顾 · 与上期对比", systemImage: "arrow.left.arrow.right")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                Spacer()
+            }
+
+            if let cmp = reportData.comparison {
+                let diff = reportData.totalExpense - cmp.prevExpense
+
+                // 支出环比
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("本期支出")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text("¥\(String(format: "%.0f", reportData.totalExpense))")
+                            .font(.system(.title3, design: .rounded).bold())
+                        Text("\(reportData.expenseCount) 笔")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    Image(systemName: "arrow.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("上期支出")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text("¥\(String(format: "%.0f", cmp.prevExpense))")
+                            .font(.system(.title3, design: .rounded).bold())
+                            .foregroundStyle(.secondary)
+                        Text("\(cmp.prevExpenseCount) 笔")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                    if cmp.prevExpense > 0 {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(diff >= 0 ? "+¥\(String(format: "%.0f", diff))" : "-¥\(String(format: "%.0f", -diff))")
+                                .font(.system(.subheadline, design: .rounded).bold())
+                                .foregroundStyle(diff >= 0 ? Color.red : .green)
+                            Text(diff >= 0
+                                 ? "环比 +\(Int(cmp.expenseChangeRatio * 100))%"
+                                 : "环比 -\(Int(-cmp.expenseChangeRatio * 100))%")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(.tertiarySystemGroupedBackground))
+                )
+
+                // 完成事项环比
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("完成事项：本期 \(reportData.completedTodos.count) 项 · 上期 \(cmp.prevCompletedCount) 项")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+
+                // 类别结构变化
+                if let g = cmp.growingCategory {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .font(.caption.bold())
+                            .foregroundStyle(.red)
+                        Text("增长最快：**\(g.category.rawValue)** ¥\(String(format: "%.0f", g.from)) → ¥\(String(format: "%.0f", g.to))（+¥\(String(format: "%.0f", g.to - g.from))）")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                    }
+                }
+                if let s = cmp.shrinkingCategory {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chart.line.downtrend.xyaxis")
+                            .font(.caption.bold())
+                            .foregroundStyle(.green)
+                        Text("降温最明显：**\(s.category.rawValue)** ¥\(String(format: "%.0f", s.from)) → ¥\(String(format: "%.0f", s.to))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.blue.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 月预算执行卡片（月报）
+
+    private func budgetOverviewCard(_ bo: BudgetOverviewResult) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("月预算执行", systemImage: "gauge.with.dots.needle.50percent")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text(bo.remaining < 0 ? "已超支" : "已使用 \(Int(min(max(bo.spentRatio, 0), 2) * 100))%")
+                    .font(.caption.bold())
+                    .foregroundStyle(bo.remaining < 0 ? .red : .orange)
+            }
+
+            HStack(spacing: 8) {
+                budgetMetric("弹性预算", value: bo.monthlyBudget, color: .indigo)
+                budgetMetric("固定支出", value: bo.fixedMonthlyTotal, color: .gray)
+                budgetMetric("本月已花", value: bo.flexibleSpent, color: .orange)
+                budgetMetric("剩余额度", value: bo.remaining, color: bo.remaining >= 0 ? .green : .red)
+            }
+
+            if bo.isCurrentMonth {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar.day.timeline.left")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("距月底 \(bo.daysLeft) 天，今天起日均还可以花 ¥\(String(format: "%.0f", bo.dailyAllowance))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.indigo.opacity(0.16), lineWidth: 1)
+        )
+    }
+
+    private func budgetMetric(_ title: String, value: Double, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(String(format: "¥%.0f", value))
+                .font(.system(.subheadline, design: .rounded).bold())
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    // MARK: - 物品日均持有成本榜卡片（月报/年报）
+
+    private var itemCostReportCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("物品日均持有成本", systemImage: "archivebox")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text("累计投入 Top \(reportData.itemCostEntries.count)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(reportData.itemCostEntries) { entry in
+                    VStack(spacing: 4) {
+                        HStack {
+                            HStack(spacing: 6) {
+                                Text(L10n.tr(entry.name))
+                                    .font(.caption)
+                                    .foregroundStyle(.primary)
+
+                                Text(L10n.tr(entry.roomArea))
+                                    .font(.caption2)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.indigo.opacity(0.12)))
+                                    .foregroundStyle(.indigo)
+
+                                if entry.summary.isSecondHand {
+                                    Text("二手购入")
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background(Capsule().fill(Color.teal.opacity(0.14)))
+                                        .foregroundStyle(.teal)
+                                }
+                                if entry.summary.isResold {
+                                    Text("已转卖")
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1)
+                                        .background(Capsule().fill(Color.green.opacity(0.14)))
+                                        .foregroundStyle(.green)
+                                }
+                            }
+                            Spacer()
+                            if entry.summary.isResold {
+                                Text(String(format: "净成本 ¥%.1f/天", entry.summary.netDailyCost))
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.green)
+                            } else {
+                                Text(String(format: "¥%.1f/天", entry.summary.dailyCost))
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+
+                        HStack(spacing: 8) {
+                            if entry.summary.isResold {
+                                Text("累计投入 ¥\(String(format: "%.0f", entry.summary.totalCost))")
+                                Text("回血 ¥\(String(format: "%.0f", entry.summary.resalePrice))")
+                                    .foregroundStyle(.green)
+                                Text("持有 \(entry.summary.daysHeld) 天")
+                            } else {
+                                Text("累计投入 ¥\(String(format: "%.0f", entry.summary.totalCost))")
+                                Text("已使用 \(entry.summary.daysHeld) 天")
+                            }
+                            if let milestone = entry.summary.milestoneText {
+                                Text("🏆 " + milestone)
+                                    .foregroundStyle(entry.summary.isResold ? .green : .orange)
+                            }
+                            Spacer()
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                    if entry.id != reportData.itemCostEntries.last?.id {
+                        Divider()
+                    }
+                }
+            }
+
+            // 二手交易与实际持有成本说明
+            VStack(alignment: .leading, spacing: 4) {
+                Text("💡 二手交易如何影响实际持有成本")
+                    .font(.caption.bold())
+                    .foregroundStyle(.primary)
+                Text("实际持有成本 = 累计投入 − 转卖回血：不常用的物品转卖为二手后，闲置期间的持有天数不再摊高日均成本，净成本被回血金额直接摊薄；二手购入的物品买入价更低，日均成本从一开始就低于全新购入。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.teal.opacity(0.08)))
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.orange.opacity(0.16), lineWidth: 1)
         )
     }
 

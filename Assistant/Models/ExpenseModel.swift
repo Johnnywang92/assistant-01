@@ -53,6 +53,7 @@ public final class ExpenseRecord {
     public var rawText: String              // 用户一句话输入的原文
     public var date: Date                   // 账单归属日期时间
     public var createdAt: Date
+    public var linkedItemID: UUID?          // 关联的收纳物品（StoredItem.id），用于日均持有成本归集
     @Transient public var receiptImageData: Data?
     // Kept out of the legacy ExpenseRecord schema so old stores can open safely.
     @Transient public var splitCount: Int = 1
@@ -74,6 +75,7 @@ public final class ExpenseRecord {
         self.rawText = rawText
         self.date = date
         self.createdAt = .now
+        self.linkedItemID = nil
         self.receiptImageData = nil
         self.splitCount = 1
         self.splitParticipants = ""
