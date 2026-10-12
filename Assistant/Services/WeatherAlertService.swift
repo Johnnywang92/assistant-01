@@ -43,6 +43,136 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
         locationManager.delegate = self
     }
 
+    public struct CurrentWeatherSnapshot: Equatable {
+        public let temperatureCelsius: Double
+        public let symbolName: String
+        public let conditionDescription: String
+        public let isRainyOrSnowy: Bool
+        public let todayMaxCelsius: Double?
+
+        public var formattedTemperature: String {
+            "\(Int(temperatureCelsius.rounded()))°C"
+        }
+    }
+
+    @AppStorage("weather_cached_temp") private var cachedTemp: Double = -999.0
+    @AppStorage("weather_cached_symbol") private var cachedSymbol: String = "cloud.sun.fill"
+    @AppStorage("weather_cached_desc") private var cachedDesc: String = "多云"
+
+    public var cachedWeatherSnapshot: CurrentWeatherSnapshot? {
+        guard cachedTemp > -100 else { return nil }
+        let isRainy = cachedSymbol.contains("rain") || cachedSymbol.contains("snow") || cachedSymbol.contains("drizzle")
+        return CurrentWeatherSnapshot(
+            temperatureCelsius: cachedTemp,
+            symbolName: cachedSymbol,
+            conditionDescription: L10n.tr(cachedDesc),
+            isRainyOrSnowy: isRainy,
+            todayMaxCelsius: nil
+        )
+    }
+
+    /// 获取当前天气（优先使用 Apple WeatherKit；若未配置 WeatherKit 权限或签名受限，自动降级为免密钥 Open-Meteo 气象接口）
+    public func fetchCurrentWeather(for location: CLLocation) async -> CurrentWeatherSnapshot? {
+        do {
+            let weather = try await WeatherService.shared.weather(for: location)
+            let current = weather.currentWeather
+            let tempC = current.temperature.converted(to: .celsius).value
+            let symbol = current.symbolName
+            let desc = current.condition.description
+            let isRainy = symbol.contains("rain") || symbol.contains("snow") || symbol.contains("drizzle")
+            let todayMax = weather.dailyForecast.first?.highTemperature.converted(to: .celsius).value
+
+            let snapshot = CurrentWeatherSnapshot(
+                temperatureCelsius: tempC,
+                symbolName: symbol,
+                conditionDescription: L10n.tr(desc),
+                isRainyOrSnowy: isRainy,
+                todayMaxCelsius: todayMax
+            )
+            saveCache(snapshot)
+            return snapshot
+        } catch {
+            if let fallback = await fetchOpenMeteoWeather(for: location) {
+                saveCache(fallback)
+                return fallback
+            }
+            return cachedWeatherSnapshot
+        }
+    }
+
+    private func saveCache(_ snapshot: CurrentWeatherSnapshot) {
+        cachedTemp = snapshot.temperatureCelsius
+        cachedSymbol = snapshot.symbolName
+        cachedDesc = snapshot.conditionDescription
+    }
+
+    private func fetchOpenMeteoWeather(for location: CLLocation) async -> CurrentWeatherSnapshot? {
+        let lat = location.coordinate.latitude
+        let lon = location.coordinate.longitude
+        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max&timezone=auto&forecast_days=1"
+        guard let url = URL(string: urlString) else { return nil }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return nil
+            }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let current = json["current"] as? [String: Any],
+                  let temp = current["temperature_2m"] as? Double else {
+                return nil
+            }
+            let code = (current["weather_code"] as? Int) ?? 0
+            let isDay = ((current["is_day"] as? Int) ?? 1) == 1
+
+            var todayMax: Double? = nil
+            if let daily = json["daily"] as? [String: Any],
+               let maxArr = daily["temperature_2m_max"] as? [Double],
+               let firstMax = maxArr.first {
+                todayMax = firstMax
+            }
+
+            let mapped = Self.mapWMOWeatherCode(code, isDay: isDay)
+            return CurrentWeatherSnapshot(
+                temperatureCelsius: temp,
+                symbolName: mapped.symbol,
+                conditionDescription: mapped.description,
+                isRainyOrSnowy: mapped.isRainyOrSnowy,
+                todayMaxCelsius: todayMax
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    private static func mapWMOWeatherCode(_ code: Int, isDay: Bool) -> (symbol: String, description: String, isRainyOrSnowy: Bool) {
+        switch code {
+        case 0:
+            return (isDay ? "sun.max.fill" : "moon.stars.fill", L10n.tr("晴"), false)
+        case 1, 2:
+            return (isDay ? "cloud.sun.fill" : "cloud.moon.fill", L10n.tr("多云"), false)
+        case 3:
+            return ("cloud.fill", L10n.tr("阴"), false)
+        case 45, 48:
+            return ("cloud.fog.fill", L10n.tr("雾"), false)
+        case 51, 53, 55, 56, 57:
+            return ("cloud.drizzle.fill", L10n.tr("毛毛雨"), true)
+        case 61, 63, 80, 81:
+            return ("cloud.rain.fill", L10n.tr("小到中雨"), true)
+        case 65, 66, 67, 82:
+            return ("cloud.heavyrain.fill", L10n.tr("大雨"), true)
+        case 71, 73, 75, 77, 85, 86:
+            return ("cloud.snow.fill", L10n.tr("降雪"), true)
+        case 95, 96, 99:
+            return ("cloud.bolt.rain.fill", L10n.tr("雷阵雨"), true)
+        default:
+            return (isDay ? "cloud.sun.fill" : "cloud.moon.fill", L10n.tr("多云"), false)
+        }
+    }
+
     /// 检查突发气象预警与骤降温差（在 App 启动、进入前台、或情景触发时调用）
     public func checkAlertsIfNeeded(location: CLLocation? = nil) async {
         guard isAlertsEnabled else {
@@ -72,11 +202,11 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
             if let alerts = weather.weatherAlerts, !alerts.isEmpty {
                 let firstAlert = alerts[0]
                 let summary = firstAlert.summary
-                let detail = firstAlert.region ?? "官方发布严重气象警报，外出请注意安全！"
+                let detail = firstAlert.region ?? L10n.tr("官方发布严重气象警报，外出请注意安全！")
 
                 self.currentBanner = AlertBanner(
                     type: .severeWeather,
-                    title: "气象预警 · \(summary)",
+                    title: L10n.choose("气象预警 · \(summary)", "Weather Alert · \(summary)"),
                     detail: detail,
                     icon: "exclamationmark.triangle.fill",
                     color: Color.orange,
@@ -88,34 +218,39 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
             // 2. 检测：气温骤降突变（对比今日最高温 vs 昨日记录最高温）
             if let todayForecast = weather.dailyForecast.first {
                 let todayMax = todayForecast.highTemperature.converted(to: .celsius).value
-
-                // 如果已有昨日最高气温基准，且日期跨天
-                if yesterdayMaxTemp > -100 && lastRecordedDateString != todayStr {
-                    let drop = yesterdayMaxTemp - todayMax
-                    if drop >= 6.0 {
-                        let dropInt = Int(round(drop))
-                        let todayMaxInt = Int(round(todayMax))
-                        let yesterdayMaxInt = Int(round(yesterdayMaxTemp))
-
-                        self.currentBanner = AlertBanner(
-                            type: .tempDrop,
-                            title: "气温骤降 \(dropInt)°C · 出门建议添衣",
-                            detail: "今日最高仅 \(todayMaxInt)°C（昨日最高 \(yesterdayMaxInt)°C），温差突变明显，预防受凉感冒！",
-                            icon: "thermometer.snowflake",
-                            color: Color.blue,
-                            timestamp: .now
-                        )
-                    }
-                }
-
-                // 每天滚动更新最高温度记录
-                if lastRecordedDateString != todayStr {
-                    yesterdayMaxTemp = todayMax
-                    lastRecordedDateString = todayStr
-                }
+                evaluateTempDrop(todayMax: todayMax, todayStr: todayStr)
             }
         } catch {
-            // WeatherKit 离线或不可用时静默降级
+            // WeatherKit 不可用时使用 Open-Meteo 最高温降级检测降温预警
+            if let fallback = await fetchOpenMeteoWeather(for: loc),
+               let todayMax = fallback.todayMaxCelsius {
+                evaluateTempDrop(todayMax: todayMax, todayStr: todayStr)
+            }
+        }
+    }
+
+    private func evaluateTempDrop(todayMax: Double, todayStr: String) {
+        if yesterdayMaxTemp > -100 && lastRecordedDateString != todayStr {
+            let drop = yesterdayMaxTemp - todayMax
+            if drop >= 6.0 {
+                let dropInt = Int(round(drop))
+                let todayMaxInt = Int(round(todayMax))
+                let yesterdayMaxInt = Int(round(yesterdayMaxTemp))
+
+                self.currentBanner = AlertBanner(
+                    type: .tempDrop,
+                    title: L10n.choose("气温骤降 \(dropInt)°C · 出门建议添衣", "Temp Drop \(dropInt)°C · Dress Warmly"),
+                    detail: L10n.choose("今日最高仅 \(todayMaxInt)°C（昨日最高 \(yesterdayMaxInt)°C），温差突变明显，预防受凉感冒！", "Today's high is only \(todayMaxInt)°C (yesterday \(yesterdayMaxInt)°C). Stay warm!"),
+                    icon: "thermometer.snowflake",
+                    color: Color.blue,
+                    timestamp: .now
+                )
+            }
+        }
+
+        if lastRecordedDateString != todayStr {
+            yesterdayMaxTemp = todayMax
+            lastRecordedDateString = todayStr
         }
     }
 
