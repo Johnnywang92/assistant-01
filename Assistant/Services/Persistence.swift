@@ -26,13 +26,20 @@ enum Persistence {
         do {
             return try openStore()
         } catch {
-            // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
-            storedRecoveryError = Self.diagnose(openError: error)
-            let memSchema = Schema(AssistantSchemaV2.models)
-            if let memContainer = try? ModelContainer(for: memSchema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
-                return memContainer
+            // 真机旧库由引入迁移计划前的「无版本容器」创建，版本标识/内容可能与此处 V1 声明不符，
+            // 带计划的轻量迁移会找不到源库。退回旧路径：无迁移计划、由系统自动轻量升级
+            // （纯加法变更，历次发布在真机上就是这么升级的）；仍不动磁盘文件。
+            do {
+                return try openStoreAutoMigrate()
+            } catch {
+                // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
+                storedRecoveryError = Self.diagnose(openError: error)
+                let memSchema = Schema(AssistantSchemaV2.models)
+                if let memContainer = try? ModelContainer(for: memSchema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
+                    return memContainer
+                }
+                fatalError("无法打开数据库或恢复页: \(error)")
             }
-            fatalError("无法打开数据库或恢复页: \(error)")
         }
     }()
 
@@ -46,6 +53,13 @@ enum Persistence {
         Self.assertSchemaCoverage()
         #endif
         return try ModelContainer(for: schema, migrationPlan: AssistantMigrationPlan.self, configurations: config)
+    }
+
+    /// 无迁移计划的旧路径：仅作为版本化计划识别不了真机遗留库时的兜底。
+    private static func openStoreAutoMigrate() throws -> ModelContainer {
+        let schema = Schema(AssistantSchemaV2.models)
+        let config = ModelConfiguration(schema: schema)
+        return try ModelContainer(for: schema, configurations: config)
     }
 
     /// 打开失败时生成可诊断的错误描述：附带库文件路径与体积，
@@ -75,9 +89,10 @@ enum Persistence {
     }
 }
 
-/// Schema V1：初始发布版本（2026-10-10 首个提交）的 13 个模型。
-/// 之后只做加法：新增字段带默认值、新增模型——因此 V1→V2 走 lightweight 迁移即可，
-/// 不需要自定义迁移阶段。**新增用户可见模型时只改 V2，不要动 V1。**
+/// Schema V1：引入迁移计划（版本化容器）之前，旧版 App 在真机上实际持久化的模型全集
+/// （即无版本容器最后一次使用的 31 模型清单，到 LifeEventGuest 为止）。
+/// 真机旧库的内容与此对齐时，V1→V2 轻量迁移才能直接命中；对不上的库由
+/// `openStoreAutoMigrate()` 兜底。**已发布版本的模型清单不可再改：新增模型请开 V3。**
 enum AssistantSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
     static var models: [any PersistentModel.Type] {
@@ -94,12 +109,31 @@ enum AssistantSchemaV1: VersionedSchema {
             AnniversaryItem.self,
             PasswordVaultItem.self,
             IDDocumentItem.self,
-            ExpenseRecord.self
+            ExpenseRecord.self,
+            DepartureCheckItem.self,
+            VoiceMemo.self,
+            VehicleProfile.self,
+            StoredItem.self,
+            DialogueMessageRecord.self,
+            PetProfile.self,
+            ChildProfile.self,
+            ChildGrowthRecord.self,
+            ChildMilestoneRecord.self,
+            ChildHealthVisitRecord.self,
+            ChildVaccinationRecord.self,
+            LifeReminderAction.self,
+            LifeEventProject.self,
+            LifeEventStage.self,
+            LifeEventTask.self,
+            LifeEventPerson.self,
+            LifeEventExpense.self,
+            LifeEventGuest.self
         ]
     }
 }
 
-/// Schema V2：当前版本。历次加法（车辆/收纳/对话/宠物/儿童/生活事件/技能路径等）后的全集。
+/// Schema V2：当前版本。V2 相对 V1 纯加法（Omnibox 事务 + 技能路径 3 模型 + 各模型默认值字段），
+/// 走 lightweight 迁移即可。后续再有加法请新开 V3，不要原地改本清单。
 enum AssistantSchemaV2: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
     static var models: [any PersistentModel.Type] {
