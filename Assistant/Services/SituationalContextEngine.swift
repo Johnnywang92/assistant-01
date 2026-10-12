@@ -8,12 +8,13 @@ public enum UserLifestyleProfile: String, CaseIterable, Identifiable, Codable {
     case student = "学生 (周中上课/周末假期)"
 
     public var id: String { rawValue }
+    public var displayName: String { L10n.tr(rawValue) }
 
     public var shortTitle: String {
         switch self {
-        case .officeWorker: return "上班族"
-        case .flexible: return "自由职业"
-        case .student: return "学生"
+        case .officeWorker: return L10n.tr("上班族")
+        case .flexible: return L10n.tr("自由职业")
+        case .student: return L10n.tr("学生")
         }
     }
 
@@ -43,15 +44,25 @@ public final class SituationalContextEngine: ObservableObject {
     @AppStorage("user_lifestyle_profile") public var lifestyleProfile: UserLifestyleProfile = .officeWorker
     /// 是否开启全 App 场景智能重排（默认开启）
     @AppStorage("context_adaptive_sorting_enabled") public var isAdaptiveSortingEnabled: Bool = true
-    /// 默认下班时间（小时，默认 18:00）
-    @AppStorage("user_off_work_hour") public var offWorkHour: Int = 18
+    /// 默认下班时间（当天分钟数，默认 18:00）
+    @AppStorage("user_off_work_minutes") public var offWorkMinutes: Int = 18 * 60
 
     /// 出门清单持久化选中的场景类型 RawValue（"ALL" 表示全部）
     @AppStorage("departure_selected_scene_raw") public var savedDepartureSceneRaw: String = ""
     /// 出门清单用户上次选择该场景的时间戳
     @AppStorage("departure_selected_scene_timestamp") public var savedDepartureSceneTimestamp: Double = 0
 
-    private init() {}
+    private init() {
+        // 兼容旧版本只保存小时的设置。
+        if UserDefaults.standard.object(forKey: "user_off_work_minutes") == nil,
+           let legacyHour = UserDefaults.standard.object(forKey: "user_off_work_hour") as? Int {
+            offWorkMinutes = min(max(legacyHour * 60, 0), 23 * 60 + 59)
+        }
+    }
+
+    public var offWorkTimeText: String {
+        String(format: "%02d:%02d", offWorkMinutes / 60, offWorkMinutes % 60)
+    }
 
     /// 获取当前时空情境
     public func currentContext(at date: Date = .now) -> SituationalState {
@@ -75,7 +86,7 @@ public final class SituationalContextEngine: ObservableObject {
         if lifestyleProfile == .officeWorker || lifestyleProfile == .student {
             // 周五傍晚 16 点后 -> 周末前夕
             if weekday == 6 && hour >= 16 {
-                return .eveOfHoliday(holidayName: "周末")
+                return .eveOfHoliday(holidayName: L10n.tr("周末"))
             }
 
             // 周六 (7) 或 周日 (1) -> 周末休闲
@@ -99,11 +110,11 @@ public final class SituationalContextEngine: ObservableObject {
 
     private func detectMajorHoliday(month: Int, day: Int, date: Date) -> String? {
         // 元旦长假 (1.1 ~ 1.3)
-        if month == 1 && day <= 3 { return "元旦假期" }
+        if month == 1 && day <= 3 { return L10n.tr("元旦假期") }
         // 劳动节长假 (5.1 ~ 5.5)
-        if month == 5 && day <= 5 { return "五一假期" }
+        if month == 5 && day <= 5 { return L10n.tr("五一假期") }
         // 国庆黄金周 (10.1 ~ 10.7)
-        if month == 10 && day <= 7 { return "国庆长假" }
+        if month == 10 && day <= 7 { return L10n.tr("国庆长假") }
 
         // 农历计算（春节、中秋、端午）
         let lunarCal = Calendar(identifier: .chinese)
@@ -112,15 +123,15 @@ public final class SituationalContextEngine: ObservableObject {
 
         // 春节 (农历腊月廿九/除夕 至 正月初七)
         if (lunarMonth == 12 && lunarDay >= 29) || (lunarMonth == 1 && lunarDay <= 7) {
-            return "春节长假"
+            return L10n.tr("春节长假")
         }
         // 端午 (农历五月初四至初六)
         if lunarMonth == 5 && (lunarDay >= 4 && lunarDay <= 6) {
-            return "端午假期"
+            return L10n.tr("端午假期")
         }
         // 中秋 (农历八月十四至十六)
         if lunarMonth == 8 && (lunarDay >= 14 && lunarDay <= 16) {
-            return "中秋假期"
+            return L10n.tr("中秋假期")
         }
 
         return nil
@@ -143,6 +154,8 @@ public final class SituationalContextEngine: ObservableObject {
 
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: date)
+        let minute = calendar.component(.minute, from: date)
+        let minutesSinceMidnight = hour * 60 + minute
         let ctx = currentContext(at: date)
         var scenes: [DepartureScene]
 
@@ -161,7 +174,7 @@ public final class SituationalContextEngine: ObservableObject {
 
         case .workCommute:
             // 工作日周一至周五：
-            if hour < offWorkHour {
+            if minutesSinceMidnight < offWorkMinutes {
                 // 没到下班时间：工作通勤概率最高
                 scenes = [.commute, .parenting, .petWalk, .casual, .workout, .travel, .rainy]
             } else {
@@ -230,10 +243,11 @@ public final class SituationalContextEngine: ObservableObject {
         guard isAdaptiveSortingEnabled else { return false }
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: date)
+        let minute = calendar.component(.minute, from: date)
         let weekday = calendar.component(.weekday, from: date)
 
         let isWorkday = (2...6).contains(weekday)
-        let isAfterWork = hour >= offWorkHour
+        let isAfterWork = hour * 60 + minute >= offWorkMinutes
         let isWorkScene = currentScene == .commute
 
         return isWorkday && isAfterWork && isWorkScene
@@ -244,22 +258,23 @@ public final class SituationalContextEngine: ObservableObject {
         guard isAdaptiveSortingEnabled else { return nil }
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: date)
+        let minute = calendar.component(.minute, from: date)
         let ctx = currentContext(at: date)
 
         switch ctx {
         case .holidayTravel(let holiday):
-            return ("\(holiday)期间 · 已智能置顶「出差旅行」清单", "airplane.departure", .purple)
+            return (L10n.choose("\(holiday)期间 · 已智能置顶「出差旅行」清单", "During \(holiday) · Pinned 'Business & Travel' checklist"), "airplane.departure", .purple)
         case .eveOfHoliday(let holiday):
-            return ("\(holiday)前夕 · 提前为您准备远行与随身行李", "suitcase.fill", .indigo)
+            return (L10n.choose("\(holiday)前夕 · 提前为您准备远行与随身行李", "Eve of \(holiday) · Prepared travel & carry-on essentials"), "suitcase.fill", .indigo)
         case .weekendLeisure:
-            return ("周末闲暇时光 · 优先展示日常出行与运动", "sun.max.fill", .green)
+            return (L10n.choose("周末闲暇时光 · 优先展示日常出行与运动", "Weekend Leisure · Prioritizing casual & workout items"), "sun.max.fill", .green)
         case .workCommute(let isMorning):
-            if hour >= offWorkHour {
-                return ("已到下班时间 · 选项已按晚间出行概率重排（推荐健身与休闲）", "moon.stars.fill", .purple)
+            if hour * 60 + minute >= offWorkMinutes {
+                return (L10n.choose("已到下班时间 · 选项已按晚间出行概率重排（推荐健身与休闲）", "After Work · Sorted for evening activities (workout & leisure)"), "moon.stars.fill", .purple)
             } else if isMorning {
-                return ("工作日早高峰 · 优先清点工牌工位通勤装备", "briefcase.fill", .blue)
+                return (L10n.choose("工作日早高峰 · 优先清点工牌工位通勤装备", "Morning Rush · Prioritizing work badge & commute essentials"), "briefcase.fill", .blue)
             } else {
-                return ("工作日日间工作 · 保持工作通勤装备清点（\(offWorkHour):00 前不下班）", "building.2.fill", .blue)
+                return (L10n.choose("工作日日间工作 · 保持工作通勤装备清点（\(offWorkTimeText) 前不下班）", "Workday Hours · Keeping commute checklist active (until \(offWorkTimeText))"), "building.2.fill", .blue)
             }
         }
     }
@@ -269,16 +284,22 @@ public final class SituationalContextEngine: ObservableObject {
     /// 语音对话界面的快捷提问动态气泡
     public func dynamicVoicePrompts() -> [String] {
         guard isAdaptiveSortingEnabled else {
-            return ["今天有哪些待办？", "出门防丢该带什么？", "今天花了多少钱？", "查一下待取快递", "记一下开会安排"]
+            return [
+                L10n.choose("今天有哪些待办？", "What are today's to-dos?"),
+                L10n.choose("出门防丢该带什么？", "What should I bring before leaving?"),
+                L10n.choose("今天花了多少钱？", "How much did I spend today?"),
+                L10n.choose("查一下待取快递", "Check pending parcels"),
+                L10n.choose("记一下开会安排", "Add a meeting reminder")
+            ]
         }
 
         if let ticket = TravelTicketReminderManager.shared.activeUpcomingTicket {
             return [
-                "查看「\(ticket.title)」购票建议",
-                "提前15天提醒我抢火车票",
-                "今天有哪些待办？",
-                "今天花了多少钱？",
-                "查一下待取快递"
+                L10n.choose("查看「\(ticket.title)」购票建议", "Ticket tips for \"\(ticket.title)\""),
+                L10n.choose("提前15天提醒我抢火车票", "Remind me 15 days ahead to book train tickets"),
+                L10n.choose("今天有哪些待办？", "What are today's to-dos?"),
+                L10n.choose("今天花了多少钱？", "How much did I spend today?"),
+                L10n.choose("查一下待取快递", "Check pending parcels")
             ]
         }
 
@@ -286,35 +307,35 @@ public final class SituationalContextEngine: ObservableObject {
         switch ctx {
         case .holidayTravel(let holiday):
             return [
-                "\(holiday)行李物品清点",
-                "假期一共花了多少钱？",
-                "查一下出行车票证件",
-                "记一笔旅行消费",
-                "查看生活纪念日"
+                L10n.choose("\(holiday)行李物品清点", "\(holiday) luggage checklist"),
+                L10n.choose("假期一共花了多少钱？", "How much did I spend this holiday?"),
+                L10n.choose("查一下出行车票证件", "Check travel tickets & IDs"),
+                L10n.choose("记一笔旅行消费", "Log a travel expense"),
+                L10n.choose("查看生活纪念日", "View anniversaries")
             ]
         case .eveOfHoliday(let holiday):
             return [
-                "\(holiday)出差旅行该带什么？",
-                "今天还有哪些遗留工作？",
-                "查一下待取快递",
-                "记一笔今天开销",
-                "出门指差防丢确认"
+                L10n.choose("\(holiday)出差旅行该带什么？", "What to pack for \(holiday) travel?"),
+                L10n.choose("今天还有哪些遗留工作？", "What work tasks remain today?"),
+                L10n.choose("查一下待取快递", "Check pending parcels"),
+                L10n.choose("记一笔今天开销", "Log today's expense"),
+                L10n.choose("出门指差防丢确认", "Departure checklist check")
             ]
         case .weekendLeisure:
             return [
-                "今天有什么休闲安排？",
-                "周末家务与大扫除习惯",
-                "今天花了多少钱？",
-                "查一下待取包裹",
-                "出门轻装防丢清点"
+                L10n.choose("今天有什么休闲安排？", "Any leisure plans for today?"),
+                L10n.choose("周末家务与大扫除习惯", "Weekend housework & cleaning"),
+                L10n.choose("今天花了多少钱？", "How much did I spend today?"),
+                L10n.choose("查一下待取包裹", "Check pending parcels"),
+                L10n.choose("出门轻装防丢清点", "Casual outing checklist")
             ]
         case .workCommute:
             return [
-                "今天有哪些工作待办？",
-                "上班通勤防丢该带什么？",
-                "查一下待取快递",
-                "今天花了多少钱？",
-                "记一下明天下午开会"
+                L10n.choose("今天有哪些工作待办？", "What work to-dos do I have today?"),
+                L10n.choose("上班通勤防丢该带什么？", "What to bring for work commute?"),
+                L10n.choose("查一下待取快递", "Check pending parcels"),
+                L10n.choose("今天花了多少钱？", "How much did I spend today?"),
+                L10n.choose("记一下明天下午开会", "Remind me of a meeting tomorrow afternoon")
             ]
         }
     }

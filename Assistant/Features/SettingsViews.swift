@@ -68,12 +68,13 @@ struct SettingsView: View {
     @AppStorage("weather_alerts_enabled") private var weatherAlertsEnabled: Bool = true
     @AppStorage("todo_notification_show_sensitive_details") private var showSensitiveTodoNotifications: Bool = false
     @AppStorage("user_lifestyle_profile") private var lifestyleProfile: UserLifestyleProfile = .officeWorker
-    @AppStorage("user_off_work_hour") private var offWorkHour: Int = 18
+    @AppStorage("user_off_work_minutes") private var offWorkMinutes: Int = 18 * 60
     @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @ObservedObject private var tabManager = TabBarManager.shared
     @ObservedObject private var seniorManager = SeniorModeManager.shared
     @ObservedObject private var reportManager = PeriodicReportManager.shared
+    @ObservedObject private var langManager = LanguageManager.shared
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.modelContext) private var context
     @State private var selectedMode = AppSettings.currentMode
@@ -86,6 +87,30 @@ struct SettingsView: View {
     @State private var lifeEventTabAlertMessage = ""
 
     var isSheet: Bool = false
+
+    private var offWorkTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                let calendar = Calendar.current
+                return calendar.date(bySettingHour: offWorkMinutes / 60,
+                                     minute: offWorkMinutes % 60,
+                                     second: 0,
+                                     of: .now) ?? .now
+            },
+            set: { newValue in
+                let calendar = Calendar.current
+                let hour = calendar.component(.hour, from: newValue)
+                let minute = calendar.component(.minute, from: newValue)
+                offWorkMinutes = hour * 60 + minute
+            }
+        )
+    }
+
+    private func migrateLegacyOffWorkTimeIfNeeded() {
+        guard UserDefaults.standard.object(forKey: "user_off_work_minutes") == nil,
+              let legacyHour = UserDefaults.standard.object(forKey: "user_off_work_hour") as? Int else { return }
+        offWorkMinutes = min(max(legacyHour * 60, 0), 23 * 60 + 59)
+    }
 
     var body: some View {
         NavigationStack {
@@ -104,9 +129,9 @@ struct SettingsView: View {
                             .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(assistantName.isEmpty ? "小助" : assistantName)
+                            Text((assistantName.isEmpty || assistantName == "小助") ? L10n.tr("小助") : assistantName)
                                 .font(.subheadline.weight(.semibold))
-                            Text("称呼：\(userTitle.isEmpty ? "你" : userTitle)")
+                            Text("称呼：\((userTitle.isEmpty || userTitle == "你") ? L10n.tr("你") : userTitle)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -133,31 +158,6 @@ struct SettingsView: View {
                         }
                     }
 
-                    // 快速命名推荐预设
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(["小助", "管家", "贾维斯", "星期五", "小秘书"], id: \.self) { preset in
-                                Button {
-                                    assistantName = preset
-                                    Haptic.light()
-                                } label: {
-                                    Text(preset)
-                                        .font(.caption2)
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 3)
-                                        .background(
-                                            Capsule()
-                                                .fill(assistantName == preset ? Color.accentColor.opacity(0.18) : Color(.tertiarySystemFill))
-                                        )
-                                        .foregroundStyle(assistantName == preset ? Color.accentColor : Color.primary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-
-                    Divider()
-
                     // 对我的称呼
                     HStack {
                         Text("对我的称呼")
@@ -178,31 +178,44 @@ struct SettingsView: View {
                             .buttonStyle(.plain)
                         }
                     }
-
-                    // 快速称呼推荐预设
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(["你", "您", "老板", "主人", "朋友"], id: \.self) { preset in
-                                Button {
-                                    userTitle = preset
-                                    Haptic.light()
-                                } label: {
-                                    Text(preset)
-                                        .font(.caption2)
-                                        .padding(.horizontal, 7)
-                                        .padding(.vertical, 3)
-                                        .background(
-                                            Capsule()
-                                                .fill(userTitle == preset ? Color.accentColor.opacity(0.18) : Color(.tertiarySystemFill))
-                                        )
-                                        .foregroundStyle(userTitle == preset ? Color.accentColor : Color.primary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
                 } header: {
                     Text("助手与称呼")
+                }
+
+                // MARK: - 应用语言切换 (支持跟随系统 / 简体中文 / English)
+                Section {
+                    NavigationLink {
+                        AppLanguageSettingsView()
+                    } label: {
+                        HStack {
+                            Label("语言 / Language", systemImage: "globe")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text(langManager.selectedLanguage.displayName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Picker("语言 / Language", selection: Binding(
+                        get: { langManager.selectedLanguage },
+                        set: { newLang in
+                            Haptic.selection()
+                            langManager.selectedLanguage = newLang
+                        }
+                    )) {
+                        ForEach(AppLanguage.allCases) { lang in
+                            Text(lang.displayName).tag(lang)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("语言 / Language")
+                } footer: {
+                    Text(L10n.choose(
+                        "切换后界面、通知与语音助手将立即生效，无需重启 App。",
+                        "Interface, notifications, and voice assistant update immediately without restarting."
+                    ))
                 }
 
                 // MARK: - 核心权限健康度检查
@@ -256,7 +269,7 @@ struct SettingsView: View {
                             Label("主题与背景", systemImage: "paintpalette.fill")
                                 .foregroundStyle(.primary)
                             Spacer()
-                            Text(AppBackgroundManager.shared.currentStyle.rawValue)
+                            Text(L10n.tr(AppBackgroundManager.shared.currentStyle.rawValue))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -281,13 +294,13 @@ struct SettingsView: View {
                             if enabled {
                                 let result = tabManager.addTab(.lifeEvents)
                                 if !result.success {
-                                    lifeEventTabAlertMessage = result.message ?? "无法开启人生大事入口"
+                                    lifeEventTabAlertMessage = L10n.tr(result.message ?? "无法开启人生大事入口")
                                     showingLifeEventTabAlert = true
                                 }
                             } else {
                                 let result = tabManager.removeTab(.lifeEvents)
                                 if !result.success {
-                                    lifeEventTabAlertMessage = result.message ?? "无法关闭人生大事入口"
+                                    lifeEventTabAlertMessage = L10n.tr(result.message ?? "无法关闭人生大事入口")
                                     showingLifeEventTabAlert = true
                                 }
                             }
@@ -359,7 +372,7 @@ struct SettingsView: View {
                 Section {
                     Picker("助手模式", selection: $selectedMode) {
                         ForEach(AssistantMode.allCases, id: \.self) { mode in
-                            Label(mode.rawValue, systemImage: mode.icon).tag(mode)
+                            Label(L10n.tr(mode.rawValue), systemImage: mode.icon).tag(mode)
                         }
                     }
                     .pickerStyle(.menu)
@@ -367,7 +380,7 @@ struct SettingsView: View {
                         AppSettings.currentMode = newMode
                     }
 
-                    Text(selectedMode.description)
+                    Text(L10n.tr(selectedMode.description))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } header: {
@@ -406,7 +419,7 @@ struct SettingsView: View {
                 Section {
                     Picker("记录保留时间", selection: $retentionPolicy) {
                         ForEach(DialogueRetentionPolicy.allCases) { policy in
-                            Text(policy.displayName).tag(policy)
+                            Text(L10n.tr(policy.displayName)).tag(policy)
                         }
                     }
                     .onChange(of: retentionPolicy) { _, newValue in
@@ -490,16 +503,12 @@ struct SettingsView: View {
                 Section {
                     Picker("作息习惯与身份", selection: $lifestyleProfile) {
                         ForEach(UserLifestyleProfile.allCases) { profile in
-                            Label(profile.rawValue, systemImage: profile.icon).tag(profile)
+                            Label(L10n.tr(profile.rawValue), systemImage: profile.icon).tag(profile)
                         }
                     }
 
                     if lifestyleProfile == .officeWorker {
-                        Picker("常规下班时间", selection: $offWorkHour) {
-                            ForEach(16...22, id: \.self) { h in
-                                Text("\(h):00").tag(h)
-                            }
-                        }
+                        DatePicker("常规下班时间", selection: offWorkTimeBinding, displayedComponents: .hourAndMinute)
                     }
 
                     Toggle("情境动态排序", isOn: $isAdaptiveSortingEnabled)
@@ -520,7 +529,7 @@ struct SettingsView: View {
                         HStack {
                             Label("AI 端侧大模型 (Qwen2.5)", systemImage: "brain.head.profile")
                             Spacer()
-                            Text(LLMModelManager.shared.isModelDownloaded ? "GGUF 已就绪" : "可下载")
+                            Text(LLMModelManager.shared.isModelDownloaded ? L10n.tr("GGUF 已就绪") : L10n.tr("可下载"))
                                 .font(.caption2)
                                 .foregroundStyle(LLMModelManager.shared.isModelDownloaded ? .green : .secondary)
                         }
@@ -553,7 +562,7 @@ struct SettingsView: View {
                 }
 
                 Section("系统信息") {
-                    LabeledContent("证书签名有效期", value: "\(ExpiryReminder.daysLeft) 天")
+                    LabeledContent("证书签名有效期", value: L10n.isEnglish ? "\(ExpiryReminder.daysLeft) days" : "\(ExpiryReminder.daysLeft) 天")
                     NavigationLink("最近收到的原生消息") { RawMessagesView() }
                 }
             }
@@ -570,6 +579,7 @@ struct SettingsView: View {
                 }
             }
             .task {
+                migrateLegacyOffWorkTimeIfNeeded()
                 savedDialogueCount = DialogueHistoryManager.shared.countHistory(context: context)
             }
             .alert("清空本地对话记录", isPresented: $showingClearDialogueAlert) {
@@ -673,7 +683,7 @@ struct SetupGuideView: View {
                 .font(.caption.bold())
                 .frame(width: 22, height: 22)
                 .background(Circle().fill(.tint.opacity(0.15)))
-            Text(text).font(.callout)
+            Text(L10n.tr(text)).font(.callout)
         }
     }
 }
@@ -686,7 +696,7 @@ struct RawMessagesView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(m.source).font(.caption.bold())
-                    Text(m.parseSummary ?? "").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.tr(m.parseSummary ?? "")).font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Text(m.receivedAt, format: .dateTime.month().day().hour().minute())
                         .font(.caption2).foregroundStyle(.tertiary)
@@ -782,9 +792,9 @@ struct ShortcutsGuideView: View {
             Image(systemName: icon)
                 .foregroundStyle(color)
                 .frame(width: 24)
-            Text(title)
+            Text(L10n.tr(title))
                 .font(.subheadline.bold())
-            Text("— \(desc)")
+            Text("— \(L10n.tr(desc))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -800,10 +810,10 @@ struct ShortcutsGuideView: View {
             }
         } label: {
             HStack {
-                Label(title, systemImage: icon)
+                Label(L10n.tr(title), systemImage: icon)
                     .foregroundStyle(Color.primary)
                 Spacer()
-                Text(copiedURL == url ? "已复制！" : url)
+                Text(copiedURL == url ? L10n.tr("已复制！") : url)
                     .font(.footnote.monospaced())
                     .foregroundStyle(copiedURL == url ? Color.green : Color.secondary)
                 Image(systemName: copiedURL == url ? "checkmark.circle.fill" : "doc.on.doc")
@@ -813,4 +823,65 @@ struct ShortcutsGuideView: View {
         }
     }
 }
+
+/// 应用语言切换独立设置页
+struct AppLanguageSettingsView: View {
+    @ObservedObject private var langManager = LanguageManager.shared
+    @ObservedObject private var bgManager = AppBackgroundManager.shared
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(AppLanguage.allCases) { lang in
+                    let isSelected = langManager.selectedLanguage == lang
+                    Button {
+                        Haptic.selection()
+                        langManager.selectedLanguage = lang
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: lang.icon)
+                                .font(.title3)
+                                .foregroundStyle(isSelected ? Color.blue : Color.secondary)
+                                .frame(width: 28)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(lang.displayName)
+                                    .font(.body.weight(isSelected ? .semibold : .regular))
+                                    .foregroundStyle(.primary)
+                                Text(lang.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            if isSelected {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                Text(L10n.choose("选择应用显示语言", "Select App Language"))
+            } footer: {
+                Text(L10n.choose(
+                    "支持跟随系统语言或手动指定简体中文 / English。切换后全应用界面、系统通知与语音识别/播报将立即同步切换。",
+                    "Choose Follow System or manually select Simplified Chinese / English. Interface, notifications, and voice recognition/TTS update immediately."
+                ))
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedAppBackground()
+        .themedRow()
+        .navigationTitle(L10n.choose("语言 / Language", "Language"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 

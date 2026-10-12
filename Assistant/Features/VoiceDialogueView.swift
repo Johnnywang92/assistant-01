@@ -41,7 +41,7 @@ struct VoiceDialogueView: View {
             VStack(spacing: 0) {
                 // 顶部运行模式、推理引擎与静音控制指示条
                 HStack {
-                    Label(AppSettings.currentMode.rawValue, systemImage: AppSettings.currentMode.icon)
+                    Label(L10n.tr(AppSettings.currentMode.rawValue), systemImage: AppSettings.currentMode.icon)
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -172,11 +172,12 @@ struct VoiceDialogueView: View {
                             // 实时转写中的文字
                             if voice.isListening && !voice.recognizedText.isEmpty {
                                 HStack {
-                                    Spacer()
                                     Text(voice.recognizedText)
                                         .font(.body)
+                                        .multilineTextAlignment(.leading)
                                         .padding()
                                         .background(RoundedRectangle(cornerRadius: 16).fill(.tint.opacity(0.2)))
+                                    Spacer()
                                 }
                             }
                         }
@@ -203,7 +204,7 @@ struct VoiceDialogueView: View {
                             Button {
                                 processUserQuery(prompt)
                             } label: {
-                                Text(prompt)
+                                Text(L10n.tr(prompt))
                                     .font(.caption2)
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 5)
@@ -376,7 +377,7 @@ struct VoiceDialogueView: View {
     private var voiceInputControlArea: some View {
         VStack(spacing: 12) {
             if let err = voice.errorMessage {
-                Text(err).font(.caption).foregroundStyle(.red)
+                Text(L10n.tr(err)).font(.caption).foregroundStyle(.red)
             }
 
             HStack(spacing: 24) {
@@ -643,10 +644,10 @@ struct DialogueBubble: View {
     var body: some View {
         HStack {
             if message.role == .user {
-                Spacer()
-                VStack(alignment: .trailing, spacing: 3) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(message.text)
                         .font(.body)
+                        .multilineTextAlignment(.leading)
                         .padding(12)
                         .background(RoundedRectangle(cornerRadius: 16).fill(.tint))
                         .foregroundStyle(.white)
@@ -654,7 +655,7 @@ struct DialogueBubble: View {
                     Text(message.timestamp, format: .dateTime.hour().minute())
                         .font(.system(size: 9))
                         .foregroundStyle(.tertiary)
-                        .padding(.trailing, 4)
+                        .padding(.leading, 4)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
@@ -788,7 +789,7 @@ struct PlanningTaskCardView: View {
                                 .strikethrough(plan.isSaved && !subtask.isSelected)
 
                             if let detail = subtask.detail, !detail.isEmpty {
-                                Text(detail)
+                                Text(L10n.tr(detail))
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
