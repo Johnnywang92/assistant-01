@@ -34,27 +34,31 @@ public enum IDDocumentType: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    public var displayName: String { L10n.tr(rawValue) }
+
     /// 正面/首页提示
     public var frontSlotLabel: String {
-        switch self {
-        case .idCard: return "人像面（正面）"
-        case .driverLicense, .vehicleLicense: return "正本/正页"
-        case .passport: return "个人信息页"
-        case .bankCard: return "卡号正面"
-        case .realEstate, .businessLicense: return "执照/证书页"
-        default: return "正面照片"
+        let raw: String = switch self {
+        case .idCard: "人像面（正面）"
+        case .driverLicense, .vehicleLicense: "正本/正页"
+        case .passport: "个人信息页"
+        case .bankCard: "卡号正面"
+        case .realEstate, .businessLicense: "执照/证书页"
+        default: "正面照片"
         }
+        return L10n.tr(raw)
     }
 
     /// 反面/次页提示
     public var backSlotLabel: String {
-        switch self {
-        case .idCard: return "国徽面（反面）"
-        case .driverLicense, .vehicleLicense: return "副页"
-        case .passport: return "签证/签名页"
-        case .bankCard: return "反面（含签名条）"
-        default: return "反面/补充页"
+        let raw: String = switch self {
+        case .idCard: "国徽面（反面）"
+        case .driverLicense, .vehicleLicense: "副页"
+        case .passport: "签证/签名页"
+        case .bankCard: "反面（含签名条）"
+        default: "反面/补充页"
         }
+        return L10n.tr(raw)
     }
 }
 
@@ -124,7 +128,7 @@ public final class IDDocumentItem {
 
     /// 脱敏显示的证件号码（如 3101**********1234）
     public var maskedNumber: String {
-        guard let num = documentNumber, !num.isEmpty else { return "未录入号码" }
+        guard let num = documentNumber, !num.isEmpty else { return L10n.tr("未录入号码") }
         if num.count <= 6 { return num }
         let prefixCount = min(4, num.count / 3)
         let suffixCount = min(4, num.count / 3)
@@ -224,12 +228,12 @@ public final class BiometricAuthManager: ObservableObject {
     /// 发起生物识别或锁屏密码校验
     public func authenticate(reason: String = "验证身份以解锁查看重要证件照片") {
         let context = LAContext()
-        context.localizedCancelTitle = "取消"
+        context.localizedCancelTitle = L10n.tr("取消")
         var error: NSError?
 
         // 优先使用生物识别或系统锁屏密码
         if context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
-            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, authErr in
+            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: L10n.tr(reason)) { success, authErr in
                 Task { @MainActor in
                     if success {
                         self.isUnlocked = true

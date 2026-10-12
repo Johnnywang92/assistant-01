@@ -54,21 +54,24 @@ public struct UpcomingTravelTicketInfo: Identifiable, Equatable {
     /// 格式化出行日期
     public var departureFormatted: String {
         let f = DateFormatter()
-        f.dateFormat = "M月d日"
+        f.locale = L10n.locale
+        f.dateFormat = L10n.choose("M月d日", "MMM d")
         return f.string(from: departureDate)
     }
 
     /// 格式化火车票开售日期
     public var trainSaleFormatted: String {
         let f = DateFormatter()
-        f.dateFormat = "M月d日"
+        f.locale = L10n.locale
+        f.dateFormat = L10n.choose("M月d日", "MMM d")
         return f.string(from: trainSaleDate)
     }
 
     /// 格式化热门场馆与景区开约日期
     public var scenicBookingFormatted: String {
         let f = DateFormatter()
-        f.dateFormat = "M月d日"
+        f.locale = L10n.locale
+        f.dateFormat = L10n.choose("M月d日", "MMM d")
         return f.string(from: scenicBookingDate)
     }
 
@@ -76,17 +79,19 @@ public struct UpcomingTravelTicketInfo: Identifiable, Equatable {
     public var stageBadgeText: String {
         switch stage {
         case .trainSaleToday:
-            return "火车票今日开售 (提前15天)"
+            return L10n.tr("火车票今日开售 (提前15天)")
         case .trainOnSale(let days):
-            return "火车票抢票中 (还有\(days)天出行)"
+            return L10n.choose("火车票抢票中 (还有\(days)天出行)", "Train Tickets On Sale (\(days)d until trip)")
         case .scenicSpotSaleToday:
-            return "文博/景区今日开抢 (提前7天)"
+            return L10n.tr("文博/景区今日开抢 (提前7天)")
         case .scenicSpotBooking(let days):
-            return "文博/景区预约中 (还有\(days)天出发)"
+            return L10n.choose("文博/景区预约中 (还有\(days)天出发)", "Attraction Booking Open (\(days)d until trip)")
         case .flightBooking(let daysUntilTrain):
-            return daysUntilTrain > 0 ? "机票预订期 · \(daysUntilTrain)天后开售火车票" : "机票最佳预订期"
+            return daysUntilTrain > 0
+                ? L10n.choose("机票预订期 · \(daysUntilTrain)天后开售火车票", "Flight Window · Train tickets in \(daysUntilTrain)d")
+                : L10n.tr("机票最佳预订期")
         case .imminent:
-            return "临近出行 · 候补捡漏"
+            return L10n.tr("临近出行 · 候补捡漏")
         }
     }
 
@@ -94,23 +99,23 @@ public struct UpcomingTravelTicketInfo: Identifiable, Equatable {
     public var recommendationDescription: String {
         switch stage {
         case .trainSaleToday:
-            return "12306 火车票今日正式放票（提前15天），建议立即定好闹钟前往抢票！"
+            return L10n.tr("12306 火车票今日正式放票（提前15天），建议立即定好闹钟前往抢票！")
         case .trainOnSale:
-            return "已进入火车票开售期，若无直达票建议尽快提交候补或预订机票行程。"
+            return L10n.tr("已进入火车票开售期，若无直达票建议尽快提交候补或预订机票行程。")
         case .scenicSpotSaleToday:
             if let guide = destinationGuide {
-                return "热门文博与景区门票今日起开放预约（提前7天）！\(guide)"
+                return L10n.choose("热门文博与景区门票今日起开放预约（提前7天）！\(guide)", "Popular museum & attraction reservations open today (7 days ahead)! \(guide)")
             }
-            return "目的地国家级/省级博物馆（如故宫/国博/省博等提前7天放票）与热门5A景区门票今日起放票预约，请记得准点抢约！"
+            return L10n.tr("目的地国家级/省级博物馆（如故宫/国博/省博等提前7天放票）与热门5A景区门票今日起放票预约，请记得准点抢约！")
         case .scenicSpotBooking:
             if let guide = destinationGuide {
-                return "已进入场馆抢约期！\(guide)"
+                return L10n.choose("已进入场馆抢约期！\(guide)", "Venue booking window open! \(guide)")
             }
-            return "距离出行不足7天，目的地热门博物馆与景区门票已开放分时段预约，请提前锁定入场名额。"
+            return L10n.tr("距离出行不足7天，目的地热门博物馆与景区门票已开放分时段预约，请提前锁定入场名额。")
         case .flightBooking:
-            return "当前处于机票黄金预订期（提前15-30天），价格相对平稳，建议提前比价锁定。"
+            return L10n.tr("当前处于机票黄金预订期（提前15-30天），价格相对平稳，建议提前比价锁定。")
         case .imminent:
-            return "行程即将开始，若尚未购票请留意 12306 候补退票或选择公路/临时航班。"
+            return L10n.tr("行程即将开始，若尚未购票请留意 12306 候补退票或选择公路/临时航班。")
         }
     }
 }
@@ -144,15 +149,15 @@ public struct ProposedTicketTodo: Identifiable, Hashable, Equatable, Sendable {
     ) {
         self.id = id
         self.categoryKey = categoryKey
-        self.title = title
-        self.subtitle = subtitle
-        self.detail = detail
+        self.title = L10n.tr(title)
+        self.subtitle = L10n.tr(subtitle)
+        self.detail = L10n.tr(detail)
         self.dueAt = dueAt
         self.remindBeforeMinutes = remindBeforeMinutes
         self.isSelected = isSelected
         self.isCustomized = isCustomized
         self.icon = icon
-        self.badge = badge
+        self.badge = L10n.tr(badge)
     }
 }
 

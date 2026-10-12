@@ -13,6 +13,8 @@ public enum DepartureScene: String, Codable, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
 
+    public var displayName: String { L10n.tr(rawValue) }
+
     public var icon: String {
         switch self {
         case .commute: return "briefcase.fill"

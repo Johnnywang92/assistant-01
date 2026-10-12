@@ -28,7 +28,7 @@ struct ChildRecordsView: View {
             VStack(spacing: 0) {
                 Picker("记录类型", selection: $recordType) {
                     ForEach(RecordType.allCases) { type in
-                        Label(type.rawValue, systemImage: type.icon).tag(type)
+                        Label(L10n.tr(type.rawValue), systemImage: type.icon).tag(type)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -83,7 +83,7 @@ struct ChildRecordsView: View {
             if child.sortedMilestones.isEmpty { emptyRecord("记录第一次翻身、说话和每个值得纪念的瞬间") }
             ForEach(child.sortedMilestones) { record in
                 recordCard(date: record.date, icon: "sparkles", title: record.title) {
-                    Text(record.category.rawValue).font(.caption).foregroundStyle(.pink)
+                    Text(L10n.tr(record.category.rawValue)).font(.caption).foregroundStyle(.pink)
                     if let notes = record.notes, !notes.isEmpty { Text(notes).font(.caption).foregroundStyle(.secondary) }
                 }
             }
@@ -96,7 +96,7 @@ struct ChildRecordsView: View {
             ForEach(child.sortedHealthVisits) { record in
                 recordCard(date: record.date, icon: "cross.case", title: record.diagnosis) {
                     if let clinic = record.hospitalOrClinic, !clinic.isEmpty { Text(clinic).font(.caption).foregroundStyle(.secondary) }
-                    if let advice = record.doctorAdvice, !advice.isEmpty { Text(advice).font(.caption).foregroundStyle(.secondary) }
+                    if let advice = record.doctorAdvice, !advice.isEmpty { Text(L10n.tr(advice)).font(.caption).foregroundStyle(.secondary) }
                     if let followUp = record.followUpDate { Text("复查：\(followUp.formatted(date: .abbreviated, time: .omitted))").font(.caption).foregroundStyle(.orange) }
                 }
             }
@@ -110,7 +110,7 @@ struct ChildRecordsView: View {
     private func emptyRecord(_ text: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: "clock.arrow.circlepath").font(.title).foregroundStyle(.secondary)
-            Text(text).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Text(L10n.tr(text)).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Text("点击右上角 + 随时追加").font(.caption).foregroundStyle(.tertiary)
         }.frame(maxWidth: .infinity).padding(.vertical, 80)
     }
@@ -119,7 +119,7 @@ struct ChildRecordsView: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Image(systemName: icon).foregroundStyle(.pink)
-                Text(title).font(.subheadline.bold())
+                Text(L10n.tr(title)).font(.subheadline.bold())
                 Spacer()
                 Text(date.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary)
             }

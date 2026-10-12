@@ -147,7 +147,7 @@ struct IDDocumentVaultView: View {
                 .padding(.horizontal, 32)
 
             if let err = auth.errorMessage {
-                Text(err)
+                Text(L10n.tr(err))
                     .font(.caption)
                     .foregroundStyle(.red)
             }
@@ -319,7 +319,7 @@ struct IDPhotoThumbnailSlotView: View {
                     }
                 }
             }
-            Text(label)
+            Text(L10n.tr(label))
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -360,7 +360,7 @@ struct IDDocumentDetailView: View {
         NavigationStack {
             List {
                 Section {
-                    LabeledContent("证件类型", value: document.type.rawValue)
+                    LabeledContent("证件类型", value: L10n.tr(document.type.rawValue))
                     if let holder = document.holderName, !holder.isEmpty {
                         LabeledContent("持有人姓名", value: holder)
                     }
@@ -562,7 +562,7 @@ struct AddIDDocumentSheet: View {
                 Section("证件类型与名称") {
                     Picker("证件类型", selection: $selectedType) {
                         ForEach(IDDocumentType.allCases, id: \.self) { type in
-                            Label(type.rawValue, systemImage: type.icon).tag(type)
+                            Label(L10n.tr(type.rawValue), systemImage: type.icon).tag(type)
                         }
                     }
                     .onChange(of: selectedType) { _, newType in

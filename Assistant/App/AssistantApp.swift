@@ -9,6 +9,7 @@ struct AssistantApp: App {
     @StateObject private var router = NavigationRouter.shared
     @StateObject private var bgManager = AppBackgroundManager.shared
     @StateObject private var seniorManager = SeniorModeManager.shared
+    @StateObject private var langManager = LanguageManager.shared
 
     private var isAppLocked: Bool {
         lockManager.isAppLockEnabled && lockManager.hasPasscode && lockManager.isLocked
@@ -29,6 +30,9 @@ struct AssistantApp: App {
                         .transition(.opacity)
                 }
             }
+            .id(langManager.effectiveLanguageCode)
+            .environment(\.locale, langManager.locale)
+            .environmentObject(langManager)
             .applySeniorMode(manager: seniorManager)
             .preferredColorScheme(bgManager.currentStyle.preferredColorScheme)
             .animation(.easeInOut(duration: 0.25), value: isAppLocked)

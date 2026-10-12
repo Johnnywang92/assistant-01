@@ -415,7 +415,7 @@ struct LifeVaultView: View {
                 .font(.headline)
                 .foregroundStyle(.primary)
 
-            Text(title)
+            Text(L10n.tr(title))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -451,11 +451,11 @@ struct LifeVaultView: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
+                Text(L10n.tr(title))
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
 
-                Text(status)
+                Text(L10n.tr(status))
                     .font(.caption)
                     .foregroundStyle(isAlert ? .red : .secondary)
             }

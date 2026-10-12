@@ -146,10 +146,10 @@ struct PasswordVaultRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Label(item.title, systemImage: "key.horizontal.fill")
+                Label(L10n.tr(item.title), systemImage: "key.horizontal.fill")
                     .font(.headline)
                 Spacer()
-                Text(item.category)
+                Text(L10n.tr(item.category))
                     .font(.caption2)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -250,7 +250,7 @@ struct AddPasswordSheet: View {
                     TextField("服务/网站名称（如：企业邮箱、路由器管理后台）", text: $title)
                     TextField("账号/用户名/邮箱", text: $account)
                     Picker("分类", selection: $category) {
-                        ForEach(categories, id: \.self) { c in Text(c).tag(c) }
+                        ForEach(categories, id: \.self) { c in Text(L10n.tr(c)).tag(c) }
                     }
                 }
 
@@ -479,7 +479,7 @@ struct StandaloneGeneratorSheet: View {
                 Section {
                     Picker("生成模式", selection: $selectedMode) {
                         ForEach(PasswordGenerationMode.allCases) { mode in
-                            Label(mode.rawValue, systemImage: mode.icon).tag(mode)
+                            Label(L10n.tr(mode.rawValue), systemImage: mode.icon).tag(mode)
                         }
                     }
                     .pickerStyle(.segmented)

@@ -66,11 +66,14 @@ enum Persistence {
 }
 
 enum AppSettings {
-    /// 助手名称（用户可自定义，默认："小助"）
+    /// 助手名称（用户可自定义，默认："小助" / "Assistant"）
     static var assistantName: String {
         get {
             let name = UserDefaults.standard.string(forKey: "assistant_custom_name")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return name.isEmpty ? "小助" : name
+            if name.isEmpty || name == "小助" || name == "Assistant" {
+                return L10n.isEnglish ? "Assistant" : "小助"
+            }
+            return name
         }
         set {
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,11 +81,14 @@ enum AppSettings {
         }
     }
 
-    /// 对用户的称呼（默认："你"）
+    /// 对用户的称呼（默认："你" / "You"）
     static var userTitle: String {
         get {
             let title = UserDefaults.standard.string(forKey: "user_preferred_title")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return title.isEmpty ? "你" : title
+            if title.isEmpty || title == "你" || title == "You" {
+                return L10n.isEnglish ? "You" : "你"
+            }
+            return title
         }
         set {
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)

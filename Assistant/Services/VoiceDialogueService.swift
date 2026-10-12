@@ -7,7 +7,11 @@ import Speech
 final class VoiceDialogueService: NSObject, ObservableObject {
     static let shared = VoiceDialogueService()
 
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
+    private let zhRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
+    private let enRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var speechRecognizer: SFSpeechRecognizer? {
+        L10n.isEnglish ? (enRecognizer ?? zhRecognizer) : (zhRecognizer ?? enRecognizer)
+    }
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
@@ -21,7 +25,8 @@ final class VoiceDialogueService: NSObject, ObservableObject {
 
     private override init() {
         super.init()
-        speechRecognizer?.delegate = self
+        zhRecognizer?.delegate = self
+        enRecognizer?.delegate = self
         synthesizer.delegate = self
     }
 
@@ -134,7 +139,9 @@ final class VoiceDialogueService: NSObject, ObservableObject {
         lastAssistantReply = text
 
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
+        let containsCJK = text.range(of: "\\p{Han}", options: .regularExpression) != nil
+        let voiceLang = (L10n.isEnglish && !containsCJK) ? "en-US" : "zh-CN"
+        utterance.voice = AVSpeechSynthesisVoice(language: voiceLang)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         utterance.pitchMultiplier = 1.0
 
@@ -174,11 +181,11 @@ public enum VoiceError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .recognizerUnavailable:
-            return "当前离线语音识别器不可用"
+            return L10n.tr("当前离线语音识别器不可用")
         case .requestCreationFailed:
-            return "创建语音请求失败"
+            return L10n.tr("创建语音请求失败")
         case .memoRecordingInProgress:
-            return "正在录制语音备忘，请先结束录制"
+            return L10n.tr("正在录制语音备忘，请先结束录制")
         }
     }
 }

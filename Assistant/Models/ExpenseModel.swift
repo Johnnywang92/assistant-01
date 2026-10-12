@@ -36,6 +36,10 @@ public enum ExpenseCategory: String, Codable, CaseIterable, Sendable {
     public var isIncome: Bool {
         self == .income || self == .otherIncome
     }
+
+    public var displayName: String {
+        L10n.tr(rawValue)
+    }
 }
 
 /// 记账明细存储模型
@@ -122,7 +126,7 @@ public enum ExpenseNaturalLanguageParser {
             title: title,
             date: date
         )
-        if let match = trimmed.range(of: "(?:AA|平摊|均摊|分摊)\\s*[：:]?\\s*(\\d+)\\s*(?:人|份)?", options: .regularExpression),
+        if let match = trimmed.range(of: "(?:AA|split|平摊|均摊|分摊)\\s*[：:]?\\s*(\\d+)\\s*(?:人|份|people|ways)?", options: [.regularExpression, .caseInsensitive]),
            let count = Int(trimmed[match].filter(\.isNumber)), count > 1 {
             result.splitCount = count
         }
@@ -154,16 +158,16 @@ public enum ExpenseNaturalLanguageParser {
             return whole
         }
 
-        // 常见语法 "花了/付了/用去/收入/支出/消费/为/是 38.5"
+        // 常见语法 "花了/付了/用去/收入/支出/消费/为/是 38.5" 或英文 "$38.5", "spent 38.5"
         let patterns = [
-            "(?:花了|付了|用去|支出|消费|收入|进账|共计|为|是|买.*?花了?|借出)\\s*([0-9]+(?:[.．][0-9]{1,2})?)",
-            "([0-9]+(?:[.．][0-9]{1,2})?)\\s*(?:元|块钱|块|RMB|rmb|\\¥)",
-            "(?:\\¥|￥)\\s*([0-9]+(?:\\.[0-9]{1,2})?)",
+            "(?:花了|付了|用去|支出|消费|收入|进账|共计|为|是|买.*?花了?|借出|spent|paid|cost|earned|received)\\s*\\$?([0-9]+(?:[.．][0-9]{1,2})?)",
+            "([0-9]+(?:[.．][0-9]{1,2})?)\\s*(?:元|块钱|块|RMB|rmb|\\¥|USD|usd|dollars?|bucks?|yuan)",
+            "(?:\\¥|￥|\\$)\\s*([0-9]+(?:\\.[0-9]{1,2})?)",
             "\\b([0-9]+(?:[.．][0-9]{1,2})?)\\b" // 末尾或独立的数字
         ]
 
         for p in patterns {
-            if let regex = try? NSRegularExpression(pattern: p),
+            if let regex = try? NSRegularExpression(pattern: p, options: [.caseInsensitive]),
                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
                match.numberOfRanges > 1,
                let range = Range(match.range(at: 1), in: text) {
@@ -177,9 +181,14 @@ public enum ExpenseNaturalLanguageParser {
 
     // MARK: - 收入/支出判断
     private static func determineIsIncome(from text: String) -> Bool {
-        let incomeKeywords = ["收入", "进账", "到账", "收到", "发工资", "工资", "奖金", "年终奖", "红包收入", "收红包", "兼职", "副业", "退款", "报销", "利息", "理财收益", "收账", "赚到", "入账"]
+        let lower = text.lowercased()
+        let incomeKeywords = [
+            "收入", "进账", "到账", "收到", "发工资", "工资", "奖金", "年终奖", "红包收入", "收红包",
+            "兼职", "副业", "退款", "报销", "利息", "理财收益", "收账", "赚到", "入账",
+            "salary", "paycheck", "bonus", "income", "earned", "refund", "reimbursement", "dividend"
+        ]
         for kw in incomeKeywords {
-            if text.contains(kw) && !text.contains("发红包") && !text.contains("给红包") {
+            if lower.contains(kw) && !text.contains("发红包") && !text.contains("给红包") {
                 return true
             }
         }
@@ -188,28 +197,30 @@ public enum ExpenseNaturalLanguageParser {
 
     // MARK: - 智能分类匹配
     private static func determineCategory(from text: String, isIncome: Bool) -> ExpenseCategory {
+        let lower = text.lowercased()
         if isIncome {
-            if text.contains("工资") || text.contains("奖金") || text.contains("薪水") || text.contains("薪资") {
+            if text.contains("工资") || text.contains("奖金") || text.contains("薪水") || text.contains("薪资")
+                || lower.contains("salary") || lower.contains("paycheck") || lower.contains("bonus") {
                 return .income
             }
             return .otherIncome
         }
 
         let dict: [(ExpenseCategory, [String])] = [
-            (.food, ["吃", "喝", "饭", "麦当劳", "肯德基", "星巴克", "咖啡", "奶茶", "外卖", "美团", "饿了么", "午餐", "晚餐", "早餐", "午饭", "晚饭", "早饭", "夜宵", "烧烤", "火锅", "零食", "面包", "水果", "蔬菜", "菜场", "买菜", "食堂", "便利店", "可乐", "饮品", "快餐", "餐厅"]),
-            (.transport, ["打车", "滴滴", "地铁", "公交", "加油", "停车", "高铁", "机票", "火车", "车票", "高速费", "打车费", "单车", "共享单车", "代驾", "过路费", "洗车", "修车", "轮渡"]),
-            (.living, ["房租", "水电", "电费", "水费", "燃气", "物业", "话费", "充话费", "宽带", "超市", "山姆", "日用品", "卫生纸", "洗洁精", "洗发水", "沐浴露", "牙膏", "理发", "剪头发", "洗衣", "保洁", "家政"]),
-            (.shopping, ["买衣服", "衣服", "裤子", "鞋子", "裙子", "淘宝", "京东", "拼多多", "网购", "包包", "首饰", "化妆品", "护肤品", "防晒", "口红", "香水"]),
-            (.entertainment, ["电影", "看电影", "游戏", "充值", "皮肤", "Steam", "steam", "任天堂", "旅游", "门票", "KTV", "演唱会", "剧本杀", "密室", "捏脚", "按摩", "健身", "游泳"]),
-            (.medical, ["药", "买药", "医院", "看病", "挂号", "体检", "诊所", "眼药水", "感冒药", "创口贴", "口罩", "检查费", "治疗", "牙医", "补牙"]),
-            (.pets, ["猫", "狗", "宠物", "猫粮", "狗粮", "猫砂", "罐头", "绝育", "驱虫", "宠物医院", "牵引绳", "猫爬架"]),
-            (.digital, ["手机", "电脑", "耳机", "键盘", "鼠标", "平板", "iPad", "充电线", "充电宝", "显示器", "数码", "家电", "冰箱", "洗衣机", "空调"]),
-            (.social, ["红包", "发红包", "请客", "聚餐", "礼金", "份子钱", "送礼", "人情", "请客吃饭", "借给"])
+            (.food, ["吃", "喝", "饭", "麦当劳", "肯德基", "星巴克", "咖啡", "奶茶", "外卖", "美团", "饿了么", "午餐", "晚餐", "早餐", "午饭", "晚饭", "早饭", "夜宵", "烧烤", "火锅", "零食", "面包", "水果", "蔬菜", "菜场", "买菜", "食堂", "便利店", "可乐", "饮品", "快餐", "餐厅", "lunch", "dinner", "breakfast", "coffee", "starbucks", "mcdonald", "kfc", "food", "meal", "snack", "fruit", "grocery", "groceries", "restaurant", "burger", "pizza", "tea"]),
+            (.transport, ["打车", "滴滴", "地铁", "公交", "加油", "停车", "高铁", "机票", "火车", "车票", "高速费", "打车费", "单车", "共享单车", "代驾", "过路费", "洗车", "修车", "轮渡", "taxi", "uber", "lyft", "subway", "metro", "bus", "train", "flight", "parking", "gas", "fuel", "toll"]),
+            (.living, ["房租", "水电", "电费", "水费", "燃气", "物业", "话费", "充话费", "宽带", "超市", "山姆", "日用品", "卫生纸", "洗洁精", "洗发水", "沐浴露", "牙膏", "理发", "剪头发", "洗衣", "保洁", "家政", "rent", "utility", "utilities", "electric", "water bill", "internet", "phone bill", "supermarket", "haircut", "laundry"]),
+            (.shopping, ["买衣服", "衣服", "裤子", "鞋子", "裙子", "淘宝", "京东", "拼多多", "网购", "包包", "首饰", "化妆品", "护肤品", "防晒", "口红", "香水", "clothes", "shirt", "shoes", "dress", "pants", "shopping", "amazon", "bag", "cosmetics", "skincare"]),
+            (.entertainment, ["电影", "看电影", "游戏", "充值", "皮肤", "Steam", "steam", "任天堂", "旅游", "门票", "KTV", "演唱会", "剧本杀", "密室", "捏脚", "按摩", "健身", "游泳", "movie", "cinema", "game", "concert", "ticket", "gym", "fitness", "massage", "travel"]),
+            (.medical, ["药", "买药", "医院", "看病", "挂号", "体检", "诊所", "眼药水", "感冒药", "创口贴", "口罩", "检查费", "治疗", "牙医", "补牙", "medicine", "pharmacy", "hospital", "doctor", "clinic", "dentist", "medical"]),
+            (.pets, ["猫", "狗", "宠物", "猫粮", "狗粮", "猫砂", "罐头", "绝育", "驱虫", "宠物医院", "牵引绳", "猫爬架", "pet", "cat food", "dog food", "vet", "kitty", "puppy"]),
+            (.digital, ["手机", "电脑", "耳机", "键盘", "鼠标", "平板", "iPad", "充电线", "充电宝", "显示器", "数码", "家电", "冰箱", "洗衣机", "空调", "phone", "laptop", "macbook", "ipad", "airpods", "headphones", "keyboard", "mouse", "charger", "monitor"]),
+            (.social, ["红包", "发红包", "请客", "聚餐", "礼金", "份子钱", "送礼", "人情", "请客吃饭", "借给", "gift", "present", "treat", "party"])
         ]
 
         for (cat, keywords) in dict {
             for kw in keywords {
-                if text.contains(kw) {
+                if lower.contains(kw) {
                     return cat
                 }
             }
@@ -221,13 +232,14 @@ public enum ExpenseNaturalLanguageParser {
     // MARK: - 日期推断
     private static func extractDate(from text: String) -> Date {
         let cal = Calendar.current
-        if text.contains("昨天") || text.contains("寻日") {
+        let lower = text.lowercased()
+        if text.contains("昨天") || text.contains("寻日") || lower.contains("yesterday") {
             return cal.date(byAdding: .day, value: -1, to: .now) ?? .now
         }
-        if text.contains("前天") {
+        if text.contains("前天") || lower.contains("two days ago") {
             return cal.date(byAdding: .day, value: -2, to: .now) ?? .now
         }
-        if text.contains("大前天") {
+        if text.contains("大前天") || lower.contains("three days ago") {
             return cal.date(byAdding: .day, value: -3, to: .now) ?? .now
         }
         return .now
@@ -248,8 +260,8 @@ public enum ExpenseNaturalLanguageParser {
             clean = clean.replacingOccurrences(of: p, with: "")
         }
 
-        // 移除数字金额与货币单位（如 "69.9元"、"69.9块"、"¥69.9"、"69.9"）
-        if let amtRegex = try? NSRegularExpression(pattern: "(?:\\¥|￥)?\\s*[0-9]+(?:[.．][0-9]{1,2})?\\s*(?:元|块钱|块|毛|角|RMB|rmb)?") {
+        // 移除数字金额与货币单位（如 "69.9元"、"69.9块"、"¥69.9"、"$69.9"、"69.9"）
+        if let amtRegex = try? NSRegularExpression(pattern: "(?:\\¥|￥|\\$)?\\s*[0-9]+(?:[.．][0-9]{1,2})?\\s*(?:元|块钱|块|毛|角|RMB|rmb|USD|usd|dollars?|bucks?|yuan)?", options: [.caseInsensitive]) {
             clean = amtRegex.stringByReplacingMatches(
                 in: clean,
                 range: NSRange(clean.startIndex..., in: clean),
@@ -257,12 +269,12 @@ public enum ExpenseNaturalLanguageParser {
             )
         }
 
-        clean = clean.trimmingCharacters(in: CharacterSet(charactersIn: " ，。、,!？?元块¥￥"))
+        clean = clean.trimmingCharacters(in: CharacterSet(charactersIn: " ，。、,!？?元块¥￥$"))
         if clean.hasPrefix("我") {
             clean = String(clean.dropFirst()).trimmingCharacters(in: CharacterSet(charactersIn: " ，。、,!？?的"))
         }
         if clean.isEmpty {
-            return isIncome ? "收到款项" : "日常消费"
+            return isIncome ? L10n.tr("收到款项") : L10n.tr("日常消费")
         }
         return clean
     }

@@ -83,7 +83,7 @@ struct HabitRow: View {
                 Label(habit.title, systemImage: "figure.run")
                     .font(.headline)
                 Spacer()
-                Text(habit.recurrence.rawValue)
+                Text(L10n.tr(habit.recurrence.rawValue))
                     .font(.caption)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -170,7 +170,7 @@ struct AddHabitSheet: View {
                     TextField("补充备注（可选）", text: $detail)
                     Picker("重复周期", selection: $recurrence) {
                         ForEach(RecurrenceInterval.allCases, id: \.self) { r in
-                            Text(r.rawValue).tag(r)
+                            Text(L10n.tr(r.rawValue)).tag(r)
                         }
                     }
                 }

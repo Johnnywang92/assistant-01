@@ -202,7 +202,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
                 }
             }
         } catch {
-            errorMessage = "音频文件无法播放：\(error.localizedDescription)"
+            errorMessage = L10n.choose("音频文件无法播放：\(error.localizedDescription)", "Cannot play audio file: \(error.localizedDescription)")
         }
     }
 
@@ -266,7 +266,10 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
     func transcribe(memo: VoiceMemo) async throws -> String {
         guard !transcribingIDs.contains(memo.id) else { throw VoiceMemoError.busy }
         guard await requestSpeechPermission() else { throw VoiceMemoError.speechDenied }
-        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN")), recognizer.isAvailable else {
+        let primaryRecognizer = SFSpeechRecognizer(locale: Locale(identifier: L10n.speechLocaleIdentifier))
+        let fallbackRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
+        guard let recognizer = (primaryRecognizer?.isAvailable == true ? primaryRecognizer : fallbackRecognizer),
+              recognizer.isAvailable else {
             throw VoiceError.recognizerUnavailable
         }
         guard recognizer.supportsOnDeviceRecognition else {
@@ -331,7 +334,10 @@ extension VoiceMemoAudioService: AVAudioRecorderDelegate, AVAudioPlayerDelegate 
 
     nonisolated func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
         Task { @MainActor in
-            self.errorMessage = "录音编码出错：\(error?.localizedDescription ?? "未知错误")"
+            self.errorMessage = L10n.choose(
+                "录音编码出错：\(error?.localizedDescription ?? "未知错误")",
+                "Recording encoding error: \(error?.localizedDescription ?? "Unknown error")"
+            )
         }
     }
 }
@@ -345,11 +351,11 @@ enum VoiceMemoError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .recordFailed: return "无法开始录音，请检查麦克风是否被其他应用占用"
-        case .speechDenied: return "未获得语音识别权限，请在系统设置中开启"
-        case .onDeviceUnsupported: return "当前设备不支持离线中文识别，请在 设置 › 通用 › 键盘 中开启听写并下载中文语音包"
-        case .busy: return "该备忘正在转写中"
-        case .micDenied: return "未获得麦克风权限，请在系统设置中开启"
+        case .recordFailed: return L10n.tr("无法开始录音，请检查麦克风是否被其他应用占用")
+        case .speechDenied: return L10n.tr("未获得语音识别权限，请在系统设置中开启")
+        case .onDeviceUnsupported: return L10n.tr("当前设备不支持离线中文识别，请在 设置 › 通用 › 键盘 中开启听写并下载中文语音包")
+        case .busy: return L10n.tr("该备忘正在转写中")
+        case .micDenied: return L10n.tr("未获得麦克风权限，请在系统设置中开启")
         }
     }
 }
@@ -357,13 +363,13 @@ enum VoiceMemoError: LocalizedError {
 // MARK: - 文本分析（规则提炼要点 / 待办候选）
 
 enum VoiceMemoTextAnalyzer {
-    /// 按中文标点切句
+    /// 按中英文标点切句
     static func sentences(from text: String) -> [String] {
         var result: [String] = []
         var current = ""
         for ch in text {
             current.append(ch)
-            if "。！？!?；;\n".contains(ch) {
+            if "。！？!?；;\n.".contains(ch) {
                 let s = current.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
                 if !s.isEmpty { result.append(s) }
                 current = ""
@@ -383,12 +389,17 @@ enum VoiceMemoTextAnalyzer {
     private static let actionKeywords = [
         "要", "需要", "记得", "别忘", "提醒", "得去", "去买", "买", "交", "约", "联系", "打电话",
         "预约", "确认", "完成", "提交", "安排", "准备", "明天", "后天", "下周", "今晚", "周一", "周二",
-        "周三", "周四", "周五", "周六", "周日", "点前", "之前", "截止"
+        "周三", "周四", "周五", "周六", "周日", "点前", "之前", "截止",
+        "need to", "remember", "don't forget", "remind", "buy", "pay", "call", "contact",
+        "schedule", "book", "confirm", "finish", "submit", "prepare", "tomorrow", "tonight",
+        "next week", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+        "before", "deadline", "due"
     ]
 
     /// 是否像一条待办
     static func looksLikeTodo(_ sentence: String) -> Bool {
-        sentence.count >= 4 && sentence.count <= 60 && actionKeywords.contains { sentence.contains($0) }
+        let lower = sentence.lowercased()
+        return sentence.count >= 4 && sentence.count <= 100 && actionKeywords.contains { lower.contains($0) }
     }
 
     static func todoCandidates(from text: String) -> [String] {

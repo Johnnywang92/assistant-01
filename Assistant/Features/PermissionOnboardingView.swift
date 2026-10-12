@@ -202,10 +202,10 @@ struct PermissionOnboardingView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
-                    Text(title)
+                    Text(L10n.tr(title))
                         .font(.subheadline.bold())
                     Spacer()
-                    Text(privacyTag)
+                    Text(L10n.tr(privacyTag))
                         .font(.system(size: 9, weight: .medium))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -213,7 +213,7 @@ struct PermissionOnboardingView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text(description)
+                Text(L10n.tr(description))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

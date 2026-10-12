@@ -205,7 +205,7 @@ struct ExpenseTrackerView: View {
                                             Circle()
                                                 .fill(categoryColor(item.category))
                                                 .frame(width: 6, height: 6)
-                                            Text("\(item.category.rawValue) \(Int(item.ratio * 100))%")
+                                            Text("\(L10n.tr(item.category.rawValue)) \(Int(item.ratio * 100))%")
                                                 .font(.caption2)
                                                 .foregroundStyle(.secondary)
                                         }
@@ -218,7 +218,7 @@ struct ExpenseTrackerView: View {
                                             .font(.caption)
                                             .foregroundStyle(.purple)
                                             .padding(.top, 2)
-                                        Text(insight)
+                                        Text(L10n.tr(insight))
                                             .font(.caption)
                                             .foregroundStyle(.primary.opacity(0.88))
                                             .fixedSize(horizontal: false, vertical: true)
@@ -405,7 +405,7 @@ struct ExpenseTrackerView: View {
             }
             .overlay(alignment: .bottom) {
                 if let feedback = feedbackBanner {
-                    Text(feedback)
+                    Text(L10n.tr(feedback))
                         .font(.footnote.bold())
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -431,7 +431,7 @@ struct ExpenseTrackerView: View {
     // MARK: - 统计卡片辅助视图
     private func statCard(title: String, amount: Double, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title)
+            Text(L10n.tr(title))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Text(String(format: "¥%.1f", amount))
@@ -567,10 +567,10 @@ struct ExpenseRow: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.title)
+                Text(L10n.tr(item.title))
                     .font(.body)
                 HStack(spacing: 6) {
-                    Text(item.category.rawValue)
+                    Text(L10n.tr(item.category.rawValue))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Text(item.date.formatted(date: .omitted, time: .shortened))
@@ -659,7 +659,7 @@ struct AddOrEditExpenseSheet: View {
                 Section("分类与项目") {
                     Picker("分类", selection: $selectedCategory) {
                         ForEach(availableCategories, id: \.self) { cat in
-                            Label(cat.rawValue, systemImage: cat.icon).tag(cat)
+                            Label(L10n.tr(cat.rawValue), systemImage: cat.icon).tag(cat)
                         }
                     }
 

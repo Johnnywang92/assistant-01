@@ -390,7 +390,7 @@ struct TravelTicketConfirmationSheet: View {
                                 Haptic.light()
                             }
                         } label: {
-                            Text(label)
+                            Text(L10n.tr(label))
                                 .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3)
@@ -416,7 +416,7 @@ struct TravelTicketConfirmationSheet: View {
                             Haptic.light()
                         }
                     } label: {
-                        Text(label)
+                        Text(L10n.tr(label))
                             .font(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)

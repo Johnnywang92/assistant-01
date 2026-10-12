@@ -28,7 +28,7 @@ struct VoiceMemoDetailView: View {
                     .onSubmit { try? context.save() }
                 HStack {
                     Picker("分类", selection: Binding(get: { memo.tag }, set: { memo.tag = $0; try? context.save() })) {
-                        ForEach(VoiceMemoTag.allCases) { Label($0.rawValue, systemImage: $0.icon).tag($0) }
+                        ForEach(VoiceMemoTag.allCases) { Label(L10n.tr($0.rawValue), systemImage: $0.icon).tag($0) }
                     }
                 }
                 LabeledContent("录制时间", value: memo.createdAt.formatted(date: .abbreviated, time: .shortened))
@@ -219,7 +219,7 @@ struct VoiceMemoDetailView: View {
             }
 
             if let errorText {
-                Text(errorText).font(.caption).foregroundStyle(.red)
+                Text(L10n.tr(errorText)).font(.caption).foregroundStyle(.red)
             }
 
             if !audio.isTranscribing(memo) && !isEditingTranscript {

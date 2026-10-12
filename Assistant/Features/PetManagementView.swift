@@ -55,7 +55,7 @@ struct PetManagementView: View {
             }
             .overlay(alignment: .bottom) {
                 if let msg = toastMessage {
-                    Text(msg)
+                    Text(L10n.tr(msg))
                         .font(.subheadline.bold())
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -181,7 +181,7 @@ struct PetManagementView: View {
                             .background(Capsule().fill(Color(.tertiarySystemFill)))
                             .foregroundStyle(.secondary)
 
-                        Text(pet.gender)
+                        Text(L10n.tr(pet.gender))
                             .font(.caption2)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -306,7 +306,7 @@ struct PetManagementView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(title)
+                    Text(L10n.tr(title))
                         .font(.subheadline.bold())
 
                     if let days = daysLeft {
@@ -336,7 +336,7 @@ struct PetManagementView: View {
                     }
                 }
 
-                Text(subtitle)
+                Text(L10n.tr(subtitle))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -420,7 +420,7 @@ struct AddEditPetSheet: View {
 
                     Picker("类型", selection: $type) {
                         ForEach(PetType.allCases) { t in
-                            Text(t.rawValue).tag(t)
+                            Text(L10n.tr(t.rawValue)).tag(t)
                         }
                     }
 
@@ -428,7 +428,7 @@ struct AddEditPetSheet: View {
 
                     Picker("性别与状态", selection: $gender) {
                         ForEach(genders, id: \.self) { g in
-                            Text(g).tag(g)
+                            Text(L10n.tr(g)).tag(g)
                         }
                     }
 

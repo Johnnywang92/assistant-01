@@ -30,6 +30,7 @@ struct CompletedTodoHistoryView: View {
         case .life: result = result.filter { [.medication, .housework, .exercise, .charging].contains($0.type) }
         case .alert: result = result.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare].contains($0.type) }
         case .parenting: result = result.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }
+        case .pet: result = result.filter { $0.type == .pet }
         }
 
         // 搜索过滤
@@ -92,7 +93,7 @@ struct CompletedTodoHistoryView: View {
                                     Haptic.selection()
                                 } label: {
                                     HStack(spacing: 4) {
-                                        Text(cat.rawValue)
+                                        Text(L10n.tr(cat.rawValue))
                                         if count > 0 {
                                             Text("\(count)")
                                                 .font(.caption2.bold())
@@ -174,6 +175,7 @@ struct CompletedTodoHistoryView: View {
         case .life: return doneTodos.filter { [.medication, .housework, .exercise, .charging].contains($0.type) }.count
         case .alert: return doneTodos.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare].contains($0.type) }.count
         case .parenting: return doneTodos.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }.count
+        case .pet: return doneTodos.filter { $0.type == .pet }.count
         }
     }
 
@@ -220,7 +222,7 @@ struct CompletedHistoryRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(item.title)
+                    Text(L10n.tr(item.title))
                         .font(.body)
                         .strikethrough(true, color: .secondary)
                         .foregroundStyle(.secondary)
@@ -262,7 +264,7 @@ struct CompletedHistoryRow: View {
                         }
                     }
                 } else if let detail = item.detail, !detail.isEmpty {
-                    Text(detail)
+                    Text(L10n.tr(detail))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)

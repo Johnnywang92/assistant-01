@@ -14,6 +14,8 @@ enum VoiceMemoTag: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var displayName: String { L10n.tr(rawValue) }
+
     var icon: String {
         switch self {
         case .inspiration: return "lightbulb.fill"
@@ -77,9 +79,9 @@ final class VoiceMemo {
 
     static func defaultTitle(for date: Date = .now) -> String {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "M月d日 HH:mm"
-        return "语音备忘 \(f.string(from: date))"
+        f.locale = L10n.locale
+        f.dateFormat = L10n.isEnglish ? "MMM d HH:mm" : "M月d日 HH:mm"
+        return L10n.isEnglish ? "Voice Memo \(f.string(from: date))" : "语音备忘 \(f.string(from: date))"
     }
 }
 

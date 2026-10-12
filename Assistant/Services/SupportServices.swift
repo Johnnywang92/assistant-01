@@ -51,8 +51,8 @@ enum NotificationService {
         }
 
         let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
+        content.title = L10n.tr(title)
+        content.body = L10n.tr(body)
         content.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
@@ -77,8 +77,8 @@ enum ExpiryReminder {
         let fireDate = expiryDate.addingTimeInterval(-24 * 3600)
         guard fireDate > .now else { return }
         let content = UNMutableNotificationContent()
-        content.title = "助手即将过期"
-        content.body = "签名将于明天过期，请在 Mac 上运行 scripts/reinstall.sh 重新安装（数据不会丢失）。"
+        content.title = L10n.tr("助手即将过期")
+        content.body = L10n.tr("签名将于明天过期，请在 Mac 上运行 scripts/reinstall.sh 重新安装（数据不会丢失）。")
         content.sound = .default
         let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)

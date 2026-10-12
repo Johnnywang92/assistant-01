@@ -81,7 +81,7 @@ struct ReceiptScannerView: View {
                     Section("识别结果") {
                         LabeledContent("金额", value: String(format: "¥%.2f", result.amount))
                         LabeledContent("项目", value: result.title)
-                        LabeledContent("分类", value: result.category.rawValue)
+                        LabeledContent("分类", value: L10n.tr(result.category.rawValue))
                         Button("确认记账") {
                             onSave(result, recognizedText, images.first?.jpegData(compressionQuality: 0.82))
                             dismiss()
@@ -92,7 +92,7 @@ struct ReceiptScannerView: View {
 
                 if let errorMessage {
                     Section {
-                        Text(errorMessage).foregroundStyle(.red)
+                        Text(L10n.tr(errorMessage)).foregroundStyle(.red)
                     }
                 }
             }

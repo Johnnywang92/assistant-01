@@ -170,7 +170,7 @@ struct DataMigrationView: View {
 
                         Picker("还原模式", selection: $selectedStrategy) {
                             ForEach(RestoreStrategy.allCases) { strategy in
-                                Text(strategy.rawValue).tag(strategy)
+                                Text(L10n.tr(strategy.rawValue)).tag(strategy)
                             }
                         }
                         .pickerStyle(.menu)
@@ -210,7 +210,7 @@ struct DataMigrationView: View {
             Section("批量快速录入 (CSV / 文本)") {
                 Picker("录入类别", selection: $batchType) {
                     ForEach(BatchImportType.allCases) { type in
-                        Text(type.rawValue).tag(type)
+                        Text(L10n.tr(type.rawValue)).tag(type)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -219,7 +219,7 @@ struct DataMigrationView: View {
                     .frame(minHeight: 120)
                     .overlay(alignment: .topLeading) {
                         if batchText.isEmpty {
-                            Text(batchType.placeholder)
+                            Text(L10n.tr(batchType.placeholder))
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
                                 .padding(8)
@@ -440,7 +440,7 @@ struct SetExportPinSheet: View {
 
                 if let errorMessage {
                     Section {
-                        Text(errorMessage)
+                        Text(L10n.tr(errorMessage))
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
@@ -536,7 +536,7 @@ struct UnlockBackupPinSheet: View {
 
                 if let errorMessage {
                     Section {
-                        Text(errorMessage)
+                        Text(L10n.tr(errorMessage))
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }

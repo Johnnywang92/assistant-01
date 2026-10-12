@@ -102,10 +102,10 @@ struct ExpiryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Label(item.title, systemImage: "hourglass.bottomhalf.filled")
+                Label(L10n.tr(item.title), systemImage: "hourglass.bottomhalf.filled")
                     .font(.headline)
                 Spacer()
-                Text(item.category)
+                Text(L10n.tr(item.category))
                     .font(.caption)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -181,7 +181,7 @@ struct AddExpirySheet: View {
                 Section("物品与有效期限") {
                     TextField("名称（如：身份证换证、眼药水开封后）", text: $title)
                     Picker("类别", selection: $category) {
-                        ForEach(categories, id: \.self) { c in Text(c).tag(c) }
+                        ForEach(categories, id: \.self) { c in Text(L10n.tr(c)).tag(c) }
                     }
                     DatePicker("过期/失效日期", selection: $expireDate, displayedComponents: .date)
                     Stepper("提前 \(remindDays) 天预警", value: $remindDays, in: 1...30)

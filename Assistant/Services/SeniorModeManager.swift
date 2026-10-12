@@ -10,16 +10,16 @@ public enum SeniorFontScale: String, CaseIterable, Identifiable, Codable {
 
     public var id: String { rawValue }
 
-    public var title: String { rawValue }
+    public var title: String { L10n.tr(rawValue) }
 
     public var description: String {
         switch self {
         case .large:
-            return "适合日常视力稍弱或老花眼初期的长辈，整体放大约 35%"
+            return L10n.tr("适合日常视力稍弱或老花眼初期的长辈，整体放大约 35%")
         case .extraLarge:
-            return "推荐模式！文字突出饱满，字号放大约 60%，阅读轻松无压力"
+            return L10n.tr("推荐模式！文字突出饱满，字号放大约 60%，阅读轻松无压力")
         case .huge:
-            return "极致大字！文字放大超 100%，图标与按钮同步加宽，超大对比度"
+            return L10n.tr("极致大字！文字放大超 100%，图标与按钮同步加宽，超大对比度")
         }
     }
 
@@ -111,7 +111,9 @@ public final class SeniorModeManager: NSObject, ObservableObject, AVSpeechSynthe
         isSpeaking = true
 
         let utterance = AVSpeechUtterance(string: trimmed)
-        utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
+        let containsCJK = trimmed.range(of: "\\p{Han}", options: .regularExpression) != nil
+        let voiceLang = (L10n.isEnglish && !containsCJK) ? "en-US" : "zh-CN"
+        utterance.voice = AVSpeechSynthesisVoice(language: voiceLang)
         // 长辈语音语速调整为 0.44 (比常规 0.5 稍慢)，发音字正腔圆，更易听清
         utterance.rate = 0.44
         utterance.pitchMultiplier = 1.02

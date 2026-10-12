@@ -18,8 +18,8 @@ struct PlannedSubtask: Identifiable, Hashable, Equatable, Sendable {
         isSelected: Bool = true
     ) {
         self.id = id
-        self.title = title
-        self.detail = detail
+        self.title = L10n.tr(title)
+        self.detail = detail.map { L10n.tr($0) }
         self.type = type
         self.isSelected = isSelected
     }
@@ -43,9 +43,9 @@ struct TaskPlanningPlan: Identifiable, Hashable, Equatable, Sendable {
         isSaved: Bool = false
     ) {
         self.id = id
-        self.topic = topic
+        self.topic = L10n.tr(topic)
         self.icon = icon
-        self.summary = summary
+        self.summary = L10n.tr(summary)
         self.subtasks = subtasks
         self.isSaved = isSaved
     }
@@ -62,22 +62,25 @@ final class TaskPlanningEngine {
     func isPlanningQuery(_ query: String) -> Bool {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
+        let lower = trimmed.lowercased()
 
         let triggerKeywords = [
             "规划", "拆解", "理一下", "理理", "准备去", "清单", "计划", "怎么准备",
-            "要做什么", "安排一下", "怎么搞", "步骤", "筹备"
+            "要做什么", "安排一下", "怎么搞", "步骤", "筹备",
+            "plan ", "break down", "prepare for", "checklist for", "steps for"
         ]
 
         let scenarioKeywords = [
             "露营", "搬家", "出差", "旅行", "旅游", "度假", "回老家", "返乡", "购票", "买票", "机票", "火车票", "大扫除", "清洁", "分享会", "演讲",
-            "派对", "聚会", "生日", "考研", "复习", "考试", "自驾游", "体检", "看病", "装修"
+            "派对", "聚会", "生日", "考研", "复习", "考试", "自驾游", "体检", "看病", "装修",
+            "camping", "moving", "trip", "travel", "cleaning", "presentation", "party", "exam", "checkup"
         ]
 
         // 包含显式规划动词，或同时提及场景与行动
-        let hasTrigger = triggerKeywords.contains { trimmed.contains($0) }
-        let hasScenario = scenarioKeywords.contains { trimmed.contains($0) }
+        let hasTrigger = triggerKeywords.contains { lower.contains($0) }
+        let hasScenario = scenarioKeywords.contains { lower.contains($0) }
 
-        return hasTrigger || (hasScenario && (trimmed.contains("怎么") || trimmed.contains("要") || trimmed.contains("想")))
+        return hasTrigger || (hasScenario && (trimmed.contains("怎么") || trimmed.contains("要") || trimmed.contains("想") || lower.contains("how to")))
     }
 
     /// 分析用户输入，生成结构化规划方案与子任务清单

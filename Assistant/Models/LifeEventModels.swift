@@ -10,6 +10,7 @@ enum LifeEventTemplate: String, Codable, CaseIterable, Identifiable {
     case custom = "自定义人生大事"
 
     var id: String { rawValue }
+    var displayName: String { L10n.tr(rawValue) }
     var icon: String {
         switch self {
         case .engagementWedding: return "heart.fill"
@@ -22,25 +23,27 @@ enum LifeEventTemplate: String, Codable, CaseIterable, Identifiable {
     }
 
     var defaultStages: [String] {
-        switch self {
-        case .engagementWedding: return ["确定婚期与预算", "场地与供应商", "宾客与物资", "婚礼前冲刺", "婚礼当天", "婚后收尾"]
-        case .houseMove: return ["确定房屋与预算", "设计与施工", "家电家具进场", "搬家与整理", "温居筹备"]
-        case .newborn: return ["孕期与待产", "生产准备", "月子安排", "宴席筹备", "宴席当天"]
-        case .graduation: return ["确认升学结果", "场地与宾客", "流程与物资", "宴席当天"]
-        case .birthdayBanquet: return ["确定日期与场地", "宾客与菜单", "流程与礼物", "宴席当天"]
-        case .custom: return ["准备阶段", "执行阶段", "收尾阶段"]
+        let raw: [String] = switch self {
+        case .engagementWedding: ["确定婚期与预算", "场地与供应商", "宾客与物资", "婚礼前冲刺", "婚礼当天", "婚后收尾"]
+        case .houseMove: ["确定房屋与预算", "设计与施工", "家电家具进场", "搬家与整理", "温居筹备"]
+        case .newborn: ["孕期与待产", "生产准备", "月子安排", "宴席筹备", "宴席当天"]
+        case .graduation: ["确认升学结果", "场地与宾客", "流程与物资", "宴席当天"]
+        case .birthdayBanquet: ["确定日期与场地", "宾客与菜单", "流程与礼物", "宴席当天"]
+        case .custom: ["准备阶段", "执行阶段", "收尾阶段"]
         }
+        return raw.map { L10n.tr($0) }
     }
 
     var starterTasks: [String] {
-        switch self {
-        case .engagementWedding: return ["确认双方家庭意见", "确定预算上限", "整理宾客名单", "确认场地与供应商", "制定当天流程"]
-        case .houseMove: return ["确认预算与入住日期", "整理装修需求", "列出家电家具清单", "预约搬家公司", "准备温居物资"]
-        case .newborn: return ["整理待产包", "确认陪产与月子安排", "准备宝宝用品", "确定宴席日期", "整理宾客名单"]
-        case .graduation: return ["确认录取与出席名单", "预订宴席场地", "确定菜单与流程", "准备邀请通知"]
-        case .birthdayBanquet: return ["确认长辈意愿", "预订场地", "整理亲友名单", "准备纪念礼物", "确定宴席流程"]
-        case .custom: return ["明确目标与日期", "列出需要协调的人和事", "确定预算与重点节点"]
+        let raw: [String] = switch self {
+        case .engagementWedding: ["确认双方家庭意见", "确定预算上限", "整理宾客名单", "确认场地与供应商", "制定当天流程"]
+        case .houseMove: ["确认预算与入住日期", "整理装修需求", "列出家电家具清单", "预约搬家公司", "准备温居物资"]
+        case .newborn: ["整理待产包", "确认陪产与月子安排", "准备宝宝用品", "确定宴席日期", "整理宾客名单"]
+        case .graduation: ["确认录取与出席名单", "预订宴席场地", "确定菜单与流程", "准备邀请通知"]
+        case .birthdayBanquet: ["确认长辈意愿", "预订场地", "整理亲友名单", "准备纪念礼物", "确定宴席流程"]
+        case .custom: ["明确目标与日期", "列出需要协调的人和事", "确定预算与重点节点"]
         }
+        return raw.map { L10n.tr($0) }
     }
 }
 
@@ -188,9 +191,9 @@ final class LifeEventGuest {
 
     var attendanceTitle: String {
         switch attendanceRaw {
-        case "yes": return "已确认"
-        case "no": return "不出席"
-        default: return "待确认"
+        case "yes": return L10n.tr("已确认")
+        case "no": return L10n.tr("不出席")
+        default: return L10n.tr("待确认")
         }
     }
 }

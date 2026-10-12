@@ -8,6 +8,8 @@ public enum PlaceCategory: String, Codable, CaseIterable {
     case parcelStation = "常用驿站"
     case other = "其他地点"
 
+    public var displayName: String { L10n.tr(rawValue) }
+
     public var icon: String {
         switch self {
         case .home: "house.fill"

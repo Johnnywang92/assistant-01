@@ -59,9 +59,9 @@ struct AnniversaryCardRow: View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(item.title)
+                    Text(L10n.tr(item.title))
                         .font(.headline)
-                    Text(item.category)
+                    Text(L10n.tr(item.category))
                         .font(.caption2)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -121,7 +121,7 @@ struct AddAnniversarySheet: View {
                 Section("基本信息") {
                     TextField("名称（如：在一起、结婚、妈妈生日）", text: $title)
                     Picker("分类", selection: $category) {
-                        ForEach(categories, id: \.self) { c in Text(c).tag(c) }
+                        ForEach(categories, id: \.self) { c in Text(L10n.tr(c)).tag(c) }
                     }
                     DatePicker("发生/起始日期", selection: $targetDate, displayedComponents: .date)
                     TextField("备忘灵感（如：想送的礼物/心仪餐厅）", text: $notes)

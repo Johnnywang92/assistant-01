@@ -192,7 +192,7 @@ struct AppLockSettingsView: View {
 
                     Picker("自动锁定时间", selection: $lockManager.timeoutOption) {
                         ForEach(LockTimeoutOption.allCases) { opt in
-                            Text(opt.title).tag(opt)
+                            Text(L10n.tr(opt.title)).tag(opt)
                         }
                     }
                 }
@@ -255,7 +255,7 @@ struct SetPasscodeSheet: View {
                     Text(step == 1 ? "设置 4 位应用密码" : "再次确认密码")
                         .font(.title3.bold())
 
-                    Text(message)
+                    Text(L10n.tr(message))
                         .font(.subheadline)
                         .foregroundStyle(step == 2 && currentCode.count == codeLength && firstCode != secondCode ? Color.red : Color.secondary)
                 }

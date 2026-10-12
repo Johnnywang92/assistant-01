@@ -5,10 +5,14 @@ options:
     iOS: "18.0"
   createIntermediateGroups: true
   developmentLanguage: zh-Hans
+  knownRegions:
+    - zh-Hans
+    - en
 
 settings:
   base:
     SWIFT_VERSION: "5.0"
+    SWIFT_EMIT_LOC_STRINGS: "YES"
     CODE_SIGN_STYLE: Automatic
     # 个人免费团队的 Team ID: yifan Wang (Personal Team)
     DEVELOPMENT_TEAM: 3559VJC998
@@ -45,6 +49,9 @@ targets:
       properties:
         CFBundleDisplayName: 小助
         CFBundleDevelopmentRegion: zh-Hans
+        CFBundleLocalizations:
+          - zh-Hans
+          - en
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         UILaunchScreen: {}

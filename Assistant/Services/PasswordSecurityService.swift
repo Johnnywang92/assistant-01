@@ -9,6 +9,7 @@ public enum PasswordGenerationMode: String, CaseIterable, Identifiable {
     case classicRandom = "高强度随机"     // 传统字符乱码: xK9#mQ2$pL7*vW
 
     public var id: String { rawValue }
+    public var displayName: String { L10n.tr(rawValue) }
 
     public var icon: String {
         switch self {
@@ -21,10 +22,10 @@ public enum PasswordGenerationMode: String, CaseIterable, Identifiable {
 
     public var subtitle: String {
         switch self {
-        case .memorablePhrase: return "具象生动，脑海形成画面，防破解极强"
-        case .pinyinPhrase: return "拼音字意对应，最贴合中文用户记忆直觉"
-        case .pronounceable: return "音节对称易朗读，无生僻别扭字符"
-        case .classicRandom: return "纯随机字符混杂，适合特殊系统严格限制"
+        case .memorablePhrase: return L10n.tr("具象生动，脑海形成画面，防破解极强")
+        case .pinyinPhrase: return L10n.tr("拼音字意对应，最贴合中文用户记忆直觉")
+        case .pronounceable: return L10n.tr("音节对称易朗读，无生僻别扭字符")
+        case .classicRandom: return L10n.tr("纯随机字符混杂，适合特殊系统严格限制")
         }
     }
 }
@@ -105,7 +106,7 @@ public enum PasswordSecurityService {
             return GeneratedPasswordResult(
                 password: pwd,
                 mode: .classicRandom,
-                mnemonicHint: "高熵强混杂：由大小写字母、数字及特殊符号按 CSPRNG 均匀分布生成。",
+                mnemonicHint: L10n.tr("高熵强混杂：由大小写字母、数字及特殊符号按 CSPRNG 均匀分布生成。"),
                 strengthScore: strength.score,
                 strengthLabel: strength.label,
                 entropyBits: entropy
@@ -143,10 +144,10 @@ public enum PasswordSecurityService {
             let noun = selectedNouns[0]
             if let num = randNum {
                 password = "\(adj)\(separator)\(noun.word)\(separator)\(num)\(symbol)"
-                hintParts = ["\(adj)", "\(noun.word)(\(noun.cn))", "\(num)\(symbol)"]
+                hintParts = ["\(adj)", L10n.isEnglish ? noun.word : "\(noun.word)(\(noun.cn))", "\(num)\(symbol)"]
             } else {
                 password = "\(adj)\(separator)\(noun.word)\(symbol)"
-                hintParts = ["\(adj)", "\(noun.word)(\(noun.cn))", "\(symbol)"]
+                hintParts = ["\(adj)", L10n.isEnglish ? noun.word : "\(noun.word)(\(noun.cn))", "\(symbol)"]
             }
         } else {
             let n1 = selectedNouns[0]
@@ -156,18 +157,23 @@ public enum PasswordSecurityService {
                 password = "\(adj)\(actualSep)\(n1.word)\(actualSep)\(num)\(symbol)\(actualSep)\(n2.word)"
                 hintParts = [
                     "\(adj)",
-                    "\(n1.word)(\(n1.cn))",
-                    "数字\(num)\(symbol)",
-                    "\(n2.word)(\(n2.cn))"
+                    L10n.isEnglish ? n1.word : "\(n1.word)(\(n1.cn))",
+                    L10n.choose("数字\(num)\(symbol)", "#\(num)\(symbol)"),
+                    L10n.isEnglish ? n2.word : "\(n2.word)(\(n2.cn))"
                 ]
             } else {
                 let actualSep = separator.isEmpty ? "-" : separator
                 password = "\(adj)\(actualSep)\(n1.word)\(symbol)\(actualSep)\(n2.word)"
-                hintParts = ["\(adj)", "\(n1.word)(\(n1.cn))", "\(symbol)", "\(n2.word)(\(n2.cn))"]
+                hintParts = [
+                    "\(adj)",
+                    L10n.isEnglish ? n1.word : "\(n1.word)(\(n1.cn))",
+                    "\(symbol)",
+                    L10n.isEnglish ? n2.word : "\(n2.word)(\(n2.cn))"
+                ]
             }
         }
 
-        let mnemonic = "记忆画面：【\(hintParts.joined(separator: " + "))】"
+        let mnemonic = L10n.choose("记忆画面：【\(hintParts.joined(separator: " + "))】", "Mental Image: [\(hintParts.joined(separator: " + "))]")
         let strength = evaluateStrength(password: password)
         let entropy = estimateEntropy(password: password)
 
@@ -215,7 +221,7 @@ public enum PasswordSecurityService {
             }
         }
 
-        let mnemonic = "拼音口诀：【\(storyParts.joined(separator: " ➔ "))】"
+        let mnemonic = L10n.choose("拼音口诀：【\(storyParts.joined(separator: " ➔ "))】", "Pinyin Hint: [\(storyParts.joined(separator: " ➔ "))]")
         let strength = evaluateStrength(password: password)
         let entropy = estimateEntropy(password: password)
 
@@ -258,7 +264,7 @@ public enum PasswordSecurityService {
             password = "\(syllables.joined(separator: sep))\(symbol)"
         }
 
-        let mnemonic = "顺口发音：【\(syllables.joined(separator: " · "))】拼读音节自然成句"
+        let mnemonic = L10n.choose("顺口发音：【\(syllables.joined(separator: " · "))】拼读音节自然成句", "Pronounceable: [\(syllables.joined(separator: " · "))] easy-to-read syllables")
         let strength = evaluateStrength(password: password)
         let entropy = estimateEntropy(password: password)
 
@@ -316,10 +322,10 @@ public enum PasswordSecurityService {
         }
 
         let label: String = switch score {
-        case 4: "极强"
-        case 3: "良好"
-        case 2: "一般"
-        default: "较弱"
+        case 4: L10n.tr("极强")
+        case 3: L10n.tr("良好")
+        case 2: L10n.tr("一般")
+        default: L10n.tr("较弱")
         }
 
         return (score, label)

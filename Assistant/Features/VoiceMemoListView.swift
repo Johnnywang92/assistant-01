@@ -82,7 +82,7 @@ struct VoiceMemoListView: View {
             HStack(spacing: 8) {
                 chip(title: "全部", icon: "tray.full.fill", selected: selectedTag == nil) { selectedTag = nil }
                 ForEach(VoiceMemoTag.allCases) { tag in
-                    chip(title: tag.rawValue, icon: tag.icon, selected: selectedTag == tag) {
+                    chip(title: L10n.tr(tag.rawValue), icon: tag.icon, selected: selectedTag == tag) {
                         selectedTag = (selectedTag == tag) ? nil : tag
                     }
                 }
@@ -96,7 +96,7 @@ struct VoiceMemoListView: View {
             Haptic.selection()
             withAnimation(.snappy) { action() }
         } label: {
-            Label(title, systemImage: icon)
+            Label(L10n.tr(title), systemImage: icon)
                 .font(.caption.weight(.medium))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
@@ -180,7 +180,7 @@ struct VoiceMemoRow: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 8) {
-                    Label(memo.tag.rawValue, systemImage: memo.tag.icon)
+                    Label(L10n.tr(memo.tag.rawValue), systemImage: memo.tag.icon)
                     Text(memo.createdAt, format: .dateTime.month().day().hour().minute())
                     Spacer()
                     Text(isCurrent && audio.playbackTime > 0
@@ -222,14 +222,14 @@ struct VoiceMemoRecorderSheet: View {
                     .frame(height: 90)
                     .padding(.horizontal)
 
-                Text(statusText).font(.footnote).foregroundStyle(.secondary)
+                Text(L10n.tr(statusText)).font(.footnote).foregroundStyle(.secondary)
 
                 if let errorText {
-                    Text(errorText).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)
+                    Text(L10n.tr(errorText)).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)
                 }
 
                 Picker("分类", selection: $tag) {
-                    ForEach(VoiceMemoTag.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(VoiceMemoTag.allCases) { Text(L10n.tr($0.rawValue)).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)

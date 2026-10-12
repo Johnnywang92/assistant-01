@@ -131,7 +131,7 @@ struct TodoImportPreviewSheet: View {
                                     }
 
                                     if let detail = item.d, !detail.isEmpty {
-                                        Text(detail)
+                                        Text(L10n.tr(detail))
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }

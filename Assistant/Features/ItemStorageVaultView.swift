@@ -62,7 +62,7 @@ struct ItemStorageVaultView: View {
                                     Haptic.selection()
                                 } label: {
                                     HStack(spacing: 3) {
-                                        Text(area)
+                                        Text(L10n.tr(area))
                                         if count > 0 {
                                             Text("\(count)")
                                                 .font(.caption2.bold())
@@ -226,7 +226,7 @@ private struct StoredItemRow: View {
                         .font(.body.bold())
                         .foregroundStyle(.primary)
 
-                    Text(item.roomArea)
+                    Text(L10n.tr(item.roomArea))
                         .font(.caption2.bold())
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -306,7 +306,7 @@ struct AddOrEditStoredItemSheet: View {
                                     name = s
                                     Haptic.light()
                                 } label: {
-                                    Text(s)
+                                    Text(L10n.tr(s))
                                         .font(.caption)
                                         .padding(.horizontal, 9)
                                         .padding(.vertical, 4)
@@ -324,7 +324,7 @@ struct AddOrEditStoredItemSheet: View {
                 Section("存放位置") {
                     Picker("所在房间/区域", selection: $roomArea) {
                         ForEach(roomAreas, id: \.self) { area in
-                            Text(area).tag(area)
+                            Text(L10n.tr(area)).tag(area)
                         }
                     }
 

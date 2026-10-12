@@ -147,7 +147,7 @@ struct PeriodicReportView: View {
     private var periodPicker: some View {
         Picker("报告周期", selection: $selectedPeriod) {
             ForEach(ReportPeriodType.allCases) { period in
-                Label(period.rawValue, systemImage: period.icon).tag(period)
+                Label(L10n.tr(period.rawValue), systemImage: period.icon).tag(period)
             }
         }
         .pickerStyle(.segmented)
@@ -334,28 +334,6 @@ struct PeriodicReportView: View {
         )
     }
 
-    private func metricGridItem(title: String, value: String, unit: String, icon: String, color: Color) -> some View {
-        VStack(spacing: 3) {
-            Image(systemName: icon)
-                .font(.caption2)
-                .foregroundStyle(color)
-
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(.headline.bold())
-                    .foregroundStyle(.primary)
-                Text(unit)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-
-            Text(title)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
     private var dailyActionSummaryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("今天需要关注", systemImage: "exclamationmark.circle.fill")
@@ -408,6 +386,28 @@ struct PeriodicReportView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func metricGridItem(title: String, value: String, unit: String, icon: String, color: Color) -> some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundStyle(color)
+
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.headline.bold())
+                    .foregroundStyle(.primary)
+                Text(L10n.tr(unit))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(L10n.tr(title))
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - 4. AI 智能复盘解读卡片
@@ -498,12 +498,12 @@ struct PeriodicReportView: View {
                                 .padding(.top, 2)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title)
+                                Text(L10n.tr(item.title))
                                     .font(.subheadline)
                                     .foregroundStyle(.primary)
 
                                 if let detail = item.detail, !detail.isEmpty {
-                                    Text(detail)
+                                    Text(L10n.tr(detail))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -569,7 +569,7 @@ struct PeriodicReportView: View {
                                     Image(systemName: stat.category.icon)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
-                                    Text(stat.category.rawValue)
+                                    Text(L10n.tr(stat.category.rawValue))
                                         .font(.caption)
                                         .foregroundStyle(.primary)
                                 }
@@ -643,7 +643,7 @@ struct PeriodicReportView: View {
                                 .padding(.top, 2)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title)
+                                Text(L10n.tr(item.title))
                                     .font(.subheadline)
                                     .foregroundStyle(.primary)
 

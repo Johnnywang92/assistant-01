@@ -73,7 +73,7 @@ struct AppBackgroundSettingsView: View {
                         Text("当前主题：")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text(manager.currentStyle.rawValue)
+                        Text(L10n.tr(manager.currentStyle.rawValue))
                             .font(.caption.bold())
                             .foregroundStyle(.tint)
                         Spacer()
@@ -215,7 +215,7 @@ private struct ThemeOptionCard: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(style.rawValue)
+                    Text(L10n.tr(style.rawValue))
                         .font(.subheadline.bold())
                         .foregroundStyle(.primary)
 

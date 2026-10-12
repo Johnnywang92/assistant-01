@@ -57,17 +57,21 @@ struct MainTabView: View {
             isDirectVoiceConversation = false
         }) {
             VoiceDialogueView(autoStartListening: autoStartListening)
+                .environment(\.locale, LanguageManager.shared.locale)
         }
         .sheet(isPresented: $showScanner) {
             QRCodeScannerView()
+                .environment(\.locale, LanguageManager.shared.locale)
         }
         .sheet(item: $router.pendingImportPayload) { payload in
             TodoImportPreviewSheet(payload: payload) {
                 router.pendingImportPayload = nil
             }
+            .environment(\.locale, LanguageManager.shared.locale)
         }
         .sheet(isPresented: $showPermissionOnboarding) {
             PermissionOnboardingView()
+                .environment(\.locale, LanguageManager.shared.locale)
         }
         .onChange(of: router.activeSheet) { _, newSheet in
             if newSheet == .voice {
@@ -84,7 +88,7 @@ struct MainTabView: View {
             let query = voice.recognizedText
             voice.recognizedText = ""
             Task { @MainActor in
-                directVoiceStatus = "正在处理：\(query)"
+                directVoiceStatus = L10n.isEnglish ? "Processing: \(query)" : "正在处理：\(query)"
                 let result = await VoiceIntentProcessor(context: context).processIntent(query: query)
                 directVoiceStatus = result.reply
                 voice.speak(text: result.reply)
@@ -114,11 +118,11 @@ struct MainTabView: View {
             return
         }
         isDirectVoiceConversation = true
-        directVoiceStatus = "请说话…"
+        directVoiceStatus = L10n.tr("请说话…")
         Task { @MainActor in
             guard await voice.requestPermissions() else {
                 isDirectVoiceConversation = false
-                directVoiceStatus = "需要允许语音识别和麦克风权限"
+                directVoiceStatus = L10n.tr("需要允许语音识别和麦克风权限")
                 return
             }
             do {

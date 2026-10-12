@@ -55,7 +55,7 @@ struct ChildManagementView: View {
             }
             .overlay(alignment: .bottom) {
                 if let msg = toastMessage {
-                    Text(msg)
+                    Text(L10n.tr(msg))
                         .font(.subheadline.bold())
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -168,7 +168,7 @@ struct ChildManagementView: View {
                                 .foregroundStyle(.secondary)
                         }
 
-                        Text(child.gender.rawValue)
+                        Text(L10n.tr(child.gender.rawValue))
                             .font(.caption2.bold())
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -302,12 +302,12 @@ struct ChildManagementView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(item.vaccineName)
+                        Text(L10n.tr(item.vaccineName))
                             .font(.caption.bold())
                             .foregroundStyle(isDone ? .secondary : .primary)
                             .strikethrough(isDone)
 
-                        Text(item.monthLabel)
+                        Text(L10n.tr(item.monthLabel))
                             .font(.caption2)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
@@ -392,7 +392,7 @@ struct AddEditChildSheet: View {
 
                     Picker("性别", selection: $gender) {
                         ForEach(ChildGender.allCases) { g in
-                            Text(g.rawValue).tag(g)
+                            Text(L10n.tr(g.rawValue)).tag(g)
                         }
                     }
 
@@ -400,7 +400,7 @@ struct AddEditChildSheet: View {
 
                     Picker("血型", selection: $bloodType) {
                         ForEach(bloodTypes, id: \.self) { b in
-                            Text(b).tag(b)
+                            Text(L10n.tr(b)).tag(b)
                         }
                     }
 

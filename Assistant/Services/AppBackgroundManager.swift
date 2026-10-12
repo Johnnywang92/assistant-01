@@ -15,6 +15,8 @@ public enum AppBackgroundStyle: String, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
 
+    public var displayName: String { L10n.tr(rawValue) }
+
     public var icon: String {
         switch self {
         case .system: return "circle.lefthalf.filled"
@@ -29,16 +31,17 @@ public enum AppBackgroundStyle: String, CaseIterable, Identifiable {
     }
 
     public var description: String {
-        switch self {
-        case .system: return "随系统外观自动切换浅色/深色模式"
-        case .aurora: return "轻盈薄雾极光渐变，通透治愈"
-        case .midnight: return "深邃深蓝紫微光，沉稳优雅"
-        case .sunset: return "柔和暮光橙粉，温馨放松"
-        case .mint: return "清新自然薄荷绿意，舒缓双眼"
-        case .paper: return "典雅温润纸质底色，复古安静"
-        case .pureDark: return "极简深邃纯黑，OLED 屏幕省电护眼"
-        case .customImage: return "从本地相册导入心仪照片并调节模糊度"
+        let raw: String = switch self {
+        case .system: "随系统外观自动切换浅色/深色模式"
+        case .aurora: "轻盈薄雾极光渐变，通透治愈"
+        case .midnight: "深邃深蓝紫微光，沉稳优雅"
+        case .sunset: "柔和暮光橙粉，温馨放松"
+        case .mint: "清新自然薄荷绿意，舒缓双眼"
+        case .paper: "典雅温润纸质底色，复古安静"
+        case .pureDark: "极简深邃纯黑，OLED 屏幕省电护眼"
+        case .customImage: "从本地相册导入心仪照片并调节模糊度"
         }
+        return L10n.tr(raw)
     }
 
     /// 针对特定极黑或暗夜主题推荐适用的系统色彩方案

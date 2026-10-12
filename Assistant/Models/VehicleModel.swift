@@ -9,6 +9,8 @@ public enum VehiclePowerType: String, Codable, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
 
+    public var displayName: String { L10n.tr(rawValue) }
+
     public var icon: String {
         switch self {
         case .gasoline: "fuelpump.fill"
@@ -19,9 +21,9 @@ public enum VehiclePowerType: String, Codable, CaseIterable, Identifiable {
 
     public var energyVerb: String {
         switch self {
-        case .gasoline: "加油"
-        case .electric: "充电"
-        case .hybrid: "加油/充电"
+        case .gasoline: L10n.tr("加油")
+        case .electric: L10n.tr("充电")
+        case .hybrid: L10n.tr("加油/充电")
         }
     }
 }

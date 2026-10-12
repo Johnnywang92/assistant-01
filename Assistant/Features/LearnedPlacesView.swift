@@ -58,7 +58,7 @@ struct LearnedPlacesView: View {
                             Text("定位权限状态")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
-                            Text(authStatusTitle)
+                            Text(L10n.tr(authStatusTitle))
                                 .font(.subheadline.bold())
                                 .foregroundStyle(isLocationAuthorized ? Color.green : Color.red)
                         }
@@ -138,7 +138,7 @@ struct LearnedPlacesView: View {
                     }
 
                     if let msg = sampleResultMessage {
-                        Text(msg)
+                        Text(L10n.tr(msg))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .transition(.opacity)
@@ -271,7 +271,7 @@ struct PlaceRow: View {
                         .lineLimit(1)
 
                     if place.category != .other {
-                        Text(place.category.rawValue)
+                        Text(L10n.tr(place.category.rawValue))
                             .font(.caption2.bold())
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -342,7 +342,7 @@ struct LearnedPlaceDetailView: View {
                 TextField("地点名称", text: $place.name)
                 Picker("分类角色", selection: $place.category) {
                     ForEach(PlaceCategory.allCases, id: \.self) { cat in
-                        Label(cat.rawValue, systemImage: cat.icon).tag(cat)
+                        Label(L10n.tr(cat.rawValue), systemImage: cat.icon).tag(cat)
                     }
                 }
                 Toggle("手动确认并锁定此角色", isOn: $place.isUserConfirmed)
@@ -374,7 +374,7 @@ struct LearnedPlaceDetailView: View {
                 .disabled(isUpdatingLocation)
 
                 if let msg = updateLocationFeedback {
-                    Text(msg)
+                    Text(L10n.tr(msg))
                         .font(.caption2)
                         .foregroundStyle(.green)
                 }
@@ -468,7 +468,7 @@ struct AddPlaceSheet: View {
                 Section("地点分类与命名") {
                     Picker("分类角色", selection: $category) {
                         ForEach(PlaceCategory.allCases, id: \.self) { cat in
-                            Label(cat.rawValue, systemImage: cat.icon).tag(cat)
+                            Label(L10n.tr(cat.rawValue), systemImage: cat.icon).tag(cat)
                         }
                     }
                     .onChange(of: category) { _, newCat in

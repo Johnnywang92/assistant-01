@@ -12,6 +12,8 @@ enum ReportPeriodType: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    var displayName: String { L10n.tr(rawValue) }
+
     var icon: String {
         switch self {
         case .daily: return "calendar.day.timeline.leading"
@@ -23,10 +25,10 @@ enum ReportPeriodType: String, CaseIterable, Identifiable, Sendable {
 
     var description: String {
         switch self {
-        case .daily: return "每日晚间生活与待办复盘"
-        case .weekly: return "周度执行力与财务全景回顾"
-        case .monthly: return "全月成果沉淀与次月规划"
-        case .yearly: return "自然年度生活、目标与财务总览"
+        case .daily: return L10n.tr("每日晚间生活与待办复盘")
+        case .weekly: return L10n.tr("周度执行力与财务全景回顾")
+        case .monthly: return L10n.tr("全月成果沉淀与次月规划")
+        case .yearly: return L10n.tr("自然年度生活、目标与财务总览")
         }
     }
 }
@@ -79,13 +81,13 @@ struct PeriodicReportData: Identifiable {
     // 成就等级评估
     var achievementLevel: String {
         if completionRate >= 0.8 && completedTodos.count >= 3 {
-            return "超额完成 🌟"
+            return L10n.tr("超额完成 🌟")
         } else if completionRate >= 0.5 || completedTodos.count >= 1 {
-            return "稳步推进 🚀"
+            return L10n.tr("稳步推进 🚀")
         } else if createdTodos.isEmpty && completedTodos.isEmpty {
-            return "从容惬意 ☕️"
+            return L10n.tr("从容惬意 ☕️")
         } else {
-            return "蓄力前行 💪"
+            return L10n.tr("蓄力前行 💪")
         }
     }
 
@@ -432,8 +434,12 @@ final class PeriodicReportManager: ObservableObject {
             let start = cal.startOfDay(for: targetDate)
             let end = cal.date(bySettingHour: 23, minute: 59, second: 59, of: start) ?? start
             let isToday = cal.isDateInToday(targetDate)
-            let titlePrefix = isToday ? "今日生活日报" : targetDate.formatted(.dateTime.month().day()) + " 日报"
-            let sub = targetDate.formatted(date: .complete, time: .omitted)
+            let titlePrefix = isToday
+                ? L10n.tr("今日生活日报")
+                : (L10n.isEnglish
+                    ? targetDate.formatted(.dateTime.month().day().locale(L10n.locale)) + " Daily Report"
+                    : targetDate.formatted(.dateTime.month().day()) + " 日报")
+            let sub = targetDate.formatted(Date.FormatStyle(date: .complete, time: .omitted, locale: L10n.locale))
             return (start, end, titlePrefix, sub)
 
         case .weekly:
@@ -443,8 +449,9 @@ final class PeriodicReportManager: ObservableObject {
                 cal.date(bySettingHour: 23, minute: 59, second: 59, of: $0)
             } ?? targetDate
             let weekNumber = cal.component(.weekOfYear, from: targetDate)
-            let title = "\(cal.component(.year, from: targetDate))年第 \(weekNumber) 周 · 复盘周报"
-            let sub = "\(start.formatted(.dateTime.month().day())) ~ \(end.formatted(.dateTime.month().day()))"
+            let year = cal.component(.year, from: targetDate)
+            let title = L10n.choose("\(year)年第 \(weekNumber) 周 · 复盘周报", "Week \(weekNumber), \(year) · Weekly Report")
+            let sub = "\(start.formatted(.dateTime.month().day().locale(L10n.locale))) ~ \(end.formatted(.dateTime.month().day().locale(L10n.locale)))"
             return (start, end, title, sub)
 
         case .yearly:
@@ -453,8 +460,8 @@ final class PeriodicReportManager: ObservableObject {
             let start = cal.date(from: DateComponents(year: year, month: 1, day: 1)) ?? cal.startOfDay(for: targetDate)
             let nextYear = cal.date(from: DateComponents(year: year + 1, month: 1, day: 1)) ?? targetDate
             let end = cal.date(byAdding: .second, value: -1, to: nextYear) ?? targetDate
-            let title = "\(year)年 · 自然年报"
-            let sub = "\(year)年1月1日 ~ \(year)年12月31日"
+            let title = L10n.choose("\(year)年 · 自然年报", "\(year) · Annual Report")
+            let sub = L10n.choose("\(year)年1月1日 ~ \(year)年12月31日", "Jan 1, \(year) ~ Dec 31, \(year)")
             return (start, end, title, sub)
 
         case .monthly:
@@ -464,9 +471,9 @@ final class PeriodicReportManager: ObservableObject {
             let end = cal.date(byAdding: .day, value: range - 1, to: start).flatMap {
                 cal.date(bySettingHour: 23, minute: 59, second: 59, of: $0)
             } ?? targetDate
-            let monthName = targetDate.formatted(.dateTime.year().month())
-            let title = "\(monthName) · 成果月报"
-            let sub = "\(monthName) 1日 ~ \(range)日"
+            let monthName = targetDate.formatted(.dateTime.year().month().locale(L10n.locale))
+            let title = L10n.choose("\(monthName) · 成果月报", "\(monthName) · Monthly Report")
+            let sub = L10n.choose("\(monthName) 1日 ~ \(range)日", "\(monthName) 1 ~ \(range)")
             return (start, end, title, sub)
         }
     }
@@ -490,56 +497,98 @@ final class PeriodicReportManager: ObservableObject {
         switch period {
         case .daily:
             if completedCount > 0 {
-                segments.append("今天你一共干脆利落地完成了 \(completedCount) 项待办，执行力非常棒！")
+                segments.append(L10n.choose(
+                    "今天你一共干脆利落地完成了 \(completedCount) 项待办，执行力非常棒！",
+                    "You completed \(completedCount) to-do\(completedCount == 1 ? "" : "s") today—great execution!"
+                ))
             } else if pendingCount > 0 {
-                segments.append("今天主要以平稳休整为主，当前手头有 \(pendingCount) 项进行中的事项。")
+                segments.append(L10n.choose(
+                    "今天主要以平稳休整为主，当前手头有 \(pendingCount) 项进行中的事项。",
+                    "A steady day today with \(pendingCount) ongoing item\(pendingCount == 1 ? "" : "s")."
+                ))
             } else {
-                segments.append("今天所有事项均已清空，尽情享受轻松惬意的夜晚吧！")
+                segments.append(L10n.tr("今天所有事项均已清空，尽情享受轻松惬意的夜晚吧！"))
             }
 
             if parcelCount > 0 {
-                segments.append("收发了 \(parcelCount) 件快递包裹。")
+                segments.append(L10n.choose(
+                    "收发了 \(parcelCount) 件快递包裹。",
+                    "Handled \(parcelCount) parcel\(parcelCount == 1 ? "" : "s")."
+                ))
             }
 
             if totalExpense > 0 {
-                let topCat = categoryStats.first?.category.rawValue ?? "日常"
-                segments.append("今日记账支出 ¥\(String(format: "%.2f", totalExpense))，主要在「\(topCat)」。")
+                let topCat = L10n.tr(categoryStats.first?.category.rawValue ?? "日常")
+                segments.append(L10n.choose(
+                    "今日记账支出 ¥\(String(format: "%.2f", totalExpense))，主要在「\(topCat)」。",
+                    "Today's spending totaled ¥\(String(format: "%.2f", totalExpense)), mostly on \(topCat)."
+                ))
             } else {
-                segments.append("今天保持了极简消费，未产生额外记账支出。")
+                segments.append(L10n.tr("今天保持了极简消费，未产生额外记账支出。"))
             }
 
             if upcomingCount > 0 {
-                segments.append("明天还有 \(upcomingCount) 个事项需要关注，今晚建议按时作息、保持充沛精力。")
+                segments.append(L10n.choose(
+                    "明天还有 \(upcomingCount) 个事项需要关注，今晚建议按时作息、保持充沛精力。",
+                    "You have \(upcomingCount) item\(upcomingCount == 1 ? "" : "s") coming up tomorrow—get a good night's rest!"
+                ))
             }
 
         case .weekly:
-            segments.append("本周全周期累计搞定 \(completedCount) 项任务，待办达成率达 \(Int(completionRate * 100))%。")
+            segments.append(L10n.choose(
+                "本周全周期累计搞定 \(completedCount) 项任务，待办达成率达 \(Int(completionRate * 100))%。",
+                "Completed \(completedCount) task\(completedCount == 1 ? "" : "s") this week with a \(Int(completionRate * 100))% completion rate."
+            ))
             if totalExpense > 0 {
-                segments.append("本周生活总支出为 ¥\(String(format: "%.2f", totalExpense))。")
+                segments.append(L10n.choose(
+                    "本周生活总支出为 ¥\(String(format: "%.2f", totalExpense))。",
+                    "Total weekly spending was ¥\(String(format: "%.2f", totalExpense))."
+                ))
                 if let top = categoryStats.first {
-                    segments.append("开支大头集中在「\(top.category.rawValue)」（占比 \(Int(top.ratio * 100))%）。")
+                    segments.append(L10n.choose(
+                        "开支大头集中在「\(top.category.rawValue)」（占比 \(Int(top.ratio * 100))%）。",
+                        "Top category was \(L10n.tr(top.category.rawValue)) (\(Int(top.ratio * 100))%)."
+                    ))
                 }
             }
             if upcomingCount > 0 {
-                segments.append("新的一周已规划了 \(upcomingCount) 项重要行程与备忘，提前规划让生活更从容。")
+                segments.append(L10n.choose(
+                    "新的一周已规划了 \(upcomingCount) 项重要行程与备忘，提前规划让生活更从容。",
+                    "\(upcomingCount) upcoming item\(upcomingCount == 1 ? "" : "s") planned for next week."
+                ))
             }
 
         case .monthly:
-            segments.append("全月硕果累累，累计完成了 \(completedCount) 个生活与工作目标。")
+            segments.append(L10n.choose(
+                "全月硕果累累，累计完成了 \(completedCount) 个生活与工作目标。",
+                "Completed \(completedCount) life and work goal\(completedCount == 1 ? "" : "s") this month."
+            ))
             if totalExpense > 0 {
-                segments.append("月度财务支出总计 ¥\(String(format: "%.2f", totalExpense))。")
+                segments.append(L10n.choose(
+                    "月度财务支出总计 ¥\(String(format: "%.2f", totalExpense))。",
+                    "Monthly expenses totaled ¥\(String(format: "%.2f", totalExpense))."
+                ))
             }
-            segments.append("下一月度将迎来新的周期节奏，记得关注即将到期的订阅扣款与重要纪念日。")
+            segments.append(L10n.tr("下一月度将迎来新的周期节奏，记得关注即将到期的订阅扣款与重要纪念日。"))
 
         case .yearly:
-            segments.append("这一自然年累计完成了 \(completedCount) 个生活与工作目标，年度待办达成率 \(Int(completionRate * 100))%。")
+            segments.append(L10n.choose(
+                "这一自然年累计完成了 \(completedCount) 个生活与工作目标，年度待办达成率 \(Int(completionRate * 100))%。",
+                "Completed \(completedCount) goal\(completedCount == 1 ? "" : "s") this year with a \(Int(completionRate * 100))% completion rate."
+            ))
             if totalExpense > 0 {
-                segments.append("全年记账支出总计 ¥\(String(format: "%.2f", totalExpense))。")
+                segments.append(L10n.choose(
+                    "全年记账支出总计 ¥\(String(format: "%.2f", totalExpense))。",
+                    "Annual spending totaled ¥\(String(format: "%.2f", totalExpense))."
+                ))
                 if let top = categoryStats.first {
-                    segments.append("年度开支大头集中在「\(top.category.rawValue)」（占比 \(Int(top.ratio * 100))%）。")
+                    segments.append(L10n.choose(
+                        "年度开支大头集中在「\(top.category.rawValue)」（占比 \(Int(top.ratio * 100))%）。",
+                        "Top annual expense category was \(L10n.tr(top.category.rawValue)) (\(Int(top.ratio * 100))%)."
+                    ))
                 }
             }
-            segments.append("新的一年继续保持节奏，按自己的目标稳步前进。")
+            segments.append(L10n.tr("新的一年继续保持节奏，按自己的目标稳步前进。"))
         }
 
         return segments.joined(separator: " ")
@@ -570,8 +619,8 @@ final class PeriodicReportManager: ObservableObject {
             dateComps.minute = m
 
             let content = UNMutableNotificationContent()
-            content.title = "📊 今日生活日报已生成"
-            content.body = "今日待办完成情况与消费账单已复盘完毕，点击查看今日专属总结。"
+            content.title = L10n.tr("📊 今日生活日报已生成")
+            content.body = L10n.tr("今日待办完成情况与消费账单已复盘完毕，点击查看今日专属总结。")
             content.sound = .default
             content.categoryIdentifier = "PERIODIC_REPORT"
             content.userInfo = ["type": "periodic-report", "period": "daily"]
@@ -592,8 +641,8 @@ final class PeriodicReportManager: ObservableObject {
             dateComps.minute = m
 
             let content = UNMutableNotificationContent()
-            content.title = "📈 本周复盘周报已出炉"
-            content.body = "回溯本周目标达成、支出趋势与下周计划，保持节奏迎接新一周！"
+            content.title = L10n.tr("📈 本周复盘周报已出炉")
+            content.body = L10n.tr("回溯本周目标达成、支出趋势与下周计划，保持节奏迎接新一周！")
             content.sound = .default
             content.categoryIdentifier = "PERIODIC_REPORT"
 
@@ -613,8 +662,8 @@ final class PeriodicReportManager: ObservableObject {
             dateComps.minute = m
 
             let content = UNMutableNotificationContent()
-            content.title = "📅 月度生活成果月报已生成"
-            content.body = "全月生活资产与支出账单结构大盘点，点击开启本月新展望。"
+            content.title = L10n.tr("📅 月度生活成果月报已生成")
+            content.body = L10n.tr("全月生活资产与支出账单结构大盘点，点击开启本月新展望。")
             content.sound = .default
             content.categoryIdentifier = "PERIODIC_REPORT"
 

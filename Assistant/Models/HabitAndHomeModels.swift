@@ -18,6 +18,8 @@ public enum RecurrenceInterval: String, Codable, CaseIterable {
         case .monthly: 30
         }
     }
+
+    public var displayName: String { L10n.tr(rawValue) }
 }
 
 /// 周期性家务与习惯规则模型
@@ -84,6 +86,8 @@ public enum ChargeDeviceType: String, Codable, CaseIterable {
     case phone = "手机"
     case watch = "Apple Watch 手表"
     case airpods = "AirPods 耳机"
+
+    public var displayName: String { L10n.tr(rawValue) }
 
     public var icon: String {
         switch self {

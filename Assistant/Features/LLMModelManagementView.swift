@@ -179,7 +179,7 @@ struct LLMModelManagementView: View {
                 } else {
                     Picker("极速下载节点", selection: $modelManager.selectedSource) {
                         ForEach(LLMDownloadSource.allCases) { src in
-                            Text(src.rawValue).tag(src)
+                            Text(L10n.tr(src.rawValue)).tag(src)
                         }
                     }
                     .pickerStyle(.menu)
@@ -235,7 +235,7 @@ struct LLMModelManagementView: View {
                 }
 
                 if let err = modelManager.errorMessage {
-                    Text(err)
+                    Text(L10n.tr(err))
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
@@ -357,7 +357,7 @@ struct LLMModelManagementView: View {
             testPrompt = prompt
             Haptic.light()
         } label: {
-            Text(prompt)
+            Text(L10n.tr(prompt))
                 .font(.caption2)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)

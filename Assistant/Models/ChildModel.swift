@@ -9,6 +9,8 @@ public enum ChildGender: String, Codable, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
 
+    public var displayName: String { L10n.tr(rawValue) }
+
     public var icon: String {
         switch self {
         case .boy: return "figure.child"
@@ -28,6 +30,8 @@ public enum MilestoneCategory: String, Codable, CaseIterable, Identifiable {
     case special = "重要纪念"
 
     public var id: String { rawValue }
+
+    public var displayName: String { L10n.tr(rawValue) }
 
     public var icon: String {
         switch self {
@@ -359,12 +363,12 @@ public final class ChildProfile {
         let years = comps.year ?? 0
         let months = comps.month ?? 0
         if years > 0 {
-            return months > 0 ? "\(years)岁\(months)个月" : "\(years)岁整"
+            return L10n.tr(months > 0 ? "\(years)岁\(months)个月" : "\(years)岁整")
         } else if months > 0 {
-            return "\(months)个月"
+            return L10n.tr("\(months)个月")
         } else {
             let days = cal.dateComponents([.day], from: birthday, to: .now).day ?? 0
-            return "\(max(1, days))天"
+            return L10n.tr("\(max(1, days))天")
         }
     }
 

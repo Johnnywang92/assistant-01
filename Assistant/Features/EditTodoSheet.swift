@@ -228,7 +228,7 @@ struct EditTodoSheet: View {
 
                     Picker("重复周期", selection: $recurrenceRule) {
                         ForEach(TodoRecurrenceRule.allCases) { rule in
-                            Label(rule.rawValue, systemImage: rule.icon).tag(rule)
+                            Label(L10n.tr(rule.rawValue), systemImage: rule.icon).tag(rule)
                         }
                     }
 
@@ -481,7 +481,7 @@ struct TodoQRCodeQuickSheet: View {
                                 }
                             }
 
-                            Text(title)
+                            Text(L10n.tr(title))
                                 .font(.title3.bold())
                                 .foregroundStyle(.primary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -598,7 +598,7 @@ struct TodoQRCodeQuickSheet: View {
                                 Text("预约详情")
                                     .font(.caption.bold())
                                     .foregroundStyle(.secondary)
-                                Text(detail)
+                                Text(L10n.tr(detail))
                                     .font(.footnote)
                                     .foregroundStyle(.primary)
                                     .frame(maxWidth: .infinity, alignment: .leading)

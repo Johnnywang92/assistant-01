@@ -27,7 +27,7 @@ public struct DialogueActionOption: Identifiable, Hashable, Equatable, Sendable 
         isPrimary: Bool = false
     ) {
         self.id = id
-        self.label = label
+        self.label = L10n.tr(label)
         self.icon = icon
         self.payload = payload
         self.actionType = actionType
@@ -48,7 +48,7 @@ struct VoiceIntentResult: Equatable {
         triggerOpenManualSettings: Bool = false,
         planningPlan: TaskPlanningPlan? = nil
     ) {
-        self.reply = reply
+        self.reply = L10n.tr(reply)
         self.options = options
         self.triggerOpenManualSettings = triggerOpenManualSettings
         self.planningPlan = planningPlan
@@ -85,15 +85,19 @@ final class ConversationSettingsEngine {
 
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
+        let lower = trimmed.lowercased()
 
         let keywords = [
             "设置", "配置", "个性化", "改名", "叫我", "称呼", "声音", "朗读", "出声",
             "静音", "长辈模式", "大字模式", "字太小", "字号", "看不清", "背景", "壁纸",
             "模式", "别打扰", "悬浮球", "天气预警", "上班族", "自由职业", "学生",
             "保留", "留存", "保存", "7天", "30天", "聊天记录", "对话记录", "清空记录",
-            "向导", "开始设置", "基础设置", "基础配置"
+            "向导", "开始设置", "基础设置", "基础配置", "语言", "英文", "英语", "中文", "跟随系统",
+            "settings", "configure", "call me", "mute", "unmute", "senior mode", "large text",
+            "quiet mode", "alert mode", "record mode", "clear history", "setup wizard",
+            "language", "english", "chinese"
         ]
-        return keywords.contains { trimmed.contains($0) }
+        return keywords.contains { lower.contains($0) }
     }
 
     /// 自然语言解析并处理设置命令
@@ -272,8 +276,42 @@ final class ConversationSettingsEngine {
             )
         }
 
+        // 单点快速命令：应用语言切换 (Language Switch)
+        let lowerText = text.lowercased()
+        if text.contains("切换英文") || text.contains("改成英文") || text.contains("设为英文") || text.contains("用英文") || text.contains("切换英语") || lowerText.contains("switch to english") || lowerText.contains("in english") || lowerText == "english" {
+            LanguageManager.shared.selectedLanguage = .en
+            Haptic.success()
+            return VoiceIntentResult(
+                reply: "Switched app language to English! Interface, notifications, and voice assistant are now in English.",
+                options: commonSettingsFollowUpOptions()
+            )
+        }
+        if text.contains("切换中文") || text.contains("改成中文") || text.contains("设为中文") || text.contains("用中文") || text.contains("简体中文") || lowerText.contains("switch to chinese") || lowerText.contains("in chinese") || lowerText == "chinese" {
+            LanguageManager.shared.selectedLanguage = .zhHans
+            Haptic.success()
+            return VoiceIntentResult(
+                reply: "已将应用语言切换为「简体中文」！界面、通知与语音助手已同步更新。",
+                options: commonSettingsFollowUpOptions()
+            )
+        }
+        if text.contains("语言") || lowerText.contains("language") {
+            let options = [
+                DialogueActionOption(label: "🌐 跟随系统 / Follow System", payload: "set_lang:system"),
+                DialogueActionOption(label: "🇨🇳 简体中文", payload: "set_lang:zh-Hans"),
+                DialogueActionOption(label: "🇺🇸 English", payload: "set_lang:en"),
+                DialogueActionOption(label: "⚙️ 手动进入详细设置", icon: "gearshape.fill", payload: "manual_settings", actionType: .openManualSettings)
+            ]
+            return VoiceIntentResult(
+                reply: L10n.choose(
+                    "请选择你想要切换的 App 语言（当前：\(LanguageManager.shared.selectedLanguage.displayName)）：",
+                    "Please choose your preferred app language (current: \(LanguageManager.shared.selectedLanguage.displayName)):"
+                ),
+                options: options
+            )
+        }
+
         // 通用兜底：启动基础设置向导
-        if text.contains("设置") || text.contains("配置") || text.contains("个性化") {
+        if text.contains("设置") || text.contains("配置") || text.contains("个性化") || lowerText.contains("settings") {
             return renderWizardStep(.userTitle)
         }
 
@@ -553,6 +591,20 @@ final class ConversationSettingsEngine {
         }
 
         // 3. 启动或跳步骤
+        if payload.hasPrefix("set_lang:") {
+            let code = String(payload.dropFirst("set_lang:".count))
+            let lang = AppLanguage(rawValue: code) ?? .system
+            LanguageManager.shared.selectedLanguage = lang
+            Haptic.success()
+            return VoiceIntentResult(
+                reply: L10n.choose(
+                    "已将应用语言切换为「\(lang.displayName)」！",
+                    "App language switched to \"\(lang.displayName)\"!"
+                ),
+                options: commonSettingsFollowUpOptions()
+            )
+        }
+
         if payload == "wizard:start" || payload == "menu_main" {
             return renderWizardStep(.userTitle)
         }

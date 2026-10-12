@@ -210,7 +210,7 @@ struct SeniorModeSettingsView: View {
                 .font(.footnote)
                 .foregroundStyle(.orange)
                 .padding(.top, 2)
-            Text(text)
+            Text(L10n.tr(text))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -135,7 +135,7 @@ private struct VehicleCardView: View {
                             .foregroundStyle(vehicle.powerType == .electric ? Color.green : Color.blue)
 
                         // 能源类型胶囊
-                        Label(vehicle.powerType.rawValue, systemImage: vehicle.powerType.icon)
+                        Label(L10n.tr(vehicle.powerType.rawValue), systemImage: vehicle.powerType.icon)
                             .font(.caption2.bold())
                             .foregroundStyle(.secondary)
                     }
@@ -408,7 +408,7 @@ private struct AddVehicleSheet: View {
 
                     Picker("能源类型", selection: $powerType) {
                         ForEach(VehiclePowerType.allCases) { type in
-                            Label(type.rawValue, systemImage: type.icon).tag(type)
+                            Label(L10n.tr(type.rawValue), systemImage: type.icon).tag(type)
                         }
                     }
                 }
@@ -503,7 +503,7 @@ private struct EditVehicleSheet: View {
 
                     Picker("能源类型", selection: $vehicle.powerType) {
                         ForEach(VehiclePowerType.allCases) { type in
-                            Label(type.rawValue, systemImage: type.icon).tag(type)
+                            Label(L10n.tr(type.rawValue), systemImage: type.icon).tag(type)
                         }
                     }
                 }

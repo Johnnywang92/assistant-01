@@ -12,6 +12,8 @@ public enum PetType: String, Codable, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
 
+    public var displayName: String { L10n.tr(rawValue) }
+
     public var icon: String {
         switch self {
         case .cat: return "pawprint.fill"
@@ -139,18 +141,18 @@ public final class PetProfile {
 
     /// 年龄描述（如 "2岁3个月" 或 "8个月"）
     public var ageDescription: String {
-        guard let b = birthday else { return "未知年龄" }
+        guard let b = birthday else { return L10n.tr("未知年龄") }
         let cal = Calendar.current
         let comps = cal.dateComponents([.year, .month], from: b, to: .now)
         let years = comps.year ?? 0
         let months = comps.month ?? 0
         if years > 0 {
-            return months > 0 ? "\(years)岁\(months)个月" : "\(years)岁整"
+            return L10n.tr(months > 0 ? "\(years)岁\(months)个月" : "\(years)岁整")
         } else if months > 0 {
-            return "\(months)个月大"
+            return L10n.tr("\(months)个月大")
         } else {
             let days = cal.dateComponents([.day], from: b, to: .now).day ?? 0
-            return "\(max(1, days))天幼宠"
+            return L10n.tr("\(max(1, days))天幼宠")
         }
     }
 }

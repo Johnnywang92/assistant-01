@@ -10,6 +10,8 @@ public enum ContextTriggerReason: String, Sendable {
     case morningBriefing = "早晨出门简报"
     case eveningBriefing = "晚间提醒"
     case locationArrive = "到达指定地点"
+
+    public var displayName: String { L10n.tr(rawValue) }
 }
 
 /// 上下文环境智能决策服务
@@ -48,7 +50,7 @@ struct ContextSmartAdvisor {
         // 0. 自动学习与推断当前地点（家/公司/其他）
         let learningEngine = PlaceLearningEngine(context: context)
         let resolvedPlace = learningEngine.resolveCurrentPlace(wifiSSID: wifiSSID, coordinate: location?.coordinate)
-        let placeName = resolvedPlace?.name ?? (resolvedPlace?.category.rawValue ?? "")
+        let placeName = resolvedPlace.map { L10n.tr($0.name.isEmpty ? $0.category.rawValue : $0.name) } ?? ""
 
         // 1. 根据天气环境决策（出门带伞、雨天提醒、气象突变与降温添衣）
         var weatherNotice: String?
@@ -66,7 +68,7 @@ struct ContextSmartAdvisor {
         switch reason {
         case .leaveHomeOrDisconnectWiFi, .morningBriefing:
             // 出门/离家/离开公司情景
-            let fromDesc = placeName.isEmpty ? "出门" : "离开\(placeName)"
+            let fromDesc = placeName.isEmpty ? L10n.choose("出门", "Leaving") : L10n.choose("离开\(placeName)", "Leaving \(placeName)")
             if let weatherNotice {
                 adviceParts.append(weatherNotice)
             }
@@ -74,34 +76,40 @@ struct ContextSmartAdvisor {
             // 如果顺路有待取件
             if !parcels.isEmpty {
                 let codes = parcels.compactMap(\.pickupCode).joined(separator: ", ")
-                adviceParts.append("📦 \(fromDesc)别忘顺路取件：\(parcels.count)个包裹（取件码: \(codes)）")
+                adviceParts.append(L10n.choose(
+                    "📦 \(fromDesc)别忘顺路取件：\(parcels.count)个包裹（取件码: \(codes)）",
+                    "📦 \(fromDesc): Don't forget \(parcels.count) parcel(s) (Code: \(codes))"
+                ))
             }
 
             // 今天到期的日程
             let todayEvents = filterTodayEvents(events)
             if !todayEvents.isEmpty {
                 let titles = todayEvents.map(\.title).joined(separator: "；")
-                adviceParts.append("📅 今日待办日程：\(titles)")
+                adviceParts.append(L10n.choose("📅 今日待办日程：\(titles)", "📅 Today's schedule: \(titles)"))
             }
 
         case .arriveHomeOrConnectWiFi, .eveningBriefing:
             // 到家或到达公司情景
-            let atDesc = placeName.isEmpty ? "到家" : "已到达\(placeName)"
+            let atDesc = placeName.isEmpty ? L10n.choose("到家", "Home") : L10n.choose("已到达\(placeName)", "Arrived at \(placeName)")
             if !parcels.isEmpty {
                 let codes = parcels.compactMap(\.pickupCode).joined(separator: ", ")
-                adviceParts.append("⚠️ \(atDesc)提醒：还有 \(parcels.count) 个快递尚未取走（取件码: \(codes)）")
+                adviceParts.append(L10n.choose(
+                    "⚠️ \(atDesc)提醒：还有 \(parcels.count) 个快递尚未取走（取件码: \(codes)）",
+                    "⚠️ \(atDesc) reminder: \(parcels.count) parcel(s) waiting (Code: \(codes))"
+                ))
             }
 
             // 晚间常规待办
             if !generals.isEmpty {
-                adviceParts.append("📝 还有 \(generals.count) 项待办待完成")
+                adviceParts.append(L10n.choose("📝 还有 \(generals.count) 项待办待完成", "📝 \(generals.count) to-do item(s) remaining"))
             }
 
         case .locationArrive:
-            let atDesc = placeName.isEmpty ? "目标区域" : placeName
+            let atDesc = placeName.isEmpty ? L10n.choose("目标区域", "destination") : placeName
             if !parcels.isEmpty {
                 let codes = parcels.compactMap(\.pickupCode).joined(separator: ", ")
-                adviceParts.append("📦 已到达 \(atDesc)：待取件 \(codes)")
+                adviceParts.append(L10n.choose("📦 已到达 \(atDesc)：待取件 \(codes)", "📦 Arrived at \(atDesc): Parcel code \(codes)"))
             }
         }
 
@@ -109,25 +117,23 @@ struct ContextSmartAdvisor {
         return adviceParts.joined(separator: "\n")
     }
 
-    // MARK: - 天气感知 (WeatherKit)
+    // MARK: - 天气感知 (WeatherKit + Open-Meteo 自动降级)
 
     private func fetchWeatherNotice(for location: CLLocation) async -> String? {
-        do {
-            let weather = try await WeatherService.shared.weather(for: location)
-            let current = weather.currentWeather
-            let symbol = current.symbolName
-            let temp = String(format: "%.0f°C", current.temperature.converted(to: .celsius).value)
-
-            // 判断是否有降雨/恶劣天气预警
-            let isRainy = symbol.contains("rain") || symbol.contains("snow") || symbol.contains("drizzle")
-            if isRainy {
-                return "🌧️ 当前天气：\(temp) \(current.condition.description)，外出请记得带伞！"
-            } else {
-                return "⛅ 当前气温 \(temp)，\(current.condition.description)"
-            }
-        } catch {
-            // 离线状态或无 WeatherKit 权限时优雅降级，不阻塞整体流程
+        guard let current = await WeatherAlertService.shared.fetchCurrentWeather(for: location) else {
             return nil
+        }
+        let temp = current.formattedTemperature
+        if current.isRainyOrSnowy {
+            return L10n.choose(
+                "🌧️ 当前天气：\(temp) \(current.conditionDescription)，外出请记得带伞！",
+                "🌧️ Current weather: \(temp) \(current.conditionDescription). Don't forget an umbrella!"
+            )
+        } else {
+            return L10n.choose(
+                "⛅ 当前气温 \(temp)，\(current.conditionDescription)",
+                "⛅ Current temperature: \(temp), \(current.conditionDescription)"
+            )
         }
     }
 

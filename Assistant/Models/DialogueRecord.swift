@@ -12,19 +12,19 @@ public enum DialogueRetentionPolicy: String, CaseIterable, Codable, Identifiable
 
     public var displayName: String {
         switch self {
-        case .none: return "不保留 (即用即走)"
-        case .sevenDays: return "自动保留 7 天"
-        case .thirtyDays: return "自动保留 30 天"
-        case .forever: return "永久保留"
+        case .none: return L10n.tr("不保留 (即用即走)")
+        case .sevenDays: return L10n.tr("自动保留 7 天")
+        case .thirtyDays: return L10n.tr("自动保留 30 天")
+        case .forever: return L10n.tr("永久保留")
         }
     }
 
     public var shortTitle: String {
         switch self {
-        case .none: return "不保留"
-        case .sevenDays: return "7天保留"
-        case .thirtyDays: return "30天保留"
-        case .forever: return "永久保留"
+        case .none: return L10n.tr("不保留")
+        case .sevenDays: return L10n.tr("7天保留")
+        case .thirtyDays: return L10n.tr("30天保留")
+        case .forever: return L10n.tr("永久保留")
         }
     }
 

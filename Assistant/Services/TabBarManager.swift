@@ -69,11 +69,14 @@ public final class TabBarManager: ObservableObject {
     @discardableResult
     public func addTab(_ tab: NavigationRouter.AppTab) -> (success: Bool, message: String?) {
         guard !activeTabs.contains(tab) else {
-            return (false, "该板块已在首页 Tab 栏中")
+            return (false, L10n.tr("该板块已在首页 Tab 栏中"))
         }
         guard activeTabs.count < Self.maxTabsCount else {
             Haptic.error()
-            return (false, "首页 Tab 栏最多只允许放置 \(Self.maxTabsCount) 个板块，请先移除其他板块")
+            return (false, L10n.choose(
+                "首页 Tab 栏最多只允许放置 \(Self.maxTabsCount) 个板块，请先移除其他板块",
+                "Home Tab Bar allows up to \(Self.maxTabsCount) tabs. Please remove another tab first."
+            ))
         }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             activeTabs.append(tab)
@@ -87,14 +90,17 @@ public final class TabBarManager: ObservableObject {
     public func removeTab(_ tab: NavigationRouter.AppTab) -> (success: Bool, message: String?) {
         guard tab != .settings else {
             Haptic.warning()
-            return (false, "「设置」为核心系统入口，固定常驻不可移除")
+            return (false, L10n.tr("「设置」为核心系统入口，固定常驻不可移除"))
         }
         guard activeTabs.count > Self.minTabsCount else {
             Haptic.error()
-            return (false, "首页 Tab 栏至少需要保留 \(Self.minTabsCount) 个板块")
+            return (false, L10n.choose(
+                "首页 Tab 栏至少需要保留 \(Self.minTabsCount) 个板块",
+                "Home Tab Bar requires at least \(Self.minTabsCount) tabs."
+            ))
         }
         guard let index = activeTabs.firstIndex(of: tab) else {
-            return (false, "未找到该板块")
+            return (false, L10n.tr("未找到该板块"))
         }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             _ = activeTabs.remove(at: index)

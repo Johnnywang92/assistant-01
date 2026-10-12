@@ -121,7 +121,7 @@ struct DepartureChecklistView: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: scene.icon)
-                                    Text("\(scene.rawValue) (\(count))")
+                                    Text("\(L10n.tr(scene.rawValue)) (\(count))")
                                 }
                                 .font(.subheadline)
                                 .padding(.horizontal, 12)
@@ -279,7 +279,7 @@ struct DepartureChecklistView: View {
                 .buttonStyle(.plain)
             }
 
-            Text("已到 \(contextEngine.offWorkHour):00 下班时间，当前仍保留「工作通勤」。选项已按晚间出行概率重排，今晚若有健身或聚餐休闲安排，可一键切换：")
+            Text("已到 \(contextEngine.offWorkTimeText) 下班时间，当前仍保留「工作通勤」。选项已按晚间出行概率重排，今晚若有健身或聚餐休闲安排，可一键切换：")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
@@ -348,9 +348,9 @@ struct DepartureChecklistView: View {
             }
         } label: {
             VStack(spacing: 4) {
-                Text(title)
+                Text(L10n.tr(title))
                     .font(.title3.bold())
-                Text(sub)
+                Text(L10n.tr(sub))
                     .font(.system(size: 9))
                     .lineLimit(1)
             }
@@ -421,7 +421,7 @@ struct CheckItemRow: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(item.title)
+                        Text(L10n.tr(item.title))
                             .font(.body)
                             .strikethrough(item.isChecked, color: .secondary)
                             .foregroundStyle(item.isChecked ? .secondary : .primary)
@@ -449,7 +449,7 @@ struct CheckItemRow: View {
 
                 Spacer()
 
-                Text(item.scene.rawValue)
+                Text(L10n.tr(item.scene.rawValue))
                     .font(.caption2)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -487,7 +487,7 @@ struct AddDepartureCheckItemSheet: View {
 
                     Picker("适用出行场景", selection: $scene) {
                         ForEach(DepartureScene.allCases) { sc in
-                            Label(sc.rawValue, systemImage: sc.icon).tag(sc)
+                            Label(L10n.tr(sc.rawValue), systemImage: sc.icon).tag(sc)
                         }
                     }
 
@@ -506,7 +506,7 @@ struct AddDepartureCheckItemSheet: View {
                                     title = preset
                                     Haptic.light()
                                 } label: {
-                                    Text(preset)
+                                    Text(L10n.tr(preset))
                                         .font(.caption)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)

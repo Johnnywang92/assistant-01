@@ -62,7 +62,7 @@ private struct LifeEventProjectCard: View {
                 .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
                 Text(project.title).font(.headline).lineLimit(1)
-                Text(project.template.rawValue).font(.caption).foregroundStyle(.secondary)
+                Text(L10n.tr(project.template.rawValue)).font(.caption).foregroundStyle(.secondary)
                 Text(project.daysRemaining >= 0 ? "还有 \(project.daysRemaining) 天" : "已过目标日期 \(abs(project.daysRemaining)) 天")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(project.daysRemaining < 0 ? Color.red : Color.accentColor)
@@ -91,7 +91,7 @@ struct LifeEventCreateView: View {
                         Button { selectedTemplate = template } label: {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(template.rawValue).foregroundStyle(.primary)
+                                    Text(L10n.tr(template.rawValue)).foregroundStyle(.primary)
                                     if template != .custom { Text("自动生成阶段与起步清单").font(.caption).foregroundStyle(.secondary) }
                                 }
                             } icon: {
