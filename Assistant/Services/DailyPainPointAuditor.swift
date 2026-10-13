@@ -19,6 +19,7 @@ struct DailyPainPointAuditor {
     public func auditAll() {
         auditSubscriptions()
         auditItemExpiries()
+        auditMedicineExpiries()
         auditAnniversaries()
         auditPasswordRotations()
         auditIDDocuments()
@@ -89,6 +90,37 @@ struct DailyPainPointAuditor {
                     body: "「\(item.title)」\(statusDesc)"
                 )
             }
+        }
+    }
+
+    /// 2.5 家庭常备药临期/过期预警（同种药多批次，逐批按实际到期日提醒）
+    private func auditMedicineExpiries() {
+        let descriptor = FetchDescriptor<MedicineItem>(
+            predicate: #Predicate { !$0.isDisposed }
+        )
+        guard let meds = try? context.fetch(descriptor) else { return }
+
+        let cal = Calendar.current
+        let now = cal.startOfDay(for: Date.now)
+
+        for med in meds {
+            // effectiveExpiryDate 为派生属性（取包装有效期与开封后到期较早者），无法下推谓词，循环内计算
+            guard let expiry = med.effectiveExpiryDate else { continue }
+            let daysLeft = cal.dateComponents([.day], from: now, to: cal.startOfDay(for: expiry)).day ?? 0
+            guard daysLeft <= 30 else { continue }
+
+            let statusDesc = daysLeft < 0 ? "已过期 \(abs(daysLeft)) 天！" : (daysLeft == 0 ? "今天到期" : "即将在 \(daysLeft) 天后过期")
+            let batchDesc = med.isOpened ? "已开封批次" : "未开封批次"
+            let expiryStr = expiry.formatted(date: .numeric, time: .omitted)
+            let title = "💊 药品临期预警：\(med.name)（\(batchDesc) · 到期 \(expiryStr)）"
+            let detail = "[\(med.category.rawValue)] \(statusDesc)，存放于\(med.roomArea)·\(med.storageLocation)，请及时补货或妥善处理，切勿误服过期药。"
+            upsertTodo(type: .itemExpiry, title: title, detail: detail, dueAt: expiry)
+
+            postThrottledNotification(
+                id: "medicine-\(med.id.uuidString)",
+                title: "药品临期提醒",
+                body: "「\(med.name)」\(batchDesc)\(statusDesc)"
+            )
         }
     }
 

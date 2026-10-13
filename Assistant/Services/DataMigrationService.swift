@@ -31,6 +31,8 @@ public struct BackupPackage: Codable {
     public var voiceMemos: [VoiceMemoDTO]?
     public var vehicles: [VehicleDTO]?
     public var storedItems: [StoredItemDTO]?
+    /// 家庭常备药（物品收纳页；旧版备份为 nil）
+    public var medicines: [MedicineItemDTO]?
     public var dialogueRecords: [DialogueRecordDTO]?
     public var rawMessages: [RawMessageDTO]?
     public var locationSamples: [LocationSampleDTO]?
@@ -241,6 +243,27 @@ public struct StoredItemDTO: Codable {
     public var isSecondHand: Bool?
     public var resalePrice: Double?
     public var resoldDate: Date?
+    public var createdAt: Date
+    public var updatedAt: Date
+}
+
+public struct MedicineItemDTO: Codable {
+    public var id: UUID
+    public var name: String
+    public var categoryRaw: String
+    public var indications: String?
+    public var usageMethod: String?
+    public var storageLocation: String
+    public var roomArea: String
+    public var purchaseDate: Date?
+    public var expiryDate: Date?
+    public var isOpened: Bool?
+    public var openedDate: Date?
+    public var afterOpenValidDays: Int?
+    public var remainingQuantity: String?
+    public var precautions: String?
+    public var imageData: Data?
+    public var isDisposed: Bool?
     public var createdAt: Date
     public var updatedAt: Date
 }
@@ -554,6 +577,7 @@ final class DataMigrationService {
         let voiceMemos = (try? context.fetchCount(FetchDescriptor<VoiceMemo>())) ?? 0
         let vehicles = (try? context.fetchCount(FetchDescriptor<VehicleProfile>())) ?? 0
         let storedItems = (try? context.fetchCount(FetchDescriptor<StoredItem>())) ?? 0
+        let medicineStocks = (try? context.fetchCount(FetchDescriptor<MedicineItem>())) ?? 0
         let dialogueRecords = (try? context.fetchCount(FetchDescriptor<DialogueMessageRecord>())) ?? 0
         let rawMessages = (try? context.fetchCount(FetchDescriptor<RawMessage>())) ?? 0
         let locationSamples = (try? context.fetchCount(FetchDescriptor<LocationStaySample>())) ?? 0
@@ -574,6 +598,7 @@ final class DataMigrationService {
             "语音备忘速记": voiceMemos,
             "爱车档案": vehicles,
             "物品收纳": storedItems,
+            "家庭常备药": medicineStocks,
             "对话历史": dialogueRecords,
             "原始消息": rawMessages,
             "位置采样": locationSamples
@@ -597,6 +622,7 @@ final class DataMigrationService {
         let voiceMemos = try context.fetch(FetchDescriptor<VoiceMemo>())
         let vehicles = try context.fetch(FetchDescriptor<VehicleProfile>())
         let storedItems = try context.fetch(FetchDescriptor<StoredItem>())
+        let medicineStocks = try context.fetch(FetchDescriptor<MedicineItem>())
         let dialogueRecords = try context.fetch(FetchDescriptor<DialogueMessageRecord>())
         let rawMessages = try context.fetch(FetchDescriptor<RawMessage>())
         let locationSamples = try context.fetch(FetchDescriptor<LocationStaySample>())
@@ -771,6 +797,16 @@ final class DataMigrationService {
                           isSecondHand: item.isSecondHand, resalePrice: item.resalePrice, resoldDate: item.resoldDate,
                           createdAt: item.createdAt, updatedAt: item.updatedAt)
         }
+        let medicineItemDTOs = medicineStocks.map { m in
+            MedicineItemDTO(id: m.id, name: m.name, categoryRaw: m.categoryRaw,
+                            indications: m.indications, usageMethod: m.usageMethod,
+                            storageLocation: m.storageLocation, roomArea: m.roomArea,
+                            purchaseDate: m.purchaseDate,
+                            expiryDate: m.expiryDate, isOpened: m.isOpened, openedDate: m.openedDate,
+                            afterOpenValidDays: m.afterOpenValidDays, remainingQuantity: m.remainingQuantity,
+                            precautions: m.precautions, imageData: m.imageData, isDisposed: m.isDisposed,
+                            createdAt: m.createdAt, updatedAt: m.updatedAt)
+        }
         let dialogueDTOs = dialogueRecords.map { record in
             DialogueRecordDTO(id: record.id, roleRaw: record.roleRaw, text: record.text,
                               timestamp: record.timestamp, sessionID: record.sessionID)
@@ -836,6 +872,7 @@ final class DataMigrationService {
             voiceMemos: voiceMemoDTOs,
             vehicles: vehicleDTOs,
             storedItems: storedItemDTOs,
+            medicines: medicineItemDTOs,
             dialogueRecords: dialogueDTOs,
             rawMessages: rawMessageDTOs,
             locationSamples: locationDTOs,
@@ -1143,6 +1180,7 @@ final class DataMigrationService {
             try context.delete(model: VoiceMemo.self)
             try context.delete(model: VehicleProfile.self)
             try context.delete(model: StoredItem.self)
+            try context.delete(model: MedicineItem.self)
             try context.delete(model: DialogueMessageRecord.self)
             try context.delete(model: RawMessage.self)
             try context.delete(model: LocationStaySample.self)
@@ -1498,6 +1536,27 @@ final class DataMigrationService {
         }
         details.append("物品收纳: \(restoredStoredItems) 项")
         totalRestored += restoredStoredItems
+
+        let existingMedicineIDs = Set(try context.fetch(FetchDescriptor<MedicineItem>()).map(\.id))
+        var restoredMedicines = 0
+        for m in package.medicines ?? [] {
+            if strategy == .merge && existingMedicineIDs.contains(m.id) { continue }
+            let item = MedicineItem(name: m.name, category: MedicineCategory(rawValue: m.categoryRaw) ?? .other,
+                                    indications: m.indications, usageMethod: m.usageMethod,
+                                    storageLocation: m.storageLocation, roomArea: m.roomArea,
+                                    purchaseDate: m.purchaseDate,
+                                    expiryDate: m.expiryDate, isOpened: m.isOpened ?? false,
+                                    openedDate: m.openedDate, afterOpenValidDays: m.afterOpenValidDays,
+                                    remainingQuantity: m.remainingQuantity, precautions: m.precautions,
+                                    imageData: m.imageData, isDisposed: m.isDisposed ?? false)
+            item.id = m.id
+            item.createdAt = m.createdAt
+            item.updatedAt = m.updatedAt
+            context.insert(item)
+            restoredMedicines += 1
+        }
+        details.append("家庭常备药: \(restoredMedicines) 项")
+        totalRestored += restoredMedicines
 
         let existingDialogueIDs = Set(try context.fetch(FetchDescriptor<DialogueMessageRecord>()).map(\.id))
         var restoredDialogues = 0
