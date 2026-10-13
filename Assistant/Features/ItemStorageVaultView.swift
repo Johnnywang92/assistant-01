@@ -298,8 +298,12 @@ struct ItemStorageVaultView: View {
                     showingAddSheet = true
                     Haptic.light()
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(Color.indigo)
+                        .symbolRenderingMode(.hierarchical)
                 }
+                .accessibilityLabel("添加收纳物品")
             }
         }
         .sheet(isPresented: $showingAddSheet) {
