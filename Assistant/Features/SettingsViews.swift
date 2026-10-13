@@ -772,6 +772,21 @@ struct ShortcutsGuideView: View {
             }
 
             Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("系统分享导入 (Share Extension)", systemImage: "square.and.arrow.up")
+                        .font(.headline)
+                    Text("在微信、相册、Safari 等任意 App 里，长按消息或图片选择「分享」，再点「发送到小助」，即可把截图/文本/链接一键丢给助手：\n• 微信支付、转账、账单截图 → 自动记账\n• 含时间、地点、二维码的截图 → 自动建待办\n• 普通文本 → 自动提取待办与快递\n\n内容先进入 App Group 中转区，回到小助（或点「已收到分享」通知）即自动识别入库。")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("系统分享导入")
+            } footer: {
+                Text("若分享面板里没看到「发送到小助」，点分享面板右上角「⋯」在「编辑操作」中启用它。")
+            }
+
+            Section {
                 urlRow(title: "呼起语音助手", url: "assistant://voice", icon: "waveform")
                 urlRow(title: "新建待办事项", url: "assistant://add-todo", icon: "plus.circle")
                 urlRow(title: "一句话快速记账", url: "assistant://expense", icon: "yensign.circle")

@@ -38,6 +38,7 @@ targets:
       - package: LlamaSwift
         product: LlamaSwift
       - target: AssistantWidgetExtension
+      - target: AssistantShareExtension
     entitlements:
       path: Assistant/Assistant.entitlements
       properties:
@@ -132,11 +133,42 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
+  AssistantShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - WidgetShared
+      - ShareExtension
+    entitlements:
+      path: ShareExtension/AssistantShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.yifanwang.assistant01
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yifanwang.assistant01.share
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SKIP_INSTALL: "YES"
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: 发送到小助
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 5
+
 schemes:
   Assistant:
     build:
       targets:
         Assistant: all
         AssistantWidgetExtension: all
+        AssistantShareExtension: all
     run:
       config: Debug
