@@ -1,6 +1,10 @@
 import PhotosUI
 import SwiftData
 import SwiftUI
+import UIKit
+import Vision
+import CoreImage
+import CoreImage.CIFilterBuiltins
 
 /// 重要证件与照片保险箱主视图
 struct IDDocumentVaultView: View {
@@ -532,6 +536,114 @@ struct FullScreenImageViewer: View {
     }
 }
 
+// MARK: - 证件四角自动裁切（Vision 矩形检测 + CoreImage 透视矫正）
+
+enum DocumentAutoCropper {
+    /// 检测照片中文证件的主矩形，对四个角做透视矫正裁切；未检测到则返回原图（已归一化为正向）。
+    /// 该函数涉及大图解码与 CIContext 渲染，应在后台线程调用。
+    static func autoCrop(_ image: UIImage) -> UIImage {
+        let base = image.normalizedForAnalysis()
+        guard let cg = base.cgImage else { return base }
+
+        let request = VNDetectRectanglesRequest()
+        request.maximumCount = 4
+        request.minimumConfidence = 0.7
+        request.minimumAspectRatio = 0.2
+        request.quadratureTolerance = 25
+
+        let handler = VNImageRequestHandler(cgImage: cg, orientation: .up, options: [:])
+        try? handler.perform([request])
+
+        // 选取面积最大的矩形作为证件主体
+        guard let observation = (request.results ?? []).max(by: { $0.boundingBox.area < $1.boundingBox.area }),
+              let corrected = perspectiveCorrect(cg: cg, observation: observation) else {
+            return base
+        }
+        return corrected
+    }
+
+    /// 将检测到的四个归一化角点映射回像素坐标后，用 CIFilter 透视矫正拉直并裁切
+    private static func perspectiveCorrect(cg: CGImage, observation: VNRectangleObservation) -> UIImage? {
+        let ci = CIImage(cgImage: cg)
+        let w = CGFloat(cg.width)
+        let h = CGFloat(cg.height)
+        func vector(_ p: CGPoint) -> CIVector {
+            CIVector(x: p.x * w, y: p.y * h)
+        }
+
+        guard let filter = CIFilter(name: "CIPerspectiveCorrection") else { return nil }
+        filter.setValue(ci, forKey: kCIInputImageKey)
+        filter.setValue(vector(observation.topLeft), forKey: "inputTopLeft")
+        filter.setValue(vector(observation.topRight), forKey: "inputTopRight")
+        filter.setValue(vector(observation.bottomLeft), forKey: "inputBottomLeft")
+        filter.setValue(vector(observation.bottomRight), forKey: "inputBottomRight")
+
+        guard let output = filter.outputImage else { return nil }
+        let extent = output.extent
+        guard extent.width >= 8, extent.height >= 8 else { return nil }
+
+        let context = CIContext()
+        guard let outCG = context.createCGImage(output, from: extent) else { return nil }
+        return UIImage(cgImage: outCG, scale: baseScale(for: extent), orientation: .up)
+    }
+
+    /// 根据裁切输出尺寸回推合适的 scale，避免长边像素过高
+    private static func baseScale(for extent: CGRect) -> CGFloat {
+        let longSide = max(extent.width, extent.height)
+        let maxLongSide: CGFloat = 1600
+        return longSide > maxLongSide ? longSide / maxLongSide : 1
+    }
+}
+
+extension UIImage {
+    /// 将带 EXIF 方向的图片烘焙为 .up 正向位图，保证 Vision 与 CIFilter 的坐标系一致
+    func normalizedForAnalysis() -> UIImage {
+        if imageOrientation == .up { return self }
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = scale
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in
+            draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+}
+
+private extension CGRect { var area: CGFloat { width * height } }
+
+// MARK: - 证件拍照取景器（UIImagePickerController 封装）
+
+struct IDDocumentCameraView: UIViewControllerRepresentable {
+    let onImage: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.cameraCaptureMode = .photo
+        picker.allowsEditing = false
+        picker.mediaTypes = ["public.image"]
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: IDDocumentCameraView
+        init(_ parent: IDDocumentCameraView) { self.parent = parent }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage { parent.onImage(image) }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
+    }
+}
+
 // MARK: - 添加 / 编辑证件表单
 
 struct AddIDDocumentSheet: View {
@@ -556,6 +668,8 @@ struct AddIDDocumentSheet: View {
 
     @State private var showingCameraForFront = false
     @State private var showingCameraForBack = false
+    /// 后台自动裁切进行中（拍照/选图后对四个角做透视矫正）
+    @State private var isCropping = false
 
     var body: some View {
         NavigationStack {
@@ -606,10 +720,19 @@ struct AddIDDocumentSheet: View {
                                 .padding(6)
                             }
                         } else {
-                            PhotosPicker(selection: $frontItem, matching: .images) {
-                                Label("从相册选取 \(selectedType.frontSlotLabel)", systemImage: "photo.badge.plus")
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
+                            HStack(spacing: 10) {
+                                Button {
+                                    showingCameraForFront = true
+                                } label: {
+                                    Label("拍照", systemImage: "camera.fill")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                }
+                                PhotosPicker(selection: $frontItem, matching: .images) {
+                                    Label("从相册", systemImage: "photo.badge.plus")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                }
                             }
                         }
                     }
@@ -637,10 +760,19 @@ struct AddIDDocumentSheet: View {
                                 .padding(6)
                             }
                         } else {
-                            PhotosPicker(selection: $backItem, matching: .images) {
-                                Label("从相册选取 \(selectedType.backSlotLabel)", systemImage: "photo.badge.plus")
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 8)
+                            HStack(spacing: 10) {
+                                Button {
+                                    showingCameraForBack = true
+                                } label: {
+                                    Label("拍照", systemImage: "camera.fill")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                }
+                                PhotosPicker(selection: $backItem, matching: .images) {
+                                    Label("从相册", systemImage: "photo.badge.plus")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                }
                             }
                         }
                     }
@@ -671,22 +803,59 @@ struct AddIDDocumentSheet: View {
             }
             .onAppear { loadExistingData() }
             .onChange(of: frontItem) { _, newItem in
+                guard let newItem else { return }
                 Task {
-                    if let data = try? await newItem?.loadTransferable(type: Data.self),
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
                        let uiImage = UIImage(data: data) {
-                        frontImage = uiImage
+                        frontImage = await autoCropped(uiImage)
                     }
                 }
             }
             .onChange(of: backItem) { _, newItem in
+                guard let newItem else { return }
                 Task {
-                    if let data = try? await newItem?.loadTransferable(type: Data.self),
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
                        let uiImage = UIImage(data: data) {
-                        backImage = uiImage
+                        backImage = await autoCropped(uiImage)
                     }
                 }
             }
+            .fullScreenCover(isPresented: $showingCameraForFront) {
+                IDDocumentCameraView { captured in
+                    Task { frontImage = await autoCropped(captured) }
+                }
+                .ignoresSafeArea()
+            }
+            .fullScreenCover(isPresented: $showingCameraForBack) {
+                IDDocumentCameraView { captured in
+                    Task { backImage = await autoCropped(captured) }
+                }
+                .ignoresSafeArea()
+            }
+            .overlay {
+                if isCropping {
+                    VStack(spacing: 10) {
+                        ProgressView()
+                        Text("正在识别证件四角并裁切…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(20)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(.regularMaterial))
+                }
+            }
         }
+    }
+
+    /// 后台对图片做四角自动裁切，切回主线程期间展示加载态
+    @MainActor
+    private func autoCropped(_ image: UIImage) async -> UIImage {
+        isCropping = true
+        defer { isCropping = false }
+        let result = await Task.detached(priority: .userInitiated) {
+            DocumentAutoCropper.autoCrop(image)
+        }.value
+        return result
     }
 
     private func loadExistingData() {
