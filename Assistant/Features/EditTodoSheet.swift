@@ -33,6 +33,11 @@ struct EditTodoSheet: View {
     @State private var showingQRPreview: Bool = false
     @State private var recognizedTravelPickup: TravelPickupMetadata? = nil
 
+    @State private var recognitionConfidence: Double? = nil
+    @State private var recognitionConfidenceReason: String? = nil
+    @State private var recognitionSuggestedTypes: [TodoType] = []
+    @State private var showConfidenceNotice: Bool = true
+
     @State private var showingDeleteConfirmation: Bool = false
 
     init(item: TodoItem) {
@@ -179,6 +184,66 @@ struct EditTodoSheet: View {
                     }
                 }
 
+                if showConfidenceNotice, let conf = recognitionConfidence, conf < 0.70 {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                Text("智能识别置信度较低（\(Int(conf * 100))%）")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.orange)
+                                Spacer()
+                                Button {
+                                    withAnimation { showConfidenceNotice = false }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            if let reason = recognitionConfidenceReason, !reason.isEmpty {
+                                Text(reason)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if !recognitionSuggestedTypes.isEmpty {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text("推荐候选分类（点击一键修正）：")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(.secondary)
+
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 6) {
+                                            ForEach(recognitionSuggestedTypes, id: \.self) { sugType in
+                                                Button {
+                                                    type = sugType
+                                                    Haptic.selection()
+                                                } label: {
+                                                    HStack(spacing: 4) {
+                                                        Image(systemName: sugType.icon)
+                                                        Text(sugType.displayName)
+                                                    }
+                                                    .font(.caption.bold())
+                                                    .padding(.horizontal, 10)
+                                                    .padding(.vertical, 5)
+                                                    .background(type == sugType ? Color.accentColor : Color.orange.opacity(0.14))
+                                                    .foregroundStyle(type == sugType ? Color.white : Color.primary)
+                                                    .clipShape(Capsule())
+                                                }
+                                                .buttonStyle(.plain)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+
                 // 2.5 火车票/机票接人提前量与汇合地点配置
                 if recognizedTravelPickup != nil {
                     Section {
@@ -305,9 +370,12 @@ struct EditTodoSheet: View {
         if let recognized = try? await OCRService.shared.recognizeTodo(from: image) {
             await MainActor.run {
                 recognizedTravelPickup = recognized.travelPickup
+                recognitionConfidence = recognized.confidence
+                recognitionConfidenceReason = recognized.confidenceReason
+                recognitionSuggestedTypes = recognized.suggestedTypes
+                showConfidenceNotice = true
                 if recognized.travelPickup != nil {
                     title = recognized.title
-                    // OCR 结果模型不携带待办类型；截图识别后的行程统一归为事项。
                     type = .event
                     if let loc = recognized.location ?? recognized.station {
                         station = loc
@@ -323,6 +391,7 @@ struct EditTodoSheet: View {
                     if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         title = recognized.title
                     }
+                    type = recognized.type
                     if station.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                        let loc = recognized.location ?? recognized.station {
                         station = loc
@@ -334,6 +403,9 @@ struct EditTodoSheet: View {
                     if detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                        let recDetail = recognized.detail {
                         detail = recDetail
+                    }
+                    if let code = recognized.pickupCode, !code.isEmpty {
+                        pickupCode = code
                     }
                 }
                 qrCodePayload = recognized.qrCodePayload

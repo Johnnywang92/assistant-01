@@ -180,6 +180,9 @@ struct ImageTodoRecognitionResult: Sendable {
     var attachmentImageData: Data?
     var travelPickup: TravelPickupMetadata?
     var rawText: String
+    var confidence: Double
+    var confidenceReason: String?
+    var suggestedTypes: [TodoType]
 
     init(
         title: String,
@@ -194,7 +197,10 @@ struct ImageTodoRecognitionResult: Sendable {
         qrCodeImageData: Data? = nil,
         attachmentImageData: Data? = nil,
         travelPickup: TravelPickupMetadata? = nil,
-        rawText: String = ""
+        rawText: String = "",
+        confidence: Double = 0.85,
+        confidenceReason: String? = nil,
+        suggestedTypes: [TodoType] = []
     ) {
         self.title = title
         self.type = type
@@ -209,6 +215,9 @@ struct ImageTodoRecognitionResult: Sendable {
         self.attachmentImageData = attachmentImageData
         self.travelPickup = travelPickup
         self.rawText = rawText
+        self.confidence = confidence
+        self.confidenceReason = confidenceReason
+        self.suggestedTypes = suggestedTypes.isEmpty ? [type] : suggestedTypes
     }
 }
 
@@ -594,27 +603,93 @@ public final class OCRService: Sendable {
         }
         let finalDetail = summaryTokens.isEmpty ? nil : summaryTokens.joined(separator: " · ")
 
-        // 判断具体待办类型
-        let todoType: TodoType = {
-            if finalTitle.contains("高铁") || finalTitle.contains("火车") || finalTitle.contains("航班") || finalTitle.contains("机票") {
-                return .travelBooking
-            }
-            if isMovieTicket || qrPayload != nil || venue != nil || address != nil || parsedDueAt != nil || rawFullText.contains("预约") || rawFullText.contains("场馆") || rawFullText.contains("活动时间") || rawFullText.contains("门票") {
-                return .event
-            }
-            return .general
-        }()
+        // 6. 细分垂直领域分类与多维度置信度评估
+        var detectedType: TodoType = .general
+        var detectedConfidence: Double = 0.60
+        var confidenceReason: String? = nil
+        var candidateTypes: [TodoType] = []
+
+        // (1) 退货寄件
+        if rawFullText.contains("退货") || rawFullText.contains("寄件码") || rawFullText.contains("上门取件") || rawFullText.contains("寄件人") || rawFullText.contains("已预约寄件") {
+            detectedType = .returnParcel
+            detectedConfidence = 0.92
+            candidateTypes = [.returnParcel, .parcel, .general]
+        }
+        // (2) 服药提醒
+        else if rawFullText.contains("用法用量") || rawFullText.contains("口服") || rawFullText.contains("处方") || rawFullText.contains("饭前服用") || rawFullText.contains("饭后服用") || rawFullText.contains("早晚各") || (rawFullText.contains("每次") && (rawFullText.contains("片") || rawFullText.contains("粒") || rawFullText.contains("袋"))) {
+            detectedType = .medication
+            detectedConfidence = 0.93
+            candidateTypes = [.medication, .general]
+        }
+        // (3) 车辆保养与车务
+        else if (rawFullText.contains("保养") && (rawFullText.contains("机油") || rawFullText.contains("车辆") || rawFullText.contains("公里") || rawFullText.contains("4s店") || rawFullText.contains("爱车"))) || rawFullText.contains("年检") || rawFullText.contains("交强险") {
+            detectedType = .vehicleCare
+            detectedConfidence = 0.90
+            candidateTypes = [.vehicleCare, .bill, .event]
+        }
+        // (4) 亲子育儿 / 疫苗
+        else if rawFullText.contains("接种证") || rawFullText.contains("预防接种") || rawFullText.contains("儿童保健") || rawFullText.contains("儿科") || (rawFullText.contains("疫苗") && !rawFullText.contains("宠物") && !rawFullText.contains("猫") && !rawFullText.contains("犬")) {
+            detectedType = .childVaccine
+            detectedConfidence = 0.91
+            candidateTypes = [.childVaccine, .childHealth, .event]
+        }
+        // (5) 宠物照护
+        else if rawFullText.contains("猫三联") || rawFullText.contains("狂犬疫苗") || rawFullText.contains("驱虫") || rawFullText.contains("宠物医院") || rawFullText.contains("洗护预约") || (rawFullText.contains("宠物") && (rawFullText.contains("就诊") || rawFullText.contains("挂号"))) {
+            detectedType = .pet
+            detectedConfidence = 0.92
+            candidateTypes = [.pet, .general, .event]
+        }
+        // (6) 账单 / 还款 / 自动续费
+        else if rawFullText.contains("还款日") || rawFullText.contains("最低还款") || rawFullText.contains("应缴金额") || rawFullText.contains("账单金额") || rawFullText.contains("自动续费") || rawFullText.contains("电费缴费") || rawFullText.contains("水费缴费") || rawFullText.contains("燃气费") {
+            detectedType = rawFullText.contains("续费") ? .subscription : .bill
+            detectedConfidence = 0.88
+            candidateTypes = [detectedType, .general]
+        }
+        // (7) 物品 / 证件临期
+        else if rawFullText.contains("保质期至") || rawFullText.contains("有效期限至") || rawFullText.contains("到期换证") || rawFullText.contains("换发身份证") {
+            detectedType = .itemExpiry
+            detectedConfidence = 0.88
+            candidateTypes = [.itemExpiry, .event, .general]
+        }
+        // (8) 出行行程客票
+        else if finalTitle.contains("高铁") || finalTitle.contains("火车") || finalTitle.contains("航班") || finalTitle.contains("机票") || rawFullText.contains("行程信息") {
+            detectedType = .travelBooking
+            detectedConfidence = 0.90
+            candidateTypes = [.travelBooking, .event, .general]
+        }
+        // (9) 预约 / 活动 / 展览 / 观影
+        else if isMovieTicket || qrPayload != nil || venue != nil || address != nil || parsedDueAt != nil || rawFullText.contains("预约") || rawFullText.contains("场馆") || rawFullText.contains("活动时间") || rawFullText.contains("门票") {
+            detectedType = .event
+            detectedConfidence = isMovieTicket ? 0.95 : (parsedDueAt != nil ? 0.86 : 0.75)
+            candidateTypes = [.event, .general]
+        } else {
+            detectedType = .general
+            detectedConfidence = 0.55
+            confidenceReason = "未识别到明确的时间、场馆或具体票务凭证，已设为日常待办，请核对"
+            candidateTypes = [.general, .event, .parcel]
+        }
+
+        if parsedDueAt != nil { detectedConfidence += 0.05 }
+        if qrPayload != nil { detectedConfidence += 0.05 }
+        if rawTitle == "图片识别待办事项" {
+            detectedConfidence = min(detectedConfidence, 0.48)
+            confidenceReason = "未能从图片中提炼出准确的标题，建议手动修改标题"
+        }
+        detectedConfidence = min(1.0, max(0.1, detectedConfidence))
 
         return ImageTodoRecognitionResult(
             title: finalTitle,
-            type: todoType,
+            type: detectedType,
             dueAt: parsedDueAt,
             station: finalStation,
             location: finalLocation,
             pickupCode: nil,
             detail: finalDetail,
             timeSlotText: parsedSlotDesc,
-            rawText: rawFullText
+            rawText: rawFullText,
+            confidence: detectedConfidence,
+            confidenceReason: confidenceReason,
+            suggestedTypes: candidateTypes
         )
     }
 

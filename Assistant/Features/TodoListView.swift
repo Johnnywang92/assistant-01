@@ -52,6 +52,7 @@ fileprivate struct TodoClassification {
     var review: [TodoItem] = []
     var done: [TodoItem] = []
     var recurring: [TodoItem] = []
+    var overdue: [TodoItem] = []
 
     var generals: [TodoItem] = []
     var parcels: [TodoItem] = []
@@ -75,6 +76,7 @@ fileprivate struct TodoClassification {
     var doneAlerts: [TodoItem] = []
 
     init(from items: [TodoItem]) {
+        let now = Date.now
         for item in items {
             switch item.status {
             case .pendingReview:
@@ -92,43 +94,36 @@ fileprivate struct TodoClassification {
                 }
             case .active:
                 active.append(item)
-                if item.isRecurring { recurring.append(item) }
-                switch item.type {
-                case .general, .event, .travelBooking: generals.append(item)
-                case .skillLearning: generals.append(item)
-                case .parcel: parcels.append(item)
-                case .returnParcel: returnParcels.append(item)
-                case .medication: medications.append(item)
-                case .charging: chargings.append(item)
-                case .housework, .exercise: houseworks.append(item)
-                case .subscription, .bill: subscriptions.append(item)
-                case .itemExpiry: expiries.append(item)
-                case .anniversary: anniversaries.append(item)
-                case .passwordSecurity: passwordTodos.append(item)
-                case .vehicleCare: vehicleTodos.append(item)
-                case .childVaccine, .childGrowth, .childMilestone, .childHealth: parentingTodos.append(item)
-                case .pet: petTodos.append(item)
-                default: others.append(item)
+                if let due = item.dueAt, due < now {
+                    overdue.append(item)
                 }
             }
         }
-        // 所有活跃分组统一按“紧急性 60% + 重要性 40%”排序，sortOrder 仅作为同分时的手动顺序。
+        // 先对所有活跃待办按“紧急性 60% + 重要性 40%”进行单次全局排序，逾期事项按截止时间升序
         TodoPriority.sort(&active)
-        TodoPriority.sort(&recurring)
-        TodoPriority.sort(&generals)
-        TodoPriority.sort(&parcels)
-        TodoPriority.sort(&returnParcels)
-        TodoPriority.sort(&medications)
-        TodoPriority.sort(&chargings)
-        TodoPriority.sort(&houseworks)
-        TodoPriority.sort(&subscriptions)
-        TodoPriority.sort(&expiries)
-        TodoPriority.sort(&anniversaries)
-        TodoPriority.sort(&passwordTodos)
-        TodoPriority.sort(&vehicleTodos)
-        TodoPriority.sort(&parentingTodos)
-        TodoPriority.sort(&petTodos)
-        TodoPriority.sort(&others)
+        overdue.sort { ($0.dueAt ?? .now) < ($1.dueAt ?? .now) }
+
+        // 各活跃分组直接沿用已排好序的 active 流进行分发，天然保持正确优先级，避免 15 次冗余全量排序
+        for item in active {
+            if item.isRecurring { recurring.append(item) }
+            switch item.type {
+            case .general, .event, .travelBooking: generals.append(item)
+            case .skillLearning: generals.append(item)
+            case .parcel: parcels.append(item)
+            case .returnParcel: returnParcels.append(item)
+            case .medication: medications.append(item)
+            case .charging: chargings.append(item)
+            case .housework, .exercise: houseworks.append(item)
+            case .subscription, .bill: subscriptions.append(item)
+            case .itemExpiry: expiries.append(item)
+            case .anniversary: anniversaries.append(item)
+            case .passwordSecurity: passwordTodos.append(item)
+            case .vehicleCare: vehicleTodos.append(item)
+            case .childVaccine, .childGrowth, .childMilestone, .childHealth: parentingTodos.append(item)
+            case .pet: petTodos.append(item)
+            default: others.append(item)
+            }
+        }
     }
 }
 
@@ -162,6 +157,8 @@ struct TodoListView: View {
     @State private var homeCategories: [TodoFilterCategory] = TodoCategoryPreferences.load()
     @State private var showCategoryCustomization = false
     @State private var itemToShare: TodoItem? = nil
+    @State private var itemToEdit: TodoItem? = nil
+    @State private var itemForQRCode: TodoItem? = nil
     @State private var confirmingTicketInfo: UpcomingTravelTicketInfo? = nil
     @State private var prepToastMessage: String? = nil
     @State private var isReordering: Bool = false
@@ -170,10 +167,58 @@ struct TodoListView: View {
     @AppStorage("overdue_triage_last_date") private var lastTriageDateKey = ""
 
     // MARK: - 单次 O(N) 极速分类缓存（彻底消除视图树重复全表遍历）
+    /// 分类结果引用缓存：视图树内 200+ 处转发属性访问在同一次渲染中只真正计算一次。
+    /// 增加渲染脉冲（50ms）节流保护，单次视图树评估内只哈希校验一次，消除卡顿。
+    private final class TodoClassificationCache {
+        var key: Int = -1
+        var query: String = ""
+        var lastComputedTime: CFAbsoluteTime = 0
+        var value: TodoClassification?
+    }
+
+    @State private var classificationCache = TodoClassificationCache()
+
     private var classified: TodoClassification {
+        let now = CFAbsoluteTimeGetCurrent()
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return TodoClassification(from: todos) }
-        return TodoClassification(from: todos.filter { matchesSearch($0, query: query) })
+        if let cached = classificationCache.value,
+           classificationCache.query == query,
+           (now - classificationCache.lastComputedTime) < 0.05 {
+            return cached
+        }
+
+        let key = Self.classificationKey(for: todos)
+        if let cached = classificationCache.value, classificationCache.key == key, classificationCache.query == query {
+            classificationCache.lastComputedTime = now
+            return cached
+        }
+        let source: [TodoItem]
+        if query.isEmpty {
+            source = todos
+        } else {
+            source = todos.filter { matchesSearch($0, query: query) }
+        }
+        let result = TodoClassification(from: source)
+        classificationCache.key = key
+        classificationCache.query = query
+        classificationCache.lastComputedTime = now
+        classificationCache.value = result
+        return result
+    }
+
+    /// 轻量内容指纹：覆盖 TodoClassification 分桶与 TodoPriority 排序所依赖的字段。
+    private static func classificationKey(for items: [TodoItem]) -> Int {
+        var hasher = Hasher()
+        for item in items {
+            hasher.combine(item.statusRaw)
+            hasher.combine(item.typeRaw)
+            hasher.combine(item.isRecurring)
+            hasher.combine(item.sortOrder)
+            hasher.combine(item.dueAt?.timeIntervalSinceReferenceDate ?? -1)
+            hasher.combine(item.title)
+            hasher.combine(item.detail ?? "")
+        }
+        return hasher.finalize()
     }
 
     private func matchesSearch(_ item: TodoItem, query: String) -> Bool {
@@ -204,14 +249,8 @@ struct TodoListView: View {
 
     private var activeTodos: [TodoItem] { classified.active }
 
-    /// 逾期事项：截止时间已过且仍未完成（与 TodayBriefingView 的逾期口径一致）
-    private var overdueTodos: [TodoItem] {
-        todos.filter { item in
-            guard item.status == .active, let due = item.dueAt else { return false }
-            return due < .now
-        }
-        .sorted { ($0.dueAt ?? .now) < ($1.dueAt ?? .now) }
-    }
+    /// 逾期事项：由分类器单次 O(N) 遍历统一收集，无需重复全表 filter + sort
+    private var overdueTodos: [TodoItem] { classified.overdue }
 
     /// 早间逾期清道夫：每天首次进入待办页时，若有逾期事项则弹出发牌器
     private func maybePresentOverdueTriage() {
@@ -248,7 +287,7 @@ struct TodoListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HomeGreetingCard(activeCount: todos.filter { $0.status == .active }.count)
+                HomeGreetingCard(activeCount: activeTodos.count)
                 // 万能投喂口固定入口：丢进文字/截图，自动记账、建待办、存收集箱
                 OmniboxEntryCard {
                     Haptic.light()
@@ -366,9 +405,15 @@ struct TodoListView: View {
             .sheet(item: $itemToShare) { item in
                 TodoShareSheet(
                     allTodos: [item],
-                    initialCategory: item.type == .parcel ? .parcel : .all,
+                    initialCategory: (item.type == .parcel || item.type == .returnParcel) ? .parcel : .all,
                     initialSelectedIds: [item.id]
                 )
+            }
+            .sheet(item: $itemToEdit) { item in
+                EditTodoSheet(item: item)
+            }
+            .sheet(item: $itemForQRCode) { item in
+                TodoQRCodeQuickSheet(item: item)
             }
             .sheet(item: $confirmingTicketInfo) { info in
                 TravelTicketConfirmationSheet(ticketInfo: info) { count in
@@ -516,6 +561,21 @@ struct TodoListView: View {
         }
         try? context.save()
         Haptic.selection()
+    }
+
+    @ViewBuilder
+    private func todoRow(_ item: TodoItem, within items: [TodoItem]) -> some View {
+        TodoRow(
+            item: item,
+            isHighlighted: highlightedTodoID == item.id,
+            onMoveToTop: { moveItemToTop(item, within: items) },
+            onMoveUp: { moveItemUp(item, within: items) },
+            onMoveDown: { moveItemDown(item, within: items) },
+            onEnterReorder: { withAnimation { isReordering = true } },
+            onEdit: { itemToEdit = item },
+            onShowQRCode: { itemForQRCode = item },
+            onShare: { itemToShare = item }
+        )
     }
 
     // MARK: - 排序调整模式顶栏提示胶囊
@@ -966,13 +1026,7 @@ struct TodoListView: View {
                 // 自由排序流：所有待办在一个连续列表中，支持任意事项跨类型上下拖动！
                 Section("事项清单（\(activeTodos.count)）") {
                     ForEach(activeTodos) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: activeTodos) },
-                            onMoveUp: { moveItemUp(item, within: activeTodos) },
-                            onMoveDown: { moveItemDown(item, within: activeTodos) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: activeTodos)
                     }
                     .onMove { from, to in
                         reorder(items: activeTodos, fromOffsets: from, toOffset: to)
@@ -989,13 +1043,7 @@ struct TodoListView: View {
         if !generals.isEmpty {
             Section("📋 日常待办（\(generals.count)）") {
                 ForEach(generals) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: generals) },
-                        onMoveUp: { moveItemUp(item, within: generals) },
-                        onMoveDown: { moveItemDown(item, within: generals) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: generals)
                 }
                 .onMove { from, to in reorder(items: generals, fromOffsets: from, toOffset: to) }
             }
@@ -1003,13 +1051,7 @@ struct TodoListView: View {
         if !parcels.isEmpty {
             Section("📦 待取快递（\(parcels.count)）") {
                 ForEach(parcels) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: parcels) },
-                        onMoveUp: { moveItemUp(item, within: parcels) },
-                        onMoveDown: { moveItemDown(item, within: parcels) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: parcels)
                 }
                 .onMove { from, to in reorder(items: parcels, fromOffsets: from, toOffset: to) }
             }
@@ -1017,13 +1059,7 @@ struct TodoListView: View {
         if !returnParcels.isEmpty {
             Section("↩️ 待退货寄件（\(returnParcels.count)）") {
                 ForEach(returnParcels) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: returnParcels) },
-                        onMoveUp: { moveItemUp(item, within: returnParcels) },
-                        onMoveDown: { moveItemDown(item, within: returnParcels) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: returnParcels)
                 }
                 .onMove { from, to in reorder(items: returnParcels, fromOffsets: from, toOffset: to) }
             }
@@ -1031,13 +1067,7 @@ struct TodoListView: View {
         if !medications.isEmpty {
             Section("💊 服药提醒（\(medications.count)）") {
                 ForEach(medications) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: medications) },
-                        onMoveUp: { moveItemUp(item, within: medications) },
-                        onMoveDown: { moveItemDown(item, within: medications) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: medications)
                 }
                 .onMove { from, to in reorder(items: medications, fromOffsets: from, toOffset: to) }
             }
@@ -1045,13 +1075,7 @@ struct TodoListView: View {
         if !chargings.isEmpty {
             Section("⚡️ 设备充电预警（\(chargings.count)）") {
                 ForEach(chargings) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: chargings) },
-                        onMoveUp: { moveItemUp(item, within: chargings) },
-                        onMoveDown: { moveItemDown(item, within: chargings) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: chargings)
                 }
                 .onMove { from, to in reorder(items: chargings, fromOffsets: from, toOffset: to) }
             }
@@ -1059,13 +1083,7 @@ struct TodoListView: View {
         if !houseworks.isEmpty {
             Section("🧹 周期家务（\(houseworks.count)）") {
                 ForEach(houseworks) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: houseworks) },
-                        onMoveUp: { moveItemUp(item, within: houseworks) },
-                        onMoveDown: { moveItemDown(item, within: houseworks) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: houseworks)
                 }
                 .onMove { from, to in reorder(items: houseworks, fromOffsets: from, toOffset: to) }
             }
@@ -1073,13 +1091,7 @@ struct TodoListView: View {
         if !subscriptions.isEmpty {
             Section("💳 续费与账单（\(subscriptions.count)）") {
                 ForEach(subscriptions) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: subscriptions) },
-                        onMoveUp: { moveItemUp(item, within: subscriptions) },
-                        onMoveDown: { moveItemDown(item, within: subscriptions) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: subscriptions)
                 }
                 .onMove { from, to in reorder(items: subscriptions, fromOffsets: from, toOffset: to) }
             }
@@ -1087,13 +1099,7 @@ struct TodoListView: View {
         if !expiries.isEmpty {
             Section("⚠️ 证件/物品临期（\(expiries.count)）") {
                 ForEach(expiries) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: expiries) },
-                        onMoveUp: { moveItemUp(item, within: expiries) },
-                        onMoveDown: { moveItemDown(item, within: expiries) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: expiries)
                 }
                 .onMove { from, to in reorder(items: expiries, fromOffsets: from, toOffset: to) }
             }
@@ -1101,13 +1107,7 @@ struct TodoListView: View {
         if !anniversaries.isEmpty {
             Section("🎁 纪念日（\(anniversaries.count)）") {
                 ForEach(anniversaries) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: anniversaries) },
-                        onMoveUp: { moveItemUp(item, within: anniversaries) },
-                        onMoveDown: { moveItemDown(item, within: anniversaries) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: anniversaries)
                 }
                 .onMove { from, to in reorder(items: anniversaries, fromOffsets: from, toOffset: to) }
             }
@@ -1115,13 +1115,7 @@ struct TodoListView: View {
         if !passwordTodos.isEmpty {
             Section("🔑 密码安全（\(passwordTodos.count)）") {
                 ForEach(passwordTodos) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: passwordTodos) },
-                        onMoveUp: { moveItemUp(item, within: passwordTodos) },
-                        onMoveDown: { moveItemDown(item, within: passwordTodos) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: passwordTodos)
                 }
                 .onMove { from, to in reorder(items: passwordTodos, fromOffsets: from, toOffset: to) }
             }
@@ -1129,13 +1123,7 @@ struct TodoListView: View {
         if !vehicleTodos.isEmpty {
             Section("🚗 爱车守护（\(vehicleTodos.count)）") {
                 ForEach(vehicleTodos) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: vehicleTodos) },
-                        onMoveUp: { moveItemUp(item, within: vehicleTodos) },
-                        onMoveDown: { moveItemDown(item, within: vehicleTodos) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: vehicleTodos)
                 }
                 .onMove { from, to in reorder(items: vehicleTodos, fromOffsets: from, toOffset: to) }
             }
@@ -1149,13 +1137,7 @@ struct TodoListView: View {
         if !otherActive.isEmpty {
             Section("其它事项（\(otherActive.count)）") {
                 ForEach(otherActive) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: otherActive) },
-                        onMoveUp: { moveItemUp(item, within: otherActive) },
-                        onMoveDown: { moveItemDown(item, within: otherActive) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: otherActive)
                 }
                 .onMove { from, to in reorder(items: otherActive, fromOffsets: from, toOffset: to) }
             }
@@ -1170,13 +1152,7 @@ struct TodoListView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(generals) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: generals) },
-                        onMoveUp: { moveItemUp(item, within: generals) },
-                        onMoveDown: { moveItemDown(item, within: generals) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: generals)
                 }
                 .onMove { from, to in reorder(items: generals, fromOffsets: from, toOffset: to) }
             }
@@ -1205,13 +1181,7 @@ struct TodoListView: View {
         } else {
             Section("🔁 周期性待办（\(recurring.count)）") {
                 ForEach(recurring) { item in
-                    TodoRow(
-                        item: item,
-                        onMoveToTop: { moveItemToTop(item, within: recurring) },
-                        onMoveUp: { moveItemUp(item, within: recurring) },
-                        onMoveDown: { moveItemDown(item, within: recurring) },
-                        onEnterReorder: { withAnimation { isReordering = true } }
-                    )
+                    todoRow(item, within: recurring)
                 }
                 .onMove { from, to in reorder(items: recurring, fromOffsets: from, toOffset: to) }
             }
@@ -1230,13 +1200,7 @@ struct TodoListView: View {
             if !parcels.isEmpty {
                 Section("📦 待取快递（\(parcels.count)）") {
                     ForEach(parcels) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: parcels) },
-                            onMoveUp: { moveItemUp(item, within: parcels) },
-                            onMoveDown: { moveItemDown(item, within: parcels) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: parcels)
                     }
                     .onMove { from, to in reorder(items: parcels, fromOffsets: from, toOffset: to) }
                 }
@@ -1244,13 +1208,7 @@ struct TodoListView: View {
             if !returnParcels.isEmpty {
                 Section("↩️ 待退货寄件（\(returnParcels.count)）") {
                     ForEach(returnParcels) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: returnParcels) },
-                            onMoveUp: { moveItemUp(item, within: returnParcels) },
-                            onMoveDown: { moveItemDown(item, within: returnParcels) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: returnParcels)
                     }
                     .onMove { from, to in reorder(items: returnParcels, fromOffsets: from, toOffset: to) }
                 }
@@ -1269,13 +1227,7 @@ struct TodoListView: View {
             if !medications.isEmpty {
                 Section("💊 服药提醒（\(medications.count)）") {
                     ForEach(medications) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: medications) },
-                            onMoveUp: { moveItemUp(item, within: medications) },
-                            onMoveDown: { moveItemDown(item, within: medications) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: medications)
                     }
                     .onMove { from, to in reorder(items: medications, fromOffsets: from, toOffset: to) }
                 }
@@ -1283,13 +1235,7 @@ struct TodoListView: View {
             if !houseworks.isEmpty {
                 Section("🧹 周期家务（\(houseworks.count)）") {
                     ForEach(houseworks) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: houseworks) },
-                            onMoveUp: { moveItemUp(item, within: houseworks) },
-                            onMoveDown: { moveItemDown(item, within: houseworks) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: houseworks)
                     }
                     .onMove { from, to in reorder(items: houseworks, fromOffsets: from, toOffset: to) }
                 }
@@ -1297,13 +1243,7 @@ struct TodoListView: View {
             if !chargings.isEmpty {
                 Section("⚡️ 设备充电预警（\(chargings.count)）") {
                     ForEach(chargings) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: chargings) },
-                            onMoveUp: { moveItemUp(item, within: chargings) },
-                            onMoveDown: { moveItemDown(item, within: chargings) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: chargings)
                     }
                     .onMove { from, to in reorder(items: chargings, fromOffsets: from, toOffset: to) }
                 }
@@ -1322,13 +1262,7 @@ struct TodoListView: View {
             if !vehicleTodos.isEmpty {
                 Section("🚗 爱车守护（\(vehicleTodos.count)）") {
                     ForEach(vehicleTodos) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: vehicleTodos) },
-                            onMoveUp: { moveItemUp(item, within: vehicleTodos) },
-                            onMoveDown: { moveItemDown(item, within: vehicleTodos) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: vehicleTodos)
                     }
                     .onMove { from, to in reorder(items: vehicleTodos, fromOffsets: from, toOffset: to) }
                 }
@@ -1336,13 +1270,7 @@ struct TodoListView: View {
             if !subscriptions.isEmpty {
                 Section("💳 自动续费与账单（\(subscriptions.count)）") {
                     ForEach(subscriptions) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: subscriptions) },
-                            onMoveUp: { moveItemUp(item, within: subscriptions) },
-                            onMoveDown: { moveItemDown(item, within: subscriptions) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: subscriptions)
                     }
                     .onMove { from, to in reorder(items: subscriptions, fromOffsets: from, toOffset: to) }
                 }
@@ -1350,13 +1278,7 @@ struct TodoListView: View {
             if !expiries.isEmpty {
                 Section("⚠️ 证件/物品临期（\(expiries.count)）") {
                     ForEach(expiries) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: expiries) },
-                            onMoveUp: { moveItemUp(item, within: expiries) },
-                            onMoveDown: { moveItemDown(item, within: expiries) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: expiries)
                     }
                     .onMove { from, to in reorder(items: expiries, fromOffsets: from, toOffset: to) }
                 }
@@ -1364,13 +1286,7 @@ struct TodoListView: View {
             if !anniversaries.isEmpty {
                 Section("🎁 纪念日（\(anniversaries.count)）") {
                     ForEach(anniversaries) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: anniversaries) },
-                            onMoveUp: { moveItemUp(item, within: anniversaries) },
-                            onMoveDown: { moveItemDown(item, within: anniversaries) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: anniversaries)
                     }
                     .onMove { from, to in reorder(items: anniversaries, fromOffsets: from, toOffset: to) }
                 }
@@ -1378,13 +1294,7 @@ struct TodoListView: View {
             if !passwordTodos.isEmpty {
                 Section("🔑 密码安全（\(passwordTodos.count)）") {
                     ForEach(passwordTodos) { item in
-                        TodoRow(
-                            item: item,
-                            onMoveToTop: { moveItemToTop(item, within: passwordTodos) },
-                            onMoveUp: { moveItemUp(item, within: passwordTodos) },
-                            onMoveDown: { moveItemDown(item, within: passwordTodos) },
-                            onEnterReorder: { withAnimation { isReordering = true } }
-                        )
+                        todoRow(item, within: passwordTodos)
                     }
                     .onMove { from, to in reorder(items: passwordTodos, fromOffsets: from, toOffset: to) }
                 }
@@ -1394,17 +1304,13 @@ struct TodoListView: View {
 
     @ViewBuilder
     private func renderParentingSection() -> some View {
-        Section("亲子育儿（(parentingTodos.count)）") {
+        Section("亲子育儿（\(parentingTodos.count)）") {
             if parentingTodos.isEmpty {
                 Text("暂无育儿待办，可添加疫苗、成长测量或健康随访提醒。")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(parentingTodos) { item in
-                    TodoRow(item: item,
-                            onMoveToTop: { moveItemToTop(item, within: parentingTodos) },
-                            onMoveUp: { moveItemUp(item, within: parentingTodos) },
-                            onMoveDown: { moveItemDown(item, within: parentingTodos) },
-                            onEnterReorder: { withAnimation { isReordering = true } })
+                    todoRow(item, within: parentingTodos)
                 }
                 .onMove { from, to in reorder(items: parentingTodos, fromOffsets: from, toOffset: to) }
             }
@@ -1419,11 +1325,7 @@ struct TodoListView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(petTodos) { item in
-                    TodoRow(item: item,
-                            onMoveToTop: { moveItemToTop(item, within: petTodos) },
-                            onMoveUp: { moveItemUp(item, within: petTodos) },
-                            onMoveDown: { moveItemDown(item, within: petTodos) },
-                            onEnterReorder: { withAnimation { isReordering = true } })
+                    todoRow(item, within: petTodos)
                 }
                 .onMove { from, to in reorder(items: petTodos, fromOffsets: from, toOffset: to) }
             }
@@ -1501,17 +1403,19 @@ struct TodoListView: View {
     @ViewBuilder
     private func renderPageContent(for category: TodoFilterCategory) -> some View {
         List {
-            // 放进列表头部，使“今日安排”可以随首页内容向上滚动，不占用固定屏幕空间。
-            Section {
-                EmptyView()
-            } header: {
-                VStack(spacing: 4) {
-                    TodayBriefingView(items: todos.filter { $0.status == .active })
-                    // Structured 式今日时间轴：起床/下班锚点 + 日程 + 定时待办 + 打卡，
-                    // 自动标出空闲时段，一眼判断"今天塞不塞得下一件新事"。
-                    DayTimelineView(items: todos.filter { $0.status == .active })
+            // 放进列表头部，使“今日安排”可以随首页内容向上滚动，仅在全部总览页挂载以大幅减少后台多页面重复查询
+            if category == .all {
+                Section {
+                    EmptyView()
+                } header: {
+                    VStack(spacing: 4) {
+                        TodayBriefingView(items: activeTodos)
+                        // Structured 式今日时间轴：起床/下班锚点 + 日程 + 定时待办 + 打卡，
+                        // 自动标出空闲时段，一眼判断"今天塞不塞得下一件新事"。
+                        DayTimelineView(items: activeTodos)
+                    }
+                    .textCase(nil)
                 }
-                .textCase(nil)
             }
 
             // 待确认事项（在全部和日常待办页面显示）
@@ -1903,26 +1807,22 @@ private struct TodoCategoryCustomizationView: View {
 struct TodoRow: View {
     @Environment(\.modelContext) private var context
     let item: TodoItem
+    var isHighlighted: Bool = false
     var onMoveToTop: (() -> Void)? = nil
     var onMoveUp: (() -> Void)? = nil
     var onMoveDown: (() -> Void)? = nil
     var onEnterReorder: (() -> Void)? = nil
+    var onEdit: (() -> Void)? = nil
+    var onShowQRCode: (() -> Void)? = nil
+    var onShare: (() -> Void)? = nil
     @ObservedObject private var seniorManager = SeniorModeManager.shared
-    @ObservedObject private var router = NavigationRouter.shared
     @State private var isCopied: Bool = false
     @State private var isAnimatingCompletion: Bool = false
     @State private var ringScale: CGFloat = 0.5
     @State private var ringOpacity: Double = 0.0
-    @State private var isShowingShareSheet: Bool = false
-    @State private var isShowingEditSheet: Bool = false
-    @State private var isShowingQRCodeSheet: Bool = false
 
     private var isEffectivelyDone: Bool {
         item.status == .done || isAnimatingCompletion
-    }
-
-    private var isNotificationFocused: Bool {
-        router.focusedTodoID == item.id
     }
 
     private var typeColor: Color {
@@ -2224,21 +2124,21 @@ struct TodoRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture {
-                isShowingEditSheet = true
+                onEdit?()
                 Haptic.light()
             }
         }
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isNotificationFocused ? Color.orange.opacity(0.20) : .clear)
+                .fill(isHighlighted ? Color.orange.opacity(0.20) : .clear)
                 .overlay {
-                    if isNotificationFocused {
+                    if isHighlighted {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .stroke(Color.orange.opacity(0.75), lineWidth: 2)
                     }
                 }
         )
-        .animation(.easeInOut(duration: 0.25), value: isNotificationFocused)
+        .animation(.easeInOut(duration: 0.25), value: isHighlighted)
         .id(item.id)
         .opacity(isEffectivelyDone ? 0.6 : 1.0)
         .animation(.easeInOut(duration: 0.25), value: isEffectivelyDone)
@@ -2247,7 +2147,7 @@ struct TodoRow: View {
         .contextMenu {
             if item.hasQRCodeOrTicket {
                 Button("出示预约二维码 / 凭证", systemImage: "qrcode.viewfinder") {
-                    isShowingQRCodeSheet = true
+                    onShowQRCode?()
                     Haptic.medium()
                 }
             }
@@ -2267,7 +2167,7 @@ struct TodoRow: View {
             }
 
             Button("编辑事项", systemImage: "pencil") {
-                isShowingEditSheet = true
+                onEdit?()
                 Haptic.light()
             }
 
@@ -2311,22 +2211,9 @@ struct TodoRow: View {
                 }
             }
             Button("分享此待办卡片", systemImage: "square.and.arrow.up") {
-                isShowingShareSheet = true
+                onShare?()
                 Haptic.light()
             }
-        }
-        .sheet(isPresented: $isShowingQRCodeSheet) {
-            TodoQRCodeQuickSheet(item: item)
-        }
-        .sheet(isPresented: $isShowingShareSheet) {
-            TodoShareSheet(
-                allTodos: [item],
-                initialCategory: (item.type == .parcel || item.type == .returnParcel) ? .parcel : .all,
-                initialSelectedIds: [item.id]
-            )
-        }
-        .sheet(isPresented: $isShowingEditSheet) {
-            EditTodoSheet(item: item)
         }
         .swipeActions(edge: .leading, allowsFullSwipe: false) {
             if let onMoveToTop {
@@ -2381,7 +2268,7 @@ struct TodoRow: View {
         HStack(spacing: 6) {
             if item.hasQRCodeOrTicket {
                 Button {
-                    isShowingQRCodeSheet = true
+                    onShowQRCode?()
                     Haptic.medium()
                 } label: {
                     Image(systemName: item.hasQRCode ? "qrcode" : "photo")
@@ -2508,6 +2395,12 @@ struct AddTodoSheet: View {
     @State private var recognizedTravelPickup: TravelPickupMetadata? = nil
     @State private var recognizedRawText: String? = nil
 
+    // 识别置信度与推荐候选类型
+    @State private var recognitionConfidence: Double? = nil
+    @State private var recognitionConfidenceReason: String? = nil
+    @State private var recognitionSuggestedTypes: [TodoType] = []
+    @State private var showConfidenceNotice: Bool = true
+
     // 出行前购票与文博景区预约确认项
     @State private var addCompanionTickets: Bool = false
     @State private var includeTrainReminder: Bool = true
@@ -2613,6 +2506,31 @@ struct AddTodoSheet: View {
                 recurrenceRule = .weekly
             }
         }
+        Haptic.selection()
+    }
+
+    /// 根据 TodoType 计算归属的大板块分类
+    private func categoryForType(_ t: TodoType) -> TodoFilterCategory {
+        switch t {
+        case .parcel, .returnParcel:
+            return .parcel
+        case .medication, .exercise, .charging, .hydration:
+            return .life
+        case .bill, .vehicleCare, .subscription, .itemExpiry, .anniversary, .passwordSecurity:
+            return .alert
+        case .childVaccine, .childGrowth, .childMilestone, .childHealth:
+            return .parenting
+        case .pet:
+            return .pet
+        default:
+            return .general
+        }
+    }
+
+    /// 点击低置信度候选分类一键切换
+    private func applySuggestedType(_ sugType: TodoType) {
+        type = sugType
+        selectedCategory = categoryForType(sugType)
         Haptic.selection()
     }
 
@@ -3109,6 +3027,66 @@ struct AddTodoSheet: View {
                         }
                     }
 
+                    // 识图置信度较低时的友好提示与候选分类一键切换
+                    if showConfidenceNotice, let conf = recognitionConfidence, conf < 0.70 {
+                        Section {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(.orange)
+                                    Text("智能识别置信度较低（\(Int(conf * 100))%）")
+                                        .font(.subheadline.bold())
+                                        .foregroundStyle(.orange)
+                                    Spacer()
+                                    Button {
+                                        withAnimation { showConfidenceNotice = false }
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                if let reason = recognitionConfidenceReason, !reason.isEmpty {
+                                    Text(reason)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                if !recognitionSuggestedTypes.isEmpty {
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text("推荐候选分类（点击一键修正）：")
+                                            .font(.caption2.bold())
+                                            .foregroundStyle(.secondary)
+
+                                        ScrollView(.horizontal, showsIndicators: false) {
+                                            HStack(spacing: 6) {
+                                                ForEach(recognitionSuggestedTypes, id: \.self) { sugType in
+                                                    Button {
+                                                        applySuggestedType(sugType)
+                                                    } label: {
+                                                        HStack(spacing: 4) {
+                                                            Image(systemName: sugType.icon)
+                                                            Text(sugType.displayName)
+                                                        }
+                                                        .font(.caption.bold())
+                                                        .padding(.horizontal, 10)
+                                                        .padding(.vertical, 5)
+                                                        .background(type == sugType ? Color.accentColor : Color.orange.opacity(0.14))
+                                                        .foregroundStyle(type == sugType ? Color.white : Color.primary)
+                                                        .clipShape(Capsule())
+                                                    }
+                                                    .buttonStyle(.plain)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+
                     // 2. 所属板块分段选择（自动对应首页当前分类）
                     Section("事项所属板块") {
                         Picker("所属板块", selection: Binding(
@@ -3431,11 +3409,11 @@ struct AddTodoSheet: View {
                 recognizedRawText = result.rawText.isEmpty ? nil : result.rawText
                 title = result.title
                 type = result.type
-                if result.type == .parcel || result.type == .returnParcel {
-                    selectedCategory = .parcel
-                } else {
-                    selectedCategory = .general
-                }
+                selectedCategory = categoryForType(result.type)
+                recognitionConfidence = result.confidence
+                recognitionConfidenceReason = result.confidenceReason
+                recognitionSuggestedTypes = result.suggestedTypes
+                showConfidenceNotice = true
                 if let code = result.pickupCode, !code.isEmpty {
                     pickupCode = code
                 }
@@ -3475,7 +3453,7 @@ struct AddTodoSheet: View {
         let trimmedCode = pickupCode.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedStation = station.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let minOrder = (try? context.fetch(FetchDescriptor<TodoItem>()))?.map(\.sortOrder).min() ?? 0
+        let minOrder = TodoItem.minimumSortOrder(in: context)
 
         let item = TodoItem(
             type: type,
