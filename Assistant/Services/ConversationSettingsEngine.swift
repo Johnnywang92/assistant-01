@@ -8,6 +8,7 @@ public enum OptionActionType: Hashable, Equatable, Sendable {
     case applySetting        // 选中并应用设置
     case openManualSettings  // 中断对话并进入手动设置页
     case cancelSettings      // 中断/退出设置向导
+    case planningAnswer      // 规划背景追问的芯片回答
 }
 
 /// 交互式气泡选项模型

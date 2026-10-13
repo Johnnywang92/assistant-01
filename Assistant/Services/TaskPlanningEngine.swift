@@ -2,12 +2,39 @@ import Foundation
 import SwiftData
 import SwiftUI
 
+/// 任务规划执行阶段枚举
+enum PlanningPhase: String, Codable, CaseIterable, Sendable {
+    case prepare = "前置筹备"    // 提前调研、办证、比价、规划
+    case execute = "物料执行"    // 采买物资、实地执行、预订
+    case sprint  = "行前冲刺"    // 打包清点、临门一脚、细节确认
+    case followup = "收尾复盘"   // 结算报销、整理归位、评价
+
+    var icon: String {
+        switch self {
+        case .prepare: return "list.bullet.clipboard"
+        case .execute: return "cart.fill"
+        case .sprint: return "figure.run"
+        case .followup: return "checkmark.seal.fill"
+        }
+    }
+
+    var badgeColorName: String {
+        switch self {
+        case .prepare: return "blue"
+        case .execute: return "orange"
+        case .sprint: return "purple"
+        case .followup: return "green"
+        }
+    }
+}
+
 /// 智能拆解出的单条待办子任务
 struct PlannedSubtask: Identifiable, Hashable, Equatable, Sendable {
     let id: UUID
     var title: String
     var detail: String?
     var type: TodoType
+    var phase: PlanningPhase
     var isSelected: Bool
 
     init(
@@ -15,12 +42,14 @@ struct PlannedSubtask: Identifiable, Hashable, Equatable, Sendable {
         title: String,
         detail: String? = nil,
         type: TodoType = .general,
+        phase: PlanningPhase = .execute,
         isSelected: Bool = true
     ) {
         self.id = id
         self.title = L10n.tr(title)
         self.detail = detail.map { L10n.tr($0) }
         self.type = type
+        self.phase = phase
         self.isSelected = isSelected
     }
 }
@@ -33,6 +62,8 @@ struct TaskPlanningPlan: Identifiable, Hashable, Equatable, Sendable {
     let summary: String
     var subtasks: [PlannedSubtask]
     var isSaved: Bool
+    /// 追问确认的背景信息，供后续「细化」子步骤时沿用，避免用户重复回答
+    var backgroundContext: String?
 
     init(
         id: UUID = UUID(),
@@ -40,7 +71,8 @@ struct TaskPlanningPlan: Identifiable, Hashable, Equatable, Sendable {
         icon: String = "checklist",
         summary: String,
         subtasks: [PlannedSubtask],
-        isSaved: Bool = false
+        isSaved: Bool = false,
+        backgroundContext: String? = nil
     ) {
         self.id = id
         self.topic = L10n.tr(topic)
@@ -48,6 +80,7 @@ struct TaskPlanningPlan: Identifiable, Hashable, Equatable, Sendable {
         self.summary = L10n.tr(summary)
         self.subtasks = subtasks
         self.isSaved = isSaved
+        self.backgroundContext = backgroundContext
     }
 }
 
@@ -95,11 +128,11 @@ final class TaskPlanningEngine {
                 icon: "tent.fill",
                 summary: "为你整理了露营四大核心维度的准备步骤，涵盖装备、餐食、营地及安全防护：",
                 subtasks: [
-                    PlannedSubtask(title: "清点露营装备：帐篷、防潮垫、睡袋与折叠桌椅", detail: "提前检查帐篷地钉与防风绳是否齐全", type: .general),
-                    PlannedSubtask(title: "采购露营餐饮：卡式炉、气罐、烧烤食材与饮用水", detail: "备齐保冷箱与大桶纯净水", type: .general),
-                    PlannedSubtask(title: "准备照明与应急电源：露营灯、大容量充电宝", detail: "确保护眼营地灯电量充满", type: .charging),
-                    PlannedSubtask(title: "准备安全防护包：户外驱蚊液、防晒霜与急救创可贴", detail: "携带必备肠胃药及常用药品", type: .general),
-                    PlannedSubtask(title: "核对营地信息：确认是否需用火报备及天气预报", detail: "下雨天提前准备防雨天幕", type: .event)
+                    PlannedSubtask(title: "清点露营装备：帐篷、防潮垫、睡袋与折叠桌椅", detail: "提前检查帐篷地钉与防风绳是否齐全", type: .general, phase: .prepare),
+                    PlannedSubtask(title: "采购露营餐饮：卡式炉、气罐、烧烤食材与饮用水", detail: "备齐保冷箱与大桶纯净水", type: .general, phase: .execute),
+                    PlannedSubtask(title: "准备照明与应急电源：露营灯、大容量充电宝", detail: "确保护眼营地灯电量充满", type: .charging, phase: .execute),
+                    PlannedSubtask(title: "准备安全防护包：户外驱蚊液、防晒霜与急救创可贴", detail: "携带必备肠胃药及常用药品", type: .medication, phase: .execute),
+                    PlannedSubtask(title: "核对营地信息：确认是否需用火报备及天气预报", detail: "下雨天提前准备防雨天幕", type: .event, phase: .sprint)
                 ]
             )
         }
@@ -111,11 +144,11 @@ final class TaskPlanningEngine {
                 icon: "truck.box.fill",
                 summary: "搬家琐事较多，按搬前断舍离、打包清点到入住前置步骤为你做了条理拆分：",
                 subtasks: [
-                    PlannedSubtask(title: "杂物断舍离：清理闲置旧物与非当季衣物", detail: "轻装上阵，减少无效搬运体积", type: .housework),
-                    PlannedSubtask(title: "采购打包物资：准备纸箱、气泡膜、封箱胶带与记号笔", detail: "在箱体四周标注房间名与易碎标志", type: .general),
-                    PlannedSubtask(title: "预约搬家货车及师傅，确认出入小区放行条", detail: "提前与物业沟通电梯使用与车辆停靠", type: .event),
-                    PlannedSubtask(title: "整理随身百宝箱：身份证件、贵重财物与首晚洗漱包", detail: "随身随车携带，严禁混入货车纸箱", type: .general),
-                    PlannedSubtask(title: "办理生活缴费结算与宽带移机", detail: "结清旧址水电燃气，提前预约新家宽带上门安装", type: .bill)
+                    PlannedSubtask(title: "杂物断舍离：清理闲置旧物与非当季衣物", detail: "轻装上阵，减少无效搬运体积", type: .housework, phase: .prepare),
+                    PlannedSubtask(title: "采购打包物资：准备纸箱、气泡膜、封箱胶带与记号笔", detail: "在箱体四周标注房间名与易碎标志", type: .general, phase: .prepare),
+                    PlannedSubtask(title: "预约搬家货车及师傅，确认出入小区放行条", detail: "提前与物业沟通电梯使用与车辆停靠", type: .event, phase: .execute),
+                    PlannedSubtask(title: "整理随身百宝箱：身份证件、贵重财物与首晚洗漱包", detail: "随身随车携带，严禁混入货车纸箱", type: .general, phase: .sprint),
+                    PlannedSubtask(title: "办理生活缴费结算与宽带移机", detail: "结清旧址水电燃气，提前预约新家宽带上门安装", type: .bill, phase: .followup)
                 ]
             )
         }
@@ -127,12 +160,12 @@ final class TaskPlanningEngine {
                 icon: "airplane.departure",
                 summary: "为你梳理了远行前火车票/机票开售窗口期、热门文博景区预约、随身行李及安全确认步骤：",
                 subtasks: [
-                    PlannedSubtask(title: "提前 15~30 天：比对预订往返机票与特惠酒店", detail: "机票黄金预订期特惠多，尽早锁定紧俏房源与折扣航班", type: .travelBooking),
-                    PlannedSubtask(title: "提前 15 天：12306 抢购/候补往返火车票", detail: "火车票开售首日定好闹钟准时抢票，未出票及时提交候补", type: .travelBooking),
-                    PlannedSubtask(title: "提前 7 天：抢约热门博物馆、特展与 5A 景区门票", detail: "故宫/国博/陕历博等通常提前7天放票（留意整点放票抢约），提前分时段实名锁定入场名额", type: .travelBooking),
-                    PlannedSubtask(title: "整理洗漱衣物、充电器、随身充电宝及备用数据线", detail: "充电宝额定能量不超过 100Wh 便于登机与安检", type: .charging),
-                    PlannedSubtask(title: "备齐出行便携药盒（肠胃药、晕车药、创可贴）", detail: "随身小包携带，以备不时之需", type: .medication),
-                    PlannedSubtask(title: "出门前全屋安全确认：关窗、关燃气总阀、拔下闲置插头", detail: "检查门锁与冰箱门是否密闭", type: .housework)
+                    PlannedSubtask(title: "提前 15~30 天：比对预订往返机票与特惠酒店", detail: "机票黄金预订期特惠多，尽早锁定紧俏房源与折扣航班", type: .travelBooking, phase: .prepare),
+                    PlannedSubtask(title: "提前 15 天：12306 抢购/候补往返火车票", detail: "火车票开售首日定好闹钟准时抢票，未出票及时提交候补", type: .travelBooking, phase: .prepare),
+                    PlannedSubtask(title: "提前 7 天：抢约热门博物馆、特展与 5A 景区门票", detail: "故宫/国博/陕历博等通常提前7天放票（留意整点放票抢约），提前分时段实名锁定入场名额", type: .travelBooking, phase: .prepare),
+                    PlannedSubtask(title: "整理洗漱衣物、充电器、随身充电宝及备用数据线", detail: "充电宝额定能量不超过 100Wh 便于登机与安检", type: .charging, phase: .sprint),
+                    PlannedSubtask(title: "备齐出行便携药盒（肠胃药、晕车药、创可贴）", detail: "随身小包携带，以备不时之需", type: .medication, phase: .sprint),
+                    PlannedSubtask(title: "出门前全屋安全确认：关窗、关燃气总阀、拔下闲置插头", detail: "检查门锁与冰箱门是否密闭", type: .housework, phase: .sprint)
                 ]
             )
         }
@@ -144,10 +177,10 @@ final class TaskPlanningEngine {
                 icon: "sparkles",
                 summary: "遵循“由上至下、由内而外”的高效清洁动线，帮你拆分为以下清单：",
                 subtasks: [
-                    PlannedSubtask(title: "玄关与客厅杂物归位，开展初步断舍离清空台面", detail: "先收纳归位，再进行擦拭拖地", type: .housework),
-                    PlannedSubtask(title: "厨房重油污攻坚：清洁抽油烟机滤网与灶台油渍", detail: "清理冰箱冷藏过期食材与调味品", type: .housework),
-                    PlannedSubtask(title: "卫浴除垢消毒：清洗浴室玻璃水垢、马桶与地漏毛发", detail: "保持开窗通风，晾晒替换地垫", type: .housework),
-                    PlannedSubtask(title: "布艺除螨洗晒：清洗更换床单被套与枕套", detail: "选晴好天气晾晒，空调滤网顺带拆洗", type: .housework)
+                    PlannedSubtask(title: "玄关与客厅杂物归位，开展初步断舍离清空台面", detail: "先收纳归位，再进行擦拭拖地", type: .housework, phase: .prepare),
+                    PlannedSubtask(title: "厨房重油污攻坚：清洁抽油烟机滤网与灶台油渍", detail: "清理冰箱冷藏过期食材与调味品", type: .housework, phase: .execute),
+                    PlannedSubtask(title: "卫浴除垢消毒：清洗浴室玻璃水垢、马桶与地漏毛发", detail: "保持开窗通风，晾晒替换地垫", type: .housework, phase: .execute),
+                    PlannedSubtask(title: "布艺除螨洗晒：清洗更换床单被套与枕套", detail: "选晴好天气晾晒，空调滤网顺带拆洗", type: .housework, phase: .followup)
                 ]
             )
         }
@@ -159,10 +192,10 @@ final class TaskPlanningEngine {
                 icon: "person.wave.2.fill",
                 summary: "为你制定了从立项、结构梳理到现场演练的专业步骤：",
                 subtasks: [
-                    PlannedSubtask(title: "梳理演讲核心主旨与受众痛点，搭建框架大纲", detail: "明确 3 个核心论点与预期交付价值", type: .general),
-                    PlannedSubtask(title: "制作演讲 PPT 幻灯片，精简文字并增加案例图表", detail: "每页幻灯片传达一个清晰信息", type: .general),
-                    PlannedSubtask(title: "进行至少 2 次掐表全真模拟试讲，调整语速节奏", detail: "严格控制在规定时长内，预留 Q&A 互动时间", type: .event),
-                    PlannedSubtask(title: "演练现场设备联调：测试投屏转接头、翻页笔与演示环境", detail: "将演讲文稿与演示 Demo 备份一份至手机/U盘", type: .charging)
+                    PlannedSubtask(title: "梳理演讲核心主旨与受众痛点，搭建框架大纲", detail: "明确 3 个核心论点与预期交付价值", type: .general, phase: .prepare),
+                    PlannedSubtask(title: "制作演讲 PPT 幻灯片，精简文字并增加案例图表", detail: "每页幻灯片传达一个清晰信息", type: .general, phase: .execute),
+                    PlannedSubtask(title: "进行至少 2 次掐表全真模拟试讲，调整语速节奏", detail: "严格控制在规定时长内，预留 Q&A 互动时间", type: .event, phase: .sprint),
+                    PlannedSubtask(title: "演练现场设备联调：测试投屏转接头、翻页笔与演示环境", detail: "将演讲文稿与演示 Demo 备份一份至手机/U盘", type: .charging, phase: .sprint)
                 ]
             )
         }
@@ -174,10 +207,10 @@ final class TaskPlanningEngine {
                 icon: "gift.fill",
                 summary: "为你梳理了从人员邀约、场地餐饮到派对高潮环节的跟进步骤：",
                 subtasks: [
-                    PlannedSubtask(title: "敲定聚会人数与时间，预订餐厅包厢或活动场地", detail: "提前发消息告知受邀朋友集合时段", type: .event),
-                    PlannedSubtask(title: "提前预订生日蛋糕、定制鲜花与装饰道具", detail: "约定当天准时配送至聚会现场", type: .anniversary),
-                    PlannedSubtask(title: "采购聚会零食、饮料、水果与桌游互动玩具", detail: "照顾不同朋友的饮食偏好与忌口", type: .general),
-                    PlannedSubtask(title: "活动前一天发送集合时间、交通停车与定位提醒", detail: "温馨提醒大家轻装出行或聚餐守时", type: .general)
+                    PlannedSubtask(title: "敲定聚会人数与时间，预订餐厅包厢或活动场地", detail: "提前发消息告知受邀朋友集合时段", type: .event, phase: .prepare),
+                    PlannedSubtask(title: "提前预订生日蛋糕、定制鲜花与装饰道具", detail: "约定当天准时配送至聚会现场", type: .anniversary, phase: .prepare),
+                    PlannedSubtask(title: "采购聚会零食、饮料、水果与桌游互动玩具", detail: "照顾不同朋友的饮食偏好与忌口", type: .general, phase: .execute),
+                    PlannedSubtask(title: "活动前一天发送集合时间、交通停车与定位提醒", detail: "温馨提醒大家轻装出行或聚餐守时", type: .general, phase: .sprint)
                 ]
             )
         }
@@ -189,10 +222,10 @@ final class TaskPlanningEngine {
                 icon: "car.fill",
                 summary: "自驾安全第一，为你梳理了爱车保养核对与行车随车必备清单：",
                 subtasks: [
-                    PlannedSubtask(title: "全车安全检查：测胎压、检查机油、刹车与加满玻璃水", detail: "长途高速前重点检查轮胎磨损有无裂痕", type: .vehicleCare),
-                    PlannedSubtask(title: "下载高德/腾讯离线地图包，规划沿途补能服务区", detail: "避开高峰堵车路段，预估每 3 小时休息一次", type: .general),
-                    PlannedSubtask(title: "准备车内必备物资：车载快充线、湿纸巾与垃圾袋", detail: "备齐薄荷糖、无糖茶与足量矿泉水", type: .charging),
-                    PlannedSubtask(title: "检查应急随车工具：反光背心、三角警示牌与随车充", detail: "确认车险电子保单在有效期内", type: .vehicleCare)
+                    PlannedSubtask(title: "全车安全检查：测胎压、检查机油、刹车与加满玻璃水", detail: "长途高速前重点检查轮胎磨损有无裂痕", type: .vehicleCare, phase: .prepare),
+                    PlannedSubtask(title: "下载高德/腾讯离线地图包，规划沿途补能服务区", detail: "避开高峰堵车路段，预估每 3 小时休息一次", type: .general, phase: .prepare),
+                    PlannedSubtask(title: "准备车内必备物资：车载快充线、湿纸巾与垃圾袋", detail: "备齐薄荷糖、无糖茶与足量矿泉水", type: .charging, phase: .execute),
+                    PlannedSubtask(title: "检查应急随车工具：反光背心、三角警示牌与随车充", detail: "确认车险电子保单在有效期内", type: .vehicleCare, phase: .sprint)
                 ]
             )
         }
@@ -204,10 +237,10 @@ final class TaskPlanningEngine {
                 icon: "cross.case.fill",
                 summary: "避免就医跑冤枉路，为你整理了关键的前置准备与空腹注意事项：",
                 subtasks: [
-                    PlannedSubtask(title: "确认医院预约挂号短信与就诊科室时段", detail: "提前 20 分钟到达候诊区签到取号", type: .event),
-                    PlannedSubtask(title: "准备医保卡、实体身份证及既往病历化验单据", detail: "把既往用药盒拍好照存在手机相册", type: .general),
-                    PlannedSubtask(title: "体检/抽血前一晚 22:00 起保持空腹，严禁进食与剧烈运动", detail: "次日早晨晨尿样本采集中段尿", type: .medication),
-                    PlannedSubtask(title: "列出准备咨询医生的不适症状清单与发作诱因", detail: "用简洁要点与医生高效沟通", type: .general)
+                    PlannedSubtask(title: "确认医院预约挂号短信与就诊科室时段", detail: "提前 20 分钟到达候诊区签到取号", type: .event, phase: .prepare),
+                    PlannedSubtask(title: "准备医保卡、实体身份证及既往病历化验单据", detail: "把既往用药盒拍好照存在手机相册", type: .general, phase: .prepare),
+                    PlannedSubtask(title: "体检/抽血前一晚 22:00 起保持空腹，严禁进食与剧烈运动", detail: "次日早晨晨尿样本采集中段尿", type: .medication, phase: .sprint),
+                    PlannedSubtask(title: "列出准备咨询医生的不适症状清单与发作诱因", detail: "用简洁要点与医生高效沟通", type: .general, phase: .sprint)
                 ]
             )
         }
@@ -219,10 +252,10 @@ final class TaskPlanningEngine {
                 icon: "graduationcap.fill",
                 summary: "将备考拆解为明确的高频动作，助你稳扎稳打提升复习效能：",
                 subtasks: [
-                    PlannedSubtask(title: "梳理科目核心考点清单，标记薄弱章节知识盲区", detail: "优先主攻高分值且提分空间大的核心章节", type: .general),
-                    PlannedSubtask(title: "制定每日真题演练计划，定量掐表完成一套试卷", detail: "重在分析错题原因并归纳解题套路", type: .event),
-                    PlannedSubtask(title: "整理高频背诵笔记与速记手册，利用碎片时间默背", detail: "早起或睡前 20 分钟巩固记忆效果最佳", type: .general),
-                    PlannedSubtask(title: "提前打印准考证并核对考场路线、文具与身份证件", detail: "备齐 2B 铅笔、黑色签字笔与橡皮", type: .general)
+                    PlannedSubtask(title: "梳理科目核心考点清单，标记薄弱章节知识盲区", detail: "优先主攻高分值且提分空间大的核心章节", type: .skillLearning, phase: .prepare),
+                    PlannedSubtask(title: "制定每日真题演练计划，定量掐表完成一套试卷", detail: "重在分析错题原因并归纳解题套路", type: .skillLearning, phase: .execute),
+                    PlannedSubtask(title: "整理高频背诵笔记与速记手册，利用碎片时间默背", detail: "早起或睡前 20 分钟巩固记忆效果最佳", type: .skillLearning, phase: .execute),
+                    PlannedSubtask(title: "提前打印准考证并核对考场路线、文具与身份证件", detail: "备齐 2B 铅笔、黑色签字笔与橡皮", type: .general, phase: .sprint)
                 ]
             )
         }
@@ -234,16 +267,17 @@ final class TaskPlanningEngine {
             icon: "list.bullet.clipboard.fill",
             summary: "针对「\(cleanTopic)」，已为你结构化拆解出以下清晰落地步骤：",
             subtasks: [
-                PlannedSubtask(title: "明确核心目标与验收标准：理清「\(cleanTopic)」的关键指标", detail: "确立清晰的完成界限与时间节点", type: .general),
-                PlannedSubtask(title: "准备前期所需物资、工具与必要协作人员", detail: "前置排查潜在卡点，备齐关键物料", type: .general),
-                PlannedSubtask(title: "分段执行核心主体工作，推进阶段性产出落地", detail: "直奔核心重点，先完成再完美", type: .general),
-                PlannedSubtask(title: "收尾检查、查漏补缺与成果复盘", detail: "逐项对照要求验收，确保平稳交付", type: .general)
+                PlannedSubtask(title: "明确核心目标与验收标准：理清「\(cleanTopic)」的关键指标", detail: "确立清晰的完成界限与时间节点", type: .general, phase: .prepare),
+                PlannedSubtask(title: "准备前期所需物资、工具与必要协作人员", detail: "前置排查潜在卡点，备齐关键物料", type: .general, phase: .prepare),
+                PlannedSubtask(title: "分段执行核心主体工作，推进阶段性产出落地", detail: "直奔核心重点，先完成再完美", type: .general, phase: .execute),
+                PlannedSubtask(title: "收尾检查、查漏补缺与成果复盘", detail: "逐项对照要求验收，确保平稳交付", type: .general, phase: .followup)
             ]
         )
     }
 
     /// 结合端侧大模型动态拆解任务与子待办清单（若端侧模型可用则优先生成针对性步骤，否则回退模板）
-    func decomposeTaskWithAI(query: String) async -> TaskPlanningPlan? {
+    /// - Parameter backgroundContext: 追问确认的背景信息（同行人/时间/预算等），非空时注入提示词使步骤贴合用户处境
+    func decomposeTaskWithAI(query: String, backgroundContext: String? = nil) async -> TaskPlanningPlan? {
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
 
@@ -255,56 +289,180 @@ final class TaskPlanningEngine {
         【拆解要求】
         1. 先抓住目标中的关键信息（地点、事项、时间、目的），所有步骤必须围绕这些具体信息展开，禁止写成放之四海而皆准的通用套话；
         2. 每条步骤 = 具体动作 + 具体对象，尽量包含数字、时间窗口或专有名词（如「提前 30 天递交新西兰签证」「按 2 人 10 天备蜜月衣物」）；
-        3. 严禁输出「确定预算」「选择目的地」「做好准备」「第一步」这类无信息量的标题，标题必须让人一眼知道要做什么；
-        4. 步骤按时间先后排列，覆盖「提前办理 → 预订采购 → 行前准备 → 临行确认」完整周期；
-        5. 输出 5 条，每条占一行，格式固定为：标题｜要点（标题不超过 15 字，要点不超过 25 字）；
-        6. 只输出清单本身：不要编号、不要解释、不要输出任何格式说明或示例内容。
+        3. 粒度要小：每一步必须是「一次就能做完」的单一动作，有明确完成信号；若一步仍含多个动作（如「预订机票和酒店」），必须拆成多条，禁止把多个环节打包成一个大步骤；
+        4. 严禁输出「确定预算」「选择目的地」「做好准备」「第一步」这类无信息量的标题，标题必须让人一眼知道要做什么；
+        5. 步骤按时间先后排列，覆盖「提前办理 → 预订采购 → 行前准备 → 临行确认」完整周期；
+        6. 输出 5 到 6 条，每条占一行，格式固定为：标题｜要点（标题不超过 15 字，要点不超过 25 字）；
+        7. 只输出清单本身：不要编号、不要解释、不要输出任何格式说明或示例内容；
+        8. 若给出「已确认背景」（同行人、时间、预算、方式、证件、语言等），所有步骤必须严格贴合该背景：如无护照则把「办理护照」列为最早一步；预算有限则优先性价比方案；有老人小孩同行则节奏放缓、避免暴走；严禁给出与背景矛盾的建议。
         【输出格式演示，仅示意写法，严禁照抄其中文字】
         例：提前 30 天办理签证｜备齐材料递交并预留体检时间
         """
-        let userContent = "用户目标：\(text)\n请按格式输出拆解清单："
+        var userContent = "用户目标：\(text)"
+        if let background = backgroundContext, !background.isEmpty {
+            userContent += "\n已确认背景：\(background)"
+        }
+        userContent += "\n请按格式输出拆解清单："
 
         if let aiOutput = await LLMInferenceService.shared.generateCustomTask(
             systemInstruction: systemInstruction,
             userContent: userContent,
-            maxNewTokens: 320
+            maxNewTokens: 380
         ) {
-            let lines = aiOutput
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-
-            var parsedSubtasks: [PlannedSubtask] = []
-            for rawLine in lines {
-                // 过滤小模型回显的格式说明行（如「步骤标题｜一句话执行要点」「例：…」）
-                if rawLine.contains("一句话执行要点") || rawLine.contains("格式") || rawLine.hasPrefix("例：") || rawLine.hasPrefix("例:") {
-                    continue
-                }
-                let cleanedLine = rawLine.replacingOccurrences(
-                    of: #"^(?:[\d一二三四五六七八九十]+[\.、\s\)\）\-•]+|第[\d一二三四五六七八九十]+步[：:、\.\s\)\）\-•]*)"#,
-                    with: "",
-                    options: .regularExpression
-                ).trimmingCharacters(in: .whitespacesAndNewlines)
-                guard cleanedLine.count >= 4 else { continue }
-
-                let parts = cleanedLine.components(separatedBy: CharacterSet(charactersIn: "｜|:："))
-                let title = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? cleanedLine
-                let detail = parts.count > 1 ? parts.dropFirst().joined(separator: "：").trimmingCharacters(in: .whitespacesAndNewlines) : nil
-                guard !title.isEmpty else { continue }
-                parsedSubtasks.append(PlannedSubtask(title: title, detail: detail, type: .general))
-            }
+            let parsedSubtasks = parseDecompositionOutput(aiOutput)
 
             if parsedSubtasks.count >= 2 {
                 return TaskPlanningPlan(
                     topic: basePlan?.icon == "list.bullet.clipboard.fill" ? "\(cleanTopic) AI 规划方案" : (basePlan?.topic ?? "\(cleanTopic) AI 规划方案"),
                     icon: basePlan?.icon ?? "sparkles",
                     summary: "✨ 已通过端侧 AI 模型为你定制「\(cleanTopic)」的 \(parsedSubtasks.count) 步执行清单：",
-                    subtasks: Array(parsedSubtasks.prefix(6))
+                    subtasks: Array(parsedSubtasks.prefix(6)),
+                    backgroundContext: backgroundContext
                 )
             }
         }
 
-        return basePlan
+        var fallback = basePlan
+        fallback?.backgroundContext = backgroundContext
+        return fallback
+    }
+
+    /// 把规划卡片中某个仍太笼统的步骤，结合父目标与已确认背景细化为微步骤清单；模型不可用时返回 nil
+    func refineSubtaskWithAI(parentPlan: TaskPlanningPlan, subtask: PlannedSubtask) async -> TaskPlanningPlan? {
+        let systemInstruction = """
+        你是执行清单细化助手。用户有一个仍太笼统的步骤，需要你把它拆成照着就能做的微步骤。
+        【细化要求】
+        1. 微步骤必须严格限定在该步骤范围内，不得扩散到其他环节，不得重复父目标里其他步骤的内容；
+        2. 每个微步骤 = 单一动作 + 具体对象，含明确完成信号，尽量带数字、渠道或专有名词；
+        3. 输出 3 到 4 条，每条占一行，格式固定为：标题｜要点（标题不超过 15 字，要点不超过 25 字）；
+        4. 只输出清单本身：不要编号、不要解释、不要输出任何格式说明或示例内容；
+        5. 若给出「背景信息」，微步骤必须与之吻合（如预算有限推荐性价比渠道、外语一般则给出中文服务渠道）。
+        【输出格式演示，仅示意写法，严禁照抄其中文字】
+        例：对比三家租车平台｜优先选含中文服务的车行
+        """
+        var userContent = """
+        总目标：\(parentPlan.topic)
+        待细化步骤：\(subtask.title)（\(subtask.detail ?? "无补充说明")）
+        """
+        if let background = parentPlan.backgroundContext, !background.isEmpty {
+            userContent += "\n背景信息：\(background)"
+        }
+        userContent += "\n请按格式输出微步骤清单："
+
+        guard let aiOutput = await LLMInferenceService.shared.generateCustomTask(
+            systemInstruction: systemInstruction,
+            userContent: userContent,
+            maxNewTokens: 240
+        ) else { return nil }
+
+        let parsedSubtasks = parseDecompositionOutput(aiOutput)
+        guard parsedSubtasks.count >= 2 else { return nil }
+
+        let shortTitle = subtask.title.count > 12 ? String(subtask.title.prefix(12)) + "…" : subtask.title
+        return TaskPlanningPlan(
+            topic: "「\(shortTitle)」细化清单",
+            icon: "list.bullet.indent",
+            summary: "🔍 已把「\(subtask.title)」细化为 \(parsedSubtasks.count) 个照着就能做的微步骤：",
+            subtasks: Array(parsedSubtasks.prefix(4)),
+            backgroundContext: parentPlan.backgroundContext
+        )
+    }
+
+    /// 根据任务标题和描述推导高精度的 TodoType，避免所有 AI 生成的待办全部退化为 .general
+    static func inferTodoType(title: String, detail: String?) -> TodoType {
+        let text = (title + " " + (detail ?? "")).lowercased()
+        if text.contains("车票") || text.contains("机票") || text.contains("门票") || text.contains("12306") || text.contains("抢票") || text.contains("放票") || text.contains("景区") || text.contains("特展") || text.contains("博物馆") || text.contains("订房") || text.contains("预订酒店") || text.contains("航班") || text.contains("航司") || text.contains("买票") || text.contains("订票") {
+            return .travelBooking
+        }
+        if text.contains("药") || text.contains("空腹") || text.contains("抽血") || text.contains("体检") || text.contains("就诊") || text.contains("挂号") || text.contains("病历") || text.contains("医生") || text.contains("创可贴") {
+            return .medication
+        }
+        if text.contains("充电") || text.contains("电池") || text.contains("充电宝") || text.contains("快充") || text.contains("电量") || text.contains("转接头") || text.contains("数据线") {
+            return .charging
+        }
+        if text.contains("扫") || text.contains("清洁") || text.contains("擦拭") || text.contains("断舍离") || text.contains("关窗") || text.contains("燃气") || text.contains("拔下") || text.contains("插头") || text.contains("油烟机") || text.contains("除螨") || text.contains("洗晒") {
+            return .housework
+        }
+        if text.contains("车") || text.contains("胎压") || text.contains("机油") || text.contains("刹车") || text.contains("玻璃水") || text.contains("自驾") || text.contains("高速") || text.contains("补能") || text.contains("保养") {
+            return .vehicleCare
+        }
+        if text.contains("生日") || text.contains("蛋糕") || text.contains("鲜花") || text.contains("纪念日") || text.contains("庆祝") || text.contains("礼物") {
+            return .anniversary
+        }
+        if text.contains("缴费") || text.contains("结清") || text.contains("账单") || text.contains("宽带") || text.contains("押金") || text.contains("退押") {
+            return .bill
+        }
+        if text.contains("会议") || text.contains("模拟") || text.contains("演练") || text.contains("演讲") || text.contains("试讲") || text.contains("约好") || text.contains("通知") || text.contains("答辩") || text.contains("聚会") {
+            return .event
+        }
+        if text.contains("复习") || text.contains("真题") || text.contains("背诵") || text.contains("模拟题") || text.contains("考点") || text.contains("学习") || text.contains("练习") || text.contains("冲刺") {
+            return .skillLearning
+        }
+        return .general
+    }
+
+    /// 根据任务标题和描述，推导其执行阶段 Phase
+    static func inferPhase(title: String, detail: String?, index: Int, total: Int) -> PlanningPhase {
+        let text = (title + " " + (detail ?? "")).lowercased()
+        if text.contains("提前") || text.contains("前期") || text.contains("调研") || text.contains("预约") || text.contains("挂号") || text.contains("办证") || text.contains("护照") || text.contains("签证") || text.contains("框架") || text.contains("大纲") || text.contains("断舍离") {
+            return .prepare
+        }
+        if text.contains("出门前") || text.contains("前一晚") || text.contains("临行") || text.contains("前一天") || text.contains("打包") || text.contains("随身") || text.contains("核对") || text.contains("清点") || text.contains("检查") || text.contains("准考证") {
+            return .sprint
+        }
+        if text.contains("复盘") || text.contains("收尾") || text.contains("结算") || text.contains("移机") || text.contains("验收") || text.contains("归位") || text.contains("报销") {
+            return .followup
+        }
+        if text.contains("采购") || text.contains("购买") || text.contains("准备") || text.contains("制作") || text.contains("演练") || text.contains("订餐") || text.contains("执行") {
+            return .execute
+        }
+        if total <= 1 { return .execute }
+        let progress = Double(index) / Double(max(1, total - 1))
+        if progress < 0.25 { return .prepare }
+        if progress < 0.70 { return .execute }
+        if progress < 0.88 { return .sprint }
+        return .followup
+    }
+
+    /// 解析端侧模型输出的「标题｜要点」逐行清单，过滤回显行与编号前缀，推导对应 TodoType 与执行阶段
+    private func parseDecompositionOutput(_ aiOutput: String) -> [PlannedSubtask] {
+        let lines = aiOutput
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        var rawPairs: [(title: String, detail: String?)] = []
+        for rawLine in lines {
+            // 过滤小模型回显的格式说明行（如「步骤标题｜一句话执行要点」「例：…」）
+            if rawLine.contains("一句话执行要点") || rawLine.contains("格式") || rawLine.hasPrefix("例：") || rawLine.hasPrefix("例:") {
+                continue
+            }
+            let cleanedLine = rawLine.replacingOccurrences(
+                of: #"^(?:[\d一二三四五六七八九十]+[\.、\s\)\）\-•]+|第[\d一二三四五六七八九十]+步[：:、\.\s\)\）\-•]*)"#,
+                with: "",
+                options: .regularExpression
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard cleanedLine.count >= 4 else { continue }
+
+            let parts = cleanedLine.components(separatedBy: CharacterSet(charactersIn: "｜|:："))
+            let title = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? cleanedLine
+            let detail = parts.count > 1 ? parts.dropFirst().joined(separator: "：").trimmingCharacters(in: .whitespacesAndNewlines) : nil
+            guard !title.isEmpty else { continue }
+            rawPairs.append((title: title, detail: detail))
+        }
+
+        var parsedSubtasks: [PlannedSubtask] = []
+        for (idx, pair) in rawPairs.enumerated() {
+            let inferredType = Self.inferTodoType(title: pair.title, detail: pair.detail)
+            let inferredPhase = Self.inferPhase(title: pair.title, detail: pair.detail, index: idx, total: rawPairs.count)
+            parsedSubtasks.append(PlannedSubtask(
+                title: pair.title,
+                detail: pair.detail,
+                type: inferredType,
+                phase: inferredPhase
+            ))
+        }
+        return parsedSubtasks
     }
 
     /// 批量保存勾选的子任务至 SwiftData 模型
@@ -318,7 +476,7 @@ final class TaskPlanningEngine {
                 status: .active,
                 title: subtask.title,
                 detail: subtask.detail,
-                sourceText: "来自任务规划：\(plan.topic)",
+                sourceText: "来自任务规划：\(plan.topic)（\(subtask.phase.rawValue)）",
                 sortOrder: idx
             )
             context.insert(item)
@@ -329,7 +487,7 @@ final class TaskPlanningEngine {
         return selected.count
     }
 
-    private func extractCustomTopic(from text: String) -> String {
+    func extractCustomTopic(from text: String) -> String {
         var clean = text
         // 1. 剥离尾部请求语（如「，帮我做一个规划」「帮我拆解一下」），保留真正的目标主体
         clean = clean.replacingOccurrences(

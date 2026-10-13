@@ -146,6 +146,9 @@ struct VoiceDialogueView: View {
                                     },
                                     onSaveSkillPlan: { draft in
                                         handleSaveSkillPlan(messageId: msg.id, draft: draft)
+                                    },
+                                    onRefineSubtask: { subtask in
+                                        handleRefineSubtask(messageId: msg.id, subtask: subtask)
                                     }
                                 )
                             }
@@ -515,6 +518,17 @@ struct VoiceDialogueView: View {
         Haptic.light()
 
         Task {
+            // 规划背景追问进行中：本条输入优先作为追问回答，不再走常规意图路由
+            if PlanningClarificationEngine.shared.isActive {
+                if trimmed.contains("算了") || trimmed.contains("不规划") || trimmed.contains("取消规划") {
+                    PlanningClarificationEngine.shared.cancelSession()
+                    appendAssistantMessage("好的，已退出背景追问。需要重新规划时随时叫我。")
+                    return
+                }
+                await respondPlanningClarification(answer: trimmed)
+                return
+            }
+
             let reply: String
             var options: [DialogueActionOption]? = nil
             var shouldOpenManualSettings: Bool = false
@@ -532,10 +546,22 @@ struct VoiceDialogueView: View {
                           let draft = SkillPathPlanner.build(query: trimmed) {
                     reply = draft.summaryText
                     skillPlan = draft
-                } else if TaskPlanningEngine.shared.isPlanningQuery(trimmed),
-                          let plan = await TaskPlanningEngine.shared.decomposeTaskWithAI(query: trimmed) {
-                    reply = "\(plan.summary)\n我已将分解好的具体待办整理在下方清单卡片中，你可以预览勾选，确认后点击「一键加入待办」即可保存至 App 中。"
-                    planningPlan = plan
+                } else if TaskPlanningEngine.shared.isPlanningQuery(trimmed) {
+                    // 先追问确认背景信息（同行人/时间/预算等），已说明过的维度不重复问；陌生领域由端侧模型就地出题
+                    switch await PlanningClarificationEngine.shared.begin(query: trimmed) {
+                    case .question(let prompt, let askOptions):
+                        reply = prompt
+                        options = askOptions
+                    case .ready(let background):
+                        if let plan = await TaskPlanningEngine.shared.decomposeTaskWithAI(query: trimmed, backgroundContext: background.isEmpty ? nil : background) {
+                            reply = planningCardReply(plan: plan, usedBackground: !background.isEmpty)
+                            planningPlan = plan
+                        } else {
+                            reply = await LLMInferenceService.shared.generate(query: trimmed, context: context)
+                        }
+                    case .cancelled:
+                        reply = "好的，需要规划时随时叫我。"
+                    }
                 } else {
                     reply = await LLMInferenceService.shared.generate(query: trimmed, context: context)
                 }
@@ -569,6 +595,12 @@ struct VoiceDialogueView: View {
 
     private func handleOptionSelected(_ option: DialogueActionOption) {
         switch option.actionType {
+        case .planningAnswer:
+            dialogueHistory.append(DialogueMessage(role: .user, text: option.label))
+            DialogueHistoryManager.shared.saveMessage(role: "user", text: option.label, sessionID: currentSessionID, context: context)
+            Task {
+                await respondPlanningClarification(answer: option.payload)
+            }
         case .openManualSettings:
             voice.stopListening()
             voice.stopSpeaking()
@@ -598,6 +630,70 @@ struct VoiceDialogueView: View {
                 voice.speak(text: result.reply)
             }
             Haptic.success()
+        }
+    }
+
+    // MARK: - 规划背景追问辅助
+
+    /// 规划卡片回复文案（usedBackground 标记是否结合了追问确认的背景信息）
+    private func planningCardReply(plan: TaskPlanningPlan, usedBackground: Bool) -> String {
+        let prefix = usedBackground ? "已结合你确认的背景信息，" : ""
+        return "\(plan.summary)\n\(prefix)我已将分解好的具体待办整理在下方清单卡片中，你可以预览勾选，确认后点击「一键加入待办」即可保存至 App 中。"
+    }
+
+    /// 提交一条追问回答：未满问数继续下一问，问完/提前生成则结合背景产出规划卡片
+    private func respondPlanningClarification(answer: String) async {
+        let outcome = PlanningClarificationEngine.shared.submit(answer: answer)
+        var reply = ""
+        var askOptions: [DialogueActionOption]?
+        var plan: TaskPlanningPlan?
+        switch outcome {
+        case .question(let prompt, let options):
+            reply = prompt
+            askOptions = options
+        case .ready(let background):
+            if let generated = await TaskPlanningEngine.shared.decomposeTaskWithAI(
+                query: PlanningClarificationEngine.shared.originalQuery,
+                backgroundContext: background.isEmpty ? nil : background
+            ) {
+                plan = generated
+                reply = planningCardReply(plan: generated, usedBackground: !background.isEmpty)
+            } else {
+                reply = "端侧模型暂时不可用，稍后对我说「帮我规划」重试一下。"
+            }
+        case .cancelled:
+            reply = "好的，已退出背景追问。需要重新规划时随时叫我。"
+        }
+        appendAssistantMessage(reply, options: askOptions, planningPlan: plan)
+    }
+
+    private func appendAssistantMessage(_ text: String, options: [DialogueActionOption]? = nil, planningPlan: TaskPlanningPlan? = nil) {
+        let assistantMsg = DialogueMessage(role: .assistant, text: text, options: options, planningPlan: planningPlan)
+        dialogueHistory.append(assistantMsg)
+        DialogueHistoryManager.shared.saveMessage(role: "assistant", text: text, sessionID: currentSessionID, context: context)
+        if !isMuted {
+            voice.speak(text: text)
+        }
+        Haptic.success()
+    }
+
+    /// 对规划卡片中某个仍太笼统的步骤发起细化：结合父目标与已确认背景，生成微步骤子卡片
+    private func handleRefineSubtask(messageId: UUID, subtask: PlannedSubtask) {
+        guard let parentPlan = dialogueHistory.first(where: { $0.id == messageId })?.planningPlan else { return }
+        let userText = "细化步骤：\(subtask.title)"
+        dialogueHistory.append(DialogueMessage(role: .user, text: userText))
+        DialogueHistoryManager.shared.saveMessage(role: "user", text: userText, sessionID: currentSessionID, context: context)
+        Haptic.light()
+
+        Task {
+            if let refined = await TaskPlanningEngine.shared.refineSubtaskWithAI(parentPlan: parentPlan, subtask: subtask) {
+                appendAssistantMessage(
+                    "\(refined.summary)\n微步骤已单独成卡，确认后勾选加入待办即可；原大步骤如已被覆盖，不再勾选可避免重复。如还有哪步太大，继续点「细化」。",
+                    planningPlan: refined
+                )
+            } else {
+                appendAssistantMessage("端侧模型暂时不可用，这条步骤稍后无法细化，你可以再点一次「细化」重试。")
+            }
         }
     }
 
@@ -674,6 +770,7 @@ struct DialogueBubble: View {
     var onSavePlan: ((TaskPlanningPlan) -> Void)? = nil
     var onDiscardPlan: (() -> Void)? = nil
     var onSaveSkillPlan: ((SkillPathDraft) -> Void)? = nil
+    var onRefineSubtask: ((PlannedSubtask) -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -699,7 +796,7 @@ struct DialogueBubble: View {
 
                     // 任务规划卡片（如果存在）
                     if let plan = message.planningPlan {
-                        PlanningTaskCardView(plan: plan) { savedPlan in
+                        PlanningTaskCardView(plan: plan, onRefine: onRefineSubtask) { savedPlan in
                             onSavePlan?(savedPlan)
                         } onDiscard: {
                             onDiscardPlan?()
@@ -769,6 +866,7 @@ struct DialogueBubble: View {
 /// 任务规划与拆解交互式卡片
 struct PlanningTaskCardView: View {
     @State var plan: TaskPlanningPlan
+    var onRefine: ((PlannedSubtask) -> Void)? = nil
     var onSave: (TaskPlanningPlan) -> Void
     var onDiscard: () -> Void
 
@@ -789,6 +887,21 @@ struct PlanningTaskCardView: View {
                     .foregroundStyle(.primary)
 
                 Spacer()
+
+                if !plan.isSaved && !plan.subtasks.isEmpty {
+                    Button {
+                        let allSelected = plan.subtasks.allSatisfy { $0.isSelected }
+                        for idx in plan.subtasks.indices {
+                            plan.subtasks[idx].isSelected = !allSelected
+                        }
+                        Haptic.light()
+                    } label: {
+                        Text(plan.subtasks.allSatisfy { $0.isSelected } ? "取消全选" : "全选")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Text("\(plan.subtasks.count) 项待办")
                     .font(.caption2.bold())
@@ -823,7 +936,7 @@ struct PlanningTaskCardView: View {
                             .padding(.top, 2)
                         }
 
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 3) {
                             Text(subtask.title)
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(subtask.isSelected ? Color.primary : Color.secondary)
@@ -838,12 +951,50 @@ struct PlanningTaskCardView: View {
 
                         Spacer()
 
-                        Text(subtask.type.displayName)
-                            .font(.system(size: 9, weight: .semibold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color(.tertiarySystemFill)))
-                            .foregroundStyle(.secondary)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            HStack(spacing: 4) {
+                                // 执行阶段标签
+                                HStack(spacing: 2) {
+                                    Image(systemName: subtask.phase.icon)
+                                    Text(subtask.phase.rawValue)
+                                }
+                                .font(.system(size: 8, weight: .semibold))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1.5)
+                                .background(Capsule().fill(Color.accentColor.opacity(0.1)))
+                                .foregroundStyle(Color.accentColor)
+
+                                // 类型标签
+                                HStack(spacing: 2) {
+                                    Image(systemName: subtask.type.icon)
+                                    Text(subtask.type.displayName)
+                                }
+                                .font(.system(size: 8, weight: .medium))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1.5)
+                                .background(Capsule().fill(Color(.tertiarySystemFill)))
+                                .foregroundStyle(.secondary)
+                            }
+
+                            // 步骤仍太笼统时，逐条细化为可照着做的微步骤
+                            if let onRefine, !plan.isSaved {
+                                Button {
+                                    Haptic.light()
+                                    onRefine(subtask)
+                                } label: {
+                                    HStack(spacing: 2) {
+                                        Image(systemName: "list.bullet.indent")
+                                        Text("细化")
+                                    }
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 2.5)
+                                    .background(Capsule().fill(Color.accentColor.opacity(0.12)))
+                                    .foregroundStyle(Color.accentColor)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
                     .padding(8)
                     .background(
