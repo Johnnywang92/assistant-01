@@ -570,7 +570,6 @@ final class DataMigrationService {
         let meds = (try? context.fetchCount(FetchDescriptor<MedicationPlan>())) ?? 0
         let places = (try? context.fetchCount(FetchDescriptor<LearnedPlace>())) ?? 0
         let passwords = (try? context.fetchCount(FetchDescriptor<PasswordVaultItem>())) ?? 0
-        let dataUsage = (try? context.fetchCount(FetchDescriptor<DataUsageRecord>())) ?? 0
         let expenses = (try? context.fetchCount(FetchDescriptor<ExpenseRecord>())) ?? 0
         let documents = (try? context.fetchCount(FetchDescriptor<IDDocumentItem>())) ?? 0
         let departures = (try? context.fetchCount(FetchDescriptor<DepartureCheckItem>())) ?? 0
@@ -591,7 +590,6 @@ final class DataMigrationService {
             "健康服药计划": meds,
             "空间感知地点": places,
             "离线安全密码": passwords,
-            "流量历史记录": dataUsage,
             "日常记账明细": expenses,
             "重要证件卡包": documents,
             "随身防丢清单": departures,
