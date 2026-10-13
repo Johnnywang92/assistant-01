@@ -68,6 +68,8 @@ struct ExpenseTrackerView: View {
     @State private var showingReceiptScanner = false
     @State private var aiExpenseInsight: String? = nil
     @State private var isAnalyzingExpenses = false
+    /// AI 洞察生成时所依据的「本月账本数据指纹」，数据未变时复用缓存结果、避免重复推理
+    @State private var aiInsightDataFingerprint: Int? = nil
     @State private var recordToShare: ExpenseRecord?
 
     private var calendar: Calendar { .current }
@@ -274,7 +276,7 @@ struct ExpenseTrackerView: View {
                                             .font(.caption)
                                             .foregroundStyle(.purple)
                                             .padding(.top, 2)
-                                        Text(L10n.tr(insight))
+                                        Text(insight)
                                             .font(.caption)
                                             .foregroundStyle(.primary.opacity(0.88))
                                             .fixedSize(horizontal: false, vertical: true)
@@ -553,25 +555,129 @@ struct ExpenseTrackerView: View {
         }
     }
 
-    private func analyzeExpensesWithAI() {
-        isAnalyzingExpenses = true
-        Haptic.light()
+    /// 「本月账本数据指纹」：仅覆盖影响洞察的本月支出字段 + 月预算 + 固定支出月额 + 归属年月。
+    /// 数据未变化时指纹一致，可复用缓存的洞察结果，避免重复端侧推理。
+    private var currentMonthAIFingerprint: Int {
+        let cal = calendar
+        let now = Date.now
+        var hasher = Hasher()
+        hasher.combine(cal.component(.year, from: now))
+        hasher.combine(cal.component(.month, from: now))
+        for record in records {
+            guard !record.isIncome,
+                  cal.component(.year, from: record.date) == cal.component(.year, from: now),
+                  cal.component(.month, from: record.date) == cal.component(.month, from: now) else { continue }
+            hasher.combine(record.date.timeIntervalSinceReferenceDate)
+            hasher.combine(record.amount)
+            hasher.combine(record.categoryRaw)
+        }
+        hasher.combine(BudgetSettings.monthlyBudget)
+        hasher.combine(RecurringExpenseManager.shared.monthlyEstimatedTotal)
+        return hasher.finalize()
+    }
+
+    /// 汇总本月支出、上月支出、本月 Top-3 大额、安心花预算与时间进度，一次 O(N) 归集，拼接为喂给模型的上下文
+    private func makeAIInsightUserContent() -> String {
+        let cal = calendar
+        let now = Date.now
+        let curYear = cal.component(.year, from: now)
+        let curMonth = cal.component(.month, from: now)
+        let prevRef = cal.date(byAdding: .month, value: -1, to: now) ?? now
+        let prevYear = cal.component(.year, from: prevRef)
+        let prevMonth = cal.component(.month, from: prevRef)
+
+        var prevMonthTotal = 0.0
+        var currentMonthExpensesList: [ExpenseRecord] = []
+        for record in records where !record.isIncome {
+            let ry = cal.component(.year, from: record.date)
+            let rm = cal.component(.month, from: record.date)
+            if ry == curYear && rm == curMonth {
+                currentMonthExpensesList.append(record)
+            } else if ry == prevYear && rm == prevMonth {
+                prevMonthTotal += record.amount
+            }
+        }
+
+        var lines: [String] = []
+        lines.append("今日支出：¥\(String(format: "%.1f", todayExpenses))；本月总支出：¥\(String(format: "%.1f", currentMonthExpenses))；本月总收入：¥\(String(format: "%.1f", currentMonthIncome))")
+
         let breakdownStr = currentMonthCategoryBreakdown
             .map { "\($0.category.rawValue) ¥\(String(format: "%.0f", $0.amount))（\(Int($0.ratio * 100))%）" }
             .joined(separator: "、")
-        let userContent = "今日支出：¥\(String(format: "%.1f", todayExpenses))；本月总支出：¥\(String(format: "%.1f", currentMonthExpenses))；本月总收入：¥\(String(format: "%.1f", currentMonthIncome))；本月分类占比：\(breakdownStr)"
-        let sys = "你是贴心的个人财务管家。请根据用户的本月消费结构，用 1 到 2 句温和、精炼的话给出消费结构点评与实用节流建议（80字以内，不要输出标题）。"
+        lines.append("本月分类占比：\(breakdownStr)")
+
+        // 环比（本月 vs 上月）
+        let momDelta = currentMonthExpenses - prevMonthTotal
+        if prevMonthTotal > 0 {
+            let pct = Int((momDelta / prevMonthTotal * 100).rounded())
+            let dir = momDelta >= 0 ? "增加" : "减少"
+            lines.append("环比上月（¥\(String(format: "%.0f", prevMonthTotal))）：\(dir) \(abs(pct))%（¥\(String(format: "%.0f", abs(momDelta)))）")
+        } else {
+            lines.append("上月支出：¥\(String(format: "%.0f", prevMonthTotal))（无环比基准）")
+        }
+
+        // 预算 / 已用 / 剩余 + 时间进度
+        let dayOfMonth = cal.component(.day, from: now)
+        let daysInMonth = cal.range(of: .day, in: .month, for: now)?.count ?? 30
+        let daysLeft = max(1, daysInMonth - dayOfMonth + 1)
+        let fixedMonthly = RecurringExpenseManager.shared.monthlyEstimatedTotal
+        let input = SafeToSpendCalculator.inputFromRecords(records: records, fixedMonthlyTotal: fixedMonthly, calendar: cal, now: now)
+        let safe = SafeToSpendCalculator.compute(input: input, now: now, calendar: cal)
+        if safe.isEnabled {
+            lines.append("月弹性预算：¥\(String(format: "%.0f", safe.disposableBudget))；本月弹性已用 ¥\(String(format: "%.0f", input.flexibleSpentThisMonth))（占 \(Int((safe.spentRatio * 100).rounded()))%）；剩余 ¥\(String(format: "%.0f", safe.remainingThisMonth))\(safe.isOverBudget ? "（已超支）" : "")")
+        } else {
+            lines.append("未设置月预算")
+        }
+        lines.append("时间进度：今天是本月第 \(dayOfMonth)/\(daysInMonth) 天，距月底还有 \(daysLeft) 天")
+
+        // 本月 Top-3 大额单笔消费
+        let top3 = currentMonthExpensesList.sorted { $0.amount > $1.amount }.prefix(3)
+        if !top3.isEmpty {
+            let top3Str = top3.map { "\($0.title)（\($0.category.rawValue) ¥\(String(format: "%.0f", $0.amount))）" }.joined(separator: "、")
+            lines.append("本月最大三笔支出：\(top3Str)")
+        }
+
+        // 固定周期支出（月均 Top-3）
+        if fixedMonthly > 0 {
+            let recurringStr = RecurringExpenseManager.shared.items
+                .filter { !$0.isPaused }
+                .sorted { $0.monthlyEquivalentAmount > $1.monthlyEquivalentAmount }
+                .prefix(3)
+                .map { "\($0.title) ¥\(String(format: "%.0f", $0.monthlyEquivalentAmount))" }
+                .joined(separator: "、")
+            if !recurringStr.isEmpty {
+                lines.append("固定周期支出（月均合计 ¥\(String(format: "%.0f", fixedMonthly))）：\(recurringStr)")
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private func analyzeExpensesWithAI() {
+        // 命中缓存：数据指纹未变且已有洞察结果，直接复用，不重复推理
+        let fingerprint = currentMonthAIFingerprint
+        if let insight = aiExpenseInsight, !insight.isEmpty, aiInsightDataFingerprint == fingerprint {
+            Haptic.light()
+            showFeedback("消费洞察已是最新")
+            return
+        }
+
+        isAnalyzingExpenses = true
+        Haptic.light()
+        let userContent = makeAIInsightUserContent()
+        let sys = "你是贴心的个人财务管家。请基于用户给出的本月消费数据（含预算/时间进度/环比/大额/固定支出），严格按以下三行结构化输出，不要标题、不要额外解释：\n结论：<一句话概括本月消费结构与预算健康度>\n风险：<最值得关注的单个消费风险或超支隐患>\n建议：<一条具体可执行的节流建议>\n每行不超过 40 字，整体控制在 120 字以内。"
         Task {
             let output = await LLMInferenceService.shared.generateCustomTask(
                 systemInstruction: sys,
                 userContent: userContent,
-                maxNewTokens: 150
+                maxNewTokens: 250
             )
             await MainActor.run {
                 isAnalyzingExpenses = false
                 if let output, !output.isEmpty {
                     withAnimation {
                         aiExpenseInsight = output
+                        aiInsightDataFingerprint = fingerprint
                     }
                     Haptic.success()
                 } else {
