@@ -194,6 +194,7 @@ struct OmniboxPlanner {
                 capability: .expenseCreate,
                 params: params,
                 confidence: 0.55,
+                confidenceReason: "松散匹配到金额，建议核对分类与金额",
                 summary: Self.summary(for: .expenseCreate, params: params)
             ))
         }
@@ -213,6 +214,7 @@ struct OmniboxPlanner {
                 capability: .todoCreate,
                 params: params,
                 confidence: 0.65,
+                confidenceReason: "根据相对时间词推测，建议核对截止日期",
                 dependsOn: actions.filter { $0.capability == .expenseCreate }.map(\.id),
                 summary: Self.summary(for: .todoCreate, params: params)
             ))
@@ -227,7 +229,8 @@ struct OmniboxPlanner {
             actions.append(PlannedAction(
                 capability: .todoCreate,
                 params: params,
-                confidence: 0.6,
+                confidence: 0.58,
+                confidenceReason: "根据保修关键词推测，默认1年期",
                 dependsOn: actions.filter { $0.capability == .expenseCreate }.map(\.id),
                 summary: Self.summary(for: .todoCreate, params: params)
             ))
@@ -425,7 +428,7 @@ struct OmniboxPlanner {
         return value
     }
 
-    private static func extractLooseAmount(from text: String) -> Double? {
+    static func extractLooseAmount(from text: String) -> Double? {
         let patterns = [
             "[¥￥]\\s*([0-9]+(?:\\.[0-9]+)?)",
             "([0-9]+(?:\\.[0-9]+)?)\\s*(?:元|块钱|块)"

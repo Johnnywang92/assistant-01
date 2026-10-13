@@ -374,10 +374,32 @@ struct OmniboxView: View {
                     .toggleStyle(.switch)
                     .scaleEffect(0.72, anchor: .leading)
                     .frame(width: 46, height: 26)
-                Image(systemName: wrapped.capability.systemImage)
-                    .foregroundStyle(lowConfidence ? Color.orange : Color.purple)
-                Text(wrapped.capability.displayName)
-                    .font(.subheadline.bold())
+
+                // 一键自由切换动作类型（记账/待办/收集箱互转）
+                Menu {
+                    ForEach(OmniboxCapability.allCases, id: \.self) { cap in
+                        Button {
+                            switchCapability(action: action, to: cap)
+                        } label: {
+                            Label(cap.displayName, systemImage: cap.systemImage)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: wrapped.capability.systemImage)
+                            .foregroundStyle(lowConfidence ? Color.orange : Color.purple)
+                        Text(wrapped.capability.displayName)
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.primary)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(.tertiarySystemFill), in: Capsule())
+                }
+
                 if lowConfidence {
                     Text(L10n.tr("待确认"))
                         .font(.caption2.bold())
@@ -387,6 +409,17 @@ struct OmniboxView: View {
                         .foregroundStyle(.orange)
                 }
                 Spacer()
+            }
+
+            if lowConfidence {
+                HStack(alignment: .top, spacing: 4) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.caption2)
+                    Text(wrapped.confidenceReason ?? L10n.tr("识别置信度较低，点击上方类型可一键切换或微调内容"))
+                        .font(.caption2)
+                }
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 2)
             }
 
             // 关键字段可直接编辑
@@ -454,6 +487,44 @@ struct OmniboxView: View {
                 .strokeBorder(lowConfidence ? Color.orange.opacity(0.4) : Color.clear, lineWidth: 1)
         )
         .opacity(action.isSelected.wrappedValue ? 1 : 0.55)
+    }
+
+    /// 一键切换动作类型时的平滑兜底迁移
+    private func switchCapability(action: Binding<PlannedAction>, to newCap: OmniboxCapability) {
+        guard action.wrappedValue.capability != newCap else { return }
+        var currentParams = action.wrappedValue.params
+        switch newCap {
+        case .expenseCreate:
+            if (currentParams["amount"] ?? "").isEmpty {
+                let source = currentParams["memo"] ?? currentParams["title"] ?? ""
+                if let extracted = OmniboxPlanner.extractLooseAmount(from: source) {
+                    currentParams["amount"] = String(format: "%.2f", extracted)
+                } else {
+                    currentParams["amount"] = "0.00"
+                }
+            }
+            if (currentParams["title"] ?? "").isEmpty {
+                currentParams["title"] = currentParams["memo"] ?? L10n.tr("待记账事项")
+            }
+            if currentParams["category"] == nil {
+                currentParams["category"] = ExpenseCategory.shopping.rawValue
+            }
+        case .todoCreate:
+            if (currentParams["title"] ?? "").isEmpty {
+                let memo = currentParams["memo"] ?? currentParams["title"] ?? ""
+                currentParams["title"] = memo.isEmpty ? L10n.tr("新建待办") : String(memo.prefix(20))
+            }
+        case .memoInbox:
+            if (currentParams["memo"] ?? "").isEmpty {
+                let title = currentParams["title"] ?? ""
+                let amt = currentParams["amount"] ?? ""
+                currentParams["memo"] = amt.isEmpty ? title : "\(title) ¥\(amt)"
+            }
+        }
+        action.wrappedValue.capability = newCap
+        action.wrappedValue.params = currentParams
+        action.wrappedValue.summary = OmniboxPlanner.summary(for: newCap, params: currentParams)
+        Haptic.selection()
     }
 
     /// 编辑字段后同步刷新 summary 预览

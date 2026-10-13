@@ -60,6 +60,8 @@ struct PlannedAction: Identifiable, Codable, Equatable {
     var params: [String: String]
     /// 0~1，低于 omnibox_low_confidence_threshold 的在确认卡中灰显提示
     var confidence: Double
+    /// 置信度原因说明
+    var confidenceReason: String? = nil
     /// 依赖的前序动作 id（执行按拓扑序，先记账拿到金额再建保修提醒）
     var dependsOn: [UUID] = []
     /// 用户在确认卡中是否勾选（默认勾选，低置信度默认不勾选）
