@@ -30,6 +30,11 @@ struct DataMigrationView: View {
     @State private var batchType: BatchImportType = .anniversary
     @State private var batchResultNotice: String?
 
+    // 备份/迁移门禁 PIN（首次冷启动已强制设置；每次进入本屏需重新解锁）
+    @StateObject private var pinGate = MigrationPinManager.shared
+    @State private var isMigrationUnlocked = false
+    @State private var showUnlockGate = false
+
     enum BatchImportType: String, CaseIterable, Identifiable {
         case anniversary = "纪念日 / 生日"
         case password = "账号与密码 (CSV)"
@@ -255,6 +260,17 @@ struct DataMigrationView: View {
         }
         .navigationTitle("数据备份与迁移")
         .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if pinGate.isConfigured && !isMigrationUnlocked {
+                migrationLockCover
+            }
+        }
+        .sheet(isPresented: $showUnlockGate) {
+            MigrationUnlockPinSheet(isPresented: $showUnlockGate, onSuccess: {
+                isMigrationUnlocked = true
+                Haptic.success()
+            })
+        }
         .fileImporter(
             isPresented: $showFileImporter,
             allowedContentTypes: [.json],
@@ -281,6 +297,54 @@ struct DataMigrationView: View {
         }
         .onAppear {
             migrationService = DataMigrationService(context: context)
+            // 每次进入本屏都重新上锁，需再次输入门禁 PIN
+            isMigrationUnlocked = false
+        }
+    }
+
+    /// 未解锁时覆盖整屏的门禁卡片：输入备份 PIN 后才能备份生成/数据迁移。
+    private var migrationLockCover: some View {
+        ZStack {
+            Color(.systemBackground).opacity(0.94).ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(.tint)
+                Text("备份与迁移已锁定")
+                    .font(.headline)
+                Text("为防止他人随意导出或覆盖您的数据，\n生成备份与还原数据前需先输入备份 PIN 码。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button {
+                    showUnlockGate = true
+                } label: {
+                    Label("输入 PIN 码解锁", systemImage: "lock.open")
+                        .font(.body.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.horizontal, 24)
+
+                if let hint = pinGate.hint, !hint.isEmpty {
+                    Text("提示：\(hint)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button("忘记 PIN 码？重置门禁", role: .destructive) {
+                    // 重置仅清空本地门禁，不影响任何已导出备份（它们由各自的加密 PIN 保护）
+                    pinGate.reset()
+                }
+                .font(.caption)
+            }
+            .padding(28)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+            )
+            .padding(.horizontal, 20)
         }
     }
 
@@ -563,6 +627,153 @@ struct UnlockBackupPinSheet: View {
                         let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !cleanPin.isEmpty else { return }
                         onUnlock(cleanPin)
+                    }
+                    .bold()
+                    .disabled(pin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 首次冷启动：强制设置备份门禁 PIN
+
+/// 应用首次冷启动时遮在根视图之上、无法跳过的设置页；写入成功后 `isConfigured` 置 true，遮罩自动消失。
+struct MigrationPinSetupView: View {
+    @ObservedObject private var pinGate = MigrationPinManager.shared
+    @State private var pin = ""
+    @State private var confirmPin = ""
+    @State private var hint = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Label("首次使用，请先设置备份 PIN 码", systemImage: "lock.shield.fill")
+                        .font(.headline)
+                    Text("此 PIN 码用于锁定“数据备份与迁移”入口：只有输入它，才能生成备份或还原数据。建议与备份加密口令区分记忆。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("安全设置")
+                }
+
+                Section("设置解锁 PIN（8–64 位）") {
+                    SecureField("输入 PIN 码", text: $pin)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                    SecureField("再次确认 PIN 码", text: $confirmPin)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                }
+
+                Section("PIN 提示（选填，仅自己看得懂）") {
+                    TextField("例如：妈妈的生日后两位…", text: $hint)
+                }
+
+                Section {
+                    Text("🔒 PIN 码只在本机派生为校验值保存，不会上传、也不会写入备份；忘记时可在迁移页重置门禁（不影响已导出的加密备份）。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("首次使用 · 安全设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成设置") {
+                        submit()
+                    }
+                    .bold()
+                    .disabled(pin.isEmpty || confirmPin.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func submit() {
+        let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanConfirm = confirmPin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleanPin.count >= 8, cleanPin.count <= 64 else {
+            errorMessage = "PIN 码长度需为 8–64 位，请重新输入。"
+            return
+        }
+        guard cleanPin == cleanConfirm else {
+            errorMessage = "两次输入的 PIN 码不一致，请确认。"
+            return
+        }
+        do {
+            try pinGate.setPin(cleanPin, hint: hint)
+            Haptic.success()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            Haptic.error()
+        }
+    }
+}
+
+// MARK: - 进入迁移页时的解锁弹层
+
+/// 输入已设置的门禁 PIN 解锁本次会话；校验交给 `MigrationPinManager`（PBKDF2 派生比对）。
+struct MigrationUnlockPinSheet: View {
+    @ObservedObject private var pinGate = MigrationPinManager.shared
+    @Binding var isPresented: Bool
+    let onSuccess: () -> Void
+
+    @State private var pin = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Label("输入备份 PIN 码解锁", systemImage: "lock.open.fill")
+                        .font(.headline)
+                    if let hint = pinGate.hint, !hint.isEmpty {
+                        Text("提示：\(hint)")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section {
+                    SecureField("PIN 码", text: $pin)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                } footer: {
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("解锁备份与迁移")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { isPresented = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("解锁") {
+                        let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !cleanPin.isEmpty else { return }
+                        if pinGate.verify(cleanPin) {
+                            isPresented = false
+                            onSuccess()
+                        } else {
+                            errorMessage = "PIN 码不正确，请重试。"
+                            Haptic.error()
+                        }
                     }
                     .bold()
                     .disabled(pin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

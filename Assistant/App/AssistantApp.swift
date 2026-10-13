@@ -10,6 +10,7 @@ struct AssistantApp: App {
     @StateObject private var bgManager = AppBackgroundManager.shared
     @StateObject private var seniorManager = SeniorModeManager.shared
     @StateObject private var langManager = LanguageManager.shared
+    @StateObject private var pinManager = MigrationPinManager.shared
 
     init() {
         // 注册小组件/实时活动桥接钩子：AppIntent 在主应用进程（Siri、操作按钮、快捷指令）
@@ -32,6 +33,12 @@ struct AssistantApp: App {
 
                 if isAppLocked {
                     AppLockScreen()
+                        .transition(.opacity)
+                }
+
+                // 首次冷启动强制设置“备份与迁移”门禁 PIN（未配置前不可进入正常使用）
+                if Persistence.recoveryError == nil && !pinManager.isConfigured {
+                    MigrationPinSetupView()
                         .transition(.opacity)
                 }
             }

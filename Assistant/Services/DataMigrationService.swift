@@ -1,5 +1,6 @@
 import CryptoKit
 import CommonCrypto
+import Combine
 import Foundation
 import SwiftData
 import UIKit
@@ -438,6 +439,88 @@ public enum RestoreStrategy: String, CaseIterable, Identifiable {
 public struct RestoreResultSummary {
     public var restoredCount: Int
     public var details: [String]
+}
+
+/// 备份与迁移功能的本地解锁 PIN 门禁（首次冷启动强制设置）。
+///
+/// 设计要点：
+/// - 只保存 PBKDF2 派生的校验值（盐 + 派生密钥 + 迭代次数），绝不保存 PIN 明文；
+/// - 与备份文件自身的加密 PIN 解耦——本 PIN 仅是进入“备份生成/数据迁移”的本地门禁，
+///   忘记它只会挡住功能入口，可安全重置，不会影响任何已导出备份的可解密性
+///   （那些备份由其导出时输入的文件 PIN 加密）。
+@MainActor
+final class MigrationPinManager: ObservableObject {
+    static let shared = MigrationPinManager()
+
+    private let saltKey = "migration_pin_salt_v1"
+    private let verifierKey = "migration_pin_verifier_v1"
+    private let iterationsKey = "migration_pin_iterations_v1"
+    private let hintKey = "migration_pin_hint_v1"
+
+    @Published private(set) var isConfigured: Bool = false
+
+    /// 用户自设的 PIN 提示（仅自己看得懂，不含明文口令）。
+    var hint: String? { UserDefaults.standard.string(forKey: hintKey) }
+
+    private init() {
+        refresh()
+    }
+
+    func refresh() {
+        isConfigured = UserDefaults.standard.string(forKey: verifierKey) != nil
+            && UserDefaults.standard.string(forKey: saltKey) != nil
+    }
+
+    /// 首次设置（或重置后重新设置）门禁 PIN。
+    func setPin(_ pin: String, hint: String? = nil) throws {
+        let clean = pin.trimmingCharacters(in: .whitespacesAndNewlines)
+        try BackupEnvelopeCrypto.validatePin(clean)
+        let salt = BackupEnvelopeCrypto.makeSalt()
+        let iterations = BackupEnvelopeCrypto.defaultIterations
+        let key = try BackupEnvelopeCrypto.deriveKey(pin: clean, salt: salt, iterations: iterations)
+        let saltBase64 = salt.base64EncodedString()
+        let verifierBase64 = key.withUnsafeBytes { Data($0).base64EncodedString() }
+        UserDefaults.standard.set(saltBase64, forKey: saltKey)
+        UserDefaults.standard.set(verifierBase64, forKey: verifierKey)
+        UserDefaults.standard.set(iterations, forKey: iterationsKey)
+        let trimmedHint = hint?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let trimmedHint, !trimmedHint.isEmpty {
+            UserDefaults.standard.set(trimmedHint, forKey: hintKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: hintKey)
+        }
+        refresh()
+    }
+
+    /// 校验输入的 PIN 是否与已设置门禁一致。
+    func verify(_ pin: String) -> Bool {
+        guard let saltStr = UserDefaults.standard.string(forKey: saltKey),
+              let storedStr = UserDefaults.standard.string(forKey: verifierKey),
+              let salt = Data(base64Encoded: saltStr),
+              let stored = Data(base64Encoded: storedStr) else { return false }
+        let iterations = UserDefaults.standard.object(forKey: iterationsKey) as? Int ?? BackupEnvelopeCrypto.defaultIterations
+        let clean = pin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.count >= BackupEnvelopeCrypto.pinMinLength,
+              let key = try? BackupEnvelopeCrypto.deriveKey(pin: clean, salt: salt, iterations: iterations) else { return false }
+        return key.withUnsafeBytes { constantTimeEqual(Data($0), stored) }
+    }
+
+    /// 重置门禁（忘记 PIN 时可安全执行：仅解锁功能入口，不会解密任何既有备份）。
+    func reset() {
+        UserDefaults.standard.removeObject(forKey: saltKey)
+        UserDefaults.standard.removeObject(forKey: verifierKey)
+        UserDefaults.standard.removeObject(forKey: iterationsKey)
+        UserDefaults.standard.removeObject(forKey: hintKey)
+        refresh()
+    }
+
+    /// 恒时比较，避免通过响应时间逐字节猜解校验值。
+    private func constantTimeEqual(_ a: Data, _ b: Data) -> Bool {
+        guard a.count == b.count else { return false }
+        var diff: UInt8 = 0
+        for i in 0..<a.count { diff &=+ a[a.index(a.startIndex, offsetBy: i)] ^ b[b.index(b.startIndex, offsetBy: i)] }
+        return diff == 0
+    }
 }
 
 // MARK: - 数据迁移与管理服务
