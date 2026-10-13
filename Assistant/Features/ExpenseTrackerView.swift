@@ -72,9 +72,52 @@ struct ExpenseTrackerView: View {
 
     private var calendar: Calendar { .current }
 
-    // MARK: - 统计数据单次 O(N) 极速归集
+    // MARK: - 统计数据单次 O(N) 极速归集（引用缓存：同一渲染内多处访问只算一次）
+    private final class ExpenseAnalysisCache {
+        var key: Int = -1
+        var lastComputedTime: CFAbsoluteTime = 0
+        var summary: ExpenseSummary?
+        var grouped: [(key: String, items: [ExpenseRecord])]?
+    }
+
+    @State private var analysisCache = ExpenseAnalysisCache()
+
+    /// 覆盖统计/分组所依赖的字段 + 归属日（跨午夜自动失效）的轻量内容指纹。
+    private var analysisKey: Int {
+        var hasher = Hasher()
+        hasher.combine(Calendar.current.startOfDay(for: .now).timeIntervalSinceReferenceDate)
+        for record in records {
+            hasher.combine(record.date.timeIntervalSinceReferenceDate)
+            hasher.combine(record.amount)
+            hasher.combine(record.isIncome)
+            hasher.combine(record.categoryRaw)
+        }
+        return hasher.finalize()
+    }
+
+    /// 键变化时同时丢弃两份缓存；键未变时保留另一份已算结果。
+    private func ensureCacheCurrent(for key: Int) {
+        if analysisCache.key != key {
+            analysisCache.key = key
+            analysisCache.summary = nil
+            analysisCache.grouped = nil
+        }
+    }
+
     private var summary: ExpenseSummary {
-        ExpenseSummary(records: records, calendar: calendar)
+        let now = CFAbsoluteTimeGetCurrent()
+        if let cached = analysisCache.summary, (now - analysisCache.lastComputedTime) < 0.05 {
+            return cached
+        }
+        let key = analysisKey
+        ensureCacheCurrent(for: key)
+        analysisCache.lastComputedTime = now
+        if let cached = analysisCache.summary {
+            return cached
+        }
+        let result = ExpenseSummary(records: records, calendar: calendar)
+        analysisCache.summary = result
+        return result
     }
 
     private var todayExpenses: Double { summary.todayExpenses }
@@ -99,10 +142,18 @@ struct ExpenseTrackerView: View {
         }
     }
 
-    // 按日期分组记录
+    // 按日期分组记录（与 summary 共用内容指纹缓存，避免每次 body 重算全量分组）
     private var groupedRecords: [(key: String, items: [ExpenseRecord])] {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
+        let now = CFAbsoluteTimeGetCurrent()
+        if let cached = analysisCache.grouped, (now - analysisCache.lastComputedTime) < 0.05 {
+            return cached
+        }
+        let key = analysisKey
+        ensureCacheCurrent(for: key)
+        analysisCache.lastComputedTime = now
+        if let cached = analysisCache.grouped {
+            return cached
+        }
 
         let grouped = Dictionary(grouping: records) { item in
             if calendar.isDateInToday(item.date) {
@@ -135,6 +186,7 @@ struct ExpenseTrackerView: View {
                 result.append((k, items))
             }
         }
+        analysisCache.grouped = result
         return result
     }
 

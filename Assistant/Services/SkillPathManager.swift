@@ -129,13 +129,16 @@ final class SkillPathManager {
 
     // MARK: - 推进与统计
 
-    /// 批量推进所有进行中的路径：只做一次全量读取，避免每条路径重复扫描
+    /// 批量推进所有进行中的路径：只做一次定向读取，避免每条路径重复扫描
     func refreshAll(context: ModelContext) {
         let paths = (try? context.fetch(FetchDescriptor<SkillPath>())) ?? []
         guard paths.contains(where: { $0.status == .active }) else { return }
 
         let stages = (try? context.fetch(FetchDescriptor<SkillStage>())) ?? []
-        let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
+        // 学习路径只会碰带 pathID 的待办：谓词下推，不物化全部日常待办与历史
+        let todos = (try? context.fetch(FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.skillPathID != nil }
+        ))) ?? []
         let logs = (try? context.fetch(FetchDescriptor<SkillPracticeLog>())) ?? []
 
         for path in paths where path.status == .active {
@@ -144,13 +147,21 @@ final class SkillPathManager {
         try? context.save()
     }
 
-    /// 检查当前阶段是否通关；通关则解锁并展开下一阶段
+    /// 检查当前阶段是否通关；通关则解锁并展开下一阶段（按 pathID 定向取数，不扫全表）
     func refresh(path: SkillPath, context: ModelContext) {
+        let pid = path.id
+        let pathIDFilter: UUID? = pid
         refresh(
             path: path,
-            stages: (try? context.fetch(FetchDescriptor<SkillStage>())) ?? [],
-            todos: (try? context.fetch(FetchDescriptor<TodoItem>())) ?? [],
-            logs: (try? context.fetch(FetchDescriptor<SkillPracticeLog>())) ?? [],
+            stages: (try? context.fetch(FetchDescriptor<SkillStage>(
+                predicate: #Predicate { $0.pathID == pid }
+            ))) ?? [],
+            todos: (try? context.fetch(FetchDescriptor<TodoItem>(
+                predicate: #Predicate { $0.skillPathID == pathIDFilter }
+            ))) ?? [],
+            logs: (try? context.fetch(FetchDescriptor<SkillPracticeLog>(
+                predicate: #Predicate { $0.pathID == pid }
+            ))) ?? [],
             context: context
         )
         try? context.save()
@@ -197,7 +208,9 @@ final class SkillPathManager {
     func progressByPath(context: ModelContext, now: Date = .now) -> [UUID: SkillProgress] {
         let paths = (try? context.fetch(FetchDescriptor<SkillPath>())) ?? []
         let stages = (try? context.fetch(FetchDescriptor<SkillStage>())) ?? []
-        let todos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
+        let todos = (try? context.fetch(FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.skillPathID != nil }
+        ))) ?? []
         let logs = (try? context.fetch(FetchDescriptor<SkillPracticeLog>())) ?? []
 
         var result: [UUID: SkillProgress] = [:]
@@ -214,11 +227,19 @@ final class SkillPathManager {
     }
 
     func progress(for path: SkillPath, context: ModelContext) -> SkillProgress {
-        Self.computeProgress(
+        let pid = path.id
+        let pathIDFilter: UUID? = pid
+        return Self.computeProgress(
             path: path,
-            stages: (try? context.fetch(FetchDescriptor<SkillStage>())) ?? [],
-            todos: (try? context.fetch(FetchDescriptor<TodoItem>())) ?? [],
-            logs: (try? context.fetch(FetchDescriptor<SkillPracticeLog>())) ?? [],
+            stages: (try? context.fetch(FetchDescriptor<SkillStage>(
+                predicate: #Predicate { $0.pathID == pid }
+            ))) ?? [],
+            todos: (try? context.fetch(FetchDescriptor<TodoItem>(
+                predicate: #Predicate { $0.skillPathID == pathIDFilter }
+            ))) ?? [],
+            logs: (try? context.fetch(FetchDescriptor<SkillPracticeLog>(
+                predicate: #Predicate { $0.pathID == pid }
+            ))) ?? [],
             now: .now
         )
     }

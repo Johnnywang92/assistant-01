@@ -32,7 +32,7 @@ struct DrainInboxIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<Int> {
-        let n = InboxService.drain(context: Persistence.shared.mainContext)
+        let n = await InboxService.drain(context: Persistence.shared.mainContext)
         return .result(value: n)
     }
 }

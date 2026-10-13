@@ -236,7 +236,7 @@ struct QRCodeScannerView: View {
                         } else if let result = try? await OCRService.shared.recognizeTodo(from: uiImage),
                                   !result.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             await MainActor.run {
-                                let minOrder = (try? context.fetch(FetchDescriptor<TodoItem>()))?.map(\.sortOrder).min() ?? 0
+                                let minOrder = TodoItem.minimumSortOrder(in: context)
                                 let item = TodoItem(
                                     type: result.type,
                                     status: .active,

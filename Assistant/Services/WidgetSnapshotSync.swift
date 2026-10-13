@@ -20,8 +20,11 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
     }
 
     private func buildSnapshot(context: ModelContext) -> WidgetSnapshot {
-        let todoDescriptor = FetchDescriptor<TodoItem>()
-        let activeItems = ((try? context.fetch(todoDescriptor)) ?? []).filter { $0.status == .active }
+        // 谓词化只拉活跃待办，避免每次刷新都把全部已完成历史物化到主线程
+        let activeRaw = TodoStatus.active.rawValue
+        let activeItems = (try? context.fetch(FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.statusRaw == activeRaw }
+        ))) ?? []
         var sorted = activeItems
         TodoPriority.sort(&sorted)
 
@@ -44,34 +47,36 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         )
     }
 
-    /// 今日练习快照：取最近活跃（最近打卡优先，否则最近开始）的进行中路径。
+    /// 今日练习快照：只取最近活跃（最近打卡优先，否则最近开始）的进行中路径。
     /// 锁屏/桌面组件据此显示连续天数与今日是否打卡，点击深链到学习路径页。
+    /// 按 pathID 谓词定向取数，不再为一条路径全表物化 stages/todos/logs。
     private static func todayPracticeEntry(context: ModelContext) -> WidgetPracticeEntry? {
-        let paths = ((try? context.fetch(FetchDescriptor<SkillPath>())) ?? [])
-            .filter { $0.status == .active }
-        guard !paths.isEmpty else { return nil }
+        let activeRaw = SkillPathStatus.active.rawValue
+        let paths = ((try? context.fetch(FetchDescriptor<SkillPath>(
+            predicate: #Predicate { $0.statusRaw == activeRaw }
+        ))) ?? [])
+        guard let path = paths.sorted(by: {
+            ($0.lastPracticedAt ?? $0.startedAt) > ($1.lastPracticedAt ?? $1.startedAt)
+        }).first else { return nil }
 
-        let logs = (try? context.fetch(FetchDescriptor<SkillPracticeLog>())) ?? []
-        let progressMap = SkillPathManager.shared.progressByPath(context: context)
+        let pid = path.id
+        let logs = (try? context.fetch(FetchDescriptor<SkillPracticeLog>(
+            predicate: #Predicate { $0.pathID == pid }
+        ))) ?? []
+        let stages = (try? context.fetch(FetchDescriptor<SkillStage>(
+            predicate: #Predicate { $0.pathID == pid }
+        ))) ?? []
+        let currentStage = stages.first { $0.index == path.currentStageIndex }
 
-        let sorted = paths.sorted { lhs, rhs in
-            (lhs.lastPracticedAt ?? lhs.startedAt) > (rhs.lastPracticedAt ?? rhs.startedAt)
-        }
-        for path in sorted {
-            guard let progress = progressMap[path.id] else { continue }
-            let pathLogs = logs.filter { $0.pathID == path.id }
-            let practicedToday = pathLogs.contains { Calendar.current.isDateInToday($0.practicedAt) }
-            return WidgetPracticeEntry(
-                pathID: path.id,
-                title: path.title,
-                stageName: progress.stageName,
-                streakDays: progress.streakDays,
-                minutesThisWeek: progress.minutesThisWeek,
-                weeklyTargetMinutes: progress.weeklyTargetMinutes,
-                isPracticedToday: practicedToday
-            )
-        }
-        return nil
+        return WidgetPracticeEntry(
+            pathID: path.id,
+            title: path.title,
+            stageName: currentStage?.name ?? "进行中",
+            streakDays: SkillPathManager.streakDays(from: logs.map { $0.practicedAt }, now: .now),
+            minutesThisWeek: SkillPathManager.minutesThisWeek(from: logs, now: .now),
+            weeklyTargetMinutes: path.weeklyMinutes,
+            isPracticedToday: logs.contains { Calendar.current.isDateInToday($0.practicedAt) }
+        )
     }
 
     private static func entry(for item: TodoItem) -> WidgetTodoEntry {
@@ -91,11 +96,16 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
     }
 
     private static func todayExpenseTotal(context: ModelContext) -> Double {
-        let descriptor = FetchDescriptor<ExpenseRecord>()
-        let records = (try? context.fetch(descriptor)) ?? []
+        // 只取今日窗口内的账单，避免全量历史支出记录物化到主线程
         let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: .now)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+        let descriptor = FetchDescriptor<ExpenseRecord>(
+            predicate: #Predicate { $0.date >= dayStart && $0.date < dayEnd }
+        )
+        let records = (try? context.fetch(descriptor)) ?? []
         return records
-            .filter { !$0.isIncome && calendar.isDateInToday($0.date) }
+            .filter { !$0.isIncome }
             .reduce(0) { $0 + $1.amount }
     }
 
@@ -261,10 +271,13 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
 
     func handleQueryParcels() async -> String {
         let context = Persistence.shared.mainContext
-        let descriptor = FetchDescriptor<TodoItem>()
+        let activeRaw = TodoStatus.active.rawValue
+        let parcelRaw = TodoType.parcel.rawValue
+        let returnParcelRaw = TodoType.returnParcel.rawValue
+        let descriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.statusRaw == activeRaw && ($0.typeRaw == parcelRaw || $0.typeRaw == returnParcelRaw) }
+        )
         let items = ((try? context.fetch(descriptor)) ?? [])
-            .filter { $0.status == .active }
-            .filter { $0.type == .parcel || $0.type == .returnParcel }
             .filter { !($0.pickupCode ?? "").isEmpty }
         guard !items.isEmpty else { return "目前没有待取的快递" }
 

@@ -17,18 +17,24 @@ enum InboxService {
     }
 
     /// 读取并导入收件箱中的所有条目，然后清空。返回导入条数。
+    /// 文件协调与读取放到后台线程（NSFileCoordinator 是跨进程同步阻塞调用，
+    /// 在主线程执行会在回前台时卡住 UI）；落库仍在调用方的主线程上下文进行。
     @MainActor
     @discardableResult
-    static func drain(context: ModelContext) -> Int {
-        ensureFile()
-        let coordinator = NSFileCoordinator()
-        var content = ""
-        var coordError: NSError?
-        coordinator.coordinate(writingItemAt: fileURL, options: .forReplacing, error: &coordError) { url in
-            content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-            if !content.isEmpty { try? Data().write(to: url) }
-        }
+    static func drain(context: ModelContext) async -> Int {
+        let content = await Task.detached(priority: .utility) { () -> String in
+            ensureFile()
+            let coordinator = NSFileCoordinator()
+            var content = ""
+            var coordError: NSError?
+            coordinator.coordinate(writingItemAt: fileURL, options: .forReplacing, error: &coordError) { url in
+                content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                if !content.isEmpty { try? Data().write(to: url) }
+            }
+            return content
+        }.value
         let entries = InboxFormat.entries(from: content)
+        guard !entries.isEmpty else { return 0 }
         let service = ImportService(context: context)
         var count = 0
         for entry in entries {

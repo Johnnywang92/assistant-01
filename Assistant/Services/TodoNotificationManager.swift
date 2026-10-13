@@ -227,12 +227,13 @@ public final class TodoNotificationManager {
     public func syncAllTodoNotifications(context: ModelContext) {
         registerCategories()
 
-        let descriptor = FetchDescriptor<TodoItem>()
+        // 只物化活跃待办：已完成/待确认历史无需参与通知排期对账
+        let activeRaw = TodoStatus.active.rawValue
+        let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.statusRaw == activeRaw })
         guard let allItems = try? context.fetch(descriptor) else { return }
 
         let now = Date.now
         let activeItemsWithDue = allItems.filter { item in
-            guard item.status == .active else { return false }
             let hasFutureDue = (item.dueAt ?? .distantPast) > now
             let hasFutureOverride = (item.reminderOverrideAt ?? .distantPast) > now
             let hasFutureOverdueReminder = item.dueAt.map { due in

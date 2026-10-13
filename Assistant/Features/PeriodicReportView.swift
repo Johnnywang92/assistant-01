@@ -22,8 +22,26 @@ struct PeriodicReportView: View {
         _selectedPeriod = State(initialValue: initialPeriod)
     }
 
+    /// 报告引用缓存：body 内 50+ 处 reportData 访问在同一次渲染中只生成一次。
+    /// generateReport 包含多次全表 fetch，无缓存时每处访问都会重新拉取全部数据。
+    /// 页面为只读展示，仅在切换周期/日期时重新生成。
+    private final class ReportCache {
+        var period: ReportPeriodType?
+        var date: Date?
+        var data: PeriodicReportData?
+    }
+
+    @State private var reportCache = ReportCache()
+
     private var reportData: PeriodicReportData {
-        reportManager.generateReport(period: selectedPeriod, for: currentDate, context: context)
+        if reportCache.period == selectedPeriod, reportCache.date == currentDate, let cached = reportCache.data {
+            return cached
+        }
+        let result = reportManager.generateReport(period: selectedPeriod, for: currentDate, context: context)
+        reportCache.period = selectedPeriod
+        reportCache.date = currentDate
+        reportCache.data = result
+        return result
     }
 
     var body: some View {

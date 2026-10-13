@@ -94,17 +94,18 @@ enum TodoPriority {
     }
 
     static func sort(_ items: inout [TodoItem], now: Date = .now) {
-        items.sort {
-            let left = score(for: $0, now: now)
-            let right = score(for: $1, now: now)
-            if left != right { return left > right }
-            switch ($0.dueAt, $1.dueAt) {
+        // 预计算每项分数：比较器退化为纯整数/日期比较，
+        // 避免 O(N log N) 次重复构建词表与本地化字符串匹配导致主线程掉帧。
+        let scored = items.map { (item: $0, score: score(for: $0, now: now)) }
+        items = scored.sorted {
+            if $0.score != $1.score { return $0.score > $1.score }
+            switch ($0.item.dueAt, $1.item.dueAt) {
             case let (l?, r?) where l != r: return l < r
             case (_?, nil): return true
             case (nil, _?): return false
-            default: return $0.sortOrder < $1.sortOrder
+            default: return $0.item.sortOrder < $1.item.sortOrder
             }
-        }
+        }.map(\.item)
     }
 
     /// 截止时间越近，紧急性越高；逾期事项始终位于最前。
@@ -120,13 +121,15 @@ enum TodoPriority {
     }
 
     /// 重要性由事项类型和标题中的风险词推断，涉及健康、财务、安全和硬截止日期的事项更重要。
+    /// 词表提升为静态常量，匹配用直接 contains 替代 ICU 本地化搜索（关键词均为中文，语义不变）。
+    private static let highImportanceTypes: Set<TodoType> = [.medication, .bill, .itemExpiry, .passwordSecurity, .childVaccine, .childHealth, .returnParcel]
+    private static let mediumImportanceTypes: Set<TodoType> = [.event, .travelBooking, .subscription, .vehicleCare, .parcel, .childGrowth, .childMilestone, .pet]
+    private static let criticalWords = ["必须", "紧急", "还款", "缴费", "截止", "逾期", "疫苗", "用药", "证件", "安全"]
+
     private static func importanceScore(for item: TodoItem) -> Int {
-        let highImportance: Set<TodoType> = [.medication, .bill, .itemExpiry, .passwordSecurity, .childVaccine, .childHealth, .returnParcel]
-        let mediumImportance: Set<TodoType> = [.event, .travelBooking, .subscription, .vehicleCare, .parcel, .childGrowth, .childMilestone, .pet]
-        var score: Int = highImportance.contains(item.type) ? 90 : (mediumImportance.contains(item.type) ? 60 : 35)
+        var score: Int = highImportanceTypes.contains(item.type) ? 90 : (mediumImportanceTypes.contains(item.type) ? 60 : 35)
         let text = item.title + " " + (item.detail ?? "")
-        let criticalWords = ["必须", "紧急", "还款", "缴费", "截止", "逾期", "疫苗", "用药", "证件", "安全"]
-        if criticalWords.contains(where: { text.localizedCaseInsensitiveContains($0) }) {
+        if criticalWords.contains(where: text.contains) {
             score = min(100, score + 20)
         }
         return score
@@ -349,6 +352,15 @@ final class TodoItem {
         } else {
             return calendar.date(byAdding: .day, value: days, to: referenceDate) ?? referenceDate
         }
+    }
+
+    /// 全库最小 sortOrder：新建待办以 min-1 插入置顶。
+    /// sortBy + fetchLimit 1 把排序与取最小值下推给 SQLite，
+    /// 不再为算一个最小值把整表（含全部已完成历史与附件字段）物化到主线程。
+    static func minimumSortOrder(in context: ModelContext) -> Int {
+        var descriptor = FetchDescriptor<TodoItem>(sortBy: [SortDescriptor(\.sortOrder, order: .forward)])
+        descriptor.fetchLimit = 1
+        return (try? context.fetch(descriptor))?.first?.sortOrder ?? 0
     }
 
     /// 完成该事项。如果为周期性待办，会自动生成下一期活跃待办事项并插入 ModelContext

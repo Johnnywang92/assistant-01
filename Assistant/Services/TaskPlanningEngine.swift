@@ -251,16 +251,23 @@ final class TaskPlanningEngine {
         let cleanTopic = extractCustomTopic(from: text)
 
         let systemInstruction = """
-        你是专业的高效任务拆解助手。请将用户的目标拆解为 4 到 5 条具体、可执行的待办步骤。
-        严格按以下格式逐行输出（每行一条，不要输出编号或多余解释）：
-        步骤标题｜一句话执行要点
+        你是资深生活规划专家，擅长把用户的具体目标拆解成可直接执行的待办清单。
+        【拆解要求】
+        1. 先抓住目标中的关键信息（地点、事项、时间、目的），所有步骤必须围绕这些具体信息展开，禁止写成放之四海而皆准的通用套话；
+        2. 每条步骤 = 具体动作 + 具体对象，尽量包含数字、时间窗口或专有名词（如「提前 30 天递交新西兰签证」「按 2 人 10 天备蜜月衣物」）；
+        3. 严禁输出「确定预算」「选择目的地」「做好准备」「第一步」这类无信息量的标题，标题必须让人一眼知道要做什么；
+        4. 步骤按时间先后排列，覆盖「提前办理 → 预订采购 → 行前准备 → 临行确认」完整周期；
+        5. 输出 5 条，每条占一行，格式固定为：标题｜要点（标题不超过 15 字，要点不超过 25 字）；
+        6. 只输出清单本身：不要编号、不要解释、不要输出任何格式说明或示例内容。
+        【输出格式演示，仅示意写法，严禁照抄其中文字】
+        例：提前 30 天办理签证｜备齐材料递交并预留体检时间
         """
-        let userContent = "请拆解任务：\(text)"
+        let userContent = "用户目标：\(text)\n请按格式输出拆解清单："
 
         if let aiOutput = await LLMInferenceService.shared.generateCustomTask(
             systemInstruction: systemInstruction,
             userContent: userContent,
-            maxNewTokens: 220
+            maxNewTokens: 320
         ) {
             let lines = aiOutput
                 .components(separatedBy: .newlines)
@@ -269,8 +276,12 @@ final class TaskPlanningEngine {
 
             var parsedSubtasks: [PlannedSubtask] = []
             for rawLine in lines {
+                // 过滤小模型回显的格式说明行（如「步骤标题｜一句话执行要点」「例：…」）
+                if rawLine.contains("一句话执行要点") || rawLine.contains("格式") || rawLine.hasPrefix("例：") || rawLine.hasPrefix("例:") {
+                    continue
+                }
                 let cleanedLine = rawLine.replacingOccurrences(
-                    of: #"^[\d一二三四五六七八九十]+[\.、\s\)\）\-•]+"#,
+                    of: #"^(?:[\d一二三四五六七八九十]+[\.、\s\)\）\-•]+|第[\d一二三四五六七八九十]+步[：:、\.\s\)\）\-•]*)"#,
                     with: "",
                     options: .regularExpression
                 ).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -320,9 +331,33 @@ final class TaskPlanningEngine {
 
     private func extractCustomTopic(from text: String) -> String {
         var clean = text
-        for p in ["我想规划", "帮我规划一下", "帮我规划", "帮我拆解一下", "帮我拆解", "帮我理一下", "计划做", "准备搞", "怎么准备"] {
-            if let range = clean.range(of: p) {
-                clean = String(clean[range.upperBound...])
+        // 1. 剥离尾部请求语（如「，帮我做一个规划」「帮我拆解一下」），保留真正的目标主体
+        clean = clean.replacingOccurrences(
+            of: #"[，,、\s]*(?:请|麻烦|帮我|给我)[做整]?(?:[一二三四五六七八九十\d]+)?[个套份]?\s*(?:规划|计划|安排|拆解|理一?下|清单|攻略)[的了吧啊~～\s]*(?:一下)?[的了吧啊~～？?\s]*$"#,
+            with: "",
+            options: .regularExpression
+        )
+        // 2. 剥离尾部疑问式（如「露营怎么准备？」「生日派对如何安排」）
+        clean = clean.replacingOccurrences(
+            of: #"(?:怎么|怎样|如何|咋)(?:准备|安排|规划|计划|搞|做|办)(?:呢|吗)?[？?\s]*$"#,
+            with: "",
+            options: .regularExpression
+        )
+        // 3. 剥离头部请求语（如「帮我规划一下搬家」「请帮我安排一下生日派对」）
+        clean = clean.replacingOccurrences(
+            of: #"^(?:请|麻烦)?(?:你|我)?(?:帮我|给我)?(?:想|要|打算|准备|计划)?(?:去)?\s*(?:规划|计划|安排|拆解|梳理|理一?下|做|搞|整)(?:一下|一次|一个|个|[一二三四五六七八九十\d]+[个次趟])?[：:，,\s]*"#,
+            with: "",
+            options: .regularExpression
+        )
+        // 4. 剥离头部疑问式（如「怎么准备露营」）
+        clean = clean.replacingOccurrences(
+            of: #"^(?:怎么|怎样|如何|咋)(?:准备|安排|规划|计划|搞|做)[，,：:\s]*"#,
+            with: "",
+            options: .regularExpression
+        )
+        for p in ["我想去", "我要去", "我打算去", "我准备", "我计划", "我要准备", "我想", "我要", "准备去", "想去"] {
+            if clean.hasPrefix(p) {
+                clean = String(clean.dropFirst(p.count))
                 break
             }
         }
@@ -333,7 +368,7 @@ final class TaskPlanningEngine {
             .replacingOccurrences(of: "，", with: "")
             .replacingOccurrences(of: "。", with: "")
 
-        if clean.isEmpty || clean.count > 16 {
+        if clean.isEmpty || clean.count > 20 {
             return "目标事项"
         }
         return clean

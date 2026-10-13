@@ -28,7 +28,6 @@ struct AssistantApp: App {
                     DataRecoveryView(error: recoveryError)
                 } else {
                     MainTabView()
-                        .blur(radius: isAppLocked ? 20 : 0)
                 }
 
                 if isAppLocked {
@@ -44,16 +43,26 @@ struct AssistantApp: App {
             .animation(.easeInOut(duration: 0.25), value: isAppLocked)
             .task {
                 guard Persistence.recoveryError == nil else { return }
-                try? PasswordVaultCrypto.migrateLegacyRecords(context: Persistence.shared.mainContext)
+                // 密码迁移不再在冷启动主线程执行：全表拉取 + 可触发 SQLite VACUUM，
+                // 改由打开保险箱时（PasswordVaultView.onAppear）惰性地按需迁移。
                 router.registerDynamicShortcuts()
                 TodoNotificationManager.shared.registerCategories()
                 // 取件销号通知的「已取件 / 全部取齐」按钮，抬腕即可点
                 await PickupCheckoutService.registerCategory()
-                TodoNotificationManager.shared.syncAllTodoNotifications(context: Persistence.shared.mainContext)
-                // 刷新桌面小组件/锁屏组件共享快照，并对账扩展侧产生的指令
+                // 护航/清点伴随通知的「关闭卡片」按钮，手表与 Mac 上都能一键收卡
+                await LiveActivityControlNotifications.registerCategories()
+                // 优先刷新桌面小组件/锁屏组件共享快照，并对账扩展侧产生的指令
                 WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext)
-                ExpiryReminder.schedule()
-                PeriodicReportManager.shared.scheduleNotifications()
+
+                // 延后耗时的后台通知全量对账与排期，优先保证首帧渲染顺畅秒开
+                Task {
+                    try? await Task.sleep(nanoseconds: 120_000_000)
+                    TodoNotificationManager.shared.syncAllTodoNotifications(context: Persistence.shared.mainContext)
+                    ExpiryReminder.schedule()
+                    PeriodicReportManager.shared.scheduleNotifications()
+                    // 冷启动也排空一次分享中转区（scenePhase 首帧即为 active 时 onChange 不补触发）
+                    await ShareInboxService.processAll()
+                }
             }
             .onOpenURL { url in
                 router.handleURL(url)
@@ -71,8 +80,8 @@ struct AssistantApp: App {
                     try? await Task.sleep(nanoseconds: 350_000_000)
 
                     let context = Persistence.shared.mainContext
-                    // 1. 回到前台时补录收件箱里积压的短信
-                    InboxService.drain(context: context)
+                    // 1. 回到前台时补录收件箱里积压的短信（文件协调在后台线程）
+                    await InboxService.drain(context: context)
                     // 2. 检查手机低电量
                     _ = BatteryReminderService(context: context).checkDeviceBattery()
                     // 3. 评估周期性家务与服药日程
@@ -89,6 +98,8 @@ struct AssistantApp: App {
 
                     // 5.1 如果用户在 App 里手动勾掉了已上岛的包裹，同步撤掉手腕上的销号通知
                     PickupCheckoutService.reconcile(context: context)
+                    // 5.2 护航/清点卡已收时，同步摘掉对应的伴随控制通知
+                    LiveActivityControlNotifications.reconcile()
 
                     // 6. 前台低功耗单次位置采样，自动喂入常驻地点自主学习引擎
                     _ = await LocationReminderService.shared.requestSingleLocationSample(context: context)
@@ -104,6 +115,9 @@ struct AssistantApp: App {
 
                     // 10. 对账扩展侧（小组件/手表卡片）产生的指令并刷新共享快照
                     WidgetSnapshotSyncController.shared.processPendingCommands(context: context)
+
+                    // 11. 排空分享扩展的中转区：把「发送到小助」的截图/文本自动记账或建待办
+                    await ShareInboxService.processAll(context: context)
                 }
             } else if phase == .background {
                 lockManager.appDidEnterBackground()

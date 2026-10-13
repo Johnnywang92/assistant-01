@@ -142,6 +142,9 @@ public final class NavigationRouter: ObservableObject {
             selectedTab = .settings
         case "omnibox", "drop", "feed":
             activeSheet = .omnibox
+        case "share", "share-import":
+            // 分享扩展交接：排空 App Group 中转区，OCR/解析并落库
+            Task { @MainActor in await ShareInboxService.processAll() }
         default:
             break
         }
@@ -283,6 +286,11 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
                 let context = Persistence.shared.mainContext
                 PickupCheckoutService.handle(response, context: context)
                 WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
+            }
+        } else if let type = userInfo["type"] as? String, type == "liveActivityControl" {
+            // 手腕/Mac 上点护航·清点的伴随关闭动作：一键结束实时活动
+            Task { @MainActor in
+                LiveActivityControlNotifications.handle(response)
             }
         } else if let type = userInfo["type"] as? String, type == "todo" {
             if let idString = userInfo["todoId"] as? String, let id = UUID(uuidString: idString) {

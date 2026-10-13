@@ -31,6 +31,66 @@ struct DayTimelineView: View {
     private static let pxPerHour: CGFloat = 64
     private static let minFreeSlotMinutes = 30
 
+    // MARK: - 布局引用缓存（同一渲染内 allEntries/rangeStart/rangeEnd/freeSlots 各只算一次）
+    /// TimelineView 每分钟重绘一次，原实现每次绘制都会反复重建并排序全量条目数组
+    /// （rangeStart/rangeEnd/画布内两处 filter 各触发一次 allEntries 重算）。
+    private final class TimelineLayoutCache {
+        var key: Int = -1
+        var entries: [DayTimelineView.TimelineEntry]?
+        var freeSlots: [DayTimelineView.FreeSlot]?
+        var rangeStart: Date?
+        var rangeEnd: Date?
+    }
+
+    @State private var layoutCache = TimelineLayoutCache()
+
+    /// 内容指纹：日程/待办/习惯/服药/锚点设置 + 归属日 + 分钟粒度。
+    /// isOverdue 与空闲时段以“现在”判定，分钟粒度重算与 TimelineView 每分钟重绘节奏一致，
+    /// 指纹必须覆盖条目展示依赖的全部字段，否则会留下旧图。
+    private var layoutKey: Int {
+        var hasher = Hasher()
+        let now = Date.now
+        hasher.combine(Int(now.timeIntervalSinceReferenceDate / 60))
+        hasher.combine(calendar.startOfDay(for: now).timeIntervalSinceReferenceDate)
+        hasher.combine(wakeMinutes)
+        hasher.combine(offMinutes)
+        for event in calendarService.events {
+            hasher.combine(event.title)
+            hasher.combine(event.startDate.timeIntervalSinceReferenceDate)
+            hasher.combine(event.endDate.timeIntervalSinceReferenceDate)
+            hasher.combine(event.isAllDay)
+        }
+        for item in items {
+            hasher.combine(item.id.uuidString)
+            hasher.combine(item.title)
+            hasher.combine(item.dueAt?.timeIntervalSinceReferenceDate ?? -1)
+        }
+        for habit in habits {
+            hasher.combine(habit.id.uuidString)
+            hasher.combine(habit.title)
+            hasher.combine(habit.isEnabled)
+            hasher.combine(habit.nextDueAt.timeIntervalSinceReferenceDate)
+        }
+        for medication in medications {
+            hasher.combine(medication.id.uuidString)
+            hasher.combine(medication.medName)
+            hasher.combine(medication.isEnabled)
+            hasher.combine(medication.dailyTimePoints.joined(separator: ","))
+        }
+        return hasher.finalize()
+    }
+
+    /// 键变化时同时丢弃全部缓存槽；键未变时保留已算好的其他槽
+    private func ensureLayoutCurrent(for key: Int) {
+        if layoutCache.key != key {
+            layoutCache.key = key
+            layoutCache.entries = nil
+            layoutCache.freeSlots = nil
+            layoutCache.rangeStart = nil
+            layoutCache.rangeEnd = nil
+        }
+    }
+
     private var dayStart: Date { calendar.startOfDay(for: .now) }
 
     // MARK: - 时间锚点
@@ -85,6 +145,17 @@ struct DayTimelineView: View {
     }
 
     private var allEntries: [TimelineEntry] {
+        let key = layoutKey
+        ensureLayoutCurrent(for: key)
+        if let cached = layoutCache.entries {
+            return cached
+        }
+        let result = buildAllEntries()
+        layoutCache.entries = result
+        return result
+    }
+
+    private func buildAllEntries() -> [TimelineEntry] {
         var entries: [TimelineEntry] = []
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
 
@@ -182,6 +253,17 @@ struct DayTimelineView: View {
     }
 
     private var freeSlots: [FreeSlot] {
+        let key = layoutKey
+        ensureLayoutCurrent(for: key)
+        if let cached = layoutCache.freeSlots {
+            return cached
+        }
+        let result = buildFreeSlots()
+        layoutCache.freeSlots = result
+        return result
+    }
+
+    private func buildFreeSlots() -> [FreeSlot] {
         let anchorEnd = max(offDate, wakeDate.addingTimeInterval(3600))
         var cursor = wakeDate
         var raw: [(Date, Date)] = []
@@ -217,13 +299,25 @@ struct DayTimelineView: View {
     // MARK: - 时间轴范围
 
     private var rangeStart: Date {
+        let key = layoutKey
+        ensureLayoutCurrent(for: key)
+        if let cached = layoutCache.rangeStart {
+            return cached
+        }
         let earliestEntry = allEntries.map(\.start).min() ?? wakeDate
         let earliest = min(earliestEntry, wakeDate)
         let earliestMinutes = Int(earliest.timeIntervalSince(dayStart) / 60)
-        return dateAt(minutes: max(0, min(earliestMinutes, wakeMinutes)))
+        let result = dateAt(minutes: max(0, min(earliestMinutes, wakeMinutes)))
+        layoutCache.rangeStart = result
+        return result
     }
 
     private var rangeEnd: Date {
+        let key = layoutKey
+        ensureLayoutCurrent(for: key)
+        if let cached = layoutCache.rangeEnd {
+            return cached
+        }
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
         var latest = max(offDate, wakeDate.addingTimeInterval(3600))
         for entry in allEntries {
@@ -231,7 +325,9 @@ struct DayTimelineView: View {
             latest = max(latest, entry.start)
         }
         latest = latest.addingTimeInterval(30 * 60)
-        return min(latest, dayEnd)
+        let result = min(latest, dayEnd)
+        layoutCache.rangeEnd = result
+        return result
     }
 
     // MARK: - 文案

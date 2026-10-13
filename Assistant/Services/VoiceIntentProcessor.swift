@@ -219,7 +219,7 @@ struct VoiceIntentProcessor {
     private func createTodoFromVoice(_ text: String) -> String {
         let parsed = TodoNaturalLanguageParser.parse(text)
 
-        let minOrder = (try? context.fetch(FetchDescriptor<TodoItem>()))?.map(\.sortOrder).min() ?? 0
+        let minOrder = TodoItem.minimumSortOrder(in: context)
 
         let item = TodoItem(
             type: parsed.type,
@@ -334,15 +334,19 @@ struct VoiceIntentProcessor {
 
         let dayLabel = relativeDayLabel(for: parsed.date, calendar: cal)
         let amountText = formatAmount(parsed.amount)
-        let records = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
-        let sameDayTotal = records
-            .filter { !$0.isIncome && cal.isDate($0.date, inSameDayAs: parsed.date) }
-            .reduce(0.0) { $0 + $1.amount }
-        let currentMonth = cal.component(.month, from: .now)
-        let currentYear = cal.component(.year, from: .now)
-        let monthTotal = records
-            .filter { !$0.isIncome && cal.component(.year, from: $0.date) == currentYear && cal.component(.month, from: $0.date) == currentMonth }
-            .reduce(0.0) { $0 + $1.amount }
+        // 日/月窗口谓词下推：只为算两个合计数不再把整本账（含小票 blob 字段）物化到主线程
+        let dayInterval = cal.dateInterval(of: .day, for: parsed.date)
+        let sameDayTotal = Self.expenseTotal(
+            from: dayInterval?.start ?? parsed.date,
+            to: dayInterval?.end ?? parsed.date.addingTimeInterval(1),
+            context: context
+        )
+        let monthInterval = cal.dateInterval(of: .month, for: .now)
+        let monthTotal = Self.expenseTotal(
+            from: monthInterval?.start ?? cal.startOfDay(for: .now),
+            to: monthInterval?.end ?? cal.startOfDay(for: .now).addingTimeInterval(1),
+            context: context
+        )
 
         if parsed.isIncome {
             return L10n.choose(
@@ -359,14 +363,44 @@ struct VoiceIntentProcessor {
         }
     }
 
+    /// 指定时间窗内非收入支出合计：把筛选范围下推给 SQLite，避免全表物化
+    private static func expenseTotal(from start: Date, to end: Date, context: ModelContext) -> Double {
+        let records = (try? context.fetch(FetchDescriptor<ExpenseRecord>(
+            predicate: #Predicate { !$0.isIncome && $0.date >= start && $0.date < end }
+        ))) ?? []
+        return records.reduce(0.0) { $0 + $1.amount }
+    }
+
     public func queryExpenses(query: String = "") -> String {
         let cal = Calendar.current
         let lower = query.lowercased()
-        let records = ((try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []).sorted { $0.date > $1.date }
-        let expenseRecords = records.filter { !$0.isIncome }
+        // 只取「本周 ∪ 本月 ∪ 前天前」窗口内的支出（降序排序下推 SQLite），
+        // 窗口内无账时用 fetchLimit 1 回查最近一笔，保持对久远零散记录的原有答复
+        let weekStart = cal.dateInterval(of: .weekOfYear, for: .now)?.start ?? .now
+        let monthStart = cal.dateInterval(of: .month, for: .now)?.start ?? .now
+        let twoDaysAgoStart = cal.date(byAdding: .day, value: -2, to: cal.startOfDay(for: .now)) ?? .now
+        let windowStart = min(weekStart, min(monthStart, twoDaysAgoStart))
+        let expenseRecords = (try? context.fetch(FetchDescriptor<ExpenseRecord>(
+            predicate: #Predicate { !$0.isIncome && $0.date >= windowStart },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        ))) ?? []
 
         if expenseRecords.isEmpty {
-            return L10n.tr("你目前还没有记录任何消费支出。随时对我说「中午吃饭花了35」或「昨天买了69.9」即可快速记账。")
+            var latestDescriptor = FetchDescriptor<ExpenseRecord>(
+                predicate: #Predicate { !$0.isIncome },
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            )
+            latestDescriptor.fetchLimit = 1
+            guard let latestEver = (try? context.fetch(latestDescriptor))?.first else {
+                return L10n.tr("你目前还没有记录任何消费支出。随时对我说「中午吃饭花了35」或「昨天买了69.9」即可快速记账。")
+            }
+            // 只有窗口之前的旧账：今天/昨天/本月合计均为 0，按最近一笔如实答复
+            let latestDay = relativeDayLabel(for: latestEver.date, calendar: cal)
+            let latestTitle = latestEver.title.isEmpty ? L10n.tr(latestEver.category.rawValue) : latestEver.title
+            return L10n.choose(
+                "你今天和昨天暂未记账；最近一笔是\(latestDay)的「\(latestTitle)」\(formatAmount(latestEver.amount)) 元，本月累计消费 0 元。",
+                "No expenses today or yesterday; latest was \"\(latestTitle)\" ¥\(formatAmount(latestEver.amount)) on \(latestDay). Month total: ¥0."
+            )
         }
 
         let todayExpenses = expenseRecords.filter { cal.isDateInToday($0.date) }

@@ -1,12 +1,16 @@
 import PhotosUI
 import SwiftData
 import SwiftUI
+import UIKit
+import ImageIO
 
 /// 极简物品收纳备忘（解决“我的东西放哪了”翻箱倒柜的痛点）
 struct ItemStorageVaultView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \StoredItem.updatedAt, order: .reverse) private var allItems: [StoredItem]
-    @Query private var allExpenseRecords: [ExpenseRecord]
+    /// 收纳页只需要关联过物品的支出：谓词下推，避免整本账（含小票附件）物化到主线程
+    @Query(filter: #Predicate<ExpenseRecord> { !$0.isIncome && $0.linkedItemID != nil })
+    private var allExpenseRecords: [ExpenseRecord]
 
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @State private var searchText: String = ""
@@ -17,21 +21,77 @@ struct ItemStorageVaultView: View {
 
     private let roomAreas = ["全部", "玄关", "主卧", "次卧", "客厅", "书房", "阳台", "储物间", "厨房"]
 
+    /// 派生结果引用缓存：linkedTotals / costTrackedSummaries / filteredItems 在同一渲染内各只算一次
+    private final class ItemVaultCache {
+        var key: Int = -1
+        var linkedTotals: [UUID: Double]?
+        var costTrackedSummaries: [(item: StoredItem, summary: ItemCostSummary)]?
+        var filteredItems: [StoredItem]?
+    }
+
+    @State private var vaultCache = ItemVaultCache()
+
+    /// 内容指纹：覆盖成本计算与筛选依赖的物品字段、关联记账字段、搜索/筛选词与归属日（跨午夜自动失效）
+    private var vaultKey: Int {
+        var hasher = Hasher()
+        hasher.combine(Calendar.current.startOfDay(for: .now).timeIntervalSinceReferenceDate)
+        hasher.combine(searchText)
+        hasher.combine(selectedArea)
+        for item in allItems {
+            hasher.combine(item.updatedAt.timeIntervalSinceReferenceDate)
+            hasher.combine(item.name)
+            hasher.combine(item.roomArea)
+            hasher.combine(item.location)
+            hasher.combine(item.notes ?? "")
+            hasher.combine(item.purchasePrice ?? -1)
+            hasher.combine(item.purchaseDate?.timeIntervalSinceReferenceDate ?? -1)
+            hasher.combine(item.isSecondHand)
+            hasher.combine(item.resalePrice ?? -1)
+            hasher.combine(item.resoldDate?.timeIntervalSinceReferenceDate ?? -1)
+        }
+        for record in allExpenseRecords {
+            hasher.combine(record.linkedItemID?.uuidString ?? "")
+            hasher.combine(record.amount)
+        }
+        return hasher.finalize()
+    }
+
+    /// 键变化时同时丢弃全部缓存槽；键未变时保留已算好的其他槽
+    private func ensureVaultCacheCurrent(for key: Int) {
+        if vaultCache.key != key {
+            vaultCache.key = key
+            vaultCache.linkedTotals = nil
+            vaultCache.costTrackedSummaries = nil
+            vaultCache.filteredItems = nil
+        }
+    }
+
     /// 关联记账金额归集：itemID -> 该物品累计投入（购入价之外的后继投入）
     private var linkedTotals: [UUID: Double] {
+        let key = vaultKey
+        ensureVaultCacheCurrent(for: key)
+        if let cached = vaultCache.linkedTotals {
+            return cached
+        }
         var totals: [UUID: Double] = [:]
         for record in allExpenseRecords where !record.isIncome {
             if let itemID = record.linkedItemID {
                 totals[itemID, default: 0] += record.amount
             }
         }
+        vaultCache.linkedTotals = totals
         return totals
     }
 
     /// 已录入成本数据的物品摘要（用于顶部速览）
     private var costTrackedSummaries: [(item: StoredItem, summary: ItemCostSummary)] {
+        let key = vaultKey
+        ensureVaultCacheCurrent(for: key)
+        if let cached = vaultCache.costTrackedSummaries {
+            return cached
+        }
         let totals = linkedTotals
-        return allItems.compactMap { item in
+        let result = allItems.compactMap { item -> (item: StoredItem, summary: ItemCostSummary)? in
             let summary = ItemCostCalculator.summary(
                 purchasePrice: item.purchasePrice,
                 purchaseDate: item.purchaseDate,
@@ -44,10 +104,17 @@ struct ItemStorageVaultView: View {
             return summary.isTracked ? (item, summary) : nil
         }
         .sorted { $0.summary.dailyCost > $1.summary.dailyCost }
+        vaultCache.costTrackedSummaries = result
+        return result
     }
 
     private var filteredItems: [StoredItem] {
-        allItems.filter { item in
+        let key = vaultKey
+        ensureVaultCacheCurrent(for: key)
+        if let cached = vaultCache.filteredItems {
+            return cached
+        }
+        let result = allItems.filter { item in
             let matchesArea = selectedArea == "全部" || item.roomArea == selectedArea
             if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return matchesArea
@@ -59,6 +126,8 @@ struct ItemStorageVaultView: View {
                 (item.notes?.lowercased().contains(q) ?? false)
             return matchesArea && matchesQuery
         }
+        vaultCache.filteredItems = result
+        return result
     }
 
     var body: some View {
@@ -286,8 +355,8 @@ private struct StoredItemRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // 实物或收纳柜照片缩略图
-            if let data = item.imageData, let uiImg = UIImage(data: data) {
+            // 实物或收纳柜照片缩略图：降采样 + 进程内缓存，避免行重绘时反复整图解码卡住滚动
+            if let data = item.imageData, let uiImg = RowThumbnailCache.thumbnail(id: item.id, updatedAt: item.updatedAt, data: data) {
                 Button {
                     onPreviewImage?(data)
                 } label: {
@@ -685,9 +754,12 @@ struct AddOrEditStoredItemSheet: View {
     /// 编辑模式下归集该物品的关联记账投入
     private func loadLinkedExpenses() {
         guard let item = itemToEdit else { return }
-        let descriptor = FetchDescriptor<ExpenseRecord>()
-        let records = (try? context.fetch(descriptor)) ?? []
-        let linked = records.filter { !$0.isIncome && $0.linkedItemID == item.id }
+        let pid: UUID? = item.id
+        // 按关联物品 ID 谓词定向取数，不再为几笔关联记账物化整本账
+        let descriptor = FetchDescriptor<ExpenseRecord>(
+            predicate: #Predicate { !$0.isIncome && $0.linkedItemID == pid }
+        )
+        let linked = (try? context.fetch(descriptor)) ?? []
         linkedExpenseTotal = linked.reduce(0) { $0 + $1.amount }
         linkedExpenseCount = linked.count
     }
@@ -728,5 +800,38 @@ struct AddOrEditStoredItemSheet: View {
         try? context.save()
         Haptic.success()
         dismiss()
+    }
+}
+
+/// 行级图片数据缩略图缓存：ImageIO 降采样 + 进程内缓存，
+/// 避免列表行每次重绘都整图解码原图卡住滚动。
+/// 键为（行 ID、字节数、updatedAt）：换图或编辑保存都会换键重新生成，不会串旧图。
+enum RowThumbnailCache {
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 400
+        return cache
+    }()
+
+    static func thumbnail(id: UUID, updatedAt: Date, data: Data, maxPixelSize: CGFloat = 140) -> UIImage? {
+        let key = "\(id.uuidString)-\(data.count)-\(Int(updatedAt.timeIntervalSince1970))" as NSString
+        if let cached = cache.object(forKey: key) { return cached }
+
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        let thumbOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+        let image: UIImage?
+        if let source = CGImageSourceCreateWithData(data as CFData, sourceOptions),
+           let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) {
+            image = UIImage(cgImage: cg)
+        } else {
+            // 格式不被 ImageIO 识别时退回整图解码一次并缓存结果
+            image = UIImage(data: data)
+        }
+        if let image { cache.setObject(image, forKey: key) }
+        return image
     }
 }

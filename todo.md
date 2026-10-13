@@ -200,3 +200,24 @@ P0 五项至此全部完成。本轮把三项「部分完成」推到可自动�
 - **P0-4 备份 KDF 下沉 + 兼容验证。** 新增 `AssistantCore/BackupEnvelopeCrypto.swift`：口令 8–64 位、PBKDF2-HMAC-SHA256 默认 310,000 轮、32 字节每包独立随机盐、迭代次数合法区间 10 万–200 万（导入方校验，防「迭代 1 次」的伪造封套被瞬间解开）、AES-GCM 认证失败统一归 `authenticationFailed`（不向用户区分口令错与篡改，避免变成口令预言机）。v1 封套保留 HKDF 只读路径。`EncryptedBackupEnvelope.currentVersion/defaultIterations` 改指向 Core 常量（单一出处）；导出/解锁改调 `validatePin`+`makeSalt`+`seal` 与 `openPayload`（版本分发在 Core），错误码映射回 `MigrationCryptoError`。
 - **验证：** `swift test` **92 项通过 0 失败**（新增密码库 12 项 + 备份加密 12 项，含 SwiftData 取证测试与 v1 兼容）；`scripts/migration-drill` **16 项断言全过**；`xcodebuild` generic iOS device Debug **BUILD SUCCEEDED**（主应用 + 扩展）。
 - **仍遗留：** ① 未真机验证：旧库升级链路（v1 库→v2）、迁移后 VACUUM 在真机库忙时的重试、备份 v1→v2 跨版本导入；② 端侧模型接入前学习路径阶段内任务全靠模板；③ 备份/迁移的故障注入（附件写失败、进程中断）仍未自动化。
+
+## 2026-10-13 实施记录（流畅度第二轮：剩余全表读与重复计算收尾）
+
+- **本轮范围。** 上一轮已对主页三大数据页（待办分类/记账统计/周期报告）做了内容指纹缓存、启动 VACUUM 移出主线程、LLM 流式回显限频、小组件/通知对账谓词化。本轮审查后继续修剩余热点：
+- **新建待办的 min(sortOrder) 下推 SQLite。** 首页新建/语音建待办/扫码建待办三处都为算一个最小排序值把整张待办表（含全部已完成历史）物化到主线程；`TodoItem.minimumSortOrder(in:)` 用 sortBy + fetchLimit 1 下沉给 SQLite，三处调用点统一替换。
+- **语音记账/查账不再拉整本账。** `recordExpense` 回显的「当日累计/本月累计」改日月窗口谓词取数；`queryExpenses` 只取「本周 ∪ 本月 ∪ 前天前」窗口（降序排序下推），窗口无账时用 fetchLimit 1 回查最近一笔，保持对久远零散记录的原有答复口径。
+- **收纳页三重优化。** ①关联记账 @Query 加谓词（只拉 linkedItemID 非空的支出）；②linkedTotals/costTrackedSummaries/filteredItems 三个派生属性接入内容指纹引用缓存（body 内 10+ 处访问同一次渲染各只算一次）；③行卡片照片改 `RowThumbnailCache`：ImageIO 降采样 + NSCache（键含字节数与 updatedAt，换图/编辑必换键不串旧图），消除行重绘时整图解码的卡滚。编辑表单的关联投入归集也改为 pathID 谓词定向取数。
+- **学习路径不再扫全待办表。** `refreshAll/progressByPath` 的 todos 拉取加 `skillPathID != nil` 谓词；`refresh(path:)/progress(for:)`（勾选完成/进页时的热路径）改为按 pathID 定向取 stages/todos/logs。
+- **今日时间轴布局缓存。** TimelineView 每分钟重绘一次，原实现 rangeStart/rangeEnd/画布两处 filter 每次访问都重建并排序全量条目数组；现 allEntries/freeSlots/rangeStart/rangeEnd 共用分钟粒度指纹缓存（与每分钟重绘节奏一致，不引入额外刷新成本）。
+- **API 坑：** 本 SDK 的 `Calendar.dateInterval(of:for:)` 返回 `DateInterval`（类）而非旧版 `(start:, end:)` 元组，`?? (date, date)` 式回退直接编译失败，已改 `.start/.end` 可选链。
+- **未动（有意保留）：** 首页 `@Query` 仍读全部待办（分类缓存已兼容，改谓词需分页重构，风险大于收益）；锁屏 blur(0) 离屏合成成本待 Instruments 实测（代码内已注）；周期报告 generateReport 仍一次全表扫描后内存分档（视图层已有缓存，每次打开只算一次）；录音电平 0.06s 定时器只在录音会话内活跃。
+- **验证：** `xcodebuild` generic iOS device Debug **BUILD SUCCEEDED**（无新增告警）。仍待真机验证：大账本/万件待办下的滚动与新建响应、收纳页长列表照片滚动流畅度。
+
+## 2026-10-13 实施记录（手表/Mac 联动交互：把「点不到关闭」改成一键收卡）
+
+- **问题根因。** ①无 watchOS App 时手表智能叠放的实时活动整卡不可交互，而护航/清点两个场景上岛后根本没有可点的伴随入口，手腕上关不掉；②锁屏/Mac 通知中心镜像卡片里「已取件」「已出发」等按钮热区只贴着文字一小条，Mac 镜面上难点中；③取件销号通知只有销号动作，没有「先不销号、只收卡」的关闭入口。
+- **卡片热区放大（AssistantLiveActivities，iPhone 锁屏/灵动岛展开态/Mac 镜像共用）。** 取件码逐件销号改为整行 Button + contentShape；行程「已出发，关闭卡片」从右侧小按钮改为通栏胶囊大按钮（锁屏重排为上下结构）；清点行加垂直 padding；灵动岛展开态的结束护航按钮同样通栏胶囊化（岛底部高度有限，只在现有按钮上加高不加新行）。
+- **一键收卡 Intent（WidgetShared/WidgetIntents）。** 新增 `CompleteAllParcelsIntent` / `CheckAllDepartureItemsIntent`：逗号分隔 UUID 标量参数（Button(intent:) 携数组在扩展侧不便序列化），主应用进程走 hook 循环、扩展进程逐件 enqueue+本地突变，复用既有对账链路不新增命令类型；锁屏卡片多件/多项未确认时追加通栏「全部取齐/全部带齐，关闭卡片」。
+- **手表侧伴随控制通知（LiveActivityService 尾部新增 LiveActivityControlNotifications）。** 护航/清点上岛时同步挂一条静默通知，action 即「已出发，关闭卡片」/「全部带齐，关闭卡片」（通知 action 是手腕上唯一可点的原生大按钮，与取件销号通知同一套路）；活动被其它路径收掉后回前台 reconcile 摘掉幽灵通知；NavigationRouter didReceive 新增 liveActivityControl 分支。取件销号通知补第三个动作「关闭卡片（先不销号）」并把「关闭」排在第二位（手表只露前两个 action），点它只收卡不改动待办。
+- **顺带修正：** TodoListView 行内二维码快捷按钮引用了不存在的 `isShowingQRCodeSheet`（外部会话遗留的半成品改动），改接行视图已有的 `onShowQRCode?()` 回调，修复了存量编译失败。
+- **验证：** `xcodebuild` generic iOS device Debug **BUILD SUCCEEDED**。待真机验收：手表点伴随通知收卡、Mac 通知中心镜像卡片点通栏按钮、灵动岛展开态新布局不截断。

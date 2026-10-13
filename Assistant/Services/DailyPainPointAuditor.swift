@@ -25,9 +25,21 @@ struct DailyPainPointAuditor {
         auditVehicleCare()
         auditPetCare()
         auditChildVaccines()
+        // 巡检期间新增的待办只在主线程做一次同步落盘，避免每条命中一次 fsync
+        if insertFlag.didInsert {
+            insertFlag.didInsert = false
+            try? context.save()
+        }
         AnniversaryReminderManager.shared.checkAndSendDailyNotifications(context: context)
         TravelTicketReminderManager.shared.checkAndSendDailyNotifications(context: context)
     }
+
+    /// struct 不可变方法里的写入标记：用引用盒子免去全链路 mutating 改造
+    private final class InsertFlagBox {
+        var didInsert = false
+    }
+
+    private let insertFlag = InsertFlagBox()
 
     /// 1. 自动续费与订阅被动扣费防范
     private func auditSubscriptions() {
@@ -293,7 +305,7 @@ struct DailyPainPointAuditor {
         if existing.isEmpty {
             let todo = TodoItem(type: type, status: .active, title: title, detail: detail, dueAt: dueAt)
             context.insert(todo)
-            try? context.save()
+            insertFlag.didInsert = true
         }
     }
 }

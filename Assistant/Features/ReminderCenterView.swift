@@ -17,23 +17,21 @@ struct ReminderCenterView: View {
     private var reminders: [TodoItem] {
         let start = Calendar.current.startOfDay(for: .now)
         let horizon = Calendar.current.date(byAdding: .day, value: 7, to: start) ?? .distantFuture
-        return todos
-            .filter { item in
-                guard item.status == .active else { return false }
-                let reminderDate = item.reminderOverrideAt ?? item.dueAt
-                guard let reminderDate else { return false }
-                return reminderDate < horizon
+        let filtered = todos.filter { item in
+            guard item.status == .active else { return false }
+            let reminderDate = item.reminderOverrideAt ?? item.dueAt
+            guard let reminderDate else { return false }
+            return reminderDate < horizon
+        }
+        let scored = filtered.map { (item: $0, score: TodoPriority.score(for: $0)) }
+        return scored.sorted {
+            if $0.score != $1.score { return $0.score > $1.score }
+            switch ($0.item.reminderOverrideAt ?? $0.item.dueAt, $1.item.reminderOverrideAt ?? $1.item.dueAt) {
+            case let (l?, r?): return l < r
+            case (_?, nil): return true
+            default: return false
             }
-            .sorted {
-                let leftScore = TodoPriority.score(for: $0)
-                let rightScore = TodoPriority.score(for: $1)
-                if leftScore != rightScore { return leftScore > rightScore }
-                switch ($0.reminderOverrideAt ?? $0.dueAt, $1.reminderOverrideAt ?? $1.dueAt) {
-                case let (l?, r?): return l < r
-                case (_?, nil): return true
-                default: return false
-                }
-            }
+        }.map(\.item)
     }
 
     private var lifeReminders: [LifeReminder] {

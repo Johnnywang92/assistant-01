@@ -313,6 +313,28 @@ public final class LLMInferenceService: ObservableObject {
     @Published public var localEngineStatus: String = "待机中"
     @Published public var isLocalModelLoaded: Bool = false
 
+    /// 流式输出合帧节流：token 回调频率可达 10–30Hz，逐 token 写 @Published
+    /// 会让千行级视图每 token 全量重渲染；限流到 ~20Hz 并只在首个 token 更新状态。
+    private var lastPartialPublish: Date = .distantPast
+    private var didMarkStreaming: Bool = false
+
+    private func handlePartialOutput(_ partial: String) {
+        if !didMarkStreaming {
+            didMarkStreaming = true
+            isLocalModelLoaded = true
+            localEngineStatus = "正在生成回复 (Metal)..."
+        }
+        let now = Date()
+        guard now.timeIntervalSince(lastPartialPublish) >= 0.05 else { return }
+        lastPartialPublish = now
+        currentOutput = partial
+    }
+
+    private func beginStreamingSession() {
+        lastPartialPublish = .distantPast
+        didMarkStreaming = false
+    }
+
     private init() {
         #if canImport(UIKit)
         NotificationCenter.default.addObserver(
@@ -402,7 +424,24 @@ public final class LLMInferenceService: ObservableObject {
         var monthExpense: Double = 0
         var monthIncome: Double = 0
         var categoryTotals: [String: Double] = [:]
-        let records = ((try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []).sorted { $0.date > $1.date }
+        // 窗口化取数：只拉「本月/本周/前天零点」三者最早时刻之后的账单，
+        // 不再把全部历史支出物化到主线程排序。
+        let windowStart = min(
+            calendar.date(from: DateComponents(year: currentYear, month: currentMonth, day: 1)) ?? .now,
+            calendar.dateInterval(of: .weekOfYear, for: .now)?.start ?? .now,
+            calendar.startOfDay(for: twoDaysAgo)
+        )
+        let records = ((try? context.fetch(FetchDescriptor<ExpenseRecord>(
+            predicate: #Predicate { $0.date >= windowStart },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        ))) ?? [])
+
+        var recentExpenseDescriptor = FetchDescriptor<ExpenseRecord>(
+            predicate: #Predicate { !$0.isIncome },
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        recentExpenseDescriptor.fetchLimit = 5
+        let recentExpenseRecords = (try? context.fetch(recentExpenseDescriptor)) ?? []
 
         let formatAmt: (Double) -> String = { val in
             if val.truncatingRemainder(dividingBy: 1) == 0 {
@@ -439,7 +478,7 @@ public final class LLMInferenceService: ObservableObject {
         let topCatText = categoryTotals.sorted { $0.value > $1.value }.prefix(3)
             .map { "\($0.key) ¥\(formatAmt($0.value))" }
             .joined(separator: "、")
-        let recentExpenseText = records.filter { !$0.isIncome }.prefix(5)
+        let recentExpenseText = recentExpenseRecords
             .map { "[\(relDayLabel($0.date))·\($0.categoryRaw)] \($0.title.isEmpty ? $0.categoryRaw : $0.title) ¥\(formatAmt($0.amount))" }
             .joined(separator: "、")
 
@@ -463,11 +502,12 @@ public final class LLMInferenceService: ObservableObject {
             return parts.joined(separator: "，")
         }()
 
-        // 4. 纪念日与倒数日
+        // 4. 纪念日与倒数日（预计算 daysUntilNext，避免在比较器里反复重建农历/公历日期）
         let anniversaries = ((try? context.fetch(FetchDescriptor<AnniversaryItem>())) ?? [])
-            .sorted { $0.daysUntilNext < $1.daysUntilNext }
+            .map { ($0, $0.daysUntilNext) }
+            .sorted { $0.1 < $1.1 }
         let anniText: String = anniversaries.isEmpty ? "无" : anniversaries.prefix(3).map {
-            "\($0.title)（还有 \($0.daysUntilNext) 天）"
+            "\($0.0.title)（还有 \($0.1) 天）"
         }.joined(separator: "、")
 
         // 5. 物品收纳箱（优先匹配问题关键词）
@@ -537,8 +577,10 @@ public final class LLMInferenceService: ObservableObject {
         }
         let familyText = familyParts.isEmpty ? "未录入" : familyParts.joined(separator: "；")
 
-        // 9. 语音备忘录与常去地点
-        let memos = ((try? context.fetch(FetchDescriptor<VoiceMemo>())) ?? []).sorted { $0.createdAt > $1.createdAt }
+        // 9. 语音备忘与常去地点（备忘只取最近 2 条，谓词排序下推到库层）
+        var memoDescriptor = FetchDescriptor<VoiceMemo>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        memoDescriptor.fetchLimit = 2
+        let memos = (try? context.fetch(memoDescriptor)) ?? []
         let memoText: String = memos.isEmpty ? "无" : memos.prefix(2).map { m in
             let snippet = (m.summary ?? m.transcription ?? "").prefix(30)
             return snippet.isEmpty ? m.title : "\(m.title)：\(snippet)"
@@ -609,6 +651,7 @@ public final class LLMInferenceService: ObservableObject {
         if modelReady {
             isGenerating = true
             currentOutput = ""
+            beginStreamingSession()
             defer { isGenerating = false }
 
             localEngineStatus = isLocalModelLoaded ? "正在端侧推理 (Metal)..." : "正在加载 GGUF 模型..."
@@ -619,10 +662,7 @@ public final class LLMInferenceService: ObservableObject {
                     maxNewTokens: maxNewTokens
                 ) { partial in
                     await MainActor.run {
-                        let service = LLMInferenceService.shared
-                        service.isLocalModelLoaded = true
-                        service.localEngineStatus = "正在生成回复 (Metal)..."
-                        service.currentOutput = partial
+                        LLMInferenceService.shared.handlePartialOutput(partial)
                     }
                 }
                 isLocalModelLoaded = true
@@ -708,6 +748,7 @@ public final class LLMInferenceService: ObservableObject {
     public func generate(query: String, context: ModelContext) async -> String {
         isGenerating = true
         currentOutput = ""
+        beginStreamingSession()
         defer { isGenerating = false }
 
         // 0. 若包含明确的新建待办/记账写库意图，先执行写库操作以免只聊天不落库
@@ -731,10 +772,7 @@ public final class LLMInferenceService: ObservableObject {
                     maxNewTokens: 256
                 ) { partial in
                     await MainActor.run {
-                        let service = LLMInferenceService.shared
-                        service.isLocalModelLoaded = true
-                        service.localEngineStatus = "正在生成回复 (Metal)..."
-                        service.currentOutput = partial
+                        LLMInferenceService.shared.handlePartialOutput(partial)
                     }
                 }
                 isLocalModelLoaded = true
