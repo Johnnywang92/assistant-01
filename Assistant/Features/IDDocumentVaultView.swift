@@ -6,7 +6,8 @@ import SwiftUI
 struct IDDocumentVaultView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \IDDocumentItem.createdAt, order: .reverse) private var documents: [IDDocumentItem]
-    @StateObject private var auth = BiometricAuthManager.shared
+    /// 独立实例（非共享单例）：与密码保险箱一致，每次进入页面都需重新身份验证
+    @StateObject private var auth = BiometricAuthManager()
     @ObservedObject private var bgManager = AppBackgroundManager.shared
 
     @State private var showingAddSheet = false
