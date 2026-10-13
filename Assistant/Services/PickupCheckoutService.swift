@@ -22,6 +22,7 @@ enum PickupCheckoutService {
     static let categoryIdentifier = "PICKUP_CHECKOUT_CATEGORY"
     static let actionTakeOne = "ACTION_PICKUP_TAKE_ONE"
     static let actionTakeAll = "ACTION_PICKUP_TAKE_ALL"
+    static let actionClose = "ACTION_PICKUP_CLOSE"
 
     private static let notificationIdentifier = "pickup-checkout-session"
     private static let sessionKey = "pickup_checkout_session_v1"
@@ -41,9 +42,16 @@ enum PickupCheckoutService {
             title: "全部取齐",
             options: []
         )
+        let close = UNNotificationAction(
+            identifier: actionClose,
+            title: "关闭卡片（先不销号）",
+            options: []
+        )
         let category = UNNotificationCategory(
             identifier: categoryIdentifier,
-            actions: [takeOne, takeAll],
+            // 手表上只展示前两个 action，把「关闭」排在第二：
+            // 不想逐件销号时，抬腕就能一眼看到并点中收卡入口。
+            actions: [takeOne, close, takeAll],
             intentIdentifiers: [],
             options: .customDismissAction
         )
@@ -125,6 +133,12 @@ enum PickupCheckoutService {
     // MARK: - 手表 / 锁屏点击响应
 
     static func handle(_ response: UNNotificationResponse, context: ModelContext) {
+        // 「关闭卡片」：不收销号通知里的进度，直接把会话与灵动岛/手表卡片一起关掉，不改动待办
+        if response.actionIdentifier == actionClose {
+            cancel()
+            LiveActivityService.endPickupActivities()
+            return
+        }
         guard var current = session else { return }
         let takeAll = response.actionIdentifier == actionTakeAll
         guard takeAll || response.actionIdentifier == actionTakeOne else { return }

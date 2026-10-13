@@ -57,6 +57,8 @@ struct PickupLiveActivity: Widget {
 }
 
 /// 取件码列表。只在 iPhone（锁屏 .medium / 灵动岛展开态）使用带按钮的版本。
+/// 整行包进 Button：只把右侧小字「已取件」当热区时，锁屏上要点得很准，
+/// Mac 通知中心镜像卡片时更是难点中；整行可点后热区高度和宽度都翻倍以上。
 struct PickupCodeList: View {
     let context: ActivityViewContext<PickupActivityAttributes>
     let compact: Bool
@@ -65,27 +67,30 @@ struct PickupCodeList: View {
         let remaining = context.attributes.parcels.filter { !context.state.completedIDs.contains($0.id) }
         VStack(alignment: .leading, spacing: compact ? 2 : 6) {
             ForEach(remaining.prefix(compact ? 1 : 4)) { parcel in
-                HStack {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(parcel.code)
-                            .font(Font.system(compact ? Font.TextStyle.callout : Font.TextStyle.title2, design: .monospaced).bold())
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.5)
-                        if !compact {
-                            Text([parcel.courier, parcel.title].compactMap { $0 }.prefix(1).joined(separator: " · "))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                Button(intent: CompleteTodoIntent(todoID: parcel.id.uuidString)) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(parcel.code)
+                                .font(Font.system(compact ? Font.TextStyle.callout : Font.TextStyle.title2, design: .monospaced).bold())
                                 .lineLimit(1)
+                                .minimumScaleFactor(0.5)
+                            if !compact {
+                                Text([parcel.courier, parcel.title].compactMap { $0 }.prefix(1).joined(separator: " · "))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
-                    }
-                    Spacer()
-                    Button(intent: CompleteTodoIntent(todoID: parcel.id.uuidString)) {
+                        Spacer()
                         Label("已取件", systemImage: "checkmark.circle.fill")
                             .font(compact ? .caption2 : .footnote.bold())
+                            .foregroundStyle(.green)
                     }
-                    .buttonStyle(.borderless)
-                    .tint(.green)
+                    .padding(.vertical, compact ? 4 : 10)
+                    .padding(.horizontal, compact ? 4 : 8)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.borderless)
             }
         }
     }
@@ -141,21 +146,38 @@ struct PickupLockScreenView: View {
     }
 
     // MARK: iPhone 锁屏：大字 + 逐件销号按钮（这里按钮是真的能点）
+    // 多件时再垫一个通栏「全部取齐」：不想逐件点时，一次就能把卡片关掉。
     private var pickupLockCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let remaining = PickupProgress.remainingCount(parcels: context.attributes.parcels,
+                                                      completedIDs: context.state.completedIDs)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label(context.attributes.station, systemImage: "shippingbox.fill")
                     .font(.headline)
                     .foregroundStyle(.orange)
                     .lineLimit(1)
                 Spacer()
-                let remaining = PickupProgress.remainingCount(parcels: context.attributes.parcels,
-                                                              completedIDs: context.state.completedIDs)
                 Text(remaining > 0 ? "待取 \(remaining) 件" : "全部完成 ✓")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             PickupCodeList(context: context, compact: false)
+            if remaining > 1 {
+                let pendingIDs = context.attributes.parcels
+                    .filter { !context.state.completedIDs.contains($0.id) }
+                    .map { $0.id.uuidString }
+                    .joined(separator: ",")
+                Button(intent: CompleteAllParcelsIntent(parcelIDs: pendingIDs)) {
+                    Label("全部取齐，关闭卡片", systemImage: "checkmark.seal.fill")
+                        .font(.footnote.bold())
+                        .foregroundStyle(.green)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(Color.green.opacity(0.18)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.borderless)
+            }
         }
         .padding(.vertical, 4)
     }
@@ -204,12 +226,18 @@ struct TravelLiveActivity: Widget {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
+                        // 通栏胶囊大按钮：结束护航是这张卡最常见的「关闭」动作，
+                        // 热区不能只贴着文字那一条。
                         Button(intent: EndTravelActivityIntent()) {
-                            Label("已出发，结束护航", systemImage: "checkmark.circle.fill")
+                            Label("已出发，关闭卡片", systemImage: "checkmark.circle.fill")
                                 .font(.footnote.bold())
+                                .foregroundStyle(.green)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Capsule().fill(Color.green.opacity(0.18)))
+                                .contentShape(Capsule())
                         }
                         .buttonStyle(.borderless)
-                        .tint(.green)
                     }
                 }
             } compactLeading: {
@@ -289,47 +317,52 @@ struct TravelLockScreenView: View {
     }
 
     private var travelLockCard: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(context.attributes.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                if let summary = context.attributes.ticketSummary {
-                    Text(summary)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(context.attributes.title)
+                        .font(.headline)
                         .lineLimit(1)
+                    if let summary = context.attributes.ticketSummary {
+                        Text(summary)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    if let place = context.attributes.place {
+                        Text(place)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    if let gate = context.attributes.gate {
+                        Label("检票口 \(gate)", systemImage: "signpost.right")
+                            .font(.caption.bold())
+                            .foregroundStyle(.orange)
+                            .lineLimit(1)
+                    }
+                    if let note = context.state.note {
+                        Text(note)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-                if let place = context.attributes.place {
-                    Text(place)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                if let gate = context.attributes.gate {
-                    Label("检票口 \(gate)", systemImage: "signpost.right")
-                        .font(.caption.bold())
-                        .foregroundStyle(.orange)
-                        .lineLimit(1)
-                }
-                if let note = context.state.note {
-                    Text(note)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 6) {
+                Spacer()
                 TravelCountdown(context: context)
                     .foregroundStyle(.blue)
-                Button(intent: EndTravelActivityIntent()) {
-                    Label("已出发", systemImage: "checkmark")
-                        .font(.caption.bold())
-                }
-                .buttonStyle(.borderless)
-                .tint(.green)
             }
+            // 「已出发」从右侧小按钮改成通栏底部大按钮：Mac/锁屏上都是一眼就能看到、一下就能点中的关闭入口。
+            Button(intent: EndTravelActivityIntent()) {
+                Label("已出发，关闭卡片", systemImage: "checkmark.circle.fill")
+                    .font(.footnote.bold())
+                    .foregroundStyle(.green)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Color.green.opacity(0.18)))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.borderless)
         }
         .padding(.vertical, 4)
     }
@@ -392,6 +425,7 @@ struct DepartureItemList: View {
 
     @ViewBuilder
     private func departureRow(item: DepartureChecklistActivityAttributes.Item, checked: Bool) -> some View {
+        // 垂直 padding + contentShape 把整行变成热区；灵动岛底部放不下太高，非 compact 只加适度留白
         let label = HStack(spacing: 6) {
             Image(systemName: checked ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(checked ? .green : .secondary)
@@ -406,6 +440,9 @@ struct DepartureItemList: View {
             }
             Spacer()
         }
+        .padding(.vertical, compact ? 2 : 4)
+        .padding(.horizontal, compact ? 2 : 6)
+        .contentShape(Rectangle())
         if interactive {
             Button(intent: ToggleDepartureItemIntent(itemID: item.id.uuidString, isChecked: !checked)) {
                 label
@@ -474,17 +511,31 @@ struct DepartureLockScreenView: View {
     }
 
     private var departureLockCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let unchecked = context.attributes.items.count - context.state.checkedIDs.count
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label("出门清点 · \(context.attributes.sceneName)", systemImage: "checklist")
                     .font(.headline)
                 Spacer()
-                let unchecked = context.attributes.items.count - context.state.checkedIDs.count
                 Text(unchecked > 0 ? "还有 \(unchecked) 项未带" : "全部确认 ✓")
                     .font(.caption)
                     .foregroundStyle(unchecked > 0 ? Color.orange : Color.green)
             }
             DepartureItemList(context: context, compact: false, interactive: true)
+            if unchecked > 1 {
+                // 通栏一键收卡：赶时间时不用逐行点对勾，也解决「找不到关闭」
+                let allIDs = context.attributes.items.map { $0.id.uuidString }.joined(separator: ",")
+                Button(intent: CheckAllDepartureItemsIntent(itemIDs: allIDs)) {
+                    Label("全部带齐，关闭卡片", systemImage: "checkmark.seal.fill")
+                        .font(.footnote.bold())
+                        .foregroundStyle(.green)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(Color.green.opacity(0.18)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.borderless)
+            }
         }
         .padding(.vertical, 4)
     }

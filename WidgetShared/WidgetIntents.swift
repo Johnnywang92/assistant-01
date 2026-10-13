@@ -134,6 +134,81 @@ public struct EndTravelActivityIntent: AppIntent {
     }
 }
 
+// MARK: - 一键批量取齐（锁屏大按钮，省去逐件点小勾选）
+
+public struct CompleteAllParcelsIntent: AppIntent {
+    public static let title: LocalizedStringResource = "全部取齐"
+
+    /// 不主动把 App 拉到前台：从灵动岛/锁屏/Mac 通知中心点按钮时不打断当前界面。
+    public static let openAppWhenRun: Bool = false
+
+    public static let description = IntentDescription("一次点完本批全部待取包裹，灵动岛与手表卡片同步收起")
+
+    /// 逗号分隔的 UUID 列表：Button(intent:) 携带数组参数在扩展侧不便序列化，用标量拼串。
+    @Parameter(title: "包裹ID列表")
+    public var parcelIDs: String
+
+    public init() {}
+
+    public init(parcelIDs: String) {
+        self.parcelIDs = parcelIDs
+    }
+
+    @MainActor
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
+        let ids = parcelIDs.split(separator: ",").compactMap { UUID(uuidString: String($0)) }
+        guard !ids.isEmpty else {
+            return .result(dialog: "没有待取的包裹")
+        }
+        if let hook = WidgetBridge.appHook {
+            for id in ids { hook.handleCompleteTodo(id: id) }
+        } else {
+            for id in ids {
+                WidgetSnapshotStore.enqueue(.completeTodo(id))
+                WidgetBridge.applyCompletionLocally(id: id)
+            }
+        }
+        return .result(dialog: "已全部取齐 ✓")
+    }
+}
+
+// MARK: - 一键全部带齐（锁屏大按钮，点一次即收卡）
+
+public struct CheckAllDepartureItemsIntent: AppIntent {
+    public static let title: LocalizedStringResource = "全部带齐"
+
+    /// 不主动把 App 拉到前台：从灵动岛/锁屏/Mac 通知中心点按钮时不打断当前界面。
+    public static let openAppWhenRun: Bool = false
+
+    public static let description = IntentDescription("一次确认出门清点全部项，灵动岛与手表卡片同步收起")
+
+    @Parameter(title: "清单项ID列表")
+    public var itemIDs: String
+
+    public init() {}
+
+    public init(itemIDs: String) {
+        self.itemIDs = itemIDs
+    }
+
+    @MainActor
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
+        let ids = itemIDs.split(separator: ",").compactMap { UUID(uuidString: String($0)) }
+        guard !ids.isEmpty else {
+            return .result(dialog: "没有待确认的清单项")
+        }
+        if let hook = WidgetBridge.appHook {
+            for id in ids { hook.handleToggleDeparture(id: id, isChecked: true) }
+        } else {
+            for id in ids {
+                WidgetSnapshotStore.enqueue(.toggleDeparture(id, true))
+                WidgetBridge.applyDepartureToggleLocally(id: id, isChecked: true)
+            }
+        }
+        return .result(dialog: "已全部带齐 ✓")
+    }
+}
+
 // MARK: - 一句话记账（Siri / 操作按钮 / 手表快捷指令，运行于主应用进程）
 
 public struct QuickAddExpenseIntent: AppIntent {
