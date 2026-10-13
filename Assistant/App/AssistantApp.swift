@@ -48,7 +48,7 @@ struct AssistantApp: App {
                 router.registerDynamicShortcuts()
                 TodoNotificationManager.shared.registerCategories()
                 // 取件销号通知的「已取件 / 全部取齐」按钮，抬腕即可点
-                PickupCheckoutService.registerCategory()
+                await PickupCheckoutService.registerCategory()
                 TodoNotificationManager.shared.syncAllTodoNotifications(context: Persistence.shared.mainContext)
                 // 刷新桌面小组件/锁屏组件共享快照，并对账扩展侧产生的指令
                 WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext)

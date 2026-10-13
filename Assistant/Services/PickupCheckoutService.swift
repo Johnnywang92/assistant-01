@@ -1,7 +1,7 @@
 import ActivityKit
 import Foundation
 import SwiftData
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// 「免掏手机」取件销号闭环。
 ///
@@ -28,7 +28,9 @@ enum PickupCheckoutService {
 
     // MARK: - 通知分类注册
 
-    static func registerCategory() {
+    // 采用 async/await 而非 getNotificationCategories 的 @Sendable 回调：
+    // category/center 均为非 Sendable 类型，在回调里跨隔离捕获会报并发警告
+    static func registerCategory() async {
         let takeOne = UNNotificationAction(
             identifier: actionTakeOne,
             title: "已取件 ✓",
@@ -46,11 +48,9 @@ enum PickupCheckoutService {
             options: .customDismissAction
         )
         let center = UNUserNotificationCenter.current()
-        center.getNotificationCategories { existing in
-            var updated = existing
-            updated.insert(category)
-            center.setNotificationCategories(updated)
-        }
+        var updated = await center.notificationCategories()
+        updated.insert(category)
+        center.setNotificationCategories(updated)
     }
 
     // MARK: - 开启一次销号会话
