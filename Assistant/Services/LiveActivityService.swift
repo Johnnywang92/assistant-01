@@ -107,19 +107,19 @@ enum LiveActivityService {
 
     static func endPickupActivities() {
         for activity in Activity<PickupActivityAttributes>.activities {
-            Task { await activity.end(using: activity.content.state, dismissalPolicy: .immediate) }
+            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
         }
     }
 
     static func endTravelActivities() {
         for activity in Activity<TravelActivityAttributes>.activities {
-            Task { await activity.end(using: activity.content.state, dismissalPolicy: .immediate) }
+            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
         }
     }
 
     static func endDepartureActivities() {
         for activity in Activity<DepartureChecklistActivityAttributes>.activities {
-            Task { await activity.end(using: activity.content.state, dismissalPolicy: .immediate) }
+            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
         }
     }
 }

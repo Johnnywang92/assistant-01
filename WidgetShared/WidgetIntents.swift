@@ -127,7 +127,7 @@ public struct EndTravelActivityIntent: AppIntent {
         }
         let activities = Activity<TravelActivityAttributes>.activities
         for activity in activities {
-            Task { await activity.end(using: activity.content.state, dismissalPolicy: .immediate) }
+            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
         }
         WidgetCenter.shared.reloadAllTimelines()
         return .result(dialog: activities.isEmpty ? "当前没有护航中的行程" : "已结束护航，一路顺利 🚄")
