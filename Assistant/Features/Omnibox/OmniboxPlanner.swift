@@ -134,7 +134,7 @@ struct OmniboxPlanner {
                 }
             }
             params.removeValue(forKey: "capability")
-            var summary = Self.summary(for: capability, params: params)
+            let summary = Self.summary(for: capability, params: params)
             if summary.isEmpty { continue }
             actions.append(PlannedAction(
                 id: UUID(),
