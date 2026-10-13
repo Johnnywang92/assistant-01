@@ -485,6 +485,9 @@ struct DayTimelineView: View {
                     }
                 }
                 .frame(height: height)
+                // 顶部留白：起点锚定的标记胶囊（y-12）与刻度文字（y-8）会越过内容顶边，
+                // 不留白会被 ScrollView 裁切，表现为头部闹钟图标下方字符被遮一半
+                .padding(.vertical, 16)
             }
             .frame(maxHeight: 420)
         }
