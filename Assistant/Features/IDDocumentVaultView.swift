@@ -546,7 +546,7 @@ enum DocumentAutoCropper {
         guard let cg = base.cgImage else { return base }
 
         let request = VNDetectRectanglesRequest()
-        request.maximumCount = 4
+        request.maximumObservations = 4
         request.minimumConfidence = 0.7
         request.minimumAspectRatio = 0.2
         request.quadratureTolerance = 25
