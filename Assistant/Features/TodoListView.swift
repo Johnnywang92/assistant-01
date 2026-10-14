@@ -261,7 +261,6 @@ struct TodoListView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 HomeGreetingCard(activeCount: activeTodos.count)
-                    .wallpaperReadableText()
                 // 万能投喂口固定入口：丢进文字/截图，自动记账、建待办、存收集箱
                 OmniboxEntryCard {
                     Haptic.light()
