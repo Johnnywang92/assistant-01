@@ -41,7 +41,7 @@ public enum LlamaInferenceError: LocalizedError {
         case .samplerInitFailed:
             return "采样器初始化失败"
         case .frameworkNotLinked:
-            return "当前编译环境未链接 LlamaSwift / llama.xcframework 二进制库"
+            return "当前编译环境未链接 LlamaSwift / llama.xcframework 二进制库。这是构建配置问题，与模型文件无关，无需重新下载模型。"
         case .contextOverflow(let required, let available):
             return "提示词需 \(required) token，模型可用仅 \(available) token，已超出上下文窗口"
         }
@@ -51,6 +51,29 @@ public enum LlamaInferenceError: LocalizedError {
 /// 端侧 llama.cpp (GGUF + Metal) 独立推理引擎 Actor
 actor LlamaCppEngine {
     static let shared = LlamaCppEngine()
+
+    /// 当前构建是否真的链接了 llama.cpp 二进制。
+    ///
+    /// **必须在诊断前先看这个标志**：`frameworkNotLinked` 与 `modelLoadFailed`
+    /// 是完全不同的故障——前者是编译配置问题（重下模型无用），
+    /// 后者才是模型文件本身有问题。上游 xcframework 仅含真机切片，
+    /// 因此模拟器目标下 `canImport` 为假、恒返回 false。
+    public static var isEngineLinked: Bool {
+        #if canImport(LlamaSwift) || canImport(llama)
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// 未链接二进制时的用户可见说明。按平台区分，避免用户误以为要重下模型。
+    public static var engineLinkHint: String {
+        #if targetEnvironment(simulator)
+        return "当前为模拟器构建，未包含端侧推理能力（llama.cpp 产物不含模拟器切片）。请改用真机运行；问答会自动降级至本机规则助手。"
+        #else
+        return "当前构建未链接 llama.cpp 二进制，端侧推理不可用。请检查 project.yml 中 LlamaSwift 依赖是否被注释，并执行 xcodegen 重新生成工程。"
+        #endif
+    }
 
     /// 端侧推理上下文窗口上限。KV 缓存按 token 线性增长（Qwen2.5-1.5B 约 28KB/token），
     /// 4096 token ≈ 115MB，是安全上界；再高在低端机有 jetsam 风险。
@@ -424,6 +447,15 @@ public final class LLMInferenceService: ObservableObject {
 
     /// 预加载本地 GGUF 模型至 Metal / 内存
     public func preloadLocalModel() async {
+        // 先判链接状态：未链接时任何加载尝试都必然抛 frameworkNotLinked，
+        // 与模型文件无关。若不在此短路，UI 会把它误显示成「加载失败」，
+        // 诱导用户去重下近 1GB 的模型文件。
+        guard LlamaCppEngine.isEngineLinked else {
+            isLocalModelLoaded = false
+            localEngineStatus = LlamaCppEngine.engineLinkHint
+            return
+        }
+
         let manager = LLMModelManager.shared
         guard await manager.validateModelStatusAndWait() else {
             localEngineStatus = manager.validationStatus == .noModelFile ? "未下载 GGUF 模型" : "模型文件校验未通过"
@@ -438,8 +470,22 @@ public final class LLMInferenceService: ObservableObject {
             localEngineStatus = "已就绪 (llama.cpp Metal)"
         } catch {
             isLocalModelLoaded = false
-            localEngineStatus = "加载失败：\(error.localizedDescription)"
+            localEngineStatus = Self.describeLoadFailure(error)
         }
+    }
+
+    /// 把加载异常翻译成对用户有指导意义的状态文案。
+    ///
+    /// 刻意不复用「加载失败：\(error)」这种通用前缀——它把「构建没链接二进制」
+    /// 和「模型文件损坏」渲染成同一句话，是本bug 最初难以定位的直接原因。
+    static func describeLoadFailure(_ error: Error) -> String {
+        if case LlamaInferenceError.frameworkNotLinked = error {
+            return LlamaCppEngine.engineLinkHint
+        }
+        if case LlamaInferenceError.modelLoadFailed = error {
+            return "GGUF 模型加载失败：文件可能已损坏，或运行内存不足。请重新下载或导入模型文件。"
+        }
+        return "加载失败：\(error.localizedDescription)"
     }
 
     /// 释放已加载的本地 GGUF 模型内存
@@ -819,7 +865,7 @@ public final class LLMInferenceService: ObservableObject {
                 }
             } catch {
                 isLocalModelLoaded = false
-                localEngineStatus = "端侧推理异常：\(error.localizedDescription)"
+                localEngineStatus = Self.describeLoadFailure(error)
             }
         }
 
@@ -972,7 +1018,7 @@ public final class LLMInferenceService: ObservableObject {
                 return await VoiceIntentProcessor(context: context).process(query: query)
             } catch {
                 isLocalModelLoaded = false
-                localEngineStatus = "端侧推理异常：\(error.localizedDescription)"
+                localEngineStatus = Self.describeLoadFailure(error)
             }
         } else {
             localEngineStatus = "未下载本地 GGUF 模型"
