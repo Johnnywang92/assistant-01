@@ -215,7 +215,7 @@ struct ExpenseTrackerView: View {
                                         .font(.caption.bold())
                                         .foregroundStyle(.secondary)
                                     Spacer()
-                                    if LLMModelManager.shared.isModelDownloaded || LLMModelManager.shared.hasValidLocalGGUFFile {
+                                    if LLMModelManager.shared.isModelDownloaded {
                                         Button {
                                             analyzeExpensesWithAI()
                                         } label: {
