@@ -146,65 +146,18 @@ public enum ActionParser: Sendable {
     /// 3. 修复小模型常见的尾逗号（, } / , ]）
     /// 4. 字符串与数字类型宽容解出
     /// 5. 拓扑依赖注入（待办依赖记账）
+    ///
+    /// 分类细节（截断/非法 capability/空数组）见 `ActionOutputParser.classify`，此处保持旧契约：
+    /// 合法数组 → 动作数组（可为空），彻底畸形 → nil。
     public static func parseActionJSON(_ raw: String) -> [ActionItem]? {
-        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if s.hasPrefix("```") {
-            s = s.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        guard let start = s.firstIndex(of: "["), let end = s.lastIndex(of: "]"), start < end else {
+        switch ActionOutputParser.classify(raw) {
+        case .ok(let actions):
+            return actions
+        case .emptyArray:
+            return []
+        case .failed:
             return nil
         }
-        let jsonString = String(s[start...end])
-
-        // 宽容修复尾随逗号：例如 `{"a": 1,}` 或 `[1, 2,]`
-        let repaired = jsonString.replacingOccurrences(
-            of: #",\s*([}\]])"#,
-            with: "$1",
-            options: .regularExpression
-        )
-
-        guard let data = repaired.data(using: .utf8),
-              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return nil
-        }
-
-        var actions: [ActionItem] = []
-        for item in array {
-            guard let capRaw = item["capability"] as? String,
-                  let capability = ActionCapability(rawValue: capRaw) else {
-                continue
-            }
-
-            var params: [String: String] = [:]
-            for (key, value) in item {
-                if let str = value as? String {
-                    params[key] = str
-                } else if let num = value as? NSNumber {
-                    params[key] = num.stringValue
-                }
-            }
-            params.removeValue(forKey: "capability")
-
-            let summary = generateSummary(for: capability, params: params)
-            actions.append(ActionItem(
-                id: UUID(),
-                capability: capability,
-                params: params,
-                confidence: 0.85,
-                summary: summary
-            ))
-        }
-
-        // 拓扑隐式依赖：待办依赖同批次记账结果
-        let expenseIDs = actions.filter { $0.capability == .expenseCreate }.map(\.id)
-        if !expenseIDs.isEmpty {
-            for index in actions.indices where actions[index].capability == .todoCreate {
-                actions[index].dependsOn = expenseIDs
-            }
-        }
-
-        return actions
     }
 
     /// 生成默认的预览文案

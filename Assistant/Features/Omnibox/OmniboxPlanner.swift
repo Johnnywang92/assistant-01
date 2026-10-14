@@ -14,6 +14,9 @@ struct OmniboxPlanner {
         var actions: [PlannedAction]
         var engine: String // "llm" / "rules"
         var normalizedText: String
+        /// LLM 路径未采纳的原因（解析失败/空数组/模型不可用）；nil 表示未降级或 LLM 成功。
+        /// 「无静默丢动作」验收凭据：engine == "rules" 且 LLM 曾被尝试时此字段必非空并进日志。
+        var fallbackReason: String? = nil
     }
 
     func plan(capture: OmniboxCapture) async -> PlanResult {
@@ -63,17 +66,28 @@ struct OmniboxPlanner {
             return PlanResult(actions: [], engine: "rules", normalizedText: "")
         }
 
-        // 2. LLM 优先，失败降级规则
-        if !normalizedText.isEmpty,
-           let actions = await Self.llmPlan(normalizedText), !actions.isEmpty {
-            return PlanResult(actions: actions, engine: "llm", normalizedText: normalizedText)
+        // 2. LLM 优先：解析失败先带一次纠正重试，仍失败才降级规则兜底，且降级原因必须留痕
+        if !normalizedText.isEmpty {
+            let outcome = await Self.llmPlan(normalizedText)
+            if let actions = outcome.actions, !actions.isEmpty {
+                return PlanResult(actions: actions, engine: "llm", normalizedText: normalizedText)
+            }
+            let reason = outcome.fallbackReason ?? "未知原因"
+            print("⚠️ [Omnibox] LLM 路径未采纳，已降级规则引擎：\(reason)｜归一文 \(normalizedText.count) 字")
+            return PlanResult(
+                actions: Self.rulePlan(normalizedText),
+                engine: "rules",
+                normalizedText: normalizedText,
+                fallbackReason: reason
+            )
         }
         return PlanResult(actions: Self.rulePlan(normalizedText), engine: "rules", normalizedText: normalizedText)
     }
 
     // MARK: - LLM 路径
 
-    private static func llmPlan(_ text: String) async -> [PlannedAction]? {
+    /// 返回动作数组与降级原因：actions 为 nil/空时 fallbackReason 必非空（审计凭据）
+    private static func llmPlan(_ text: String) async -> (actions: [PlannedAction]?, fallbackReason: String?) {
         let systemInstruction = """
         你是个人助手的万能投喂口与智能助理理解引擎。把用户输入拆解为可执行动作，只输出一个 JSON 数组，不要输出任何解释、markdown 或多余文字。
         可用动作：
@@ -99,16 +113,40 @@ struct OmniboxPlanner {
         let now = Date()
         let dateText = Self.yyyyMMdd.string(from: now)
         let weekdayText = Self.weekdayFormatter.string(from: now)
-        let userContent = "今天是\(dateText) \(weekdayText)。\n输入：\n\(text)"
+        let baseUserContent = "今天是\(dateText) \(weekdayText)。\n输入：\n\(text)"
 
-        guard let raw = await LLMInferenceService.shared.generateCustomTask(
-            systemInstruction: systemInstruction,
-            userContent: userContent,
-            maxNewTokens: 400
-        ), !raw.isEmpty else {
-            return nil
+        // GBNF 约束下的生成理论上必是合法数组；分类+重试兜住文法未生效的场景
+        // （局域网 Ollama 通道、grammar sampler 初始化失败降级）
+        var attempt = 0
+        var userContent = baseUserContent
+        while true {
+            guard let raw = await LLMInferenceService.shared.generateCustomTask(
+                systemInstruction: systemInstruction,
+                userContent: userContent,
+                maxNewTokens: 400,
+                grammarGBNF: ActionJSONGrammar.gbnf
+            ), !raw.isEmpty else {
+                return (nil, "端侧模型未返回可用输出（第 \(attempt + 1) 次尝试）")
+            }
+
+            let decision = ActionOutputParser.classify(raw)
+            switch decision {
+            case .ok(let actions):
+                return (actions, nil)
+            case .emptyArray:
+                // 模型明确返回空数组：不是解析失败，不消耗重试算力，直接交规则兜底并留痕
+                return (nil, "模型返回空动作数组")
+            case .failed(let reason):
+                guard ActionOutputParser.shouldRetry(decision: decision, attempt: attempt) else {
+                    return (nil, attempt == 0
+                        ? "解析失败：\(reason.rawValue)"
+                        : "纠正重试 \(attempt) 次后仍失败：\(reason.rawValue)")
+                }
+                print("⚠️ [Omnibox] 模型输出解析失败（\(reason.rawValue)），纠正重试 \(attempt + 1)/\(ActionOutputParser.maxCorrectiveRetries)")
+                userContent = ActionOutputParser.correctiveUserContent(original: baseUserContent, failedOutput: raw)
+                attempt += 1
+            }
         }
-        return Self.parseActionJSON(raw)
     }
 
     /// 宽容解析模型输出：剥掉 markdown 围栏、截取最外层 JSON 数组（委托 AssistantCore.ActionParser）

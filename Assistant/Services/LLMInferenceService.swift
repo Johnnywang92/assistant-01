@@ -155,6 +155,8 @@ actor LlamaCppEngine {
         prompt: String,
         modelURL: URL,
         maxNewTokens: Int = 256,
+        grammar: String? = nil,
+        grammarRoot: String = "root",
         onPartialOutput: @Sendable (String) async -> Void
     ) async throws -> String {
         try ensureModelLoaded(at: modelURL)
@@ -255,6 +257,23 @@ actor LlamaCppEngine {
             llama_sampler_free(sampler)
         }
 
+        // GBNF 语法约束必须放在链首（对齐 llama.cpp examples/main 的用法）：
+        // 若排在 top-k/top-p 之后，截断可能把文法允许的 token 全部剪掉导致无法收尾；
+        // chain 接管 grammar sampler 生命周期，勿另行 free。
+        if let grammar {
+            let grammarSampler = grammar.withCString { grammarStr in
+                grammarRoot.withCString { rootStr in
+                    llama_sampler_init_grammar(vocab, grammarStr, rootStr)
+                }
+            }
+            if let grammarSampler {
+                llama_sampler_chain_add(sampler, grammarSampler)
+            } else {
+                // 头文件约定：文法串解析失败返回 NULL。降级为不加约束继续推理，不能让整次生成崩掉。
+                print("⚠️ GBNF 文法解析失败，本次推理未挂语法约束")
+            }
+        }
+
         llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40))
         llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.90, 1))
         llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.60))
@@ -327,6 +346,8 @@ actor LlamaCppEngine {
         prompt: String,
         modelURL: URL,
         maxNewTokens: Int = 256,
+        grammar: String? = nil,
+        grammarRoot: String = "root",
         onPartialOutput: @Sendable (String) async -> Void
     ) async throws -> String {
         throw LlamaInferenceError.frameworkNotLinked
@@ -405,7 +426,7 @@ public final class LLMInferenceService: ObservableObject {
     public func preloadLocalModel() async {
         let manager = LLMModelManager.shared
         guard await manager.validateModelStatusAndWait() else {
-            localEngineStatus = "未下载 GGUF 模型"
+            localEngineStatus = manager.validationStatus == .noModelFile ? "未下载 GGUF 模型" : "模型文件校验未通过"
             isLocalModelLoaded = false
             return
         }
@@ -752,10 +773,13 @@ public final class LLMInferenceService: ObservableObject {
     }
 
     /// 供 App 各内容模块（周期复盘润色、语音备忘提炼、自定义任务拆解、记账洞察等）调用的专项端侧推理接口
+    /// - Parameter grammarGBNF: 非 nil 时对端侧 llama.cpp 推理挂 GBNF 语法约束；
+    ///   局域网 Ollama 联调通道不支持自定义文法，该路径靠上层宽容解析与重试兜底。
     public func generateCustomTask(
         systemInstruction: String,
         userContent: String,
-        maxNewTokens: Int = 256
+        maxNewTokens: Int = 256,
+        grammarGBNF: String? = nil
     ) async -> String? {
         let modelManager = LLMModelManager.shared
         let modelReady = await modelManager.validateModelStatusAndWait()
@@ -779,7 +803,8 @@ public final class LLMInferenceService: ObservableObject {
                 let output = try await LlamaCppEngine.shared.generate(
                     prompt: chatMLPrompt,
                     modelURL: modelManager.localModelURL,
-                    maxNewTokens: maxNewTokens
+                    maxNewTokens: maxNewTokens,
+                    grammar: grammarGBNF
                 ) { partial in
                     await MainActor.run {
                         LLMInferenceService.shared.handlePartialOutput(partial)
@@ -979,6 +1004,10 @@ public final class LLMInferenceService: ObservableObject {
             return sideEffectNote
         }
         let baseReply = await VoiceIntentProcessor(context: context).process(query: query)
+        if case .validationFailed(let reason) = modelManager.validationStatus {
+            // 文件存在但完整性校验失败：明确展示原因，不能静默回落成「未下载」或「就绪」
+            return "\(baseReply)\n\n⚠️ 模型文件校验未通过（\(L10n.tr(reason))），已切换至本机规则助手回答，可在「设置 → AI 模型」中重新校验或重新导入。"
+        }
         if !modelManager.isModelDownloaded {
             return "\(baseReply)\n\n💡 当前尚未下载本地 GGUF 模型，已使用本机规则助手回答（可在「设置 → AI 模型」中下载 Qwen2.5-1.5B 开启端侧推理）。"
         } else {

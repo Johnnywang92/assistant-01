@@ -33,6 +33,7 @@ struct OmniboxView: View {
     @State private var phase: Phase = .idle
     @State private var actions: [PlannedAction] = []
     @State private var planEngine = "rules"
+    @State private var planFallbackReason: String?
     @State private var outcomes: [ActionExecutionOutcome] = []
     @State private var errorMessage: String?
     @State private var lastCapture: OmniboxCapture?
@@ -466,6 +467,13 @@ struct OmniboxView: View {
                     Task { await runPlan(force: true) }
                 }
                 .font(.caption)
+            }
+
+            // 降级原因对用户可见：保证「LLM 失败回落规则」不是静默发生的（原因细节同时进控制台日志）
+            if planEngine == "rules", let reason = planFallbackReason {
+                Text(L10n.tr("模型输出解析失败，已降级本机规则引擎：") + reason)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
 
             ForEach($actions) { $action in
@@ -912,6 +920,7 @@ struct OmniboxView: View {
 
         let plan = await OmniboxPlanner().plan(capture: capture)
         planEngine = plan.engine
+        planFallbackReason = plan.fallbackReason
         if plan.actions.isEmpty {
             // 纯图片但 OCR 颗粒无收时给出针对性提示
             let hasImages = !images.isEmpty
