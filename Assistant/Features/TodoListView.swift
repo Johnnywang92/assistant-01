@@ -281,6 +281,16 @@ struct TodoListView: View {
     private var done: [TodoItem] { classified.done }
     private var recurring: [TodoItem] { classified.recurring }
 
+    /// 搜索/深链直达待办详情：等搜索弹层 dismiss 动画结束再叠弹层，避免两个 sheet 撞呈现时序
+    private func presentTodoDetail(for id: UUID?) {
+        guard let id else { return }
+        router.requestedTodoDetailID = nil
+        let item = todos.first(where: { $0.id == id })
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            itemToEdit = item
+        }
+    }
+
     private var generals: [TodoItem] { classified.generals }
     private var works: [TodoItem] { classified.works }
     private var parcels: [TodoItem] { classified.parcels }
@@ -483,6 +493,10 @@ struct TodoListView: View {
                 let target = category(for: item)
                 selectedFilter = homeCategories.contains(target) ? target : .all
             }
+            // 统一搜索/深链命中待办：在滚动定位之外直达详情弹层
+            .onChange(of: router.requestedTodoDetailID) { _, id in
+                presentTodoDetail(for: id)
+            }
             .onChange(of: searchText) { _, query in
                 if !query.isEmpty { selectedFilter = .all }
             }
@@ -519,6 +533,8 @@ struct TodoListView: View {
                     selectedFilter = homeCategories.contains(target) ? target : .all
                     highlightedTodoID = id
                 }
+                // 搜索弹层先于本页挂载时 onChange 不触发，这里兜底消费直达详情的请求
+                presentTodoDetail(for: router.requestedTodoDetailID)
             }
             .onChange(of: todos) { _, _ in
                 anniversaryReminder.refreshActiveUpcoming(context: context)
