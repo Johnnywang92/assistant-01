@@ -51,6 +51,13 @@ struct UnifiedSearchView: View {
                         ContentUnavailableView.search(text: query)
                     }
                 } else {
+                    if SearchPrivacyGate.hidesSensitiveDetails {
+                        Section {
+                            Label(L10n.tr("敏感内容已隐藏，解锁或在设置中开启敏感详情后查看"), systemImage: "lock.shield")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     // 按模块分类分组
                     ForEach(UnifiedSearchCategory.allCases) { category in
                         let categoryResults = searchService.results.filter { $0.category == category }
@@ -83,25 +90,17 @@ struct UnifiedSearchView: View {
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "搜索待办/取件码/账单/收纳/证件/备忘")
             .onChange(of: query) { _, newQuery in
-                Task {
-                    _ = await searchService.search(
-                        query: newQuery,
-                        context: context,
-                        isLocked: lockManager.isLocked
-                    )
-                }
+                runSearch(newQuery)
+            }
+            // 锁定态/敏感详情开关在搜索过程中变化时重算结果，避免已渲染的正文预览残留
+            .onChange(of: lockManager.isLocked) { _, _ in
+                runSearch(query)
             }
             .onAppear {
                 if let prefilled = router.prefilledSearchQuery, !prefilled.isEmpty {
                     query = prefilled
                     router.prefilledSearchQuery = nil
-                    Task {
-                        _ = await searchService.search(
-                            query: prefilled,
-                            context: context,
-                            isLocked: lockManager.isLocked
-                        )
-                    }
+                    runSearch(prefilled)
                 }
             }
             .toolbar {
@@ -109,6 +108,12 @@ struct UnifiedSearchView: View {
                     Button("完成") { dismiss() }
                 }
             }
+        }
+    }
+
+    private func runSearch(_ query: String) {
+        Task {
+            _ = await searchService.search(query: query, context: context)
         }
     }
 

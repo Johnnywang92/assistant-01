@@ -65,6 +65,29 @@ public struct UnifiedSearchResultItem: Identifiable, Sendable {
     }
 }
 
+/// 跨模块搜索结果的统一隐私闸门：锁定态或「敏感详情」开关关闭时，五类结果一律只保留标题类字段与所属模块
+enum SearchPrivacyGate {
+    /// 复用现有状态：AppLock 锁定标记 + 原只作用于通知的「敏感详情」开关存储键，不新造设置项
+    @MainActor static var hidesSensitiveDetails: Bool {
+        AppLockManager.shared.isLocked || !TodoNotificationManager.shared.showSensitiveDetails
+    }
+
+    /// 结果暴露的唯一出口：隐藏态一律清空副标题，避免证件与其他模块两套脱敏口径
+    @MainActor static func reveal(
+        category: UnifiedSearchCategory,
+        title: String,
+        maskedTitle: String? = nil,
+        subtitle: String?
+    ) -> (title: String, subtitle: String?) {
+        guard hidesSensitiveDetails else { return (title, subtitle) }
+        // 证件标题可能含持证人姓名，隐藏态回退为证件类型名
+        if category == .document, let maskedTitle {
+            return ("🔒 \(maskedTitle)", nil)
+        }
+        return (title, nil)
+    }
+}
+
 /// 跨模块统一搜索服务（扇出 TodoItem / ExpenseRecord / StoredItem / IDDocumentItem / VoiceMemo）
 @MainActor
 public final class UnifiedSearchService: ObservableObject {
@@ -76,8 +99,8 @@ public final class UnifiedSearchService: ObservableObject {
 
     private init() {}
 
-    /// 执行跨模块全量检索，受 AppLockManager 锁定状态约束对敏感项脱敏
-    public func search(query: String, context: ModelContext, isLocked: Bool = false) async -> [UnifiedSearchResultItem] {
+    /// 执行跨模块全量检索，敏感暴露级别统一由 SearchPrivacyGate 判定
+    public func search(query: String, context: ModelContext) async -> [UnifiedSearchResultItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             self.results = []
@@ -90,7 +113,7 @@ public final class UnifiedSearchService: ObservableObject {
         var items: [UnifiedSearchResultItem] = []
 
         // 1. 待办事项 (TodoItem)
-        let todoDescriptor = FetchDescriptor<TodoItem>(
+        var todoDescriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate<TodoItem> {
                 $0.title.localizedStandardContains(trimmed) ||
                 ($0.detail != nil && $0.detail!.localizedStandardContains(trimmed)) ||
@@ -100,8 +123,9 @@ public final class UnifiedSearchService: ObservableObject {
             },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
+        todoDescriptor.fetchLimit = 20
         if let todos = try? context.fetch(todoDescriptor) {
-            for t in todos.prefix(20) {
+            for t in todos {
                 let sub: String? = {
                     if let code = t.pickupCode, !code.isEmpty {
                         let stationText = t.station ?? t.location ?? ""
@@ -109,14 +133,15 @@ public final class UnifiedSearchService: ObservableObject {
                     }
                     return t.detail?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? t.detail : (t.station ?? t.location)
                 }()
+                let revealed = SearchPrivacyGate.reveal(category: .todo, title: t.title, subtitle: sub)
                 items.append(
                     UnifiedSearchResultItem(
                         id: t.id,
                         category: .todo,
-                        title: t.title,
-                        subtitle: sub,
+                        title: revealed.title,
+                        subtitle: revealed.subtitle,
                         date: t.dueAt ?? t.createdAt,
-                        isSensitive: false,
+                        isSensitive: true,
                         targetTab: .todos,
                         vaultDestination: nil
                     )
@@ -125,7 +150,7 @@ public final class UnifiedSearchService: ObservableObject {
         }
 
         // 2. 记账记录 (ExpenseRecord)
-        let expenseDescriptor = FetchDescriptor<ExpenseRecord>(
+        var expenseDescriptor = FetchDescriptor<ExpenseRecord>(
             predicate: #Predicate<ExpenseRecord> {
                 $0.title.localizedStandardContains(trimmed) ||
                 $0.categoryRaw.localizedStandardContains(trimmed) ||
@@ -133,18 +158,24 @@ public final class UnifiedSearchService: ObservableObject {
             },
             sortBy: [SortDescriptor(\.date, order: .reverse)]
         )
+        expenseDescriptor.fetchLimit = 20
         if let expenses = try? context.fetch(expenseDescriptor) {
-            for e in expenses.prefix(20) {
+            for e in expenses {
                 let sign = e.isIncome ? "+" : "-"
                 let amountText = String(format: "%@%.2f 元", sign, e.amount)
+                let revealed = SearchPrivacyGate.reveal(
+                    category: .expense,
+                    title: e.title,
+                    subtitle: "\(amountText) · \(e.categoryRaw)"
+                )
                 items.append(
                     UnifiedSearchResultItem(
                         id: e.id,
                         category: .expense,
-                        title: e.title,
-                        subtitle: "\(amountText) · \(e.categoryRaw)",
+                        title: revealed.title,
+                        subtitle: revealed.subtitle,
                         date: e.date,
-                        isSensitive: false,
+                        isSensitive: true,
                         targetTab: .expenses,
                         vaultDestination: nil
                     )
@@ -153,7 +184,7 @@ public final class UnifiedSearchService: ObservableObject {
         }
 
         // 3. 收纳物品 (StoredItem)
-        let storageDescriptor = FetchDescriptor<StoredItem>(
+        var storageDescriptor = FetchDescriptor<StoredItem>(
             predicate: #Predicate<StoredItem> {
                 $0.name.localizedStandardContains(trimmed) ||
                 $0.location.localizedStandardContains(trimmed) ||
@@ -162,17 +193,19 @@ public final class UnifiedSearchService: ObservableObject {
             },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
+        storageDescriptor.fetchLimit = 20
         if let stored = try? context.fetch(storageDescriptor) {
-            for s in stored.prefix(20) {
+            for s in stored {
                 let loc = "\(s.roomArea) · \(s.location)"
+                let revealed = SearchPrivacyGate.reveal(category: .storage, title: s.name, subtitle: loc)
                 items.append(
                     UnifiedSearchResultItem(
                         id: s.id,
                         category: .storage,
-                        title: s.name,
-                        subtitle: loc,
+                        title: revealed.title,
+                        subtitle: revealed.subtitle,
                         date: s.updatedAt,
-                        isSensitive: false,
+                        isSensitive: true,
                         targetTab: .vault,
                         vaultDestination: "storage"
                     )
@@ -180,8 +213,8 @@ public final class UnifiedSearchService: ObservableObject {
             }
         }
 
-        // 4. 证件卡包 (IDDocumentItem) - 敏感项受 AppLock 约束
-        let docDescriptor = FetchDescriptor<IDDocumentItem>(
+        // 4. 证件卡包 (IDDocumentItem) - 脱敏口径统一走 SearchPrivacyGate
+        var docDescriptor = FetchDescriptor<IDDocumentItem>(
             predicate: #Predicate<IDDocumentItem> {
                 $0.title.localizedStandardContains(trimmed) ||
                 $0.typeRaw.localizedStandardContains(trimmed) ||
@@ -190,24 +223,27 @@ public final class UnifiedSearchService: ObservableObject {
             },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
+        docDescriptor.fetchLimit = 15
         if let docs = try? context.fetch(docDescriptor) {
-            for d in docs.prefix(15) {
+            for d in docs {
                 let subtitleText: String? = {
-                    if isLocked {
-                        return "🔒 证件信息已加密锁定，解锁后查看"
-                    }
                     if let num = d.documentNumber, !num.isEmpty {
                         return "\(d.type.displayName) · 号码：\(num)"
                     }
                     return d.type.displayName
                 }()
-
+                let revealed = SearchPrivacyGate.reveal(
+                    category: .document,
+                    title: d.title,
+                    maskedTitle: d.type.displayName,
+                    subtitle: subtitleText
+                )
                 items.append(
                     UnifiedSearchResultItem(
                         id: d.id,
                         category: .document,
-                        title: isLocked ? "🔒 \(d.type.displayName)" : d.title,
-                        subtitle: subtitleText,
+                        title: revealed.title,
+                        subtitle: revealed.subtitle,
                         date: d.expiryDate ?? d.updatedAt,
                         isSensitive: true,
                         targetTab: .documents,
@@ -218,7 +254,7 @@ public final class UnifiedSearchService: ObservableObject {
         }
 
         // 5. 语音备忘 (VoiceMemo)
-        let memoDescriptor = FetchDescriptor<VoiceMemo>(
+        var memoDescriptor = FetchDescriptor<VoiceMemo>(
             predicate: #Predicate<VoiceMemo> {
                 $0.title.localizedStandardContains(trimmed) ||
                 ($0.transcription != nil && $0.transcription!.localizedStandardContains(trimmed)) ||
@@ -226,18 +262,20 @@ public final class UnifiedSearchService: ObservableObject {
             },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
+        memoDescriptor.fetchLimit = 15
         if let memos = try? context.fetch(memoDescriptor) {
-            for m in memos.prefix(15) {
+            for m in memos {
                 let snippet = (m.summary ?? m.transcription ?? "").prefix(40)
                 let sub = snippet.isEmpty ? "\(Int(m.duration)) 秒录音" : String(snippet)
+                let revealed = SearchPrivacyGate.reveal(category: .memo, title: m.title, subtitle: sub)
                 items.append(
                     UnifiedSearchResultItem(
                         id: m.id,
                         category: .memo,
-                        title: m.title,
-                        subtitle: sub,
+                        title: revealed.title,
+                        subtitle: revealed.subtitle,
                         date: m.createdAt,
-                        isSensitive: false,
+                        isSensitive: true,
                         targetTab: .memos,
                         vaultDestination: "voiceMemos"
                     )

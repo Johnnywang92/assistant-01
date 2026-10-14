@@ -12,6 +12,7 @@ struct MainTabView: View {
     @State private var showScanner = false
     @State private var showOmnibox = false
     @State private var showUnifiedSearch = false
+    @State private var crossModuleSearchText = ""
     @State private var showClipboardReadError = false
     @State private var autoStartListening = false
     @ObservedObject private var voice = VoiceDialogueService.shared
@@ -36,6 +37,16 @@ struct MainTabView: View {
                         .tag(tab)
                         .badge(badgeCount(for: tab))
                 }
+            }
+            // 根级跨模块搜索入口：页内已有 .searchable 的标签以页内搜索优先，
+            // 根搜索词只负责唤起统一搜索弹层，避免两个搜索条争用同一导航栏
+            .searchable(text: $crossModuleSearchText, prompt: Text(L10n.tr("跨模块搜索")))
+            .onChange(of: crossModuleSearchText) { _, newQuery in
+                let trimmed = newQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                router.prefilledSearchQuery = trimmed
+                router.activeSheet = .unifiedSearch
+                crossModuleSearchText = ""
             }
 
             // 剪贴板新内容提示条（检测到截图/复制文字后回到 App 时从顶部滑入）

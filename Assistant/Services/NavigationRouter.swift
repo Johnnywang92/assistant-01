@@ -7,7 +7,7 @@ import UIKit
 public final class NavigationRouter: ObservableObject {
     public static let shared = NavigationRouter()
 
-    public enum AppTab: String, CaseIterable, Identifiable, Codable {
+    public enum AppTab: String, CaseIterable, Identifiable, Codable, Sendable {
         case todos
         case lifeEvents
         case departure
@@ -84,6 +84,8 @@ public final class NavigationRouter: ObservableObject {
     @Published public var activeSheet: ActiveSheet?
     @Published public var requestedFilter: String?
     @Published public var focusedTodoID: UUID?
+    /// 统一搜索/深链直达待办：TodoListView 消费后打开该待办详情并置 nil
+    @Published public var requestedTodoDetailID: UUID? = nil
     @Published public var pendingImportPayload: TodoSharePayload?
     /// 万能投喂口的剪贴板预填充载荷（由投喂口消费后置 nil）
     @Published public var omniboxPrefill: OmniboxPayload?
@@ -106,7 +108,10 @@ public final class NavigationRouter: ObservableObject {
     /// 跨模块统一导航路由：若对应 Tab 处于活跃列表则直达 Tab，否则切至生活档案大厅并推入对应子页面
     public func navigateTo(tab: AppTab, vaultDestination: String? = nil, focusTodoID: UUID? = nil) {
         if let focusTodoID {
-            self.focusTodo(focusTodoID)
+            // 搜索结果命中待办：滚动定位之外再直达详情
+            selectedTab = .todos
+            focusedTodoID = focusTodoID
+            requestedTodoDetailID = focusTodoID
             return
         }
         if TabBarManager.shared.isTabActive(tab) {
@@ -134,6 +139,14 @@ public final class NavigationRouter: ObservableObject {
         }
 
         switch host {
+        case "search", "unified-search":
+            // 深链 assistant://search?q=关键词：小组件/快捷指令直接唤起跨模块统一搜索
+            if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               let queryValue = components.queryItems?.first(where: { $0.name == "q" })?.value,
+               !queryValue.isEmpty {
+                prefilledSearchQuery = queryValue
+            }
+            activeSheet = .unifiedSearch
         case "import", "import-todo", "import-qr":
             if let payload = QRCodeService.decodePayload(from: url.absoluteString) {
                 selectedTab = .todos
