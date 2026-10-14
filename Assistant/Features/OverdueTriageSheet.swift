@@ -92,7 +92,7 @@ struct OverdueTriageSheet: View {
                     .id(card.id)
             }
         }
-        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: index)
+        .responsiveAnimation(.spring(response: 0.32, dampingFraction: 0.8), value: index)
         .frame(maxHeight: 320)
     }
 
@@ -167,7 +167,7 @@ struct OverdueTriageSheet: View {
                 } else if width < -Self.swipeThreshold {
                     apply(.pushToWeekend)
                 } else {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                    AppMotion.animate(.spring(response: 0.3, dampingFraction: 0.75)) {
                         dragOffset = 0
                     }
                 }
@@ -340,7 +340,7 @@ struct OverdueTriageSheet: View {
         WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
         processedCount += 1
 
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+        AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.85)) {
             dragOffset = 0
             showReschedulePicker = false
             index += 1

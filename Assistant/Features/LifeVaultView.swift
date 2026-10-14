@@ -106,66 +106,20 @@ struct LifeVaultView: View {
     var body: some View {
         NavigationStack {
             List {
-                // 顶部快速看板统计
+                // 顶部快速看板统计（只读概览；导航统一走下方分组列表，避免同一目标双入口）
                 Section {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                        Button {
-                            selectedDestination = .lifeEvents
-                        } label: {
-                            statPill(title: "人生大事", count: "\(lifeProjects.count)", icon: "sparkles", color: .orange)
-                        }
-                        .buttonStyle(.borderless)
-
-                        Button {
-                            selectedDestination = .documents
-                        } label: {
-                            statPill(title: "证件", count: "\(documents.count)", icon: "person.text.rectangle.fill", color: .blue, badgeCount: expiringDocCount)
-                        }
-                        .buttonStyle(.borderless)
-
-                        Button {
-                            selectedDestination = .passwords
-                        } label: {
-                            statPill(title: "密码", count: "\(passwords.count)", icon: "key.fill", color: .teal)
-                        }
-                        .buttonStyle(.borderless)
-
-                        Button {
-                            selectedDestination = .storage
-                        } label: {
-                            statPill(title: "收纳", count: "\(storedItems.count)", icon: "archivebox.fill", color: .indigo)
-                        }
-                        .buttonStyle(.borderless)
-
-                        Button {
-                            selectedDestination = .vehicles
-                        } label: {
-                            statPill(title: "爱车", count: "\(vehicles.count)", icon: "car.fill", color: .indigo, badgeCount: needCareVehicleCount)
-                        }
-                        .buttonStyle(.borderless)
-
-                        Button {
-                            selectedDestination = .departure
-                        } label: {
-                            statPill(title: "防丢", count: "\(departureItems.count)", icon: "bag.fill", color: .teal, badgeCount: uncheckedDepartureCount)
-                        }
-                        .buttonStyle(.borderless)
-
-                        Button {
-                            selectedDestination = .anniversaries
-                        } label: {
-                            statPill(title: "纪念日", count: "\(anniversaries.count)", icon: "gift.fill", color: .pink)
-                        }
-                        .buttonStyle(.borderless)
-
-                        Button {
-                            selectedDestination = .habits
-                        } label: {
-                            statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: .purple)
-                        }
-                        .buttonStyle(.borderless)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: AppSpacing.sm), count: 4), spacing: AppSpacing.sm) {
+                        statPill(title: "人生大事", count: "\(lifeProjects.count)", icon: "sparkles", color: AppColor.warning)
+                        statPill(title: "证件", count: "\(documents.count)", icon: "person.text.rectangle.fill", color: AppColor.info, badgeCount: expiringDocCount)
+                        statPill(title: "密码", count: "\(passwords.count)", icon: "key.fill", color: AppColor.success, badgeCount: 0)
+                        statPill(title: "收纳", count: "\(storedItems.count)", icon: "archivebox.fill", color: AppColor.primary, badgeCount: 0)
+                        statPill(title: "爱车", count: "\(vehicles.count)", icon: "car.fill", color: AppColor.primary, badgeCount: needCareVehicleCount)
+                        statPill(title: "防丢", count: "\(departureItems.count)", icon: "bag.fill", color: AppColor.success, badgeCount: uncheckedDepartureCount)
+                        statPill(title: "纪念日", count: "\(anniversaries.count)", icon: "gift.fill", color: AppColor.feature, badgeCount: 0)
+                        statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: AppColor.feature, badgeCount: 0)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, AppSpacing.xs)
+                    .wallpaperReadableText()
                 }
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
@@ -454,7 +408,7 @@ struct LifeVaultView: View {
 
     @ViewBuilder
     private func statPill(title: String, count: String, icon: String, color: Color, badgeCount: Int = 0) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: AppSpacing.xs) {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: icon)
                     .font(.title3)
@@ -463,7 +417,7 @@ struct LifeVaultView: View {
 
                 if badgeCount > 0 {
                     Circle()
-                        .fill(Color.red)
+                        .fill(AppColor.danger)
                         .frame(width: 8, height: 8)
                         .offset(x: 4, y: -2)
                 }
@@ -479,15 +433,13 @@ struct LifeVaultView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(badgeCount > 0 ? Color.red.opacity(0.35) : Color.clear, lineWidth: 1)
-        )
+        // 警告态统计卡：badgeCount>0 时自动带 danger 描边
+        .appWarningState(active: badgeCount > 0, severity: .danger, cornerRadius: AppRadius.card)
         .contentShape(Rectangle())
+        // 只读统计卡：整卡合并为一个无障碍元素，需关注数量随标签播报
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title) 统计")
+        .accessibilityValue(badgeCount > 0 ? "\(count) 项，\(badgeCount) 项需关注" : "\(count) 项")
     }
 
     @ViewBuilder
@@ -500,7 +452,7 @@ struct LifeVaultView: View {
     ) -> some View {
         HStack(spacing: 14) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .fill(color.gradient)
                     .frame(width: 40, height: 40)
                 Image(systemName: icon)
@@ -515,7 +467,7 @@ struct LifeVaultView: View {
 
                 Text(L10n.tr(status))
                     .font(.caption)
-                    .foregroundStyle(isAlert ? .red : .secondary)
+                    .foregroundStyle(isAlert ? AppColor.danger : .secondary)
             }
             .padding(.vertical, 4)
         }

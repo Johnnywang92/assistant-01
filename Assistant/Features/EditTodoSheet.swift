@@ -204,7 +204,7 @@ struct EditTodoSheet: View {
                                     .foregroundStyle(.orange)
                                 Spacer()
                                 Button {
-                                    withAnimation { showConfidenceNotice = false }
+                                    AppMotion.animate { showConfidenceNotice = false }
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundStyle(.secondary)
@@ -670,9 +670,9 @@ struct TodoQRCodeQuickSheet: View {
                                     Button {
                                         UIPasteboard.general.string = loc
                                         Haptic.light()
-                                        withAnimation { isCopiedLocation = true }
+                                        AppMotion.animate { isCopiedLocation = true }
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-                                            withAnimation { isCopiedLocation = false }
+                                            AppMotion.animate { isCopiedLocation = false }
                                         }
                                     } label: {
                                         Text(isCopiedLocation ? "已复制" : "复制地址")
@@ -726,9 +726,9 @@ struct TodoQRCodeQuickSheet: View {
                                         Button {
                                             UIPasteboard.general.string = payload
                                             Haptic.light()
-                                            withAnimation { isCopiedCode = true }
+                                            AppMotion.animate { isCopiedCode = true }
                                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-                                                withAnimation { isCopiedCode = false }
+                                                AppMotion.animate { isCopiedCode = false }
                                             }
                                         } label: {
                                             HStack(spacing: 3) {

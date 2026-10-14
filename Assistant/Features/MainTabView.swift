@@ -65,7 +65,7 @@ struct MainTabView: View {
                 }
                 Spacer()
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: clipboard.suggestion)
+            .responsiveAnimation(.spring(response: 0.35, dampingFraction: 0.85), value: clipboard.suggestion)
 
             // 单手自由拖拽吸边语音悬浮球（支持单击唤起、长按直启语音输入）
             DraggableVoiceFloatingBall(showVoice: $showVoice, autoStartListening: $autoStartListening) {

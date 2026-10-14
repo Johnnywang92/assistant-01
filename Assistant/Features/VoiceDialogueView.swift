@@ -192,7 +192,7 @@ struct VoiceDialogueView: View {
                     }
                     .onChange(of: dialogueHistory.count) { _, _ in
                         if let last = dialogueHistory.last {
-                            withAnimation {
+                            AppMotion.animate {
                                 proxy.scrollTo(last.id, anchor: .bottom)
                             }
                         }
@@ -320,7 +320,7 @@ struct VoiceDialogueView: View {
                 Button("取消", role: .cancel) {}
                 Button("确认清空", role: .destructive) {
                     DialogueHistoryManager.shared.clearAll(context: context)
-                    withAnimation {
+                    AppMotion.animate {
                         dialogueHistory.removeAll()
                     }
                     Haptic.success()
@@ -397,7 +397,7 @@ struct VoiceDialogueView: View {
                             .fill(voice.isListening ? Color.red : Color.accentColor)
                             .frame(width: 68, height: 68)
                             .scaleEffect(voice.isListening ? 1.08 : 1.0)
-                            .animation(voice.isListening ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: voice.isListening)
+                            .responsiveAnimation(voice.isListening ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: voice.isListening)
                             .shadow(color: (voice.isListening ? Color.red : Color.accentColor).opacity(0.4), radius: 8)
 
                         Image(systemName: voice.isListening ? "stop.fill" : "mic.fill")
@@ -784,7 +784,7 @@ struct DialogueBubble: View {
                         .foregroundStyle(.white)
 
                     Text(message.timestamp, format: .dateTime.hour().minute())
-                        .font(.system(size: 9))
+                        .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .padding(.leading, 4)
                 }
@@ -853,7 +853,7 @@ struct DialogueBubble: View {
                 .foregroundStyle(.primary)
 
                 Text(message.timestamp, format: .dateTime.hour().minute())
-                    .font(.system(size: 9))
+                    .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 4)
             }
@@ -897,7 +897,7 @@ struct PlanningTaskCardView: View {
                         Haptic.light()
                     } label: {
                         Text(plan.subtasks.allSatisfy { $0.isSelected } ? "取消全选" : "全选")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.caption2.weight(.medium))
                             .foregroundStyle(Color.accentColor)
                     }
                     .buttonStyle(.plain)
@@ -986,7 +986,7 @@ struct PlanningTaskCardView: View {
                                         Image(systemName: "list.bullet.indent")
                                         Text("细化")
                                     }
-                                    .font(.system(size: 9, weight: .semibold))
+                                    .font(.caption2.weight(.semibold))
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 2.5)
                                     .background(Capsule().fill(Color.accentColor.opacity(0.12)))

@@ -319,13 +319,14 @@ struct IDPhotoThumbnailSlotView: View {
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                         Text(fileName == nil ? "未添加" : "加载中…")
-                            .font(.system(size: 10))
+                            .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
                 }
             }
             Text(L10n.tr(label))
-                .font(.system(size: 10))
+                .font(.caption2)
+                .fontWeight(.medium)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -379,6 +380,8 @@ struct IDDocumentDetailView: View {
                                 } label: {
                                     Image(systemName: "doc.on.doc").font(.footnote)
                                 }
+                                .accessibilityLabel("复制证件号码")
+                                .accessibilityHint("将完整证件号码复制到剪贴板")
                             }
                         }
                     }

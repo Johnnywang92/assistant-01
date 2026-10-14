@@ -175,7 +175,7 @@ struct TabBarCustomizationView: View {
                         .font(.body.weight(.medium))
                     if isSettings {
                         Text("固定常驻")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.caption2.bold())
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1.5)
                             .background(Capsule().fill(Color.secondary.opacity(0.15)))

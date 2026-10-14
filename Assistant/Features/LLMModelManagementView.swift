@@ -66,7 +66,9 @@ struct LLMModelManagementView: View {
                         }
                         GridRow {
                             Text("推理引擎").foregroundStyle(.secondary).font(.caption)
-                            Text("llama.cpp (Metal GPU)").font(.caption.bold()).foregroundStyle(.purple)
+                            Text(isEngineLinked ? "llama.cpp (Metal GPU)" : "未链接")
+                                .font(.caption.bold())
+                                .foregroundStyle(isEngineLinked ? AppColor.feature : AppColor.warning)
                             Text("引擎状态").foregroundStyle(.secondary).font(.caption)
                             Text(inferenceService.localEngineStatus)
                                 .font(.caption.bold())
@@ -80,10 +82,26 @@ struct LLMModelManagementView: View {
                     }
                 }
                 .padding(.vertical, 4)
+
+                // 能力边界如实告知：二进制未链接时，「已就绪」是虚假承诺
+                if !isEngineLinked {
+                    Label {
+                        Text(LlamaCppEngine.engineLinkHint)
+                            .font(.caption)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(AppColor.warning)
+                    }
+                    .padding(.vertical, 2)
+                }
             } header: {
                 Text("模型基础信息")
             } footer: {
-                Text("已接入 llama.cpp 端侧推理引擎（Apple Metal GPU 加速）。模型文件下载或导入后，所有对话问答均在 iPhone 本机离线完成，隐私数据不出设备。")
+                if isEngineLinked {
+                    Text("已接入 llama.cpp 端侧推理引擎（Apple Metal GPU 加速）。模型文件下载或导入后，所有对话问答均在 iPhone 本机离线完成，隐私数据不出设备。")
+                } else {
+                    Text("当前构建未包含端侧推理二进制，下载的模型文件不会被用于回答。问答由本机规则引擎应答，同样不联网；如需真实模型推理，请在真机上运行。")
+                }
             }
 
             // MARK: - 2. 下载与文件获取控制
@@ -102,7 +120,7 @@ struct LLMModelManagementView: View {
                         }
 
                         ProgressView(value: modelManager.downloadProgress)
-                            .tint(.purple)
+                            .tint(AppColor.feature)
 
                         HStack {
                             let downloadedMB = Double(modelManager.downloadedBytes) / 1024.0 / 1024.0
@@ -191,7 +209,7 @@ struct LLMModelManagementView: View {
                             if inferenceService.isLocalModelLoaded {
                                 Label("Metal 显存已就绪", systemImage: "bolt.horizontal.circle.fill")
                                     .font(.caption.bold())
-                                    .foregroundStyle(.purple)
+                                    .foregroundStyle(AppColor.feature)
                                 Spacer()
                                 Button("释放显存") {
                                     Task {
@@ -201,7 +219,7 @@ struct LLMModelManagementView: View {
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
-                            } else {
+                            } else if isEngineLinked {
                                 Label("首次问答将自动映射加载至 Metal", systemImage: "cpu")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -213,8 +231,14 @@ struct LLMModelManagementView: View {
                                     }
                                 }
                                 .buttonStyle(.borderedProminent)
-                                .tint(.purple)
+                                .tint(AppColor.feature)
                                 .controlSize(.small)
+                            } else {
+                                // 未链接二进制时隐藏「预加载」入口：点击必然失败
+                                Label("当前构建不含端侧推理能力", systemImage: "cpu")
+                                    .font(.caption)
+                                    .foregroundStyle(AppColor.warning)
+                                Spacer()
                             }
                         }
                     }
@@ -240,7 +264,7 @@ struct LLMModelManagementView: View {
                                 }
                             }
                             .buttonStyle(.borderedProminent)
-                            .tint(.purple)
+                            .tint(AppColor.feature)
 
                             HStack {
                                 Text("已保存中断前进度，无需从头下载")
@@ -266,7 +290,7 @@ struct LLMModelManagementView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(.purple)
+                        .tint(AppColor.feature)
                     }
 
                     Button {
@@ -279,7 +303,7 @@ struct LLMModelManagementView: View {
                 if let err = modelManager.errorMessage {
                     Text(L10n.tr(err))
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(AppColor.danger)
                 }
             } header: {
                 Text("模型文件获取与管理")
@@ -310,8 +334,16 @@ struct LLMModelManagementView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(.purple)
-                        .disabled(isTesting || testPrompt.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .tint(AppColor.feature)
+                        .disabled(isTesting || testPrompt.trimmingCharacters(in: .whitespaces).isEmpty || !isAnyInferenceEntryAvailable)
+
+                    if !isAnyInferenceEntryAvailable {
+                        Text(isEngineLinked
+                             ? "端侧模型需完整性校验通过（或已配置局域网端点）后方可测试。"
+                             : "当前构建未链接推理二进制，本地测试不可用；可改用下方局域网端点联调。")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                     }
 
                     // 快速样例问题标签
@@ -328,13 +360,13 @@ struct LLMModelManagementView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Text("端侧实时流式输出：")
                                 .font(.caption.bold())
-                                .foregroundStyle(.purple)
+                                .foregroundStyle(AppColor.feature)
 
                             Text(inferenceService.currentOutput)
                                 .font(.callout)
                                 .padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemGroupedBackground)))
+                                .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(AppColor.surface))
                         }
                         .padding(.top, 4)
                     } else if let result = testResult {
@@ -347,7 +379,7 @@ struct LLMModelManagementView: View {
                                 .font(.callout)
                                 .padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemGroupedBackground)))
+                                .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(AppColor.surface))
                         }
                         .padding(.top, 4)
                     }
@@ -372,7 +404,7 @@ struct LLMModelManagementView: View {
                             .textInputAutocapitalization(.never)
                     }
                     .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color(.secondarySystemGroupedBackground)))
+                    .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(AppColor.surface))
                     Toggle("允许向此局域网端点发送待办、快递码、开销等生活数据", isOn: $inferenceService.remoteContextConsent)
                     Text("连接状态：\(inferenceService.remoteConnectionStatus)")
                         .font(.caption)
@@ -393,7 +425,10 @@ struct LLMModelManagementView: View {
 
     // MARK: - 辅助操作
 
-    // 仅「校验通过」视为就绪；SHA-256 结论前不显示绿色徽标，避免状态误报
+    /// 编译期是否真的链接了推理二进制。未链接时全页不得出现「已就绪」类表述。
+    private var isEngineLinked: Bool { LlamaCppEngine.isEngineLinked }
+
+    /// 仅「校验通过」视为就绪；SHA-256 结论前不显示绿色徽标，避免状态误报
     private var badgeText: String {
         if modelManager.isDownloading { return "下载中" }
         switch modelManager.validationStatus {
@@ -427,7 +462,8 @@ struct LLMModelManagementView: View {
     private var isAnyInferenceEntryAvailable: Bool {
         let remoteConfigured = inferenceService.remoteContextConsent
             && !inferenceService.developerEndpoint.trimmingCharacters(in: .whitespaces).isEmpty
-        return modelManager.isModelDownloaded || remoteConfigured
+        // 本地路径要求二进制确实已链接，否则点击必然抛 frameworkNotLinked
+        return (isEngineLinked && modelManager.isModelDownloaded) || remoteConfigured
     }
 
     @ViewBuilder

@@ -254,7 +254,7 @@ struct OmniboxView: View {
                             Text(clipboardAutoDismissSeconds == 0 ? L10n.tr("不自动退出") : "\(clipboardAutoDismissSeconds)s")
                                 .font(.caption2.bold())
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 9))
+                                .font(.caption2)
                         }
                         .foregroundStyle(.purple)
                         .padding(.horizontal, 6)
@@ -292,7 +292,7 @@ struct OmniboxView: View {
                             Text(autoDismissSeconds == 0 ? L10n.tr("不自动关闭") : "\(autoDismissSeconds)s")
                                 .font(.caption2.bold())
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 9))
+                                .font(.caption2)
                         }
                         .foregroundStyle(.purple)
                         .padding(.horizontal, 6)

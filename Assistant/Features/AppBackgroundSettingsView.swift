@@ -220,7 +220,7 @@ private struct ThemeOptionCard: View {
                         .foregroundStyle(.primary)
 
                     Text(style.description)
-                        .font(.system(size: 10))
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }

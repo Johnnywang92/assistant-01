@@ -203,9 +203,9 @@ struct ExpenseTrackerView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 16) {
-                            statCard(title: "今日支出", amount: todayExpenses, color: .orange)
-                            statCard(title: "本月支出", amount: currentMonthExpenses, color: .red)
-                            statCard(title: "本月收入", amount: currentMonthIncome, color: .green)
+                            statCard(title: "今日支出", amount: todayExpenses, color: AppColor.warning)
+                            statCard(title: "本月支出", amount: currentMonthExpenses, color: AppColor.danger)
+                            statCard(title: "本月收入", amount: currentMonthIncome, color: AppColor.success)
                         }
 
                         if !currentMonthCategoryBreakdown.isEmpty {
@@ -231,8 +231,8 @@ struct ExpenseTrackerView: View {
                                             }
                                             .padding(.horizontal, 7)
                                             .padding(.vertical, 3)
-                                            .background(Capsule().fill(Color.purple.opacity(0.14)))
-                                            .foregroundStyle(.purple)
+                                            .background(Capsule().fill(AppColor.softFill(AppColor.feature, opacity: 0.14)))
+                                            .foregroundStyle(AppColor.feature)
                                         }
                                         .buttonStyle(.plain)
                                         .disabled(isAnalyzingExpenses)
@@ -274,7 +274,7 @@ struct ExpenseTrackerView: View {
                                     HStack(alignment: .top, spacing: 6) {
                                         Image(systemName: "brain.head.profile")
                                             .font(.caption)
-                                            .foregroundStyle(.purple)
+                                            .foregroundStyle(AppColor.feature)
                                             .padding(.top, 2)
                                         Text(insight)
                                             .font(.caption)
@@ -283,7 +283,7 @@ struct ExpenseTrackerView: View {
                                     }
                                     .padding(10)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.purple.opacity(0.08)))
+                                    .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(AppColor.softFill(AppColor.feature, opacity: 0.08)))
                                     .padding(.top, 2)
                                 }
                             }
@@ -318,10 +318,12 @@ struct ExpenseTrackerView: View {
                             } label: {
                                 Image(systemName: isListeningQuickVoice ? "waveform.circle.fill" : "mic.fill")
                                     .font(.title3)
-                                    .foregroundStyle(isListeningQuickVoice ? Color.red : Color.accentColor)
+                                    .foregroundStyle(isListeningQuickVoice ? AppColor.danger : AppColor.primary)
                                     .symbolEffect(.pulse, isActive: isListeningQuickVoice)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(isListeningQuickVoice ? "停止语音记账" : "语音记账")
+                            .accessibilityHint("点击后说出账目，如“麦当劳吃了38”，自动识别记账")
 
                             // 提交记账按钮
                             Button("记一笔") {
@@ -335,7 +337,7 @@ struct ExpenseTrackerView: View {
                         if isListeningQuickVoice {
                             Text("正在聆听... 说完点击话筒即可自动识别记账")
                                 .font(.caption2)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(AppColor.danger)
                         } else {
                             Text("💡 支持自然语言：麦当劳吃了38、交房租3200、发工资15000等")
                                 .font(.caption2)
@@ -499,7 +501,11 @@ struct ExpenseTrackerView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemGroupedBackground)))
+        .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(AppColor.surface))
+        // VoiceOver：统计卡整体播报「标题 + 金额」
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title)")
+        .accessibilityValue(String(format: "%.1f 元", amount))
     }
 
     // MARK: - 一句话记账提交
@@ -675,7 +681,7 @@ struct ExpenseTrackerView: View {
             await MainActor.run {
                 isAnalyzingExpenses = false
                 if let output, !output.isEmpty {
-                    withAnimation {
+                    AppMotion.animate {
                         aiExpenseInsight = output
                         aiInsightDataFingerprint = fingerprint
                     }
@@ -688,9 +694,9 @@ struct ExpenseTrackerView: View {
     }
 
     private func showFeedback(_ text: String) {
-        withAnimation { feedbackBanner = text }
+        AppMotion.animate { feedbackBanner = text }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            withAnimation { feedbackBanner = nil }
+            AppMotion.animate { feedbackBanner = nil }
         }
     }
 
@@ -753,10 +759,10 @@ struct SafeToSpendCard: View {
                     if result.isOverBudget {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.red)
+                                .foregroundStyle(AppColor.danger)
                             Text("本月弹性预算已超支 ¥\(String(format: "%.0f", -result.remainingThisMonth))，今天尽量少花")
                                 .font(.subheadline)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(AppColor.danger)
                         }
                     } else {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -765,7 +771,7 @@ struct SafeToSpendCard: View {
                                 .foregroundStyle(.secondary)
                             Text(String(format: "¥%.0f", result.safeToSpendToday))
                                 .font(.system(.largeTitle, design: .rounded).bold())
-                                .foregroundStyle(result.safeToSpendToday > 0 ? .green : .orange)
+                                .foregroundStyle(result.safeToSpendToday > 0 ? AppColor.success : AppColor.warning)
                                 .contentTransition(.numericText())
                         }
                     }
@@ -773,9 +779,9 @@ struct SafeToSpendCard: View {
                     // 弹性预算消耗进度条
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
-                            Capsule().fill(Color(.tertiarySystemFill))
+                            Capsule().fill(AppColor.fillTertiary)
                             Capsule()
-                                .fill(result.isOverBudget ? Color.red : Color.green)
+                                .fill(result.isOverBudget ? AppColor.danger : AppColor.success)
                                 .frame(width: min(1, result.spentRatio) * geo.size.width)
                         }
                     }
@@ -797,7 +803,7 @@ struct SafeToSpendCard: View {
                     .foregroundStyle(.secondary)
                 }
                 .padding(14)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(.secondarySystemGroupedBackground)))
+                .appCard(cornerRadius: AppRadius.banner)
             }
             .buttonStyle(.plain)
             .accessibilityHint("查看或编辑月度预算")
@@ -1086,7 +1092,7 @@ struct AddOrEditExpenseSheet: View {
                             HStack {
                                 Spacer()
                                 Label("删除这笔账目记录", systemImage: "trash")
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(AppColor.danger)
                                 Spacer()
                             }
                         }

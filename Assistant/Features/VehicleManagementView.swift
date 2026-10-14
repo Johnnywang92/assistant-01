@@ -230,12 +230,12 @@ private struct VehicleCardView: View {
                 Button(justRefilled ? "已打卡" : "打卡") {
                     vehicle.completeEnergyRefill()
                     Haptic.success()
-                    withAnimation { justRefilled = true }
+                    AppMotion.animate { justRefilled = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        withAnimation { justRefilled = false }
+                        AppMotion.animate { justRefilled = false }
                     }
                 }
-                .font(.system(size: 10, weight: .bold))
+                .font(.caption2.bold())
                 .buttonStyle(.bordered)
                 .tint(vehicle.powerType == .electric ? .green : .blue)
                 .controlSize(.mini)
@@ -253,7 +253,7 @@ private struct VehicleCardView: View {
             }
 
             Text("周期 \(vehicle.energyCycleDays) 天一次")
-                .font(.system(size: 10))
+                .font(.caption2)
                 .foregroundStyle(.secondary)
         }
         .padding(10)
@@ -272,12 +272,12 @@ private struct VehicleCardView: View {
                 Button(justMaintained ? "已打卡" : "打卡") {
                     vehicle.completeMaintenance()
                     Haptic.success()
-                    withAnimation { justMaintained = true }
+                    AppMotion.animate { justMaintained = true }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                        withAnimation { justMaintained = false }
+                        AppMotion.animate { justMaintained = false }
                     }
                 }
-                .font(.system(size: 10, weight: .bold))
+                .font(.caption2.bold())
                 .buttonStyle(.bordered)
                 .tint(.orange)
                 .controlSize(.mini)
@@ -295,7 +295,7 @@ private struct VehicleCardView: View {
             }
 
             Text("每 \(vehicle.maintenanceIntervalMonths) 个月常规检查")
-                .font(.system(size: 10))
+                .font(.caption2)
                 .foregroundStyle(.secondary)
         }
         .padding(10)
@@ -322,7 +322,7 @@ private struct VehicleCardView: View {
                 }
                 if let date = vehicle.insuranceExpiryDate {
                     Text(date.formatted(date: .numeric, time: .omitted))
-                        .font(.system(size: 10))
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
             } else {
@@ -330,7 +330,7 @@ private struct VehicleCardView: View {
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                 Text("点击编辑补充")
-                    .font(.system(size: 10))
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
@@ -358,7 +358,7 @@ private struct VehicleCardView: View {
                 }
                 if let date = vehicle.annualInspectionDate {
                     Text(date.formatted(date: .numeric, time: .omitted))
-                        .font(.system(size: 10))
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
             } else {
@@ -366,7 +366,7 @@ private struct VehicleCardView: View {
                     .font(.subheadline)
                     .foregroundStyle(.tertiary)
                 Text("六年免检/上线")
-                    .font(.system(size: 10))
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }

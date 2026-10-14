@@ -206,7 +206,7 @@ struct PermissionOnboardingView: View {
                         .font(.subheadline.bold())
                     Spacer()
                     Text(L10n.tr(privacyTag))
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.caption2.weight(.medium))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color(.tertiarySystemFill)))

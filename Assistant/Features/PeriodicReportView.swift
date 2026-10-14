@@ -444,12 +444,12 @@ struct PeriodicReportView: View {
                     .font(.headline.bold())
                     .foregroundStyle(.primary)
                 Text(L10n.tr(unit))
-                    .font(.system(size: 10))
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
 
             Text(L10n.tr(title))
-                .font(.system(size: 10))
+                .font(.caption2)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)

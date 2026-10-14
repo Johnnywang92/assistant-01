@@ -47,9 +47,10 @@ struct AssistantApp: App {
             .id(langManager.effectiveLanguageCode)
             .environment(\.locale, langManager.locale)
             .environmentObject(langManager)
+            .appMotionObserver()
             .applySeniorMode(manager: seniorManager)
             .preferredColorScheme(bgManager.currentStyle.preferredColorScheme)
-            .animation(.easeInOut(duration: 0.25), value: isAppLocked)
+            .responsiveAnimation(.easeInOut(duration: 0.25), value: isAppLocked)
             .task {
                 guard Persistence.recoveryError == nil else { return }
                 // 密码迁移不再在冷启动主线程执行：全表拉取 + 可触发 SQLite VACUUM，

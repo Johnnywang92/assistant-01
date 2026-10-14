@@ -167,6 +167,8 @@ struct PasswordVaultRow: View {
                     Image(systemName: "doc.on.doc").font(.caption)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel("复制账号")
+                .accessibilityHint("将账号复制到剪贴板")
             }
 
             HStack {
@@ -185,6 +187,7 @@ struct PasswordVaultRow: View {
                     Image(systemName: isRevealed ? "eye.slash" : "eye").font(.caption)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel(isRevealed ? "隐藏密码" : "显示密码")
 
                 Button {
                     guard let password = decryptedPassword else {
@@ -197,6 +200,8 @@ struct PasswordVaultRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
+                .accessibilityLabel("复制密码")
+                .accessibilityHint("复制到剪贴板，60 秒后自动失效且仅限本机使用")
             }
 
             HStack {

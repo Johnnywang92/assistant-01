@@ -719,7 +719,7 @@ struct TodoShareSheet: View {
                 let count = Self.filterItems(allTodos: allTodos, category: cat).count
 
                 Button {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    AppMotion.animate(.spring(response: 0.3, dampingFraction: 0.8)) {
                         selectedCategory = cat
                         // 切换分类后自动全选该分类下的事项
                         let newCandidates = Self.filterItems(allTodos: allTodos, category: cat)
@@ -734,7 +734,7 @@ struct TodoShareSheet: View {
 
                         if count > 0 {
                             Text("\(count)")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.caption2.bold())
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
                                 .background(Capsule().fill(isSelected ? Color.white.opacity(0.25) : Color.secondary.opacity(0.15)))
@@ -770,7 +770,7 @@ struct TodoShareSheet: View {
 
                 if !candidateItems.isEmpty {
                     Button(selectedItemIds.count == candidateItems.count ? "取消全选" : "全选本类") {
-                        withAnimation(.spring(response: 0.25)) {
+                        AppMotion.animate(.spring(response: 0.25)) {
                             if selectedItemIds.count == candidateItems.count {
                                 selectedItemIds.removeAll()
                             } else {
@@ -797,7 +797,7 @@ struct TodoShareSheet: View {
                     ForEach(candidateItems) { item in
                         let isSelected = selectedItemIds.contains(item.id)
                         Button {
-                            withAnimation(.spring(response: 0.2)) {
+                            AppMotion.animate(.spring(response: 0.2)) {
                                 if isSelected {
                                     selectedItemIds.remove(item.id)
                                 } else {
@@ -937,11 +937,11 @@ struct TodoShareSheet: View {
     }
 
     private func showToast(_ msg: String) {
-        withAnimation(.spring(duration: 0.25)) {
+        AppMotion.animate(.spring(duration: 0.25)) {
             toastMessage = msg
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) {
-            withAnimation(.easeInOut(duration: 0.25)) {
+            AppMotion.animate(.easeInOut(duration: 0.25)) {
                 toastMessage = nil
             }
         }

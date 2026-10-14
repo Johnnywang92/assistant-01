@@ -261,7 +261,7 @@ public struct AppBackgroundView: View {
             }
         }
         .ignoresSafeArea()
-        .animation(.easeInOut(duration: 0.3), value: manager.currentStyle)
+        .responsiveAnimation(.easeInOut(duration: 0.3), value: manager.currentStyle)
     }
 }
 

@@ -89,8 +89,8 @@ struct DraggableVoiceFloatingBall: View {
                     .foregroundStyle(.white)
             }
             .scaleEffect(isDragging ? 1.15 : (isLongPressing ? 1.24 : 1.0))
-            .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isLongPressing)
-            .animation(.spring(response: 0.3, dampingFraction: 0.65), value: isDragging)
+            .responsiveAnimation(.spring(response: 0.3, dampingFraction: 0.65), value: isLongPressing)
+            .responsiveAnimation(.spring(response: 0.3, dampingFraction: 0.65), value: isDragging)
             .position(x: currentX, y: currentY)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("语音助手")
@@ -100,13 +100,18 @@ struct DraggableVoiceFloatingBall: View {
                 autoStartListening = false
                 showVoice = true
             }
+            // VoiceOver 专属操作：让仅用屏幕阅读器的用户也能直达录音（等效长按手势）
+            .accessibilityAction(named: "开始语音输入") {
+                autoStartListening = true
+                showVoice = true
+            }
             // 长按手势：按住 0.45 秒直接开始录音，不打开对话页面
             .onLongPressGesture(minimumDuration: 0.45, pressing: { pressing in
                 guard !isDragging else {
                     isLongPressing = false
                     return
                 }
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) {
+                AppMotion.animate(.spring(response: 0.3, dampingFraction: 0.65)) {
                     isLongPressing = pressing
                 }
                 if pressing {
@@ -159,7 +164,7 @@ struct DraggableVoiceFloatingBall: View {
                         let finalNormX = (targetX - minX) / max(maxX - minX, 1)
                         let finalNormY = (targetY - minY) / max(maxY - minY, 1)
 
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.72)) {
+                        AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.72)) {
                             dragOffset = .zero
                             normX = Double(finalNormX)
                             normY = Double(finalNormY)
