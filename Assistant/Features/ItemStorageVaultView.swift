@@ -361,14 +361,6 @@ struct ItemStorageVaultView: View {
                         Label("未找到相关物品", systemImage: "shippingbox")
                     } description: {
                         Text(searchText.isEmpty ? "点击右上角 + 随手记下物品与存放柜子" : "换个搜索词试试，如：钥匙、羽绒服、工具箱")
-                    } actions: {
-                        Button {
-                            showingAddSheet = true
-                        } label: {
-                            Label("添加收纳物品", systemImage: "plus")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.indigo)
                     }
                     .padding(.vertical, 16)
                 }
@@ -1340,7 +1332,7 @@ struct MedicineEditorSheet: View {
                     TextField("详细位置（如：客厅药箱第二层、冰箱冷藏门）", text: $storageLocation)
                 }
 
-                Section(footer: Text("开封后使用期通常比包装有效期更短（如眼药水开封后约 28 天），系统会取两者较早者作为实际到期日。同种药多次购买会按“最先到期优先”分组排列，方便先进先出。")) {
+                Section {
                     Toggle("记录购买/获得日期", isOn: $hasPurchaseDate)
                     if hasPurchaseDate {
                         DatePicker("购买日期", selection: $purchaseDate, displayedComponents: .date)
@@ -1361,6 +1353,8 @@ struct MedicineEditorSheet: View {
                     }
                 } header: {
                     Text("有效期（防过期重点）")
+                } footer: {
+                    Text("开封后使用期通常比包装有效期更短（如眼药水开封后约 28 天），系统会取两者较早者作为实际到期日。同种药多次购买会按“最先到期优先”分组排列，方便先进先出。")
                 }
 
                 Section("药盒/说明书照片（选填）") {
