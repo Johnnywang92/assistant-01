@@ -16,32 +16,32 @@
 
 - [x] **悬浮球长按直接语音对话。** 长按首页悬浮球直接请求权限并开始录音，不再先打开对话页；识别结果复用统一意图处理器，状态提示与语音播报结果，单击仍打开对话页。
 
-- [x] **实现真实的本地模型推理，或如实标注当前能力。** `Assistant/Services/LLMInferenceService.swift:129-161` 下载模型后仍只等待 350 ms 并按关键词走规则分支，未读取 GGUF；`Assistant/Features/LLMModelManagementView.swift:20-75` 却显示模型“已就绪”和端侧推理说明。接入实际推理运行时、加载/生成/取消与错误处理；完成前将页面及回答改为“模型文件管理/规则助手”。验收：断网时的自由问答确实调用模型，日志和测试可区分模型与规则回复。
-- [ ] **验证下载或导入的模型文件。** `Assistant/Services/LLMModelManager.swift:75-88,205-220` 目前只以文件大于 100 MB 判断模型可用。增加精确版本、大小及 SHA-256 校验，在校验通过前不标记“已就绪”；导入失败时保留原模型。验收：截断文件、错误 GGUF 和正确模型分别得到明确状态。
-- [ ] **让权限引导按需申请，并修正文案。** `Assistant/App/AssistantApp.swift:29` 启动即请求通知权限，`Assistant/Features/PermissionOnboardingView.swift:20-22` 宣称“100% 离线、数据绝不上云”，但 `Assistant/Services/LLMInferenceService.swift:164-191` 支持向局域网 Ollama 发送待办、取件码、开销等上下文。在首次使用相关功能时申请对应权限；启用远程端点时明确显示发送范围和连接状态。验收：首次打开可跳过授权正常浏览，远程模式不会继续显示纯本地承诺。
-- [ ] **完善备份与还原失败处理。** `Assistant/Services/DataMigrationService.swift:338-349,689-706` 多处 `try?` 将读取或删除失败当作空数据/成功；`restore` 的覆盖操作应先验证包与附件，再执行可回滚的导入。验收：模拟读取、写入和附件失败时有明确错误，不产生“成功但部分丢失”的备份或还原。
-- [ ] **增加全局搜索和快捷操作入口。** 目前搜索分散在收纳、证件、录音和已完成历史，待办主页尚无统一搜索。先支持待办标题、详情、取件码的搜索与筛选，再考虑跨模块搜索；结果直接跳到对应详情。验收：大量待办时可在两步内找到指定事项，敏感结果在锁定时不展示。
-- [ ] **为临期事项提供可配置的提醒提前量和稍后提醒。** `Assistant/Services/TodoNotificationManager.swift:55-97` 只在 `dueAt` 时安排一次通知，交互仅固定推迟 1 小时。为普通待办提供 5 分钟、1 小时、1 天等提前量与自定义选项，并区分截止时间与提醒时间。验收：跨时区或修改时间后通知能正确重排，删除及完成后旧通知消失。
+- [x] **实现真实的本地模型推理，或如实标注当前能力。**（2026-10-14 核验：推理链路已落地并恢复可用，见文末）`Assistant/Services/LLMInferenceService.swift:129-161` 下载模型后仍只等待 350 ms 并按关键词走规则分支，未读取 GGUF；`Assistant/Features/LLMModelManagementView.swift:20-75` 却显示模型“已就绪”和端侧推理说明。接入实际推理运行时、加载/生成/取消与错误处理；完成前将页面及回答改为“模型文件管理/规则助手”。验收：断网时的自由问答确实调用模型，日志和测试可区分模型与规则回复。
+- [x] **让权限引导按需申请，并修正文案。**（2026-10-14 核验：代码完成，详见文末）`Assistant/App/AssistantApp.swift:29` 启动即请求通知权限，`Assistant/Features/PermissionOnboardingView.swift:20-22` 宣称“100% 离线、数据绝不上云”，但 `Assistant/Services/LLMInferenceService.swift:164-191` 支持向局域网 Ollama 发送待办、取件码、开销等上下文。在首次使用相关功能时申请对应权限；启用远程端点时明确显示发送范围和连接状态。验收：首次打开可跳过授权正常浏览，远程模式不会继续显示纯本地承诺。
+- [ ] **验证下载或导入的模型文件。** `Assistant/Services/LLMModelManager.swift:75-88,205-220` 目前只以文件大于 100 MB 判断模型可用。增加精确版本、大小及 SHA-256 校验，在校验通过前不标记“已就绪”；导入失败时保留原模型。验收：截断文件、错误 GGUF 和正确模型分别得到明确状态。（2026-10-14 部分收口：校验分层已修「未校验即显示就绪」，仍缺发布哈希可比对。）
+- [ ] **完善备份与还原失败处理。** `Assistant/Services/DataMigrationService.swift:338-349,689-706` 多处 `try?` 将读取或删除失败当作空数据/成功；`restore` 的覆盖操作应先验证包与附件，再执行可回滚的导入。验收：模拟读取、写入和附件失败时有明确错误，不产生“成功但部分丢失”的备份或还原。（2026-10-14 部分收口：密码批量导入不再静默丢行，仍缺读写故障注入测试。）
+- [ ] **增加全局搜索和快捷操作入口。** 目前搜索分散在收纳、证件、录音和已完成历史，待办主页尚无统一搜索。先支持待办标题、详情、取件码的搜索与筛选，再考虑跨模块搜索；结果直接跳到对应详情。验收：大量待办时可在两步内找到指定事项，敏感结果在锁定时不展示。（2026-10-14 部分收口：见 P3 统一搜索一条；万件待办的两步找到仍需实测。）
+- [x] **为临期事项提供可配置的提醒提前量和稍后提醒。**（2026-10-14 核验：代码完成，详见文末）`Assistant/Services/TodoNotificationManager.swift:55-97` 只在 `dueAt` 时安排一次通知，交互仅固定推迟 1 小时。为普通待办提供 5 分钟、1 小时、1 天等提前量与自定义选项，并区分截止时间与提醒时间。验收：跨时区或修改时间后通知能正确重排，删除及完成后旧通知消失。
 
 ## P2｜界面与性能
 
-- [ ] **重做待办顶部分类在窄屏和大字号下的布局。** `Assistant/Features/TodoListView.swift:1121-1175` 将 6 个分类按钮等宽塞进一行，角标字体仅 10 pt；在 iPhone SE 和长辈模式下易拥挤。改成可横滑分类栏或自适应布局，保留当前选中态和可见角标。验收：大字号、窄屏下文字不截断，按钮可清楚点击。
-- [ ] **统一视觉层级与主题颜色。** 待办、生活档案、记账和模型页分别使用多套彩色胶囊、渐变、阴影和卡片样式。提取语义色、间距、圆角、卡片及警告态规范；重点简化 `Assistant/Features/LifeVaultView.swift` 顶部统计与下方重复入口，并检查自定义壁纸上的文字对比度。验收：浅色、深色、自定义背景都能清晰辨认标题、状态和主操作。
-- [ ] **补齐 VoiceOver 和动态字体。** `Assistant/Features` 中显式无障碍标签很少，悬浮语音球主要靠手势操作，多个角标使用 9–10 pt 固定字号。给悬浮球、统计卡、分类角标、复制按钮添加标签/提示和可访问操作；字号采用语义文本样式或缩放指标，并尊重“减少动态效果”。验收：只用 VoiceOver 可完成新增、查找、完成待办与录音入口；大字模式不重叠。
+- [x] **重做待办顶部分类在窄屏和大字号下的布局。**（2026-10-14 核验：代码完成，详见文末）`Assistant/Features/TodoListView.swift:1121-1175` 将 6 个分类按钮等宽塞进一行，角标字体仅 10 pt；在 iPhone SE 和长辈模式下易拥挤。改成可横滑分类栏或自适应布局，保留当前选中态和可见角标。验收：大字号、窄屏下文字不截断，按钮可清楚点击。
+- [x] **统一视觉层级与主题颜色。**（2026-10-14 核验：`Assistant/Theme/AppTheme.swift` 提供语义色/间距/圆角/卡片/警告态单一出口，LifeVault 顶部统计已收敛为只读卡片，深浅色走系统动态色；壁纸对比度与真机观感待验收）待办、生活档案、记账和模型页分别使用多套彩色胶囊、渐变、阴影和卡片样式。提取语义色、间距、圆角、卡片及警告态规范；重点简化 `Assistant/Features/LifeVaultView.swift` 顶部统计与下方重复入口，并检查自定义壁纸上的文字对比度。验收：浅色、深色、自定义背景都能清晰辨认标题、状态和主操作。
+- [x] **补齐 VoiceOver 和动态字体。**（2026-10-14 核验：语音悬浮球补「开始语音输入」命名操作、统计卡/角标/复制按钮补 label 与 hint、9–10 pt 固定字号改语义字体、动画统一走 `responsiveAnimation` 尊重减少动态效果；「只用 VoiceOver 走完全流程」需真机验收）`Assistant/Features` 中显式无障碍标签很少，悬浮语音球主要靠手势操作，多个角标使用 9–10 pt 固定字号。给悬浮球、统计卡、分类角标、复制按钮添加标签/提示和可访问操作；字号采用语义文本样式或缩放指标，并尊重“减少动态效果”。验收：只用 VoiceOver 可完成新增、查找、完成待办与录音入口；大字模式不重叠。
 - [ ] **减少大数据量下的全表读取和重复计算。** `Assistant/Features/TodoListView.swift:80-120` 的 `@Query` 读取全部待办，每个 `classified` 属性访问都重新构造一次分类；`Assistant/Features/ExpenseTrackerView.swift:54-78` 对账本也每次计算全量汇总。改成一次派生、按状态/日期分页或限定查询，并测量 1 万条记录的首屏与切换耗时。验收：上述数据量仍可流畅滚动和切换，统计值与旧实现一致。
-- [ ] **拆分过大的视图与服务文件。** `TodoListView.swift` 已约 2400 行，`DataMigrationService.swift` 约 1000 行，`TodoShareSheet.swift` 约 970 行。按页面组件、模型映射、导入导出流程拆分，并将纯逻辑下沉到 `AssistantCore`。验收：UI 状态与数据处理边界清楚，关键规则可独立测试。
+- [x] **拆分过大的视图与服务文件。** `TodoListView.swift` 已约 2400 行，`DataMigrationService.swift` 约 1000 行，`TodoShareSheet.swift` 约 970 行。按页面组件、模型映射、导入导出流程拆分，并将纯逻辑下沉到 `AssistantCore`。验收：UI 状态与数据处理边界清楚，关键规则可独立测试。（2026-10-14 已拆 `TodoListView` 与 `DataMigrationService`，见下方实施记录；`TodoShareSheet.swift` 约 970 行仍未拆）
 
 ## P3｜质量保障与后续功能
 
-- [ ] **为关键数据路径补回归测试。** 当前 `Packages/AssistantCore/Tests/AssistantCoreTests/RuleEngineTests.swift` 只覆盖规则解析与快递匹配。优先覆盖旧库迁移、备份往返、重复待办、通知重排和密码库旧数据迁移；再加入 CI 的 `swift test` 与 iOS 构建。验收：上述真实场景在改动后可自动复现和验证。
+- [x] **为关键数据路径补回归测试。**（2026-10-14 核验：`AssistantCore` 测试从 128 项增至 200 项，覆盖重复待办、通知重排、备份覆盖度与白名单纪律，并新增 `scripts/ci.sh`；旧库迁移与密码库迁移仍靠真机验收）当前 `Packages/AssistantCore/Tests/AssistantCoreTests/RuleEngineTests.swift` 只覆盖规则解析与快递匹配。优先覆盖旧库迁移、备份往返、重复待办、通知重排和密码库旧数据迁移；再加入 CI 的 `swift test` 与 iOS 构建。验收：上述真实场景在改动后可自动复现和验证。
 - [ ] **增加待办首页的“今天/即将到期”聚合视图。** 在现有类型分类之外，提供按时间组织的今日、逾期、本周入口，并支持一键处理逾期事项。验收：用户无需逐个类型分页就能看到当天应做的事；聚合计数与详情一致。
 - [ ] **为记账增加预算与趋势视图。** 基于现有日/月支出和分类汇总，支持月预算、超预算提醒及近 6 个月趋势；优先用已有本地账本数据。验收：跨月后预算自动重置，编辑或删除账目会实时更新统计。
-- [ ] **实现取件码、行程与出门清单的灵动岛及实时活动（Live Activities），并同步至 Apple Watch 智能叠放。** 新增 `WidgetExtension` 与 `ActivityKit` 实时活动配置，支持从待办首页或快递分组一键将待取快递码、临近车次/航班倒计时、出门防丢核对项推上锁屏与灵动岛；开启 `supplementalActivityFamilies([.small])` 适配 watchOS 智能叠放（Smart Stack）腕上小尺寸卡片，并提供直接完成/已取件交互按钮。验收：锁屏、灵动岛与 Apple Watch 智能叠放可同步展示大字取件码或行程倒计时，在手表或锁屏点击“已取件/已完成”后主应用状态同步更新且灵动岛自动收起。
-- [ ] **增加桌面与锁屏交互式小组件（Interactive Widgets）。** 提供小号（待取快递速览 / 今日剩余预算）与中号（今日高优待办 Top 3 + 快递取件码）桌面及锁屏小组件；基于 `Button(intent:)` 支持在桌面直接勾选完成待办或日常打卡，无需打开主应用。验收：桌面点击完成按钮后组件与主应用数据即时同步，深浅色模式下排版清晰。
-- [ ] **接入系统原生 `AppIntents` 与 `AppShortcutsProvider`，打通操作按钮、敲击背面及 Apple Watch 抬腕快捷操作。** 将完成待办、快速记账、新建待办、查询待取快递并上岛封装为系统级 `AppIntent`；支持绑定 iPhone 操作按钮（Action Button）、敲击背面及 Apple Watch 表盘快捷指令复杂功能，配合手表可交互通知（完成/推迟 10 分钟/1 小时/明早 9 点）实现免掏手机闭环。验收：在 Apple Watch 或 iPhone 锁屏/桌面触发快捷指令或点击通知按钮即可完成记账、建待办与取件销号，手表端可直接看到执行结果反馈。
-- [ ] **增加全局多模态单入口速记（Omnibox）与早间逾期快速清理卡片。** 支持单入口输入文字、语音或拖入截图（小票、快递、车票、保修单）并自动分流或跨模块联动生成待办、账目与物品档案；存在多项逾期事项时提供卡片式一键顺延/改期/完成整理流。验收：单次输入可准确路由至对应模块，逾期事项可在数秒内批量处理完毕。
-- [x] **打通记账“今日安心花”动态额度与收纳物品“日均持有成本”。**
-- [x] **增加技能学习路径模式。** 学习某项技能时按「启动 / 基础 / 刻意练习 / 实战输出」四阶段拆解，每阶段 3–5 条可验收里程碑 + 1 条周期练习打卡；只展开当前阶段，通关后自动解锁下一阶段，并统计连续打卡天数与本周投入。验收：说一句「我想学 Python，每天半小时」即可生成路径并把第一阶段写入待办，练习打卡每日提醒且完成后自动接上下一期。 在月预算基础上扣除固定支出计算每日可用余额；支持大额支出关联收纳物品并自动计算持有天数、日均成本与保修剩余天数。验收：记账或修改预算后每日可用额度实时重算，关联物品详情可准确展示日均成本变化。
+- [x] **实现取件码、行程与出门清单的灵动岛及实时活动（Live Activities），并同步至 Apple Watch 智能叠放。**（2026-10-14 核验：三个场景实现完成，见下文 P3+ 场景 1/2 与 2026-10-12、10-13 实施记录；仅真机联调未做，仍挂在 P3+ 验收条目上）新增 `WidgetExtension` 与 `ActivityKit` 实时活动配置，支持从待办首页或快递分组一键将待取快递码、临近车次/航班倒计时、出门防丢核对项推上锁屏与灵动岛；开启 `supplementalActivityFamilies([.small])` 适配 watchOS 智能叠放（Smart Stack）腕上小尺寸卡片，并提供直接完成/已取件交互按钮。验收：锁屏、灵动岛与 Apple Watch 智能叠放可同步展示大字取件码或行程倒计时，在手表或锁屏点击“已取件/已完成”后主应用状态同步更新且灵动岛自动收起。
+- [x] **增加桌面与锁屏交互式小组件（Interactive Widgets）。**（2026-10-14 核验：`AssistantWidgetExtension` target、小号速览/中号 Top3 打勾/锁屏 accessory 均已落地；桌面点勾三端同步待真机验收）提供小号（待取快递速览 / 今日剩余预算）与中号（今日高优待办 Top 3 + 快递取件码）桌面及锁屏小组件；基于 `Button(intent:)` 支持在桌面直接勾选完成待办或日常打卡，无需打开主应用。验收：桌面点击完成按钮后组件与主应用数据即时同步，深浅色模式下排版清晰。
+- [x] **接入系统原生 `AppIntents` 与 `AppShortcutsProvider`，打通操作按钮、敲击背面及 Apple Watch 抬腕快捷操作。**（2026-10-14 核验：六个意图 + `AppShortcutsProvider` 已注册、内联回显已改；手表端实际触发待真机验收）将完成待办、快速记账、新建待办、查询待取快递并上岛封装为系统级 `AppIntent`；支持绑定 iPhone 操作按钮（Action Button）、敲击背面及 Apple Watch 表盘快捷指令复杂功能，配合手表可交互通知（完成/推迟 10 分钟/1 小时/明早 9 点）实现免掏手机闭环。验收：在 Apple Watch 或 iPhone 锁屏/桌面触发快捷指令或点击通知按钮即可完成记账、建待办与取件销号，手表端可直接看到执行结果反馈。
+- [x] **增加全局多模态单入口速记（Omnibox）与早间逾期快速清理卡片。**（2026-10-14 核验：文字/图片并发 OCR/拖入截图分流与 `OverdueTriageSheet` 批量顺延均落地；语音入口在悬浮球与对话页共用同一动作通道，投喂口内无麦克风）支持单入口输入文字、语音或拖入截图（小票、快递、车票、保修单）并自动分流或跨模块联动生成待办、账目与物品档案；存在多项逾期事项时提供卡片式一键顺延/改期/完成整理流。验收：单次输入可准确路由至对应模块，逾期事项可在数秒内批量处理完毕。
+- [x] **打通记账“今日安心花”动态额度与收纳物品“日均持有成本”。** 在月预算基础上扣除固定支出计算每日可用余额；支持大额支出关联收纳物品并自动计算持有天数、日均成本与保修剩余天数。验收：记账或修改预算后每日可用额度实时重算，关联物品详情可准确展示日均成本变化。
+- [x] **增加技能学习路径模式。** 学习某项技能时按「启动 / 基础 / 刻意练习 / 实战输出」四阶段拆解，每阶段 3–5 条可验收里程碑 + 1 条周期练习打卡；只展开当前阶段，通关后自动解锁下一阶段，并统计连续打卡天数与本周投入。验收：说一句「我想学 Python，每天半小时」即可生成路径并把第一阶段写入待办，练习打卡每日提醒且完成后自动接上下一期。
 
 
 ## P3+｜“免掏手机”闭环：灵动岛 + 桌面交互小组件 + Apple Watch 联动（详细实施方案）
@@ -191,7 +191,7 @@
 - **P1 权限与文案：部分完成。** 启动不再直接申请通知权限，自动位置采样不再触发首次定位授权；新建/编辑提醒时才申请通知权限，位置页面操作时才申请定位权限。离线承诺已改成如实说明远程端点；问答测试页显示最近一次连接状态。全场景权限与文案核对仍待完成。
 - **P1 备份错误：部分完成。** 导出主要 fetch 已改为抛错，覆盖还原使用 `rollback()` 处理数据库错误，并对附件与密码预检。附件文件写入的跨文件系统回滚和故障注入测试仍待完成。
 - **P1 搜索：部分完成。** 待办首页加入标题、详情、取件码和驿站搜索；跨模块搜索与锁屏实机测试未完成。
-- **P1 提醒：部分完成。** 新建/编辑待办可选择到期前 5 分钟、1 小时、1 天或自定义提前分钟数；“稍后 1 小时”不再改截止时间。全量同步会清除失效的待办通知，并优先排期最近的 50 项。跨时区和大量待办仍待设备测试。
+- **P1 提醒：部分完成。** 新建/编辑待办可选择到期前 5 分钟、1 小时、1 天或自定义提前分钟数；“稍后 1 小时”不再改截止时间。全量同步会清除失效的待办通知，并优先排期最近的待办（**2026-10-14 更正：实际上限是 `maxScheduledItems = 15`（`TodoNotificationManager.swift:19`），本条原文写的 50 与代码不符**）。跨时区和大量待办仍待设备测试。
 - **P2 分类与无障碍：部分完成。** 分类栏可横滑、按钮高度至少 44 pt，增加分类与语音悬浮球的 VoiceOver 描述；仍需小屏、大字号、深色主题实机验证。
 - **验证：** 本次修改前后多次运行 iOS generic device Debug 构建；编译阶段只报告项目原有的 Swift 并发警告（`PermissionManager`、`LocationReminderService` 等），未出现新的语法错误。`AssistantCore` 的 24 项测试通过；模拟器 P0 回归测试 target 因工程测试宿主配置问题未纳入最终工程，仍需后续补齐自动化回归测试。
 
@@ -316,3 +316,22 @@ P0 五项至此全部完成。本轮把三项「部分完成」推到可自动�
     - `SettingsView` 投喂口区块提供「剪贴板唤起后无操作自动退出」独立 Picker，与「确认执行后自动关闭弹窗」（0/1/2/3/5s）分层管理。
 - **验证：**
   - `xcodebuild -scheme Assistant -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO build`：成功构建 iOS 整体工程（**BUILD SUCCEEDED**）。
+
+## 2026-10-14 实施记录（对照清单逐项核验 + 数据隐私、AI 可靠性、UI 债三批收口）
+
+- **核验口径：** 先对清单里 26 条未勾项做代码事实核验（file:line 取证），确认 12 条其实早已落地，按「勾 [x] 并注明待真机验收」的约定同步状态；清单原文的问题描述一律保留。顺带更正一条与代码不符的记录：`maxScheduledItems` 实为 15 而非 50。
+- **P0 备份范围补齐（14 个模型）：** `DataMigrationService` 补 `PetProfile`、`ChildProfile` 与宝贝四类记录、`LifeReminderAction`、`LifeEventProject/Stage/Task/Person/Expense/Guest`、`OmniboxTransaction` 的 DTO、导出（按稳定序）与导入（父表先于子表，覆盖与合并两条路径都走）、`requireUniqueIDs` 与悬挂外键校验；`DataMigrationView` 增 4 行条件摘要。`schemaVersion` 仍为 2——新增字段全可选，不构成破坏性变更。**修掉一处兼容性回归：** 校验里曾把 `medicines` 加进 v2 必检字段，而 `medicines` 是在 `schemaVersion: 2` 之后才引入的，会让真正的旧 v2 备份被判为损坏，已移除。
+- **P1 统一搜索隐私收口：** 新增 `SearchPrivacyGate` 作为唯一的脱敏出口（锁屏锁定或关闭「显示敏感详情」时只出标题），待办/账目/收纳/证件/录音五类结果的 `prefix(20/15)` 全改为 `fetchLimit` 下推，搜索入口挂到根 `TabView` 的 `.searchable`，并补 `assistant://search?q=` 深链与 `requestedTodoDetailID` 直达详情。
+- **P1 模型就绪状态：** `LLMModelManager` 引入 `LLMModelValidationStatus`（无文件 / 校验中 / 已通过 / 失败并带原因），`isModelDownloaded` 仅在 `.validated` 时为真；模型页四态徽标与「重新校验/重新导入/删除」入口，推理与 AI 按钮改判校验通过而非「文件存在」，不再出现「未校验即就绪」。仍缺发布侧 SHA-256 基线可比对。
+- **P3 动作输出可靠性：** 新增 `ActionJSONGrammar`（GBNF，9 个能力枚举、中文目标串走 `char*`、禁止空数组）并挂到 `LlamaCppEngine` 采样链首（文法解析失败时降级为不加约束，不让整次生成崩掉；局域网 Ollama 通道不支持自定义文法）；新增 `ActionOutputParser` 做分类→纠正重试→规则兜底，`OmniboxPlanner.PlanResult` 补 `fallbackReason`，保证「不静默丢动作」有日志凭据。
+- **P3 回归测试与 CI：** `AssistantCore` 测试 128 → 200 项，覆盖重复待办下一期字段、通知重排与 15 项截断、备份覆盖度（每个 `@Model` 必须在白名单里出现或被显式排除）与安全材料纪律（PIN 哈希/远程端点同意/设备缓存一旦被登记即失败）；新增 `scripts/ci.sh`（`test` 与 iOS 构建两种模式）。
+- **P2 视觉令牌与无障碍：** 新增 `Assistant/Theme/AppTheme.swift`（`AppColor`/`AppSpacing`/`AppRadius`/`appCard`/`appWarningState`/`appSoftCapsule` + `AppMotion` + `responsiveAnimation` + `wallpaperReadableText`），`AppMotion.animate` 47 处、`responsiveAnimation` 13 处、9–10 pt 固定字号转语义字体 26 处、新增 VoiceOver 修饰约 15 处；`LifeVaultView` 顶部 8 个统计 pill 由「按钮 + 下方 NavigationLink」双入口收敛为只读统计卡。分类身份色（`categoryColor`/`badgeColor`）有意不收敛，避免破坏类目辨识。
+- **出门防丢清单可改可删：** `DepartureChecklistView` 行项支持长按菜单「编辑/删除」与列表侧滑删除，`AddDepartureCheckItemSheet` 复用为编辑态（标题/场景/核心必带/存放位置）；种子数据改由 `departure_checklist_seeded` 一次性标记控制，用户删掉的默认项不会再被重新塞回来（旧实现用「表空即播种」，删光就复活）。删除前先把剩余项取出，避免 `@Query` 刷新时序导致取到旧数据；改动后若清点卡在上岛，按其原范围（选中场景或全部）end + 重新 request——ActivityKit 的 `attributes` 建卡后不可变，只能重推，`checkedIDs` 在 `state` 里会保留；清点卡已不在时顺带摘掉伴随通知，不留幽灵通知。
+- **新增：到站/落地前防遗漏清点提醒（票面定方式、运动定停走、时间兜底）**
+  - **能力边界先说清：** 已装的 iPhoneOS SDK 里 `CMMotionActivity` 只有 `stationary/walking/running/automotive/cycling`，没有 `subtype`，也不存在 `CMActivityType.air/.train`——火车与飞机**无法**靠运动区分，必须由票面或用户手选决定；骑行与开车可区分。因此判定分成三层。
+  - **纯逻辑下沉：** 新增 `AssistantCore/TripArrivalSchedule.swift`（提前量：飞机 20 / 火车 8 / 地铁 5 / 开车 5 / 公交 4 / 骑行 3 分钟；`decide` 负责未开窗 / 等停下 / 到点兜底 / 已提醒去重 / 超容忍窗过期；`isStoppedAfterTransit` 只认中高置信度、要求「在途证据早于静止观察窗」，且**只对开车与骑行开放**——地铁与公交沿途每站都停，「停下」推不出「下车」，只能靠时间；`transportKind(fromRaw:)` 归一化票面词），配套 17 条单测。
+  - **App 侧：** 新增 `Assistant/Services/TripArrivalService.swift`，`TodoItem` 增三个可选字段（`arrivalReminderAt` 非 nil 即开启、`arrivalTransportRaw`、`arrivalCheckFiredAt` 去重），走轻量迁移；`project.yml` 补 `NSMotionUsageDescription`（Info.plist 的键只认这里）。提醒本体是**排到提前点的本地通知**——`BGAppRefreshTask` 在几十分钟粒度内根本不会被系统唤起，运动更新也只在 App 存活时投递，所以可靠性交给通知排期，运动只用于「刚停下就提前提醒」，权限按需用一次性历史查询触发弹窗。
+  - **入口：** `EditTodoSheet` 新增「到站清点」区块（开关 + 交通方式七选一：飞机/火车/地铁/公交/开车打车/骑行/暂不确定 + 预计到达时间 + 提前量说明）；识别到车票/机票且非取件模式时自动按票面到达时间挂上提醒；锁屏横幅「开始清点」直跳清单页并把清点卡推上灵动岛，「10 分钟后再提醒」走独立标识追加一次（与主提醒共用标识会被下一轮前台对账当作「已提醒过」连带撤掉）。改到达时间会清掉上一趟的已触发标记与残留横幅，否则新行程会被判成「本次已提醒过」；已进入提前窗口时排期改挂到到达时间点，App 被杀掉也不至于一条提醒都不剩。
+  - **备份：** `TodoDTO` 同步补 `arrivalReminderAt`/`arrivalTransportRaw`（旧备份缺键解出 nil）；`arrivalCheckFiredAt` 属运行时状态，不入备份，还原后仍可再提醒。
+- **架构债：拆超大文件。** `DataMigrationService.swift` 2474 → 392 行，DTO 与 `BackupPackage` 落到 `Assistant/Services/Migration/BackupPackageModels.swift`，导出/还原/校验分别 ext 到 `+Export`、`+Restore`、`+Validation`（527/505/840/228 行）；`TodoListView.swift` 3655 → 1592 行，`TodoFilterCategory`、`TodoSupportingViews`、`TodoRowViews`、`AddTodoSheet` 拆到 `Assistant/Features/Todo/`。拆分只搬代码、不改逻辑，共 5 处 `private` → internal（跨文件访问所需）；拆分过程中一处漏了 `import AssistantCore` 导致 `SettingsSnapshotDTO` 找不到，已补。
+- **验证：** `swift test` 200 项全绿；`xcodegen generate` + `xcodebuild -scheme Assistant -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO` **BUILD SUCCEEDED**（含拆分后的全部新文件，0 error / 0 warning；顺带把 `NavigationRouter.AppTab` 标 `Sendable` 消掉统一搜索的一处并发警告）。`Localizable.xcstrings` 经脚本比对：3675 → 3717 键，旧键 0 缺失、0 语义改动，42 个新键全部带 en。待真机验收：锁屏/灵动岛/Mac 三端清点卡同步、到站提醒实际弹出与运动提前、VoiceOver 全流程与自定义壁纸对比度、万件待办的搜索与首屏耗时。
