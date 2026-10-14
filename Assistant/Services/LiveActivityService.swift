@@ -129,6 +129,12 @@ enum LiveActivityService {
             Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
         }
     }
+
+    /// 清点卡的物品与必带标记写死在 attributes 里（ActivityKit 不允许更新 attributes），
+    /// 清单增删改后只能重推，否则锁屏与手表上会继续显示已删除的物品。
+    static var hasDepartureActivity: Bool {
+        !Activity<DepartureChecklistActivityAttributes>.activities.isEmpty
+    }
 }
 
 // MARK: - 手表 / Mac 上的一键「点关闭」伴随通知
@@ -222,6 +228,11 @@ enum LiveActivityControlNotifications {
         if Activity<DepartureChecklistActivityAttributes>.activities.isEmpty {
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [departureNotificationIdentifier])
         }
+    }
+
+    /// 清点卡确定不再展示时立即摘掉伴随通知，不等下一次前后台切换的 reconcile
+    static func dismissDeparture() {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [departureNotificationIdentifier])
     }
 
     private static func checkAllDepartureItems() {

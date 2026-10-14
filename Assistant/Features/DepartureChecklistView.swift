@@ -5,12 +5,15 @@ import SwiftUI
 struct DepartureChecklistView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \DepartureCheckItem.createdAt) private var items: [DepartureCheckItem]
+    @AppStorage("departure_checklist_seeded") private var hasSeededDefaults = false
     @ObservedObject private var contextEngine = SituationalContextEngine.shared
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var selectedScene: DepartureScene? = nil
     @State private var showingAddSheet = false
+    @State private var editingItem: DepartureCheckItem?
+    @State private var pendingDepartureRefresh = false
     @State private var showingResetAlert = false
     @State private var hasInitializedScene = false
     @State private var isAfterWorkSuggestionDismissed = false
@@ -178,8 +181,22 @@ struct DepartureChecklistView: View {
                 } else {
                     ForEach(filteredItems) { item in
                         CheckItemRow(item: item)
+                            .contextMenu {
+                                Button {
+                                    editingItem = item
+                                } label: {
+                                    Label("编辑", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    delete(items: [item])
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                            }
                     }
-                    .onDelete(perform: deleteItems)
+                    .onDelete { offsets in
+                        delete(items: offsets.map { filteredItems[$0] })
+                    }
                 }
             } header: {
                 HStack {
@@ -251,8 +268,15 @@ struct DepartureChecklistView: View {
                 .accessibilityLabel("把出门清点推上灵动岛")
             }
         }
-        .sheet(isPresented: $showingAddSheet) {
-            AddDepartureCheckItemSheet(defaultScene: selectedScene ?? .commute)
+        .sheet(isPresented: $showingAddSheet, onDismiss: refreshDepartureActivityAfterEdit) {
+            AddDepartureCheckItemSheet(defaultScene: selectedScene ?? .commute, onChanged: {
+                pendingDepartureRefresh = true
+            })
+        }
+        .sheet(item: $editingItem, onDismiss: refreshDepartureActivityAfterEdit) { item in
+            AddDepartureCheckItemSheet(defaultScene: item.scene, editing: item, onChanged: {
+                pendingDepartureRefresh = true
+            })
         }
         .alert("重新出发", isPresented: $showingResetAlert) {
             Button("确认重置", role: .destructive) {
@@ -369,7 +393,7 @@ struct DepartureChecklistView: View {
                 Text(L10n.tr(title))
                     .font(.title3.bold())
                 Text(L10n.tr(sub))
-                    .font(.system(size: 9))
+                    .font(.caption2)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
@@ -399,14 +423,41 @@ struct DepartureChecklistView: View {
         Haptic.success()
     }
 
-    private func deleteItems(at offsets: IndexSet) {
-        for index in offsets {
-            context.delete(filteredItems[index])
+    private func delete(items: [DepartureCheckItem]) {
+        guard !items.isEmpty else { return }
+        // 删除后 @Query 未必立刻刷新，先按当前可见列表算出重推给卡片用的剩余项
+        let deletedIDs = Set(items.map(\.id))
+        let remaining = filteredItems.filter { !deletedIDs.contains($0.id) }
+        for item in items {
+            context.delete(item)
         }
         try? context.save()
+        refreshDepartureActivity(with: remaining)
+    }
+
+    /// 弹窗关闭后 @Query 才稳定包含新增项，所以重推时机放在 onDismiss，且只在本次真的改过时执行
+    private func refreshDepartureActivityAfterEdit() {
+        guard pendingDepartureRefresh else { return }
+        pendingDepartureRefresh = false
+        refreshDepartureActivity(with: filteredItems)
+    }
+
+    /// 清点卡的物品与必带标记固定在上岛那一刻的 attributes 里，改不了；
+    /// 增删改后按当前视图重推一次，否则锁屏/手表上会留下已删除物品的幽灵行或过期名称。
+    private func refreshDepartureActivity(with items: [DepartureCheckItem]) {
+        guard LiveActivityService.hasDepartureActivity else { return }
+        LiveActivityService.endDepartureActivities()
+        let sceneName = selectedScene.map { $0.displayName } ?? "全部物品"
+        if !LiveActivityService.startDepartureChecklist(sceneName: sceneName, items: items) {
+            // 剩余项已全部勾完（或清单已空）时不再重推，顺带摘掉伴随通知，不留点不到的控制入口
+            LiveActivityControlNotifications.dismissDeparture()
+        }
     }
 
     private func seedDefaultsIfNeeded() {
+        // 只铺一次：用户把清单删光后重进，不该把整份默认清单再塞回来
+        guard !hasSeededDefaults else { return }
+        hasSeededDefaults = true
         guard items.isEmpty else { return }
         for seed in DepartureChecklistDefaults.seeds {
             let item = DepartureCheckItem(
@@ -451,18 +502,18 @@ struct CheckItemRow: View {
 
                         if item.isEssential {
                             Text("核心必带")
-                                .font(.system(size: 9, weight: .bold))
+                                .font(.caption2.bold())
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(.red.opacity(0.15)))
-                                .foregroundStyle(.red)
+                                .background(Capsule().fill(AppColor.softFill(AppColor.danger, opacity: 0.15)))
+                                .foregroundStyle(AppColor.danger)
                         }
                     }
 
                     if let loc = item.storageLocationNote, !loc.isEmpty {
                         HStack(spacing: 3) {
                             Image(systemName: "mappin.and.ellipse")
-                                .font(.system(size: 10))
+                                .font(.caption2)
                             Text("存放: \(loc)")
                                 .font(.caption2)
                         }
@@ -485,12 +536,14 @@ struct CheckItemRow: View {
     }
 }
 
-/// 添加随身防丢物品弹窗
+/// 添加 / 编辑随身防丢物品弹窗
 struct AddDepartureCheckItemSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
     var defaultScene: DepartureScene
+    var editing: DepartureCheckItem?
+    var onChanged: () -> Void = {}
 
     @State private var title = ""
     @State private var scene: DepartureScene = .commute
@@ -501,6 +554,8 @@ struct AddDepartureCheckItemSheet: View {
         "笔记本电脑", "电脑充电器", "公司门禁卡", "家门钥匙", "折叠雨伞",
         "AirPods 耳机", "运动水杯", "移动电源", "常备药品", "纸巾/湿巾"
     ]
+
+    private var isEditing: Bool { editing != nil }
 
     var body: some View {
         NavigationStack {
@@ -542,32 +597,52 @@ struct AddDepartureCheckItemSheet: View {
                     }
                 }
             }
-            .navigationTitle("添加随身防丢装备")
+            .navigationTitle(isEditing ? "编辑随身防丢装备" : "添加随身防丢装备")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("添加") {
-                        let item = DepartureCheckItem(
-                            title: title,
-                            scene: scene,
-                            isEssential: isEssential,
-                            storageLocationNote: storageLocationNote.isEmpty ? nil : storageLocationNote,
-                            isChecked: false
-                        )
-                        context.insert(item)
-                        try? context.save()
-                        Haptic.success()
-                        dismiss()
+                    Button(isEditing ? "保存" : "添加") {
+                        save()
                     }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .onAppear {
                 scene = defaultScene
+                if let editing {
+                    title = editing.title
+                    scene = editing.scene
+                    isEssential = editing.isEssential
+                    storageLocationNote = editing.storageLocationNote ?? ""
+                }
             }
         }
+    }
+
+    private func save() {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return }
+        let trimmedNote = storageLocationNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let editing {
+            editing.title = trimmedTitle
+            editing.scene = scene
+            editing.isEssential = isEssential
+            editing.storageLocationNote = trimmedNote.isEmpty ? nil : trimmedNote
+        } else {
+            context.insert(DepartureCheckItem(
+                title: trimmedTitle,
+                scene: scene,
+                isEssential: isEssential,
+                storageLocationNote: trimmedNote.isEmpty ? nil : trimmedNote,
+                isChecked: false
+            ))
+        }
+        try? context.save()
+        Haptic.success()
+        onChanged()
+        dismiss()
     }
 }
