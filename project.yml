@@ -22,9 +22,9 @@ settings:
 packages:
   AssistantCore:
     path: Packages/AssistantCore
-  LlamaSwift:
-    url: https://github.com/mattt/llama.swift
-    from: "2.0.0"
+  # LlamaSwift:
+  #   url: https://github.com/mattt/llama.swift
+  #   from: "2.0.0"
 
 targets:
   Assistant:
@@ -35,8 +35,8 @@ targets:
       - WidgetShared
     dependencies:
       - package: AssistantCore
-      - package: LlamaSwift
-        product: LlamaSwift
+      # - package: LlamaSwift
+      #   product: LlamaSwift
       - target: AssistantWidgetExtension
       - target: AssistantShareExtension
     entitlements:
