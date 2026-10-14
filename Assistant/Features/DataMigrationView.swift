@@ -202,6 +202,22 @@ struct DataMigrationView: View {
                             Text("• 学习路径: \(summary.skillPathCount) 条 | 阶段: \(summary.skillStageCount) | 打卡: \(summary.practiceLogCount) 次")
                                 .font(.caption)
                         }
+                        if summary.petCount > 0 || summary.reminderActionCount > 0 {
+                            Text("• 宠物: \(summary.petCount) | 提醒动作: \(summary.reminderActionCount)")
+                                .font(.caption)
+                        }
+                        if summary.childCount > 0 || summary.childGrowthCount > 0 || summary.childMilestoneCount > 0 || summary.childHealthVisitCount > 0 || summary.childVaccinationCount > 0 {
+                            Text("• 宝贝: \(summary.childCount) | 成长: \(summary.childGrowthCount) | 里程碑: \(summary.childMilestoneCount) | 就医: \(summary.childHealthVisitCount) | 疫苗: \(summary.childVaccinationCount)")
+                                .font(.caption)
+                        }
+                        if summary.lifeEventProjectCount > 0 || summary.lifeEventStageCount > 0 || summary.lifeEventTaskCount > 0 || summary.lifeEventPersonCount > 0 || summary.lifeEventExpenseCount > 0 || summary.lifeEventGuestCount > 0 {
+                            Text("• 人生大事: \(summary.lifeEventProjectCount) | 阶段: \(summary.lifeEventStageCount) | 任务: \(summary.lifeEventTaskCount) | 人员: \(summary.lifeEventPersonCount) | 支出: \(summary.lifeEventExpenseCount) | 宾客: \(summary.lifeEventGuestCount)")
+                                .font(.caption)
+                        }
+                        if summary.omniboxTransactionCount > 0 {
+                            Text("• 投喂事务: \(summary.omniboxTransactionCount) 笔")
+                                .font(.caption)
+                        }
                         if summary.settingsKeyCount > 0 {
                             Text("• 偏好设置: \(summary.settingsKeyCount) 项（名称/语言/背景/预算/报告推送等）")
                                 .font(.caption)
