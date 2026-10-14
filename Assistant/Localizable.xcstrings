@@ -1685,6 +1685,22 @@
         }
       }
     },
+    "%@ 统计" : {
+
+    },
+    "%@ 项" : {
+
+    },
+    "%@ 项，%lld 项需关注" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ 项，%2$lld 项需关注"
+          }
+        }
+      }
+    },
     "%@ 项待办" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2571,6 +2587,23 @@
         }
       }
     },
+    "• 人生大事: %lld | 阶段: %lld | 任务: %lld | 人员: %lld | 支出: %lld | 宾客: %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• Life Events: %lld | Stages: %lld | Tasks: %lld | People: %lld | Expenses: %lld | Guests: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• 人生大事: %lld | 阶段: %lld | 任务: %lld | 人员: %lld | 支出: %lld | 宾客: %lld"
+          }
+        }
+      }
+    },
     "• 偏好设置: %lld 项（名称/语言/背景/预算/报告推送等）" : {
 
     },
@@ -2733,6 +2766,40 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "• 学习路径: %1$lld 条 | 阶段: %2$lld | 打卡: %3$lld 次"
+          }
+        }
+      }
+    },
+    "• 宝贝: %lld | 成长: %lld | 里程碑: %lld | 就医: %lld | 疫苗: %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• Child: %lld | Growth: %lld | Milestones: %lld | Health Visits: %lld | Vaccinations: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• 宝贝: %lld | 成长: %lld | 里程碑: %lld | 就医: %lld | 疫苗: %lld"
+          }
+        }
+      }
+    },
+    "• 宠物: %lld | 提醒动作: %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• Pets: %lld | Reminder Actions: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• 宠物: %lld | 提醒动作: %lld"
           }
         }
       }
@@ -3192,6 +3259,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "• 待办: %lld | 续费: %lld | 临期: %lld"
+          }
+        }
+      }
+    },
+    "• 投喂事务: %lld 笔" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• Capture Transactions: %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• 投喂事务: %lld 笔"
           }
         }
       }
@@ -6517,6 +6601,9 @@
         }
       }
     },
+    "3 秒" : {
+
+    },
     "3 秒（默认）" : {
 
     },
@@ -6592,6 +6679,9 @@
       }
     },
     "5 秒" : {
+
+    },
+    "5 秒（默认）" : {
 
     },
     "5A景区门票/游船预约（提前7-14天）" : {
@@ -6695,6 +6785,9 @@
           }
         }
       }
+    },
+    "8 秒" : {
+
     },
     "08:00 苏博" : {
       "extractionState" : "manual",
@@ -6828,6 +6921,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "10 分钟后"
+          }
+        }
+      }
+    },
+    "10 分钟后再提醒" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remind me again in 10 minutes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "10 分钟后再提醒"
           }
         }
       }
@@ -7398,6 +7508,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "GGUF 已就绪"
+          }
+        }
+      }
+    },
+    "GGUF 文件格式版本不支持。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This GGUF format version is not supported."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GGUF 文件格式版本不支持。"
           }
         }
       }
@@ -8174,6 +8301,23 @@
         }
       }
     },
+    "上一趟行程还没确认，点「开始清点」逐项核对。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your last trip isn't confirmed yet. Tap Start Checklist to review each item."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一趟行程还没确认，点「开始清点」逐项核对。"
+          }
+        }
+      }
+    },
     "上博" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8636,6 +8780,23 @@
         }
       }
     },
+    "下车/落地前先看一眼座位与行李网：" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check your seat and rack before leaving: "
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下车/落地前先看一眼座位与行李网："
+          }
+        }
+      }
+    },
     "下载中" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8898,6 +9059,9 @@
       }
     },
     "不自动关闭" : {
+
+    },
+    "不自动退出" : {
 
     },
     "不设开封期限" : {
@@ -10027,6 +10191,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "交通出行"
+          }
+        }
+      }
+    },
+    "交通方式" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transport mode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交通方式"
           }
         }
       }
@@ -12277,6 +12458,9 @@
         }
       }
     },
+    "停止语音记账" : {
+
+    },
     "停车" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13104,6 +13288,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "公交"
+          }
+        }
+      }
+    },
+    "公交即将到站，检查随身物品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bus stop approaching — check your belongings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公交即将到站，检查随身物品"
+          }
+        }
+      }
+    },
+    "公交车" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bus"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公交车"
           }
         }
       }
@@ -15533,6 +15751,9 @@
         }
       }
     },
+    "切换待办的展示方式：板块分组或全局自由排序" : {
+
+    },
     "切至日常轻装" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -15614,6 +15835,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "列出需要协调的人和事"
+          }
+        }
+      }
+    },
+    "列车即将到站，检查随身物品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Train is arriving — check your belongings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "列车即将到站，检查随身物品"
           }
         }
       }
@@ -15995,6 +16233,74 @@
         }
       }
     },
+    "到站/落地时提醒我清点" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remind me to check my belongings on arrival"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "到站/落地时提醒我清点"
+          }
+        }
+      }
+    },
+    "到站前核对随身物品，点「开始清点」逐项确认。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify your belongings before arrival; tap Start Checklist to confirm each item."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "到站前核对随身物品，点「开始清点」逐项确认。"
+          }
+        }
+      }
+    },
+    "到站清点" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrival Checklist"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "到站清点"
+          }
+        }
+      }
+    },
+    "到达前 %d 分钟提醒清点随身物品。开车与骑行会读取运动状态，刚停下就提醒；其余方式按预计到达时间兜底。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminds you %d minutes before arrival. Car and bike trips use motion data to tell when you have stopped; other modes fall back to the estimated arrival time."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "到达前 %d 分钟提醒清点随身物品。开车与骑行会读取运动状态，刚停下就提醒；其余方式按预计到达时间兜底。"
+          }
+        }
+      }
+    },
     "到达指定地点" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16181,6 +16487,9 @@
           }
         }
       }
+    },
+    "剪贴板唤起后无操作自动退出" : {
+
     },
     "剪贴板检测自动打开投喂口" : {
 
@@ -17226,6 +17535,40 @@
         }
       }
     },
+    "即将到达，检查后座与后备箱" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almost there — check the back seat and trunk"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即将到达，检查后座与后备箱"
+          }
+        }
+      }
+    },
+    "即将到达，检查随身物品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Almost there — check your belongings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "即将到达，检查随身物品"
+          }
+        }
+      }
+    },
     "即将过期" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -17464,6 +17807,9 @@
         }
       }
     },
+    "双击完成该待办" : {
+
+    },
     "双击打开对话，长按开始语音输入" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -17480,6 +17826,9 @@
           }
         }
       }
+    },
+    "双击标记回未完成" : {
+
     },
     "双方无需添加好友，离线状态下也可直接对准屏幕扫描导入。" : {
       "extractionState" : "manual",
@@ -19501,6 +19850,23 @@
         }
       }
     },
+    "地铁即将到站，检查随身物品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metro station approaching — check your belongings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地铁即将到站，检查随身物品"
+          }
+        }
+      }
+    },
     "地铁站" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20033,6 +20399,9 @@
         }
       }
     },
+    "复制到剪贴板，60 秒后自动失效且仅限本机使用" : {
+
+    },
     "复制原文" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20168,6 +20537,12 @@
           }
         }
       }
+    },
+    "复制证件号码" : {
+
+    },
+    "复制账号" : {
+
     },
     "复查：%@" : {
       "extractionState" : "manual",
@@ -23655,6 +24030,9 @@
         }
       }
     },
+    "将取件码复制到剪贴板，便于在驿站时报出" : {
+
+    },
     "将备考拆解为明确的高频动作，助你稳扎稳打提升复习效能：" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -23671,6 +24049,12 @@
           }
         }
       }
+    },
+    "将完整证件号码复制到剪贴板" : {
+
+    },
+    "将寄件码复制到剪贴板" : {
+
     },
     "将当前所在位置覆盖为该地点坐标" : {
       "extractionState" : "manual",
@@ -23739,6 +24123,9 @@
           }
         }
       }
+    },
+    "将账号复制到剪贴板" : {
+
     },
     "小儿麻痹症" : {
       "extractionState" : "manual",
@@ -25682,6 +26069,23 @@
         }
       }
     },
+    "已检测到停车/下车，趁刚下车清点一遍随身物品。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop detected — go through your belongings right after getting off."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已检测到停车/下车，趁刚下车清点一遍随身物品。"
+          }
+        }
+      }
+    },
     "已添加 %@ 张" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27319,6 +27723,26 @@
         }
       }
     },
+    "开始清点" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Checklist"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开始清点"
+          }
+        }
+      }
+    },
+    "开始语音输入" : {
+
+    },
     "开封后 %lld 天" : {
 
     },
@@ -27344,6 +27768,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "开封药品"
+          }
+        }
+      }
+    },
+    "开车/打车" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Car / Ride-hailing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开车/打车"
           }
         }
       }
@@ -30694,9 +31135,6 @@
         }
       }
     },
-    "执行投喂动作（记账、待办、备忘）后，弹窗将在指定秒数后自动关闭；期间点击页面任何操作可随时暂停或撤销。" : {
-
-    },
     "执行阶段" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30888,9 +31326,6 @@
       }
     },
     "投入与周期" : {
-
-    },
-    "投喂完成后自动关闭弹窗" : {
 
     },
     "折叠雨伞" : {
@@ -33346,6 +33781,23 @@
         }
       }
     },
+    "敏感内容已隐藏，解锁或在设置中开启敏感详情后查看" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sensitive details are hidden. Unlock the app or turn on sensitive details in Settings to view."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "敏感内容已隐藏，解锁或在设置中开启敏感详情后查看"
+          }
+        }
+      }
+    },
     "敦煌" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35067,6 +35519,9 @@
         }
       }
     },
+    "显示密码" : {
+
+    },
     "晚上好" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35389,6 +35844,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暂不清楚"
+          }
+        }
+      }
+    },
+    "暂不确定" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not sure yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂不确定"
           }
         }
       }
@@ -36428,6 +36900,9 @@
           }
         }
       }
+    },
+    "未完成" : {
+
     },
     "未录入" : {
       "extractionState" : "manual",
@@ -37849,6 +38324,57 @@
         }
       }
     },
+    "校验中" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifying…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "校验中"
+          }
+        }
+      }
+    },
+    "校验失败" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verification failed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "校验失败"
+          }
+        }
+      }
+    },
+    "校验通过" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verified"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "校验通过"
+          }
+        }
+      }
+    },
     "核对月龄和接种本，提前预约门诊" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -38294,6 +38820,9 @@
         }
       }
     },
+    "检测到剪贴板有内容自动唤起投喂口时，若您无意添加到 App，无需任何操作，弹窗将在指定秒数后自动关闭退出；期间点击任意位置或操作可暂停倒计时。" : {
+
+    },
     "检验有效截止期" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -38413,6 +38942,23 @@
         }
       }
     },
+    "模型文件校验未通过" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model file failed verification"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型文件校验未通过"
+          }
+        }
+      }
+    },
     "模型文件获取与管理" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -38426,6 +38972,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型文件获取与管理"
+          }
+        }
+      }
+    },
+    "模型输出解析失败，已降级本机规则引擎：" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model output parsing failed, fell back to the local rules engine: "
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型输出解析失败，已降级本机规则引擎："
           }
         }
       }
@@ -38599,6 +39162,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在录音 · 锁屏也会继续录制"
+          }
+        }
+      }
+    },
+    "正在校验模型完整性…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verifying model file integrity…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在校验模型完整性…"
           }
         }
       }
@@ -42036,6 +42616,23 @@
         }
       }
     },
+    "火车/高铁" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Train / High-speed rail"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "火车/高铁"
+          }
+        }
+      }
+    },
     "火车票" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -42324,6 +42921,9 @@
           }
         }
       }
+    },
+    "点击后说出账目，如“麦当劳吃了38”，自动识别记账" : {
+
     },
     "点击开启长辈模式" : {
       "extractionState" : "manual",
@@ -45163,6 +45763,9 @@
         }
       }
     },
+    "确认执行后自动关闭弹窗" : {
+
+    },
     "确认批量录入" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -46134,6 +46737,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "端侧思考中..."
+          }
+        }
+      }
+    },
+    "端侧模型需完整性校验通过（或已配置局域网端点）后方可测试。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The on-device model must pass integrity verification (or a LAN endpoint must be configured) before testing."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端侧模型需完整性校验通过（或已配置局域网端点）后方可测试。"
           }
         }
       }
@@ -47771,6 +48391,23 @@
         }
       }
     },
+    "编辑随身防丢装备" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Essential Carry Item"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑随身防丢装备"
+          }
+        }
+      }
+    },
     "缴费" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -49230,6 +49867,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "行李箱拉链内袋"
+          }
+        }
+      }
+    },
+    "行程即将到达，检查随身物品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trip almost over — check your belongings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "行程即将到达，检查随身物品"
           }
         }
       }
@@ -51664,6 +52318,23 @@
         }
       }
     },
+    "该清点随身物品了" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time to check your belongings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该清点随身物品了"
+          }
+        }
+      }
+    },
     "详情与备注" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -51921,6 +52592,9 @@
           }
         }
       }
+    },
+    "语音记账" : {
+
     },
     "说一句话快速创建一条待办，例如：明天下午三点取快递" : {
 
@@ -52777,6 +53451,23 @@
     },
     "跟踪物品" : {
 
+    },
+    "跨模块搜索" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Across Modules"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跨模块搜索"
+          }
+        }
+      }
     },
     "路由器管理" : {
       "extractionState" : "manual",
@@ -54957,6 +55648,40 @@
         }
       }
     },
+    "重新导入" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Re-import"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新导入"
+          }
+        }
+      }
+    },
+    "重新校验" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Re-verify"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新校验"
+          }
+        }
+      }
+    },
     "重新识别" : {
 
     },
@@ -55924,6 +56649,9 @@
           }
         }
       }
+    },
+    "隐藏密码" : {
+
     },
     "随手记下贵重物、换季衣物或备用件存放位置，告别翻箱倒柜。" : {
       "extractionState" : "manual",
@@ -57001,6 +57729,23 @@
     "预计 %lld 周" : {
 
     },
+    "预计到达时间" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estimated arrival time"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预计到达时间"
+          }
+        }
+      }
+    },
     "预订假期往返机票（提前15-30天）" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -57188,6 +57933,23 @@
         }
       }
     },
+    "飞机即将落地，检查随身物品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plane is landing — check your belongings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "飞机即将落地，检查随身物品"
+          }
+        }
+      }
+    },
     "食堂" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -57312,6 +58074,23 @@
     },
     "首次使用，请先设置备份 PIN 码" : {
 
+    },
+    "首次校验大文件约需数十秒，校验通过前模型不可用。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "First-time verification of the large model file takes tens of seconds. The model stays unavailable until verification passes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首次校验大文件约需数十秒，校验通过前模型不可用。"
+          }
+        }
+      }
     },
     "首次问答将自动映射加载至 Metal" : {
       "extractionState" : "manual",
@@ -57530,6 +58309,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "验证身份以解锁查看重要证件照片"
+          }
+        }
+      }
+    },
+    "骑行" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cycling"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "骑行"
           }
         }
       }
