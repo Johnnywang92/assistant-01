@@ -717,6 +717,8 @@ enum TodoNaturalLanguageParser {
             type = .returnParcel
         } else if original.contains("取件") || original.contains("快递") || original.contains("包裹") {
             type = .parcel
+        } else if original.contains("开会") || original.contains("周报") || original.contains("月报") || original.contains("汇报") || original.contains("评审") || original.contains("加班") || original.contains("述职") {
+            type = .work
         } else {
             type = .general
         }

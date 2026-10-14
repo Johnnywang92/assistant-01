@@ -8,6 +8,7 @@ import WeatherKit
 enum TodoFilterCategory: String, CaseIterable, Identifiable, Hashable {
     case all = "全部"
     case general = "待办"
+    case work = "工作"
     case recurring = "周期"
     case parcel = "快递"
     case life = "生活"
@@ -20,6 +21,7 @@ enum TodoFilterCategory: String, CaseIterable, Identifiable, Hashable {
 
 enum TodoCategoryPreferences {
     private static let key = "todo_home_category_order_v1"
+    private static let workCategoryMigratedKey = "todo_home_category_work_migrated_v1"
 
     static func load() -> [TodoFilterCategory] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -28,6 +30,13 @@ enum TodoCategoryPreferences {
         }
         var categories = rawValues.compactMap { TodoFilterCategory(rawValue: $0) }.uniqued()
         if !categories.contains(.all) { categories.insert(.all, at: 0) }
+        // 一次性迁移：旧存档顺序自动补入新增的“工作”类目；此后用户再手动移除则尊重其选择
+        if !UserDefaults.standard.bool(forKey: workCategoryMigratedKey) {
+            if !categories.contains(.work), let idx = categories.firstIndex(of: .general) {
+                categories.insert(.work, at: idx + 1)
+            }
+            UserDefaults.standard.set(true, forKey: workCategoryMigratedKey)
+        }
         return categories
     }
 
@@ -55,6 +64,7 @@ fileprivate struct TodoClassification {
     var overdue: [TodoItem] = []
 
     var generals: [TodoItem] = []
+    var works: [TodoItem] = []
     var parcels: [TodoItem] = []
     var returnParcels: [TodoItem] = []
     var medications: [TodoItem] = []
@@ -109,6 +119,7 @@ fileprivate struct TodoClassification {
             switch item.type {
             case .general, .event, .travelBooking: generals.append(item)
             case .skillLearning: generals.append(item)
+            case .work: works.append(item)
             case .parcel: parcels.append(item)
             case .returnParcel: returnParcels.append(item)
             case .medication: medications.append(item)
@@ -237,6 +248,7 @@ struct TodoListView: View {
     private func category(for item: TodoItem) -> TodoFilterCategory {
         switch item.type {
         case .parcel, .returnParcel: return .parcel
+        case .work: return .work
         case .medication, .charging, .housework, .exercise, .hydration: return .life
         case .subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare: return .alert
         case .childVaccine, .childGrowth, .childMilestone, .childHealth: return .parenting
@@ -270,6 +282,7 @@ struct TodoListView: View {
     private var recurring: [TodoItem] { classified.recurring }
 
     private var generals: [TodoItem] { classified.generals }
+    private var works: [TodoItem] { classified.works }
     private var parcels: [TodoItem] { classified.parcels }
     private var returnParcels: [TodoItem] { classified.returnParcels }
     private var medications: [TodoItem] { classified.medications }
@@ -1048,6 +1061,14 @@ struct TodoListView: View {
                 .onMove { from, to in reorder(items: generals, fromOffsets: from, toOffset: to) }
             }
         }
+        if !works.isEmpty {
+            Section("💼 工作待办（\(works.count)）") {
+                ForEach(works) { item in
+                    todoRow(item, within: works)
+                }
+                .onMove { from, to in reorder(items: works, fromOffsets: from, toOffset: to) }
+            }
+        }
         if !parcels.isEmpty {
             Section("📦 待取快递（\(parcels.count)）") {
                 ForEach(parcels) { item in
@@ -1155,6 +1176,21 @@ struct TodoListView: View {
                     todoRow(item, within: generals)
                 }
                 .onMove { from, to in reorder(items: generals, fromOffsets: from, toOffset: to) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func renderWorkSection() -> some View {
+        Section(works.isEmpty ? "工作待办" : "💼 工作待办（\(works.count)）") {
+            if works.isEmpty {
+                Text("暂无工作待办，点击右上角 ➕ 即可快速添加会议、周报或项目事项。")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(works) { item in
+                    todoRow(item, within: works)
+                }
+                .onMove { from, to in reorder(items: works, fromOffsets: from, toOffset: to) }
             }
         }
     }
@@ -1431,6 +1467,8 @@ struct TodoListView: View {
                 renderAllSections()
             case .general:
                 renderGeneralSection()
+            case .work:
+                renderWorkSection()
             case .recurring:
                 renderRecurringSection()
             case .parcel:
@@ -1526,6 +1564,7 @@ struct TodoListView: View {
         switch category {
         case .all: return activeTodos.count
         case .general: return generals.count
+        case .work: return works.count
         case .recurring: return recurring.count
         case .parcel: return parcels.count + returnParcels.count
         case .life: return medications.count + houseworks.count + chargings.count
@@ -1539,6 +1578,7 @@ struct TodoListView: View {
         switch category {
         case .all: return .secondary
         case .general: return .blue
+        case .work: return .brown
         case .recurring: return .indigo
         case .parcel: return .orange
         case .life: return .green
@@ -1554,6 +1594,8 @@ struct TodoListView: View {
             return done
         case .general:
             return done.filter { [.general, .event].contains($0.type) }
+        case .work:
+            return done.filter { $0.type == .work }
         case .recurring:
             return classified.doneRecurring
         case .parcel:
@@ -1781,6 +1823,7 @@ private struct TodoCategoryCustomizationView: View {
         switch category {
         case .all: return "square.grid.2x2.fill"
         case .general: return "checkmark.circle"
+        case .work: return "briefcase.fill"
         case .recurring: return "repeat"
         case .parcel: return "shippingbox.fill"
         case .life: return "heart.fill"
@@ -1794,6 +1837,7 @@ private struct TodoCategoryCustomizationView: View {
         switch category {
         case .all: return .secondary
         case .general: return .blue
+        case .work: return .brown
         case .recurring: return .indigo
         case .parcel: return .orange
         case .life: return .green
@@ -1830,6 +1874,7 @@ struct TodoRow: View {
         case .parcel: return .orange
         case .returnParcel: return .indigo
         case .general, .event: return .blue
+        case .work: return .brown
         case .medication: return .green
         case .housework: return .purple
         case .charging: return .yellow
@@ -2433,6 +2478,11 @@ struct AddTodoSheet: View {
             defaultType = .general
             defaultHasDueDate = false
             defaultDue = Calendar.current.date(byAdding: .hour, value: 2, to: .now) ?? .now
+        case .work:
+            defaultType = .work
+            defaultHasDueDate = true
+            let workEvening = Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: .now) ?? .now
+            defaultDue = workEvening > .now ? workEvening : (Calendar.current.date(byAdding: .day, value: 1, to: workEvening) ?? .now)
         case .parcel:
             defaultType = .parcel
             defaultHasDueDate = false
@@ -2475,9 +2525,11 @@ struct AddTodoSheet: View {
     private var availableTypesForCategory: [TodoType] {
         switch selectedCategory {
         case .all:
-            return [.general, .travelBooking, .parcel, .medication, .housework, .exercise, .charging, .subscription, .vehicleCare, .bill, .itemExpiry, .anniversary, .hydration, .event, .childVaccine, .childGrowth, .childMilestone, .childHealth, .pet]
+            return [.general, .work, .travelBooking, .parcel, .medication, .housework, .exercise, .charging, .subscription, .vehicleCare, .bill, .itemExpiry, .anniversary, .hydration, .event, .childVaccine, .childGrowth, .childMilestone, .childHealth, .pet]
         case .general:
             return [.general, .travelBooking, .event]
+        case .work:
+            return [.work, .event, .general]
         case .recurring:
             return [.general, .medication, .housework, .charging, .hydration, .bill, .event]
         case .parcel:
@@ -2500,7 +2552,7 @@ struct AddTodoSheet: View {
         if !candidates.contains(type) {
             type = candidates.first ?? .general
         }
-        if newCat == .life || newCat == .alert || newCat == .recurring || newCat == .parenting || newCat == .pet {
+        if newCat == .life || newCat == .alert || newCat == .recurring || newCat == .parenting || newCat == .pet || newCat == .work {
             hasDueDate = true
             if newCat == .recurring && recurrenceRule == .none {
                 recurrenceRule = .weekly
@@ -2514,6 +2566,8 @@ struct AddTodoSheet: View {
         switch t {
         case .parcel, .returnParcel:
             return .parcel
+        case .work:
+            return .work
         case .medication, .exercise, .charging, .hydration:
             return .life
         case .bill, .vehicleCare, .subscription, .itemExpiry, .anniversary, .passwordSecurity:
@@ -2564,6 +2618,8 @@ struct AddTodoSheet: View {
             return "安全提醒（如：定期轮换平台密码、更新路由器管理密码）"
         case .event:
             return "日程事项（如：周五下午团队例会、拜访重要客户）"
+        case .work:
+            return "工作事项（如：准备项目周报、预约会议室并同步议题、提交评审材料）"
         case .travelBooking:
             return "出行与购票（如：国庆返乡高铁票、下周上海出差机票、假期旅行）"
         case .exercise:
@@ -2675,6 +2731,13 @@ struct AddTodoSheet: View {
             return [
                 QuickSuggestion(title: "团队项目进度例会", detail: "会议室对齐本周阻塞项", defaultHourOffset: 24),
                 QuickSuggestion(title: "客户拜访洽谈", detail: "准备方案与演示文稿", defaultHourOffset: 48)
+            ]
+        case .work:
+            return [
+                QuickSuggestion(title: "整理本周工作周报", detail: "总结核心交付物与下周规划", defaultHourOffset: 24),
+                QuickSuggestion(title: "准备团队例会材料", detail: "更新项目进展与阻塞清单", defaultHourOffset: 12),
+                QuickSuggestion(title: "项目里程碑交付评审", detail: "核对交付清单与演示环境", defaultHourOffset: 72),
+                QuickSuggestion(title: "出差/客户拜访行程安排", detail: "确认交通住宿与洽谈方案", defaultHourOffset: 120)
             ]
         case .travelBooking:
             return [

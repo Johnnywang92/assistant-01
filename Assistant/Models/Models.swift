@@ -3,6 +3,7 @@ import SwiftData
 
 enum TodoType: String, Codable, CaseIterable, Hashable {
     case parcel, data, bill, event, general
+    case work          // 工作待办（会议、周报、项目交付、汇报评审）
     case medication    // 吃药提醒
     case charging      // 手机/耳机/手表充电提醒
     case housework     // 周期性家务 (扫地/洗床单/换滤网/浇花)
@@ -30,6 +31,7 @@ enum TodoType: String, Codable, CaseIterable, Hashable {
         case .bill: "yensign.circle.fill"
         case .event: "calendar"
         case .general: "checkmark.circle"
+        case .work: "briefcase.fill"
         case .medication: "pills.fill"
         case .charging: "bolt.batteryblock.fill"
         case .housework: "bubbles.and.sparkles.fill"
@@ -53,6 +55,7 @@ enum TodoType: String, Codable, CaseIterable, Hashable {
     var displayName: String {
         let raw: String = switch self {
         case .general: "日常待办"
+        case .work: "工作待办"
         case .parcel: "快递取件"
         case .returnParcel: "退货寄件"
         case .medication: "服药提醒"

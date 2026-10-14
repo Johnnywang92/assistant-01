@@ -25,6 +25,7 @@ struct CompletedTodoHistoryView: View {
         switch selectedCategory {
         case .all: break
         case .general: result = result.filter { [.general, .event].contains($0.type) }
+        case .work: result = result.filter { $0.type == .work }
         case .recurring: result = result.filter { $0.isRecurring }
         case .parcel: result = result.filter { [.parcel, .returnParcel].contains($0.type) }
         case .life: result = result.filter { [.medication, .housework, .exercise, .charging].contains($0.type) }
@@ -170,6 +171,7 @@ struct CompletedTodoHistoryView: View {
         switch cat {
         case .all: return doneTodos.count
         case .general: return doneTodos.filter { [.general, .event].contains($0.type) }.count
+        case .work: return doneTodos.filter { $0.type == .work }.count
         case .recurring: return doneTodos.filter { $0.isRecurring }.count
         case .parcel: return doneTodos.filter { [.parcel, .returnParcel].contains($0.type) }.count
         case .life: return doneTodos.filter { [.medication, .housework, .exercise, .charging].contains($0.type) }.count

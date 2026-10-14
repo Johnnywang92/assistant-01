@@ -24172,6 +24172,74 @@
         }
       }
     },
+    "工作待办" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Work Tasks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工作待办"
+          }
+        }
+      }
+    },
+    "工作待办清单" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Work To-do List"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工作待办清单"
+          }
+        }
+      }
+    },
+    "💼 工作待办（%lld）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "💼 Work Tasks (%lld)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "💼 工作待办（%lld）"
+          }
+        }
+      }
+    },
+    "暂无工作待办，点击右上角 ➕ 即可快速添加会议、周报或项目事项。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No work tasks yet. Tap ➕ at the top right to quickly add meetings, reports or project items."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无工作待办，点击右上角 ➕ 即可快速添加会议、周报或项目事项。"
+          }
+        }
+      }
+    },
     "工作企业" : {
       "extractionState" : "manual",
       "localizations" : {

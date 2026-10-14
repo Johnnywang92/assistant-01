@@ -379,6 +379,8 @@ struct TodoShareSheet: View {
             return allTodos
         case .general:
             return allTodos.filter { [.general, .event].contains($0.type) }
+        case .work:
+            return allTodos.filter { $0.type == .work }
         case .recurring:
             return allTodos.filter { $0.isRecurring }
         case .parcel:
@@ -411,6 +413,8 @@ struct TodoShareSheet: View {
             return L10n.tr("我的生活清单")
         case .general:
             return L10n.tr("日常待办清单")
+        case .work:
+            return L10n.tr("工作待办清单")
         case .recurring:
             return L10n.tr("周期待办清单")
         case .parcel:

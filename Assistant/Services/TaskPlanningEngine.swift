@@ -392,6 +392,9 @@ final class TaskPlanningEngine {
         if text.contains("缴费") || text.contains("结清") || text.contains("账单") || text.contains("宽带") || text.contains("押金") || text.contains("退押") {
             return .bill
         }
+        if text.contains("周报") || text.contains("月报") || text.contains("汇报") || text.contains("评审") || text.contains("立项") || text.contains("述职") || text.contains("加班") || text.contains("绩效") {
+            return .work
+        }
         if text.contains("会议") || text.contains("模拟") || text.contains("演练") || text.contains("演讲") || text.contains("试讲") || text.contains("约好") || text.contains("通知") || text.contains("答辩") || text.contains("聚会") {
             return .event
         }
