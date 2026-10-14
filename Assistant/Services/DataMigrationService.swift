@@ -541,7 +541,7 @@ final class MigrationPinManager: ObservableObject {
     private func constantTimeEqual(_ a: Data, _ b: Data) -> Bool {
         guard a.count == b.count else { return false }
         var diff: UInt8 = 0
-        for i in 0..<a.count { diff &=+ a[a.index(a.startIndex, offsetBy: i)] ^ b[b.index(b.startIndex, offsetBy: i)] }
+        for i in 0..<a.count { diff |= a[a.index(a.startIndex, offsetBy: i)] ^ b[b.index(b.startIndex, offsetBy: i)] }
         return diff == 0
     }
 }
