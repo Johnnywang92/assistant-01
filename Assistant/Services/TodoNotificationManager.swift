@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import SwiftUI
 import UserNotifications
+import AssistantCore
 
 /// 待办事项本地通知调度与交互管理中心
 public final class TodoNotificationManager {
@@ -14,9 +15,8 @@ public final class TodoNotificationManager {
     public static let actionSnoozeTomorrow = "ACTION_TODO_SNOOZE_TOMORROW"
     public static let actionView = "ACTION_TODO_VIEW"
 
-    private let overdueOffsets: [TimeInterval] = [3600, 3 * 3600, 24 * 3600]
-    // 每个待办最多占用 4 个系统通知名额（主提醒 + 3 次逾期提醒）；iOS 对待处理通知数量有限制。
-    private let maxScheduledItems = 15
+    // 逾期补提醒偏移与排期项上限的判定口径下沉到 AssistantCore.TodoReminderSchedule（可单测）。
+    private var overdueOffsets: [TimeInterval] { TodoReminderSchedule.overdueOffsets }
 
     private init() {}
 
@@ -81,10 +81,13 @@ public final class TodoNotificationManager {
         }
         // 重排时先移除旧的主提醒和逾期提醒，避免编辑截止时间后留下旧通知。
         cancelNotification(for: item.id)
-        let earlyReminder = dueAt.addingTimeInterval(-TimeInterval(max(0, item.remindBeforeMinutes) * 60))
-        let plannedReminder = item.reminderOverrideAt ?? (earlyReminder > .now ? earlyReminder : dueAt)
-        let hasFutureOverdueReminder = overdueOffsets.contains { dueAt.addingTimeInterval($0) > .now }
-        guard plannedReminder > .now || dueAt > .now || hasFutureOverdueReminder else {
+        // 提前量与 override 的取舍、是否还值得排期，均由 Core 纯函数判定。
+        guard let plannedReminder = TodoReminderSchedule.mainReminderDate(
+            dueAt: dueAt,
+            remindBeforeMinutes: item.remindBeforeMinutes,
+            reminderOverrideAt: item.reminderOverrideAt,
+            now: .now
+        ) else {
             cancelNotification(for: item.id)
             return
         }
@@ -138,9 +141,8 @@ public final class TodoNotificationManager {
         }
 
         // 到期后仍未完成时再提醒几次，避免一次通知被忽略后事项悄悄过期。
-        for offset in overdueOffsets {
+        for offset in TodoReminderSchedule.futureOverdueOffsets(dueAt: dueAt, now: .now) {
             let fireDate = dueAt.addingTimeInterval(offset)
-            guard fireDate > .now else { continue }
             let overdueContent = UNMutableNotificationContent()
             overdueContent.title = showSensitiveDetails
                 ? L10n.choose("待办已逾期：\(item.title)", "To-Do Overdue: \(item.title)")
@@ -233,22 +235,19 @@ public final class TodoNotificationManager {
         guard let allItems = try? context.fetch(descriptor) else { return }
 
         let now = Date.now
-        let activeItemsWithDue = allItems.filter { item in
-            let hasFutureDue = (item.dueAt ?? .distantPast) > now
-            let hasFutureOverride = (item.reminderOverrideAt ?? .distantPast) > now
-            let hasFutureOverdueReminder = item.dueAt.map { due in
-                overdueOffsets.contains { due.addingTimeInterval($0) > now }
-            } ?? false
-            return hasFutureDue || hasFutureOverride || hasFutureOverdueReminder
+        // 筛选、排序与 15 项截断口径下沉到 Core；这里只做快照转换与回填。
+        let itemByID = Dictionary(allItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let snapshots = allItems.map {
+            TodoReminderSchedule.Item(
+                id: $0.id,
+                dueAt: $0.dueAt,
+                reminderOverrideAt: $0.reminderOverrideAt,
+                remindBeforeMinutes: $0.remindBeforeMinutes
+            )
         }
-
         // iOS 对应用待处理通知数量有限制；每项最多 4 个请求，因此优先排期最近的 15 项。
-        let scheduledItems = activeItemsWithDue.sorted {
-            let first = $0.reminderOverrideAt ?? ($0.dueAt ?? .distantFuture).addingTimeInterval(-TimeInterval($0.remindBeforeMinutes * 60))
-            let second = $1.reminderOverrideAt ?? ($1.dueAt ?? .distantFuture).addingTimeInterval(-TimeInterval($1.remindBeforeMinutes * 60))
-            return first < second
-        }.prefix(maxScheduledItems)
-        let validIDs = Set(scheduledItems.flatMap { item in
+        let scheduledSnapshots = TodoReminderSchedule.selectItemsForRescheduling(snapshots, now: now)
+        let validIDs = Set(scheduledSnapshots.flatMap { item in
             [notificationId(for: item.id)] + overdueOffsets.map { overdueNotificationId(for: item.id, offset: $0) }
         })
         UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
@@ -257,8 +256,10 @@ public final class TodoNotificationManager {
                 UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: stale)
             }
         }
-        for item in scheduledItems {
-            scheduleNotification(for: item)
+        for snapshot in scheduledSnapshots {
+            if let item = itemByID[snapshot.id] {
+                scheduleNotification(for: item)
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import AssistantCore
 
 enum TodoType: String, Codable, CaseIterable, Hashable {
     case parcel, data, bill, event, general
@@ -139,42 +140,9 @@ enum TodoPriority {
     }
 }
 
-/// 待办重复周期规则
-public enum TodoRecurrenceRule: String, Codable, CaseIterable, Identifiable {
-    case none = "不重复"
-    case daily = "每天"
-    case everyOtherDay = "每2天（隔天）"
-    case everyThreeDays = "每3天"
-    case weekly = "每周"
-    case biweekly = "每两周"
-    case monthly = "每月"
-    case custom = "自定义天数"
-
-    public var id: String { rawValue }
-
-    public var icon: String {
-        switch self {
-        case .none: return "slash.circle"
-        case .daily: return "repeat"
-        case .everyOtherDay, .everyThreeDays, .custom: return "repeat.1"
-        case .weekly, .biweekly: return "calendar.badge.clock"
-        case .monthly: return "calendar"
-        }
-    }
-
-    public func dayInterval(customDays: Int = 1) -> Int {
-        switch self {
-        case .none: return 0
-        case .daily: return 1
-        case .everyOtherDay: return 2
-        case .everyThreeDays: return 3
-        case .weekly: return 7
-        case .biweekly: return 14
-        case .monthly: return 30
-        case .custom: return max(1, customDays)
-        }
-    }
-
+/// 待办重复周期规则的枚举本体已下沉到 AssistantCore.TodoRecurrenceRule（可脱离 app 单测）；
+/// 这里只补依赖本地化的展示名。
+extension TodoRecurrenceRule {
     public func displayLabel(customDays: Int = 1) -> String {
         switch self {
         case .custom:
@@ -330,10 +298,8 @@ final class TodoItem {
     }
 
     var effectiveRecurrenceDays: Int {
-        if recurrenceRule == .custom {
-            return max(1, recurrenceIntervalDays)
-        }
-        return recurrenceRule.dayInterval(customDays: recurrenceIntervalDays)
+        // custom 分支在原实现里等价于 dayInterval 自身的 max(1, customDays)，统一走 Core 换算
+        recurrenceRule.dayInterval(customDays: recurrenceIntervalDays)
     }
 
     var recurrenceSummaryText: String {
@@ -343,22 +309,14 @@ final class TodoItem {
         return L10n.tr(recurrenceRule.rawValue)
     }
 
-    /// 计算下一次循环的截止时间
+    /// 计算下一次循环的截止时间（薄适配：判定逻辑在 AssistantCore.RecurrencePlan，可单测）
     func nextRecurringDueDate(from referenceDate: Date = .now) -> Date {
-        let calendar = Calendar.current
-        let days = effectiveRecurrenceDays
-        guard days > 0 else { return referenceDate }
-
-        if let baseDue = dueAt {
-            var nextDate = calendar.date(byAdding: .day, value: days, to: baseDue) ?? referenceDate
-            while nextDate <= referenceDate {
-                guard let advanced = calendar.date(byAdding: .day, value: days, to: nextDate) else { break }
-                nextDate = advanced
-            }
-            return nextDate
-        } else {
-            return calendar.date(byAdding: .day, value: days, to: referenceDate) ?? referenceDate
-        }
+        RecurrencePlan.nextDueDate(
+            dueAt: dueAt,
+            rule: recurrenceRule,
+            customDays: recurrenceIntervalDays,
+            referenceDate: referenceDate
+        )
     }
 
     /// 全库最小 sortOrder：新建待办以 min-1 插入置顶。
@@ -390,27 +348,31 @@ final class TodoItem {
 
         guard isRecurring else { return nil }
 
-        let nextDue = nextRecurringDueDate(from: .now)
+        // 下一期字段清单在 AssistantCore.RecurrencePlan（纯函数、有回归测试）；
+        // RecurringTodoRecord 的 init 参数全必填，漏登记新字段会编译失败。
+        guard let next = RecurrencePlan.nextFields(from: RecurringTodoRecord(item: self), referenceDate: .now) else {
+            return nil
+        }
         let nextItem = TodoItem(
-            type: self.type,
-            status: .active,
-            title: self.title,
-            detail: self.detail,
-            pickupCode: self.pickupCode,
-            courier: self.courier,
-            station: self.station,
-            location: self.location,
-            dueAt: nextDue,
-            sourceText: self.sourceText,
-            sortOrder: self.sortOrder,
-            recurrenceRuleRaw: self.recurrenceRuleRaw,
-            recurrenceIntervalDays: self.recurrenceIntervalDays,
-            remindBeforeMinutes: self.remindBeforeMinutes,
+            type: TodoType(rawValue: next.typeRaw) ?? .general,
+            status: TodoStatus(rawValue: next.statusRaw) ?? .active,
+            title: next.title,
+            detail: next.detail,
+            pickupCode: next.pickupCode,
+            courier: next.courier,
+            station: next.station,
+            location: next.location,
+            dueAt: next.dueAt,
+            sourceText: next.sourceText,
+            sortOrder: next.sortOrder,
+            recurrenceRuleRaw: next.recurrenceRuleRaw,
+            recurrenceIntervalDays: next.recurrenceIntervalDays,
+            remindBeforeMinutes: next.remindBeforeMinutes,
             // 学习路径关联必须随下一期一起复制，否则打卡一次后新待办会脱离原路径
-            skillPathID: self.skillPathID,
-            skillStageIndex: self.skillStageIndex,
-            isSkillPractice: self.isSkillPractice,
-            skillPracticeMinutes: self.skillPracticeMinutes
+            skillPathID: next.skillPathID,
+            skillStageIndex: next.skillStageIndex,
+            isSkillPractice: next.isSkillPractice,
+            skillPracticeMinutes: next.skillPracticeMinutes
         )
         context.insert(nextItem)
         TodoNotificationManager.shared.scheduleNotification(for: nextItem)
@@ -425,6 +387,32 @@ final class TodoItem {
                 try? await CalendarAgendaService.shared.deleteEvent(identifier: calId)
             }
         }
+    }
+}
+
+/// TodoItem → Core 纯函数输入快照的薄适配；这里登记的字段即随下一期复制的全集。
+extension RecurringTodoRecord {
+    init(item: TodoItem) {
+        self.init(
+            typeRaw: item.type.rawValue,
+            statusRaw: item.status.rawValue,
+            title: item.title,
+            detail: item.detail,
+            pickupCode: item.pickupCode,
+            courier: item.courier,
+            station: item.station,
+            location: item.location,
+            dueAt: item.dueAt,
+            sourceText: item.sourceText,
+            sortOrder: item.sortOrder,
+            recurrenceRuleRaw: item.recurrenceRuleRaw,
+            recurrenceIntervalDays: item.recurrenceIntervalDays,
+            remindBeforeMinutes: item.remindBeforeMinutes,
+            skillPathID: item.skillPathID,
+            skillStageIndex: item.skillStageIndex,
+            isSkillPractice: item.isSkillPractice,
+            skillPracticeMinutes: item.skillPracticeMinutes
+        )
     }
 }
 
