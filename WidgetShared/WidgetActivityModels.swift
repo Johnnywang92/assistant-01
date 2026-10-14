@@ -146,13 +146,20 @@ public enum DepartureActivityHelper {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         for activity in Activity<DepartureChecklistActivityAttributes>.activities {
             var state = activity.content.state
+            var changed = false
             if isChecked {
-                guard !state.checkedIDs.contains(itemID) else { continue }
-                state.checkedIDs.append(itemID)
-            } else {
+                if !state.checkedIDs.contains(itemID) {
+                    state.checkedIDs.append(itemID)
+                    changed = true
+                }
+            } else if state.checkedIDs.contains(itemID) {
                 state.checkedIDs.removeAll { $0 == itemID }
+                changed = true
             }
+            // 已勾过的项不能提前跳过：补一次全勾判定，
+            // 否则旧版遗留的「全部已勾但卡未收」死卡对「全部带齐」动作永远关不掉
             let allChecked = activity.attributes.items.allSatisfy { state.checkedIDs.contains($0.id) }
+            guard changed || allChecked else { continue }
             if allChecked {
                 Task { await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .immediate) }
             } else {

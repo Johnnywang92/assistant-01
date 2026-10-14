@@ -88,6 +88,8 @@ enum LiveActivityService {
     @discardableResult
     static func startDepartureChecklist(sceneName: String, items: [DepartureCheckItem]) -> Bool {
         guard activitiesEnabled, !items.isEmpty else { return false }
+        // 全部已勾完时不再上岛：否则锁屏会挂出一张没有待办行、又没有收卡入口的死卡
+        guard items.contains(where: { !$0.isChecked }) else { return false }
         let checklistItems = items.map {
             DepartureChecklistActivityAttributes.Item(id: $0.id, title: $0.title, isEssential: $0.isEssential)
         }

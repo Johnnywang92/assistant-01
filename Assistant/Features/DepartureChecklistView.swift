@@ -386,7 +386,10 @@ struct DepartureChecklistView: View {
 
     private func resetChecklist() {
         for item in filteredItems {
+            guard item.isChecked else { continue }
             item.isChecked = false
+            // 同步到锁屏/灵动岛/Mac 镜像的实时活动，否则卡片继续显示全部已勾
+            DepartureActivityHelper.setChecked(itemID: item.id, isChecked: false)
         }
         checkedShen = false
         checkedShou = false
@@ -426,6 +429,8 @@ struct CheckItemRow: View {
     var body: some View {
         Button {
             item.isChecked.toggle()
+            // App 内勾选同步到锁屏/灵动岛/Mac 镜像的实时活动；最后一项勾完自动收卡
+            DepartureActivityHelper.setChecked(itemID: item.id, isChecked: item.isChecked)
             if item.isChecked {
                 Haptic.medium()
             } else {
