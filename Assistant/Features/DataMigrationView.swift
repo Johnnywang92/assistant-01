@@ -34,6 +34,8 @@ struct DataMigrationView: View {
     @StateObject private var pinGate = MigrationPinManager.shared
     @State private var isMigrationUnlocked = false
     @State private var showUnlockGate = false
+    @State private var showChangePinSheet = false
+    @State private var gatePinChangeNotice: String?
 
     enum BatchImportType: String, CaseIterable, Identifiable {
         case anniversary = "纪念日 / 生日"
@@ -118,6 +120,32 @@ struct DataMigrationView: View {
                 Text("安全迁移备份导出 (PIN 码加密)")
             } footer: {
                 Text("🔒 安全机制：备份包含密码、证件等敏感数据，必须设置 PIN 码进行 AES-256 强加密。在新手机上恢复时必须输入相同的 PIN 码方可解锁。")
+            }
+
+            // 2.5 门禁 PIN 修改：仅把守本屏入口，与各备份文件的加密 PIN 相互独立
+            Section {
+                Button {
+                    Haptic.impact(style: .light)
+                    showChangePinSheet = true
+                } label: {
+                    Label("修改门禁 PIN 码", systemImage: "key.fill")
+                        .font(.body.weight(.medium))
+                }
+
+                if let gatePinChangeNotice {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(.green)
+                        Text(gatePinChangeNotice)
+                            .font(.footnote)
+                            .foregroundStyle(.primary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            } header: {
+                Text("门禁 PIN")
+            } footer: {
+                Text("门禁 PIN 只锁定本屏入口，可随时修改；它与各备份文件自身的加密 PIN 是两回事，修改门禁 PIN 不影响已导出备份的解密。")
             }
 
             // 3. 从备份还原 (新手机恢复)
@@ -282,6 +310,12 @@ struct DataMigrationView: View {
             SetExportPinSheet(isPresented: $showSetPinSheet) { pin, hint in
                 handleExportEncryptedBackup(pin: pin, hint: hint)
             }
+        }
+        .sheet(isPresented: $showChangePinSheet) {
+            ChangeMigrationPinSheet(isPresented: $showChangePinSheet, onSuccess: {
+                gatePinChangeNotice = "门禁 PIN 已修改，下次进入本页请用新 PIN 解锁。"
+                Haptic.success()
+            })
         }
         .sheet(isPresented: $showUnlockPinSheet) {
             if let envelope = pendingEnvelope {
@@ -779,6 +813,109 @@ struct MigrationUnlockPinSheet: View {
                     .disabled(pin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+        }
+    }
+}
+
+// MARK: - 修改门禁 PIN（需先验证当前 PIN）
+
+/// 校验当前门禁 PIN 后设置新 PIN，可同时更新提示；验错时旧 PIN 始终有效（`MigrationPinManager.changePin` 仅在校验通过后才写入）。
+struct ChangeMigrationPinSheet: View {
+    @ObservedObject private var pinGate = MigrationPinManager.shared
+    @Binding var isPresented: Bool
+    let onSuccess: () -> Void
+
+    @State private var currentPin = ""
+    @State private var newPin = ""
+    @State private var confirmPin = ""
+    @State private var hint = ""
+    @State private var errorMessage: String?
+
+    init(isPresented: Binding<Bool>, onSuccess: @escaping () -> Void) {
+        _isPresented = isPresented
+        self.onSuccess = onSuccess
+        // 预填既有提示，方便只改 PIN 不改提示
+        _hint = State(initialValue: MigrationPinManager.shared.hint ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("验证当前 PIN 码") {
+                    SecureField("输入 PIN 码", text: $currentPin)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                    if let hint = pinGate.hint, !hint.isEmpty {
+                        Text("提示：\(hint)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("设置新 PIN（8–64 位）") {
+                    SecureField("输入新 PIN 码", text: $newPin)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                    SecureField("再次确认新 PIN 码", text: $confirmPin)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                }
+
+                Section("PIN 提示（选填，仅自己看得懂）") {
+                    TextField("例如：妈妈的生日后两位…", text: $hint)
+                }
+
+                Section {
+                    Text("🔒 PIN 码只在本机派生为校验值保存，不会上传、也不会写入备份；忘记时可在迁移页重置门禁（不影响已导出的加密备份）。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("修改门禁 PIN")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { isPresented = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        submit()
+                    }
+                    .bold()
+                    .disabled(currentPin.isEmpty || newPin.isEmpty || confirmPin.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func submit() {
+        let cleanCurrent = currentPin.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanPin = newPin.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanConfirm = confirmPin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleanPin.count >= 8, cleanPin.count <= 64 else {
+            errorMessage = "PIN 码长度需为 8–64 位，请重新输入。"
+            return
+        }
+        guard cleanPin == cleanConfirm else {
+            errorMessage = "两次输入的 PIN 码不一致，请确认。"
+            return
+        }
+        do {
+            try pinGate.changePin(current: cleanCurrent, to: cleanPin, hint: hint)
+            errorMessage = nil
+            isPresented = false
+            onSuccess()
+        } catch {
+            errorMessage = error.localizedDescription
+            Haptic.error()
         }
     }
 }

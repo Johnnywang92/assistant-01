@@ -382,6 +382,7 @@ public enum MigrationCryptoError: LocalizedError {
     case persistenceFailure
     case pinMismatch
     case invalidPin
+    case currentPinIncorrect
     case corruptedData
     case missingPin
 
@@ -401,6 +402,8 @@ public enum MigrationCryptoError: LocalizedError {
             return "两次输入的 PIN 码不一致，请核对后重新输入。"
         case .invalidPin:
             return "PIN 码不正确，无法解密该备份文件。"
+        case .currentPinIncorrect:
+            return "当前 PIN 码不正确，无法修改门禁。"
         case .corruptedData:
             return "备份数据文件损坏或已被篡改。"
         case .missingPin:
@@ -526,6 +529,13 @@ final class MigrationPinManager: ObservableObject {
         guard clean.count >= BackupEnvelopeCrypto.pinMinLength,
               let key = try? BackupEnvelopeCrypto.deriveKey(pin: clean, salt: salt, iterations: iterations) else { return false }
         return key.withUnsafeBytes { constantTimeEqual(Data($0), stored) }
+    }
+
+    /// 修改门禁 PIN：先校验旧 PIN 再重新派生写入，可同时更新提示。
+    /// 与「重置门禁」不同：校验失败时旧 PIN 始终有效，不会把门禁清空。
+    func changePin(current: String, to newPin: String, hint: String? = nil) throws {
+        guard verify(current) else { throw MigrationCryptoError.currentPinIncorrect }
+        try setPin(newPin, hint: hint)
     }
 
     /// 重置门禁（忘记 PIN 时可安全执行：仅解锁功能入口，不会解密任何既有备份）。

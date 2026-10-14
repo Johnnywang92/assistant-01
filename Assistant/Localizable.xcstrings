@@ -5639,6 +5639,23 @@
         }
       }
     },
+    "💼 工作待办（%lld）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "💼 Work Tasks (%lld)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "💼 工作待办（%lld）"
+          }
+        }
+      }
+    },
     "📅 月度生活成果月报已生成" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12120,6 +12137,40 @@
         }
       }
     },
+    "修改门禁 PIN" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Gate PIN"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修改门禁 PIN"
+          }
+        }
+      }
+    },
+    "修改门禁 PIN 码" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Gate PIN Code"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修改门禁 PIN 码"
+          }
+        }
+      }
+    },
     "修车" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13450,6 +13501,9 @@
         }
       }
     },
+    "关闭清点卡片" : {
+
+    },
     "关闭照明" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13761,6 +13815,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "再次确认密码"
+          }
+        }
+      }
+    },
+    "再次确认新 PIN 码" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Re-enter New PIN"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再次确认新 PIN 码"
           }
         }
       }
@@ -24172,6 +24243,23 @@
         }
       }
     },
+    "工作企业" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Employer"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "工作企业"
+          }
+        }
+      }
+    },
     "工作待办" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -24202,57 +24290,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "工作待办清单"
-          }
-        }
-      }
-    },
-    "💼 工作待办（%lld）" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "💼 Work Tasks (%lld)"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "💼 工作待办（%lld）"
-          }
-        }
-      }
-    },
-    "暂无工作待办，点击右上角 ➕ 即可快速添加会议、周报或项目事项。" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No work tasks yet. Tap ➕ at the top right to quickly add meetings, reports or project items."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无工作待办，点击右上角 ➕ 即可快速添加会议、周报或项目事项。"
-          }
-        }
-      }
-    },
-    "工作企业" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Employer"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "工作企业"
           }
         }
       }
@@ -25975,6 +26012,9 @@
         }
       }
     },
+    "已结束出门清点，一路顺利 🎒" : {
+
+    },
     "已结束护航，一路顺利 🚄" : {
 
     },
@@ -27482,6 +27522,23 @@
         }
       }
     },
+    "当前 PIN 码不正确，无法修改门禁。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incorrect current PIN. The gate PIN cannot be changed."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前 PIN 码不正确，无法修改门禁。"
+          }
+        }
+      }
+    },
     "当前「%@」分类下暂无事项" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28013,6 +28070,9 @@
       }
     },
     "当前没有护航中的行程" : {
+
+    },
+    "当前没有清点卡片" : {
 
     },
     "当前离线语音识别器不可用" : {
@@ -35372,6 +35432,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暂无密码记录"
+          }
+        }
+      }
+    },
+    "暂无工作待办，点击右上角 ➕ 即可快速添加会议、周报或项目事项。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No work tasks yet. Tap ➕ at the top right to quickly add meetings, reports or project items."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无工作待办，点击右上角 ➕ 即可快速添加会议、周报或项目事项。"
           }
         }
       }
@@ -47223,6 +47300,9 @@
         }
       }
     },
+    "结束出门清点实时活动，收起锁屏与灵动岛卡片" : {
+
+    },
     "结束行程护航实时活动" : {
 
     },
@@ -50861,6 +50941,23 @@
     "设置有效期" : {
 
     },
+    "设置新 PIN（8–64 位）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set New PIN (8–64 Characters)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置新 PIN（8–64 位）"
+          }
+        }
+      }
+    },
     "设置解锁 PIN（8–64 位）" : {
 
     },
@@ -53232,6 +53329,23 @@
         }
       }
     },
+    "输入新 PIN 码" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter New PIN"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入新 PIN 码"
+          }
+        }
+      }
+    },
     "输入至少 8 位口令" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55376,6 +55490,57 @@
         }
       }
     },
+    "门禁 PIN" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gate PIN"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "门禁 PIN"
+          }
+        }
+      }
+    },
+    "门禁 PIN 只锁定本屏入口，可随时修改；它与各备份文件自身的加密 PIN 是两回事，修改门禁 PIN 不影响已导出备份的解密。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The gate PIN only locks this screen’s entrance and can be changed anytime; it is separate from the encryption PIN of each backup file, so changing it never affects restoring exported backups."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "门禁 PIN 只锁定本屏入口，可随时修改；它与各备份文件自身的加密 PIN 是两回事，修改门禁 PIN 不影响已导出备份的解密。"
+          }
+        }
+      }
+    },
+    "门禁 PIN 已修改，下次进入本页请用新 PIN 解锁。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gate PIN updated. Use the new PIN next time you unlock this page."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "门禁 PIN 已修改，下次进入本页请用新 PIN 解锁。"
+          }
+        }
+      }
+    },
     "问答结果：" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -57266,6 +57431,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "驿站"
+          }
+        }
+      }
+    },
+    "验证当前 PIN 码" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify Current PIN"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验证当前 PIN 码"
           }
         }
       }
