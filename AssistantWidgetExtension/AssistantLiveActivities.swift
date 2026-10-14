@@ -382,7 +382,7 @@ struct DepartureChecklistLiveActivity: Widget {
                         .lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    let unchecked = context.attributes.items.count - context.state.checkedIDs.count
+                    let unchecked = context.attributes.items.filter { !context.state.checkedIDs.contains($0.id) }.count
                     Text(unchecked > 0 ? "\(unchecked) 项未带" : "已带齐 ✓")
                         .font(.caption2)
                         .foregroundStyle(unchecked > 0 ? Color.orange : Color.green)
@@ -394,7 +394,7 @@ struct DepartureChecklistLiveActivity: Widget {
                 Image(systemName: "checklist")
                     .foregroundStyle(.mint)
             } compactTrailing: {
-                let unchecked = context.attributes.items.count - context.state.checkedIDs.count
+                let unchecked = context.attributes.items.filter { !context.state.checkedIDs.contains($0.id) }.count
                 Text(unchecked > 0 ? "\(unchecked)" : "✓")
                     .font(.caption2.bold())
             } minimal: {
@@ -414,11 +414,26 @@ struct DepartureItemList: View {
     var interactive: Bool = true
 
     var body: some View {
-        let items = compact ? Array(context.attributes.items.prefix(3)) : context.attributes.items
+        // 未确认项置顶、已勾项排后，并限制总行数：锁屏/灵动岛卡片高度有限，
+        // 条目不封顶会把末尾清单项和收卡按钮直接裁掉，用户真正关心的只有「还差什么」。
+        let pending = context.attributes.items.filter { !context.state.checkedIDs.contains($0.id) }
+        let checked = context.attributes.items.filter { context.state.checkedIDs.contains($0.id) }
+        let visibleCap = compact ? 3 : 4
+        let visiblePending = Array(pending.prefix(visibleCap))
+        let visibleChecked = Array(checked.prefix(max(0, visibleCap - visiblePending.count)))
+        let hiddenCount = context.attributes.items.count - visiblePending.count - visibleChecked.count
         VStack(alignment: .leading, spacing: compact ? 2 : 5) {
-            ForEach(items) { item in
-                let checked = context.state.checkedIDs.contains(item.id)
-                departureRow(item: item, checked: checked)
+            ForEach(visiblePending) { item in
+                departureRow(item: item, checked: false)
+            }
+            ForEach(visibleChecked) { item in
+                departureRow(item: item, checked: true)
+            }
+            if hiddenCount > 0 {
+                Text("还有 \(hiddenCount) 项已收起")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, compact ? 2 : 6)
             }
         }
     }
@@ -474,12 +489,22 @@ struct DepartureLockScreenView: View {
     // MARK: 手表：只回答「我还差什么」，打勾在 iPhone 锁屏/灵动岛做
     @ViewBuilder
     private var departureWristCard: some View {
-        let pending = context.attributes.items.filter { !context.state.checkedIDs.contains($0.id) }
+        let allPending = context.attributes.items.filter { !context.state.checkedIDs.contains($0.id) }
+        // 必带项永远排在前面：小方屏只放得下 3 行，被折进「还有 N 项」的应该只能是次要物品
+        let pending = allPending.filter(\.isEssential) + allPending.filter { !$0.isEssential }
+        let totalCount = context.attributes.items.count
         VStack(alignment: .leading, spacing: 3) {
-            Label("出门清点", systemImage: "checklist")
-                .font(.caption2.bold())
-                .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.mint)
-                .lineLimit(1)
+            HStack(spacing: 4) {
+                Label("出门清点", systemImage: "checklist")
+                    .font(.caption2.bold())
+                    .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.mint)
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                // 进度一目了然：抬腕先知道「带到哪了」再知道「还差什么」
+                Text("\(totalCount - allPending.count)/\(totalCount)")
+                    .font(.caption2.monospacedDigit().bold())
+                    .foregroundStyle(.secondary)
+            }
             if pending.isEmpty {
                 Text("已全部带齐 ✓")
                     .font(.headline)
@@ -487,23 +512,21 @@ struct DepartureLockScreenView: View {
             } else {
                 ForEach(Array(pending.prefix(3))) { item in
                     HStack(spacing: 4) {
-                        Circle()
-                            .strokeBorder(.secondary, lineWidth: 1)
-                            .frame(width: 8, height: 8)
+                        // 用红色感叹号圆点替代「必带」文字胶囊：窄屏上文字标签会把标题挤截断
+                        Image(systemName: item.isEssential ? "exclamationmark.circle.fill" : "circle")
+                            .font(.system(size: 9))
+                            .foregroundStyle(item.isEssential && !isLuminanceReduced ? Color.red : Color.secondary)
                         Text(item.title)
                             .font(.caption2)
                             .lineLimit(1)
-                        if item.isEssential {
-                            Text("必带")
-                                .font(.caption2.bold())
-                                .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.red)
-                        }
+                            .minimumScaleFactor(0.75)
                     }
                 }
                 if pending.count > 3 {
-                    Text("还有 \(pending.count - 3) 项…")
+                    Text("还有 \(pending.count - 3) 项未带")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
         }
@@ -511,22 +534,26 @@ struct DepartureLockScreenView: View {
     }
 
     private var departureLockCard: some View {
-        let unchecked = context.attributes.items.count - context.state.checkedIDs.count
+        let pending = context.attributes.items.filter { !context.state.checkedIDs.contains($0.id) }
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label("出门清点 · \(context.attributes.sceneName)", systemImage: "checklist")
                     .font(.headline)
                 Spacer()
-                Text(unchecked > 0 ? "还有 \(unchecked) 项未带" : "全部确认 ✓")
+                Text(pending.isEmpty ? "全部确认 ✓" : "还有 \(pending.count) 项未带")
                     .font(.caption)
-                    .foregroundStyle(unchecked > 0 ? Color.orange : Color.green)
+                    .foregroundStyle(pending.isEmpty ? Color.green : Color.orange)
             }
-            DepartureItemList(context: context, compact: false, interactive: true)
-            if unchecked > 1 {
-                // 通栏一键收卡：赶时间时不用逐行点对勾，也解决「找不到关闭」
-                let allIDs = context.attributes.items.map { $0.id.uuidString }.joined(separator: ",")
-                Button(intent: CheckAllDepartureItemsIntent(itemIDs: allIDs)) {
-                    Label("全部带齐，关闭卡片", systemImage: "checkmark.seal.fill")
+            if pending.isEmpty {
+                // 全部带齐时不再堆一串划线条目，总结一行 + 通栏关闭按钮，
+                // 避免锁屏上出现关不掉的「死卡」
+                Label("随身物品已全部带齐，可以出发了", systemImage: "checkmark.seal.fill")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.green)
+                    .lineLimit(2)
+                    .padding(.vertical, 2)
+                Button(intent: EndDepartureActivityIntent()) {
+                    Label("关闭卡片", systemImage: "checkmark.circle.fill")
                         .font(.footnote.bold())
                         .foregroundStyle(.green)
                         .frame(maxWidth: .infinity)
@@ -535,6 +562,22 @@ struct DepartureLockScreenView: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.borderless)
+            } else {
+                DepartureItemList(context: context, compact: false, interactive: true)
+                if pending.count > 1 {
+                    // 通栏一键收卡：赶时间时不用逐行点对勾，也解决「找不到关闭」
+                    let allIDs = context.attributes.items.map { $0.id.uuidString }.joined(separator: ",")
+                    Button(intent: CheckAllDepartureItemsIntent(itemIDs: allIDs)) {
+                        Label("全部带齐，关闭卡片", systemImage: "checkmark.seal.fill")
+                            .font(.footnote.bold())
+                            .foregroundStyle(.green)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Capsule().fill(Color.green.opacity(0.18)))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.borderless)
+                }
             }
         }
         .padding(.vertical, 4)

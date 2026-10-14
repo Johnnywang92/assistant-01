@@ -134,7 +134,33 @@ public struct EndTravelActivityIntent: AppIntent {
     }
 }
 
-// MARK: - 一键批量取齐（锁屏大按钮，省去逐件点小勾选）
+// MARK: - 结束出门清点活动（全带齐后的「关闭卡片」）
+
+public struct EndDepartureActivityIntent: AppIntent {
+    public static let title: LocalizedStringResource = "关闭清点卡片"
+
+    /// 不主动把 App 拉到前台：从灵动岛/锁屏/Mac 通知中心点按钮时不打断当前界面。
+    public static let openAppWhenRun: Bool = false
+
+    public static let description = IntentDescription("结束出门清点实时活动，收起锁屏与灵动岛卡片")
+
+    public init() {}
+
+    @MainActor
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            return .result(dialog: "实时活动不可用")
+        }
+        let activities = Activity<DepartureChecklistActivityAttributes>.activities
+        for activity in activities {
+            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
+        }
+        WidgetCenter.shared.reloadAllTimelines()
+        return .result(dialog: activities.isEmpty ? "当前没有清点卡片" : "已结束出门清点，一路顺利 🎒")
+    }
+}
+
+// MARK: - 一键批量取齐（锁屏大按钮，省去逐行点小勾选）
 
 public struct CompleteAllParcelsIntent: AppIntent {
     public static let title: LocalizedStringResource = "全部取齐"
