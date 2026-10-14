@@ -355,7 +355,8 @@ struct MedicationEditorSheet: View {
                 }
 
                 Section {
-                    Text("预览：\(medName.isEmpty ? "药品" : medName)，每次 \(Self.formatAmount(dosageAmount)) \(dosageUnit)，每天 \(frequency) 次（\(timePoints.map { Self.string(from: $0) }).joined(separator: "、"))")
+                    let timesText = timePoints.map { Self.string(from: $0) }.joined(separator: "、")
+                    Text("预览：\(medName.isEmpty ? "药品" : medName)，每次 \(Self.formatAmount(dosageAmount)) \(dosageUnit)，每天 \(frequency) 次（\(timesText)）")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
