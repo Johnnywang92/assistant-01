@@ -377,6 +377,25 @@ struct LifeVaultView: View {
                     router.requestedSkillPathList = false
                 }
             }
+            .onChange(of: router.requestedVaultDestination) { _, dest in
+                guard let dest else { return }
+                switch dest {
+                case "storage": selectedDestination = .storage
+                case "documents": selectedDestination = .documents
+                case "voiceMemos", "memos": selectedDestination = .voiceMemos
+                case "passwords": selectedDestination = .passwords
+                case "departure": selectedDestination = .departure
+                case "lifeEvents": selectedDestination = .lifeEvents
+                case "anniversaries": selectedDestination = .anniversaries
+                case "habits": selectedDestination = .habits
+                case "vehicles": selectedDestination = .vehicles
+                case "pets": selectedDestination = .pets
+                case "children": selectedDestination = .children
+                case "skillPaths": selectedDestination = .skillPaths
+                default: break
+                }
+                router.requestedVaultDestination = nil
+            }
         }
     }
 

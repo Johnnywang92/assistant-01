@@ -55,6 +55,8 @@ targets:
     info:
       path: Assistant/Info.plist
       properties:
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.yifanwang.assistant01.refresh
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
         CFBundleDisplayName: 小助

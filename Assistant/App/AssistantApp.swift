@@ -16,6 +16,8 @@ struct AssistantApp: App {
         // 注册小组件/实时活动桥接钩子：AppIntent 在主应用进程（Siri、操作按钮、快捷指令）
         // 执行时直连 SwiftData；扩展进程执行时走 App Group 指令队列。
         WidgetBridge.appHook = WidgetSnapshotSyncController.shared
+        // 注册后台定时巡检任务 (BGAppRefreshTask)
+        BackgroundRefreshCoordinator.shared.registerBackgroundTask()
     }
 
     private var isAppLocked: Bool {
@@ -87,18 +89,15 @@ struct AssistantApp: App {
                     try? await Task.sleep(nanoseconds: 350_000_000)
 
                     let context = Persistence.shared.mainContext
-                    // 1. 回到前台时补录收件箱里积压的短信（文件协调在后台线程）
-                    await InboxService.drain(context: context)
+                    // 1/4/9/11: 共用 BackgroundRefreshCoordinator 幂等巡检
+                    await BackgroundRefreshCoordinator.shared.performIdempotentAudits(context: context)
+
                     // 2. 检查手机低电量
                     _ = BatteryReminderService(context: context).checkDeviceBattery()
                     // 3. 评估周期性家务与服药日程
                     let scheduler = HabitAndMedicationScheduler(context: context)
                     await scheduler.evaluatePeriodicHabits()
                     scheduler.scheduleMedicationReminders()
-
-                    // 4. 执行自动续费防扣款与证件临期巡检
-                    let auditor = DailyPainPointAuditor(context: context)
-                    auditor.auditAll()
 
                     // 5. 执行对话记录超期自动滚动清理 (7天/30天自动保留)
                     DialogueHistoryManager.shared.cleanExpiredRecords(context: context)
@@ -117,19 +116,15 @@ struct AssistantApp: App {
                     // 8. 巡检查验并同步待办事项通知排期
                     TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
 
-                    // 9. 巡检查验固定周期支出并自动入账
-                    RecurringExpenseManager.shared.processDueRecurringExpenses(in: context)
-
                     // 10. 对账扩展侧（小组件/手表卡片）产生的指令并刷新共享快照
                     WidgetSnapshotSyncController.shared.processPendingCommands(context: context)
-
-                    // 11. 排空分享扩展的中转区：把「发送到小助」的截图/文本自动记账或建待办
-                    await ShareInboxService.processAll(context: context)
                 }
             } else if phase == .background {
                 lockManager.appDidEnterBackground()
                 // 回后台前把最新数据写入共享快照，供桌面/锁屏组件读取
                 WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext)
+                // 预约下一次后台巡检（系统在 4 小时后允许唤醒评估）
+                BackgroundRefreshCoordinator.shared.scheduleNextRefresh()
             }
         }
     }

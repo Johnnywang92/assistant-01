@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import SwiftData
 import SwiftUI
@@ -36,6 +37,7 @@ struct PlannedSubtask: Identifiable, Hashable, Equatable, Sendable {
     var type: TodoType
     var phase: PlanningPhase
     var isSelected: Bool
+    var offsetDays: Int?
 
     init(
         id: UUID = UUID(),
@@ -43,7 +45,8 @@ struct PlannedSubtask: Identifiable, Hashable, Equatable, Sendable {
         detail: String? = nil,
         type: TodoType = .general,
         phase: PlanningPhase = .execute,
-        isSelected: Bool = true
+        isSelected: Bool = true,
+        offsetDays: Int? = nil
     ) {
         self.id = id
         self.title = L10n.tr(title)
@@ -51,6 +54,7 @@ struct PlannedSubtask: Identifiable, Hashable, Equatable, Sendable {
         self.type = type
         self.phase = phase
         self.isSelected = isSelected
+        self.offsetDays = offsetDays ?? TaskPlanningInference.extractOffsetDays(from: "\(title) \(detail ?? "")")
     }
 }
 
@@ -64,6 +68,8 @@ struct TaskPlanningPlan: Identifiable, Hashable, Equatable, Sendable {
     var isSaved: Bool
     /// 追问确认的背景信息，供后续「细化」子步骤时沿用，避免用户重复回答
     var backgroundContext: String?
+    /// 规划锚点日期（如出发日、考试日、活动日）
+    var anchorDate: Date?
 
     init(
         id: UUID = UUID(),
@@ -72,7 +78,8 @@ struct TaskPlanningPlan: Identifiable, Hashable, Equatable, Sendable {
         summary: String,
         subtasks: [PlannedSubtask],
         isSaved: Bool = false,
-        backgroundContext: String? = nil
+        backgroundContext: String? = nil,
+        anchorDate: Date? = nil
     ) {
         self.id = id
         self.topic = L10n.tr(topic)
@@ -81,6 +88,7 @@ struct TaskPlanningPlan: Identifiable, Hashable, Equatable, Sendable {
         self.subtasks = subtasks
         self.isSaved = isSaved
         self.backgroundContext = backgroundContext
+        self.anchorDate = anchorDate
     }
 }
 
@@ -304,6 +312,8 @@ final class TaskPlanningEngine {
         }
         userContent += "\n请按格式输出拆解清单："
 
+        let anchor = Self.extractAnchorDate(from: "\(text) \(backgroundContext ?? "")")
+
         if let aiOutput = await LLMInferenceService.shared.generateCustomTask(
             systemInstruction: systemInstruction,
             userContent: userContent,
@@ -317,13 +327,15 @@ final class TaskPlanningEngine {
                     icon: basePlan?.icon ?? "sparkles",
                     summary: "✨ 已通过端侧 AI 模型为你定制「\(cleanTopic)」的 \(parsedSubtasks.count) 步执行清单：",
                     subtasks: Array(parsedSubtasks.prefix(6)),
-                    backgroundContext: backgroundContext
+                    backgroundContext: backgroundContext,
+                    anchorDate: anchor
                 )
             }
         }
 
         var fallback = basePlan
         fallback?.backgroundContext = backgroundContext
+        fallback?.anchorDate = anchor
         return fallback
     }
 
@@ -359,13 +371,74 @@ final class TaskPlanningEngine {
         guard parsedSubtasks.count >= 2 else { return nil }
 
         let shortTitle = subtask.title.count > 12 ? String(subtask.title.prefix(12)) + "…" : subtask.title
+        // 递归细化继承父步骤 dueAt - 1 天
+        let parentAnchor = parentPlan.anchorDate ?? Date()
+        let parentOffset = subtask.offsetDays ?? 0
+        let refinedAnchor = Calendar.current.date(byAdding: .day, value: parentOffset - 1, to: parentAnchor)
+
         return TaskPlanningPlan(
             topic: "「\(shortTitle)」细化清单",
             icon: "list.bullet.indent",
             summary: "🔍 已把「\(subtask.title)」细化为 \(parsedSubtasks.count) 个照着就能做的微步骤：",
             subtasks: Array(parsedSubtasks.prefix(4)),
-            backgroundContext: parentPlan.backgroundContext
+            backgroundContext: parentPlan.backgroundContext,
+            anchorDate: refinedAnchor
         )
+    }
+
+    /// 从自然语言文本中提取时间锚点（下月N号、M月D日、N天后等）
+    static func extractAnchorDate(from text: String) -> Date? {
+        let now = Date()
+        let calendar = Calendar.current
+
+        // 1. 匹配 "下月N号/日"
+        if let match = text.range(of: #"下个?月(\d{1,2})[号日]"#, options: .regularExpression) {
+            let matchedStr = String(text[match])
+            let digits = matchedStr.filter(\.isNumber)
+            if let day = Int(digits), let nextMonth = calendar.date(byAdding: .month, value: 1, to: now) {
+                var comp = calendar.dateComponents([.year, .month], from: nextMonth)
+                comp.day = day
+                comp.hour = 9
+                comp.minute = 0
+                if let date = calendar.date(from: comp) { return date }
+            }
+        }
+
+        // 2. 匹配 "M月D号/日"
+        if let match = text.range(of: #"(\d{1,2})月(\d{1,2})[号日]"#, options: .regularExpression) {
+            let matchedStr = String(text[match])
+            let parts = matchedStr.components(separatedBy: "月")
+            if parts.count == 2, let m = Int(parts[0].filter(\.isNumber)), let d = Int(parts[1].filter(\.isNumber)) {
+                var comp = calendar.dateComponents([.year], from: now)
+                comp.month = m
+                comp.day = d
+                comp.hour = 9
+                comp.minute = 0
+                if let date = calendar.date(from: comp) {
+                    if date < now {
+                        comp.year = (comp.year ?? 2026) + 1
+                        return calendar.date(from: comp)
+                    }
+                    return date
+                }
+            }
+        }
+
+        // 3. 匹配 "N天后" / "N周后"
+        if let match = text.range(of: #"(\d{1,3})天后"#, options: .regularExpression) {
+            let matchedStr = String(text[match])
+            if let days = Int(matchedStr.filter(\.isNumber)) {
+                return calendar.date(byAdding: .day, value: days, to: now)
+            }
+        }
+        if let match = text.range(of: #"(\d{1,2})周后"#, options: .regularExpression) {
+            let matchedStr = String(text[match])
+            if let weeks = Int(matchedStr.filter(\.isNumber)) {
+                return calendar.date(byAdding: .day, value: weeks * 7, to: now)
+            }
+        }
+
+        return nil
     }
 
     /// 根据任务标题和描述推导高精度的 TodoType，避免所有 AI 生成的待办全部退化为 .general
@@ -456,33 +529,54 @@ final class TaskPlanningEngine {
 
         var parsedSubtasks: [PlannedSubtask] = []
         for (idx, pair) in rawPairs.enumerated() {
+            let offsetDays = TaskPlanningInference.extractOffsetDays(from: "\(pair.title) \(pair.detail ?? "")")
             let inferredType = Self.inferTodoType(title: pair.title, detail: pair.detail)
             let inferredPhase = Self.inferPhase(title: pair.title, detail: pair.detail, index: idx, total: rawPairs.count)
             parsedSubtasks.append(PlannedSubtask(
                 title: pair.title,
                 detail: pair.detail,
                 type: inferredType,
-                phase: inferredPhase
+                phase: inferredPhase,
+                offsetDays: offsetDays
             ))
         }
         return parsedSubtasks
     }
 
-    /// 批量保存勾选的子任务至 SwiftData 模型
+    /// 批量保存勾选的子任务至 SwiftData 模型并自动排期通知
     func savePlanToTodos(plan: TaskPlanningPlan, context: ModelContext) -> Int {
         let selected = plan.subtasks.filter { $0.isSelected }
         guard !selected.isEmpty else { return 0 }
 
+        let now = Date()
+        let anchor = plan.anchorDate ?? Calendar.current.date(byAdding: .day, value: 14, to: now) ?? now
+
         for (idx, subtask) in selected.enumerated() {
+            let phaseType: PlanningPhaseType
+            switch subtask.phase {
+            case .prepare: phaseType = .prepare
+            case .execute: phaseType = .execute
+            case .sprint: phaseType = .sprint
+            case .followup: phaseType = .followup
+            }
+
+            let dueDate = TaskPlanningInference.calculateDueDate(
+                anchorDate: anchor,
+                offsetDays: subtask.offsetDays,
+                phase: phaseType
+            )
+
             let item = TodoItem(
                 type: subtask.type,
                 status: .active,
                 title: subtask.title,
                 detail: subtask.detail,
+                dueAt: dueDate,
                 sourceText: "来自任务规划：\(plan.topic)（\(subtask.phase.rawValue)）",
                 sortOrder: idx
             )
             context.insert(item)
+            TodoNotificationManager.shared.scheduleNotification(for: item)
         }
 
         try? context.save()

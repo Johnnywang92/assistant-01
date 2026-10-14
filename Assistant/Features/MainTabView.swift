@@ -11,6 +11,7 @@ struct MainTabView: View {
     @State private var showVoice = false
     @State private var showScanner = false
     @State private var showOmnibox = false
+    @State private var showUnifiedSearch = false
     @State private var showClipboardReadError = false
     @State private var autoStartListening = false
     @ObservedObject private var voice = VoiceDialogueService.shared
@@ -99,6 +100,10 @@ struct MainTabView: View {
             PermissionOnboardingView()
                 .environment(\.locale, LanguageManager.shared.locale)
         }
+        .sheet(isPresented: $showUnifiedSearch) {
+            UnifiedSearchView()
+                .environment(\.locale, LanguageManager.shared.locale)
+        }
         .onChange(of: router.activeSheet) { _, newSheet in
             if newSheet == .voice {
                 autoStartListening = false
@@ -109,6 +114,9 @@ struct MainTabView: View {
                 router.activeSheet = nil
             } else if newSheet == .omnibox {
                 showOmnibox = true
+                router.activeSheet = nil
+            } else if newSheet == .unifiedSearch {
+                showUnifiedSearch = true
                 router.activeSheet = nil
             }
         }

@@ -24,6 +24,7 @@ struct OmniboxView: View {
     @ObservedObject private var router = NavigationRouter.shared
     @ObservedObject private var clipboard = ClipboardIngestionService.shared
     @AppStorage(ClipboardIngestionService.autoIngestKey) private var autoIngest = true
+    @AppStorage("omnibox_auto_dismiss_seconds") private var autoDismissSeconds: Int = 3
 
     @State private var inputText = ""
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -37,6 +38,9 @@ struct OmniboxView: View {
     @State private var lastTransaction: OmniboxTransaction?
     @State private var showMemos = false
     @State private var showHistory = false
+    @State private var remainingSeconds: Int = 3
+    @State private var isCountdownPaused: Bool = false
+    @State private var countdownTask: Task<Void, Never>?
 
     private var images: [UIImage] { attachments.map(\.image) }
 
@@ -79,7 +83,10 @@ struct OmniboxView: View {
                     }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(L10n.tr("关闭")) { dismiss() }
+                    Button(closeButtonTitle) {
+                        cancelCountdown()
+                        dismiss()
+                    }
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
@@ -98,6 +105,9 @@ struct OmniboxView: View {
         .onAppear {
             consumePrefillIfPresent()
         }
+        .onDisappear {
+            cancelCountdown()
+        }
         .sheet(isPresented: $showMemos) {
             OmniboxMemoListView()
                 .environment(\.locale, LanguageManager.shared.locale)
@@ -106,6 +116,17 @@ struct OmniboxView: View {
             OmniboxHistoryView()
                 .environment(\.locale, LanguageManager.shared.locale)
         }
+    }
+
+    private var closeButtonTitle: String {
+        if phase == .executed && autoDismissSeconds > 0 {
+            if isCountdownPaused {
+                return "\(L10n.tr("关闭")) (\(L10n.tr("已暂停")))"
+            } else if remainingSeconds > 0 {
+                return "\(L10n.tr("关闭")) (\(remainingSeconds)s)"
+            }
+        }
+        return L10n.tr("关闭")
     }
 
     /// 消费路由预填充（剪贴板自动投喂 / 提示条「投喂」按钮带入），并自动跑拆解
@@ -166,6 +187,44 @@ struct OmniboxView: View {
                         .toggleStyle(.switch)
                         .scaleEffect(0.62, anchor: .trailing)
                         .frame(width: 36, height: 22)
+                }
+                .padding(.top, 2)
+
+                HStack(spacing: 4) {
+                    Text(L10n.tr("完成后自动关闭"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Menu {
+                        ForEach([0, 1, 2, 3, 5, 10], id: \.self) { seconds in
+                            Button {
+                                autoDismissSeconds = seconds
+                                if seconds == 0 {
+                                    cancelCountdown()
+                                } else if phase == .executed {
+                                    startCountdownIfNeeded()
+                                }
+                            } label: {
+                                HStack {
+                                    Text(seconds == 0 ? L10n.tr("不自动关闭") : "\(seconds) \(L10n.tr("秒"))")
+                                    if autoDismissSeconds == seconds {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(autoDismissSeconds == 0 ? L10n.tr("不自动关闭") : "\(autoDismissSeconds)s")
+                                .font(.caption2.bold())
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 9))
+                        }
+                        .foregroundStyle(.purple)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.1), in: Capsule())
+                    }
                 }
                 .padding(.top, 2)
             }
@@ -469,6 +528,49 @@ struct OmniboxView: View {
                 DatePicker("", selection: dueDateBinding(action), displayedComponents: [.date, .hourAndMinute])
                     .labelsHidden()
                     .font(.caption)
+            case .todoUpdate:
+                TextField(L10n.tr("原待办（匹配目标）"), text: textBinding(action, key: "target"))
+                    .font(.subheadline)
+                    .padding(6)
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                TextField(L10n.tr("修改后标题（可选）"), text: textBinding(action, key: "newTitle"))
+                    .font(.subheadline)
+                    .padding(6)
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+            case .todoComplete, .todoCancel:
+                TextField(L10n.tr("待办事项目标"), text: textBinding(action, key: "target"))
+                    .font(.subheadline)
+                    .padding(6)
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+            case .reminderSnooze:
+                HStack(spacing: 8) {
+                    TextField(L10n.tr("提醒事项"), text: textBinding(action, key: "target"))
+                        .font(.subheadline)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    TextField(L10n.tr("顺延时长"), text: textBinding(action, key: "duration"))
+                        .font(.caption)
+                        .frame(width: 80)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                }
+            case .expenseUpdate:
+                HStack(spacing: 8) {
+                    TextField(L10n.tr("修改后金额"), text: numericBinding(action, key: "newAmount"))
+                        .keyboardType(.decimalPad)
+                        .frame(width: 90)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    TextField(L10n.tr("账目匹配目标"), text: textBinding(action, key: "target"))
+                        .font(.subheadline)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                }
+            case .queryLookup:
+                TextField(L10n.tr("查询关键词"), text: textBinding(action, key: "target"))
+                    .font(.subheadline)
+                    .padding(6)
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
             case .memoInbox:
                 TextField(L10n.tr("备忘内容"), text: textBinding(action, key: "memo"), axis: .vertical)
                     .font(.subheadline)
@@ -519,6 +621,11 @@ struct OmniboxView: View {
                 let title = currentParams["title"] ?? ""
                 let amt = currentParams["amount"] ?? ""
                 currentParams["memo"] = amt.isEmpty ? title : "\(title) ¥\(amt)"
+            }
+        case .expenseUpdate, .todoUpdate, .todoComplete, .todoCancel, .reminderSnooze, .queryLookup:
+            if (currentParams["target"] ?? "").isEmpty {
+                let source = currentParams["memo"] ?? currentParams["title"] ?? ""
+                currentParams["target"] = source
             }
         }
         action.wrappedValue.capability = newCap
@@ -589,9 +696,57 @@ struct OmniboxView: View {
 
     private var receiptSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(L10n.tr("已完成"), systemImage: "checkmark.circle.fill")
-                .font(.headline)
-                .foregroundStyle(.green)
+            HStack {
+                Label(L10n.tr("已完成"), systemImage: "checkmark.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(.green)
+
+                Spacer()
+
+                if autoDismissSeconds > 0 {
+                    HStack(spacing: 5) {
+                        Image(systemName: isCountdownPaused ? "pause.circle.fill" : "timer")
+                            .font(.caption2)
+                        Text(isCountdownPaused
+                             ? L10n.tr("倒计时已暂停")
+                             : "\(remainingSeconds)s \(L10n.tr("后自动关闭"))")
+                            .font(.caption2.bold())
+                    }
+                    .foregroundStyle(isCountdownPaused ? Color.orange : Color.purple)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(isCountdownPaused ? Color.orange.opacity(0.12) : Color.purple.opacity(0.1))
+                    )
+                }
+            }
+
+            if autoDismissSeconds > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: isCountdownPaused ? "pause.fill" : "hourglass")
+                        .font(.caption)
+                        .foregroundStyle(isCountdownPaused ? Color.orange : Color.purple)
+                    Text(isCountdownPaused
+                         ? L10n.tr("倒计时已暂停，您可以仔细核对结果或一键撤销")
+                         : String(format: L10n.tr("弹窗将在 %d 秒后自动关闭"), remainingSeconds))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        if isCountdownPaused {
+                            resumeCountdown()
+                        } else {
+                            pauseCountdown()
+                        }
+                    } label: {
+                        Text(isCountdownPaused ? L10n.tr("恢复倒计时") : L10n.tr("暂停关闭"))
+                            .font(.caption.bold())
+                            .foregroundStyle(.purple)
+                    }
+                }
+                .padding(10)
+                .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
 
             ForEach(outcomes) { outcome in
                 HStack(spacing: 10) {
@@ -692,7 +847,7 @@ struct OmniboxView: View {
         let executed = OmniboxExecutor.executeTopologically(selected, context: context)
         outcomes = executed
 
-        // 落一条事务记录（含原始输入），便于追溯审计
+        // 落一条事务记录（含原始输入），便于追诉审计
         let transaction = OmniboxTransaction(
             capture: lastCapture ?? OmniboxCapture(source: images.isEmpty ? .paste : .mixed),
             actions: selected,
@@ -708,9 +863,11 @@ struct OmniboxView: View {
 
         WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
         phase = .executed
+        startCountdownIfNeeded()
     }
 
     private func undoAll() {
+        cancelCountdown()
         do {
             try OmniboxExecutor.undo(outcomes, context: context)
             lastTransaction?.status = .undone
@@ -724,6 +881,7 @@ struct OmniboxView: View {
     }
 
     private func resetForNextFeed() {
+        cancelCountdown()
         inputText = ""
         attachments = []
         pickerItems = []
@@ -733,6 +891,43 @@ struct OmniboxView: View {
         lastCapture = nil
         lastTransaction = nil
         phase = .idle
+    }
+
+    // MARK: - 倒计时自动关闭
+
+    private func startCountdownIfNeeded() {
+        cancelCountdown()
+        guard autoDismissSeconds > 0 else { return }
+        remainingSeconds = autoDismissSeconds
+        isCountdownPaused = false
+        countdownTask = Task { @MainActor in
+            while remainingSeconds > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled { return }
+                if !isCountdownPaused {
+                    remainingSeconds -= 1
+                }
+            }
+            if !Task.isCancelled && !isCountdownPaused && phase == .executed {
+                dismiss()
+            }
+        }
+    }
+
+    private func cancelCountdown() {
+        countdownTask?.cancel()
+        countdownTask = nil
+    }
+
+    private func pauseCountdown() {
+        isCountdownPaused = true
+    }
+
+    private func resumeCountdown() {
+        if remainingSeconds <= 0 {
+            remainingSeconds = max(1, autoDismissSeconds)
+        }
+        isCountdownPaused = false
     }
 
     /// 只重建相册来源的附件，保留拖入/一键粘贴的手动图

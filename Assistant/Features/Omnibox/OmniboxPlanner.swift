@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import UIKit
 
@@ -74,17 +75,26 @@ struct OmniboxPlanner {
 
     private static func llmPlan(_ text: String) async -> [PlannedAction]? {
         let systemInstruction = """
-        你是个人助手的万能投喂口理解引擎。把用户输入拆解为可执行动作，只输出一个 JSON 数组，不要输出任何解释、markdown 或多余文字。
+        你是个人助手的万能投喂口与智能助理理解引擎。把用户输入拆解为可执行动作，只输出一个 JSON 数组，不要输出任何解释、markdown 或多余文字。
         可用动作：
-        1) 记账：{"capability":"expense.create","amount":"数字","isIncome":"false","category":"餐饮美食|交通出行|居家日用|购物消费|休闲娱乐|医疗健康|宠物萌宠|数码家电|人情社交|职业收入|其它收入|其它支出","title":"简短事项名","dateISO":"yyyy-MM-dd HH:mm 可省，短信或截图中有交易时间时输出"}
-        2) 待办：{"capability":"todo.create","title":"待办标题","detail":"补充说明，可省","dueAtDays":"相对今天的天数，可省","dueAtTime":"HH:mm，可省"}
-        3) 收集箱：{"capability":"memo.inbox","memo":"原文摘录"}
+        1) 记账：{"capability":"expense.create","amount":"数字","isIncome":"false","category":"餐饮美食|交通出行|居家日用|购物消费|休闲娱乐|医疗健康|宠物萌宠|数码家电|人情社交|职业收入|其它收入|其它支出","title":"简短事项名","dateISO":"yyyy-MM-dd HH:mm 可省"}
+        2) 修改账目：{"capability":"expense.update","target":"原账单事项名或关键词","newAmount":"修改后金额"}
+        3) 待办新建：{"capability":"todo.create","title":"待办标题","detail":"补充说明，可省","dueAtDays":"相对今天的天数，可省","dueAtTime":"HH:mm，可省"}
+        4) 修改待办：{"capability":"todo.update","target":"原待办匹配关键词","newTitle":"新标题（可省）","dueAtDays":"新截止相对天数（可省）"}
+        5) 完成待办：{"capability":"todo.complete","target":"待完成事项匹配词"}
+        6) 取消待办：{"capability":"todo.cancel","target":"待取消事项匹配词"}
+        7) 推迟提醒：{"capability":"reminder.snooze","target":"提醒事项匹配词","duration":"10分钟|1小时|明早"}
+        8) 查询事项：{"capability":"query.lookup","target":"查询关键词"}
+        9) 收集箱：{"capability":"memo.inbox","memo":"原文摘录"}
         规则：
-        - 识别到金额时必须输出记账动作。
-        - 输入是扣款短信或订单截图（含「实付款」「支付金额」等）时，提取商户名作为 title，并按商户推断分类（如美团→餐饮美食、京东→购物消费、滴滴→交通出行）。
-        - 提到收货、保修、还款、到期、预约等未来事项时输出待办动作，合理推断天数。
-        - 商品订单类输入通常同时需要记账和收货待办。
-        - 完全无法归类时输出一个收集箱动作。
+        - 提到“完成”、“搞定”、“做好了”某个待办时，必须输出 todo.complete 动作，target 为事项名。
+        - 提到“取消”、“删掉”、“不要提醒”某个事项时，输出 todo.cancel 动作。
+        - 提到“推迟”、“稍后提醒”、“延后”时，输出 reminder.snooze 动作。
+        - 识别到消费/支出金额且非修改时，输出 expense.create 动作。
+        - 识别到针对已有记录改金额、改标题时，输出对应的 expense.update 或 todo.update。
+        - 输入是扣款短信或订单截图时，提取商户名作为 title 并记账。
+        - 提到收货、保修、还款、到期、预约等未来事项时输出 todo.create 动作。
+        - 完全无法归类时输出一个收集箱 memo.inbox 动作。
         """
         let now = Date()
         let dateText = Self.yyyyMMdd.string(from: now)
@@ -101,61 +111,29 @@ struct OmniboxPlanner {
         return Self.parseActionJSON(raw)
     }
 
-    /// 宽容解析模型输出：剥掉 markdown 围栏、截取最外层 JSON 数组
+    /// 宽容解析模型输出：剥掉 markdown 围栏、截取最外层 JSON 数组（委托 AssistantCore.ActionParser）
     static func parseActionJSON(_ raw: String) -> [PlannedAction]? {
-        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if s.hasPrefix("```") {
-            s = s.replacingOccurrences(of: "```json", with: "").replacingOccurrences(of: "```", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        guard let start = s.firstIndex(of: "["), let end = s.lastIndex(of: "]"), start < end else { return nil }
-        let jsonString = String(s[start...end])
-        // 宽容修复小模型常见输出问题：尾随逗号（"...,}" / "...,]"）
-        let repaired = jsonString.replacingOccurrences(
-            of: #",\s*([}\]])"#,
-            with: "$1",
-            options: .regularExpression
-        )
-        guard let data = repaired.data(using: .utf8),
-              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return nil
-        }
-
-        var actions: [PlannedAction] = []
-        for item in array {
-            guard let capRaw = item["capability"] as? String,
-                  let capability = OmniboxCapability(rawValue: capRaw) else { continue }
-            var params: [String: String] = [:]
-            for (key, value) in item {
-                if let str = value as? String {
-                    params[key] = str
-                } else if let num = value as? NSNumber {
-                    params[key] = num.stringValue
-                }
-            }
-            params.removeValue(forKey: "capability")
-            let summary = Self.summary(for: capability, params: params)
-            if summary.isEmpty { continue }
-            actions.append(PlannedAction(
-                id: UUID(),
-                capability: capability,
-                params: params,
-                confidence: 0.85,
-                summary: summary
-            ))
-        }
-        // 给跨模块联动补隐式依赖：待办依赖同批次记账结果（拓扑序：记账先执行）
-        let expenseIDs = actions.filter { $0.capability == .expenseCreate }.map(\.id)
-        for index in actions.indices where actions[index].capability == .todoCreate {
-            actions[index].dependsOn = expenseIDs
-        }
-        return actions
+        ActionParser.parseActionJSON(raw)
     }
 
     // MARK: - 规则兜底路径
 
     static func rulePlan(_ text: String) -> [PlannedAction] {
         var actions: [PlannedAction] = []
+
+        // 0. 操作类指令优先：完成/取消/推迟等动作明确，避免被误判成新建或普通备忘
+        if let complete = Self.extractTodoComplete(from: text) {
+            actions.append(complete)
+            return actions
+        }
+        if let cancel = Self.extractTodoCancel(from: text) {
+            actions.append(cancel)
+            return actions
+        }
+        if let snooze = Self.extractReminderSnooze(from: text) {
+            actions.append(snooze)
+            return actions
+        }
 
         // 1. 记账：优先按短信/订单截图结构化模板提取（最高置信），再复用既有自然语言解析器，最后宽松正则兜底
         if let structured = Self.extractStructuredExpense(from: text) {
@@ -276,6 +254,8 @@ struct OmniboxPlanner {
         case .memoInbox:
             guard let memo = params["memo"]?.trimmingCharacters(in: .whitespacesAndNewlines), !memo.isEmpty else { return "" }
             return L10n.tr("收入收集箱：") + String(memo.prefix(40))
+        default:
+            return ActionParser.generateSummary(for: capability, params: params)
         }
     }
 
@@ -286,6 +266,89 @@ struct OmniboxPlanner {
     }
 
     // MARK: - 规则提取器
+
+    /// 匹配完成待办动作：把[X]完成 / 完成[X] / 标记完成[X]
+    static func extractTodoComplete(from text: String) -> PlannedAction? {
+        let patterns = [
+            "(?:把|将)?\\s*(.+?)\\s*(?:标记为?已?完成|搞定了?|做好了?|已完成)$",
+            "^(?:完成|办结|做完|搞定)\\s*(.+)"
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let ns = text as NSString
+            let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+            if let first = matches.first, first.numberOfRanges > 1 {
+                let target = ns.substring(with: first.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !target.isEmpty && target.count < 40 {
+                    let params = ["target": target]
+                    return PlannedAction(
+                        capability: .todoComplete,
+                        params: params,
+                        confidence: 0.9,
+                        summary: Self.summary(for: .todoComplete, params: params)
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
+    /// 匹配取消/删除待办动作：取消[X] / 删掉[X] / 不要提醒[X]
+    static func extractTodoCancel(from text: String) -> PlannedAction? {
+        let patterns = [
+            "^(?:取消|删除|删掉|去掉|撤销)\\s*(?:待办|事项|提醒)?\\s*(.+)",
+            "^(?:不要|别)\\s*提醒我?\\s*(.+)"
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let ns = text as NSString
+            let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+            if let first = matches.first, first.numberOfRanges > 1 {
+                let target = ns.substring(with: first.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !target.isEmpty && target.count < 40 {
+                    let params = ["target": target]
+                    return PlannedAction(
+                        capability: .todoCancel,
+                        params: params,
+                        confidence: 0.85,
+                        summary: Self.summary(for: .todoCancel, params: params)
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
+    /// 匹配推迟提醒动作：推迟[X] / 顺延[X] / 稍后提醒[X]
+    static func extractReminderSnooze(from text: String) -> PlannedAction? {
+        let patterns = [
+            "^(?:推迟|顺延|延后|稍后提醒)\\s*(.+?)(?:(\\d+\\s*(?:分钟|小时|天))|到明早)?$",
+            "^(?:把|将)?\\s*(.+?)\\s*(?:推迟|顺延|延后)(?:(\\d+\\s*(?:分钟|小时|天))|到明早)?$"
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let ns = text as NSString
+            let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+            if let first = matches.first, first.numberOfRanges > 1 {
+                let target = ns.substring(with: first.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                var duration = "1小时"
+                if first.numberOfRanges > 2 && first.range(at: 2).location != NSNotFound {
+                    let dur = ns.substring(with: first.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !dur.isEmpty { duration = dur }
+                }
+                if !target.isEmpty && target.count < 40 {
+                    let params = ["target": target, "duration": duration]
+                    return PlannedAction(
+                        capability: .reminderSnooze,
+                        params: params,
+                        confidence: 0.85,
+                        summary: Self.summary(for: .reminderSnooze, params: params)
+                    )
+                }
+            }
+        }
+        return nil
+    }
 
     /// 短信账单 / 订单截图的结构化提取：模板化金额关键词 + 商户名 + 交易时间
     /// 覆盖：银行/支付宝/微信扣款短信（消费/支出/向XX支付）、电商订单页（实付款/支付金额/合计）

@@ -1,30 +1,37 @@
+import AssistantCore
 import Foundation
 import SwiftData
 
-// MARK: - 能力标识（模块只注册 Capability，理解层不认识模块，只认识动作类型）
+// MARK: - 能力标识（基于 AssistantCore.ActionCapability 扩充展示属性）
 
-/// Omnibox 可派发的动作能力类型
-enum OmniboxCapability: String, Codable, CaseIterable {
-    /// 记一笔收支 → ExpenseRecord
-    case expenseCreate = "expense.create"
-    /// 建一条待办（可带截止时间）→ TodoItem
-    case todoCreate = "todo.create"
-    /// 无法归类的内容落入收集箱备忘
-    case memoInbox = "memo.inbox"
+typealias OmniboxCapability = ActionCapability
 
+extension ActionCapability {
     var displayName: String {
         switch self {
         case .expenseCreate: return L10n.tr("记账")
+        case .expenseUpdate: return L10n.tr("修改账目")
         case .todoCreate: return L10n.tr("待办")
+        case .todoUpdate: return L10n.tr("修改待办")
+        case .todoComplete: return L10n.tr("完成待办")
+        case .todoCancel: return L10n.tr("取消待办")
+        case .reminderSnooze: return L10n.tr("推迟提醒")
         case .memoInbox: return L10n.tr("收集箱")
+        case .queryLookup: return L10n.tr("查询事项")
         }
     }
 
     var systemImage: String {
         switch self {
         case .expenseCreate: return "yensign.circle.fill"
+        case .expenseUpdate: return "pencil.circle.fill"
         case .todoCreate: return "checklist"
+        case .todoUpdate: return "pencil.and.list.clipboard"
+        case .todoComplete: return "checkmark.circle.fill"
+        case .todoCancel: return "xmark.circle.fill"
+        case .reminderSnooze: return "clock.arrow.circlepath"
         case .memoInbox: return "tray.full.fill"
+        case .queryLookup: return "magnifyingglass"
         }
     }
 }
@@ -51,43 +58,10 @@ struct OmniboxCapture: Sendable {
     var capturedAt: Date = .now
 }
 
-// MARK: - 计划动作（Planner 输出的动作 DAG 节点）
+// MARK: - 计划动作与撤销令牌类型桥接
 
-struct PlannedAction: Identifiable, Codable, Equatable {
-    var id = UUID()
-    var capability: OmniboxCapability
-    /// 能力所需参数（键值均为字符串，宽容解析 LLM/规则输出）
-    var params: [String: String]
-    /// 0~1，低于 omnibox_low_confidence_threshold 的在确认卡中灰显提示
-    var confidence: Double
-    /// 置信度原因说明
-    var confidenceReason: String? = nil
-    /// 依赖的前序动作 id（执行按拓扑序，先记账拿到金额再建保修提醒）
-    var dependsOn: [UUID] = []
-    /// 用户在确认卡中是否勾选（默认勾选，低置信度默认不勾选）
-    var isSelected: Bool = true
-    /// 一句话预览（确认卡与回执展示）
-    var summary: String = ""
-
-    static let lowConfidenceThreshold = 0.6
-
-    var needsConfirmation: Bool { confidence < PlannedAction.lowConfidenceThreshold }
-}
-
-// MARK: - 撤销令牌（每个执行器必须支持 undo，回执即事务）
-
-struct OmniboxUndoToken: Codable {
-    enum Kind: String, Codable {
-        case todo
-        case expense
-        case memoLine
-    }
-
-    var kind: Kind
-    var recordID: UUID?
-    /// memo 行内容（按行删除用）
-    var memoLine: String?
-}
+typealias PlannedAction = ActionItem
+typealias OmniboxUndoToken = ActionUndoToken
 
 // MARK: - 执行回执条目
 

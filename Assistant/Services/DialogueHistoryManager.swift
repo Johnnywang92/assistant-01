@@ -81,6 +81,43 @@ final class DialogueHistoryManager {
         }
     }
 
+    /// 获取用于喂给端侧模型的最近若干轮对话（按时间正序排列）
+    /// - Parameters:
+    ///   - sessionID: 会话标识；非空时仅读取同一会话的消息
+    ///   - limit: 最大轮数（单条记录为一轮消息，默认取最近 8 句）
+    ///   - context: SwiftData 模型上下文
+    /// - Returns: `(role: String, text: String)` 数组；若保留策略为 `.none` 则直接返回空数组
+    func recentTurns(
+        sessionID: UUID? = nil,
+        limit: Int = 8,
+        context: ModelContext
+    ) -> [(role: String, text: String)] {
+        guard AppSettings.dialogueRetentionPolicy != .none else { return [] }
+        guard limit > 0 else { return [] }
+
+        var descriptor: FetchDescriptor<DialogueMessageRecord>
+        if let sid = sessionID {
+            descriptor = FetchDescriptor<DialogueMessageRecord>(
+                predicate: #Predicate<DialogueMessageRecord> { $0.sessionID == sid },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else {
+            descriptor = FetchDescriptor<DialogueMessageRecord>(
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        }
+        descriptor.fetchLimit = limit
+
+        do {
+            let records = try context.fetch(descriptor)
+            // 查出的是最近倒序记录，反转为按时间正序喂给 ChatML
+            return records.reversed().map { (role: $0.roleRaw, text: $0.text) }
+        } catch {
+            print("⚠️ 读取近期对话轮次失败: \(error)")
+            return []
+        }
+    }
+
     /// 获取已保存的历史记录条数
     func countHistory(context: ModelContext) -> Int {
         var descriptor = FetchDescriptor<DialogueMessageRecord>()

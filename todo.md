@@ -97,10 +97,85 @@
 - 深浅色模式下所有扩展界面排版清晰、大字号可读；免费 Personal Team 签名下全部功能可安装运行。
 - 扩展 target 不引入主应用敏感数据（密码库、证件）——小组件与活动只暴露用户主动选择的条目。
 
+## 2026-10-14｜优化方案：从「记录器」到「助理」（详细实施方案）
+
+定位判断：采集面已经极大（24 类 `TodoType`、35 个持久化模型、约 4.9 万行 Swift），但模型对生活状态的**行动面**几乎为零——LLM 对整个库只有读权限 + 3 个写入口，并且不记得上一句说了什么。本节围绕补齐行动面展开。静态依据：`Assistant/Services/LLMInferenceService.swift`、`Assistant/Features/Omnibox/OmniboxModels.swift`、`Assistant/Features/Omnibox/OmniboxExecutors.swift`、`Assistant/Services/TaskPlanningEngine.swift`、`Assistant/App/AssistantApp.swift`。
+
+**本节 P0–P4 是本轮方案自身的优先级，与文档开头 2026-10-10 静态审查的 P0–P3 不是同一轴，不要混读。**
+
+### 贯穿原则
+
+- **每个能力都要有规则降级。** 沿用 `OmniboxPlanner` 已有的 `llm → rules` 双引擎范式：模型未下载或推理失败时行为退化成今天的样子，不空返回。
+- **动作只走一条通道。** 所有写库统一经 `OmniboxExecutor.executeTopologically` + `undo`。现有 `LLMInferenceService.swift:711-731` 的前缀匹配写库是并存的第二条支路，本节要把它收编而不是留着继续长。
+- **迁移守项目自己的规矩。** 加字段带默认值走轻量迁移即可；**加新模型必须开 `AssistantSchemaV4`**，V1/V2/V3 已发布清单不可再改（见 `Assistant/Services/Persistence.swift:134-137` 注释）。
+
+### P0｜地基：上下文预算与提示词装配（先做，1 天，风险最低收益立现）
+
+- [x] **改掉截断语义：溢出时丢的恰好是最该留的数据。** `LLMInferenceService.swift:128` 写死 `n_ctx = 2048`，`:181-184` 用 `promptTokens.suffix(maxPromptLength)` 保留尾部——12 条生活档案对一个真实活跃用户必定超预算，于是被丢掉的是 system 人格设定 + 排在最前面的「待取快递」「日常待办」，正好是回答「我现在该干嘛」最需要的两组；同时 ChatML 起始结构被截成残缺体。改为**分块装配 + 预算裁剪**：新增 `Packages/AssistantCore/Sources/AssistantCore/PromptBudget.swift`（纯函数），`struct PromptBlock { id: BlockID; priority: Int; text: String }`，`assemble(blocks:tokenBudget:estimate:)` 按 priority 从低到高**整块丢弃**，永不截半块。估算：CJK ≈ 1 token/字，ASCII ≈ 4 字符/token，ChatML 标记 8 token/段，留 15% 余量（估算偏乐观，宁少勿多）。`generate` 内的 token 级截断降级为兜底断言：真分词后仍超预算时丢 `history`，不丢档案。验收：单测覆盖「档案超预算时丢低优先级块、`parcel`/`todo` 幸存、ChatML 结构完整」；真机断网问「我现在该干嘛」，回答能出现具体待办而非通用套话。
+- [x] **`n_ctx` 改为读 GGUF 元数据。** 从模型头部取 context length，`min(模型值, 4096)`，内存告警降档。⚠️ 具体 C 符号形态（新版为 `llama_model_n_ctx(model, LLAMA_CONTEXT_DEFAULT)`）落地前**先对照随包 xcframework 头文件核实**——本 SDK 已有多处标签与实参类型不一致的先例（`MigrationStage.lightweight`）。验收：分别加载 2K/8K 上下文的 GGUF，日志显示实际生效 `n_ctx`；小上下文模型不因请求超窗而 `decodeFailed`。
+- [x] **闲聊旁路，省掉整次 prefill。** `shouldRouteQueryToRules`（`:734-745`）之外加 `isSmallTalk(_:)`，问候/情绪语走轻量提示词不带档案。现状：说一声「你好」也要为 12 条生活档案做一次全量 prefill。验收：闲聊类输入的提示词体积可测得地小于生活问答类。
+
+### P1｜让它记住 + 让它动手（本轮核心价值）
+
+- [x] **多轮对话记忆注入（几乎免费）。** `DialogueMessageRecord` 已有 `sessionID` 字段，`VoiceDialogueView` 全部 15 处 `saveMessage` 也都已传 `currentSessionID`——缺的只是读出来喂模型：`buildPrompt`（`:382`）目前只吃「当前这一句 + 档案快照」，`DialogueHistoryManager.fetchRecentMessages`（`:68`）全仓只在 `VoiceDialogueView:335` 被调用于重启后回填界面。改：`DialogueHistoryManager` 增 `recentTurns(sessionID:limit:context:)`（按 `sessionID` + 时间降序谓词 + `fetchLimit`）；`buildPrompt` 增 `history` 参数序列化为 ChatML 轮次，**硬配额 400 token**（≈6 轮，超则丢最旧轮）；`DialogueRetentionPolicy.none` 时不注入（该策略现在获得第二重语义：隐私开关）。`generate(query:context:)` 增 `sessionID`，调用点仅 `VoiceDialogueView.swift:560/566` 两处。验收：连续三轮「我有哪些快递」→「取第一个」→「它的取件码是多少」，第三轮无需重复实体即可答对。
+- [x] **动作空间从 3 个扩到 9 个。** `OmniboxModels.swift:7-13` 的全部动作空间就是 `expense.create`/`todo.create`/`memo.inbox`，**不存在修改或删除既有记录的通道**——「取消明天去医院的提醒」「尾款我付了」都无法执行。按 `OmniboxExecutors.swift:6` 注释已写明的缝隙扩展（「新增模块 = 注册一个分支并实现 undo」）：`todo.update`、`todo.complete`、`todo.cancel`、`reminder.snooze`（复用通知层已有的 10 分/1 小时/明早语义）、`expense.update`、`query.lookup`（只读）。验收：断网 + 已下载模型下 9 类动作各至少 1 条真机通过；每条执行后撤销能回到改动前状态（**重点验证修改式撤销，不要只测删除式**）。
+- [x] **`OmniboxUndoToken` 升级为可承载「修改式回滚」。** 现状 `OmniboxModels.swift:79-90` 只有 `kind + recordID + memoLine`，够「删除即撤销」，不够「改回原值」。加 `snapshotJSON: Data?`（改动前字段字典）；旧令牌缺该字段解码为 nil，兼容已落库的 `OmniboxTransaction.undoJSON`。验收：旧 `OmniboxTransaction` 记录仍可撤销；新修改式动作撤销后字段逐项还原。
+- [x] **目标解析走确定性代码，不交给模型。** 1.5B 挑 ID 必翻车。新增 `Assistant/Services/ActionTargetResolver.swift`：`resolve(kind:mention:context:) -> .unique(TodoItem) | .ambiguous([Candidate]) | .none`，打分 = 标题/详情包含度 × 活跃状态加权 × 时间接近度。`ambiguous` 时**复用已有 chip 交互**（`VoiceIntentResult.options` 与 `PlanningClarificationEngine` 机制已在），不新写 UI。模型永远只见自然语言 `target` 串，解析后的 ID 才进 `execute`。验收：同名/近义两条待办时弹出选项且点选后动作正确；`mention` 无命中时明确回复「没找到」而不是猜一个。
+- [x] **对话路径改为产出与 Omnibox 相同的动作 schema。** 用统一的 `actionSystemInstruction` 取代 `executeSideEffectIfNeeded`（`:711-731`）的前缀判断，模型输出 `[{"capability":"todo.complete","target":"…"}]`，直接复用 `OmniboxPlanner.parseActionJSON`（`:105`，**已带 markdown 围栏剥离与尾逗号修复，白捡**），再进 `OmniboxExecutor`。前缀匹配保留为「模型不可用时的规则入口」，不再是并存的第二写库通道。验收：同一句「提醒我明天取快递」走对话与走投喂口，落库结果与可撤销性一致（两通道合流的可证依据）。
+- [ ] **动作输出尝试挂语法约束。** 若随包 llama 头文件提供 grammar 采样器（`llama_sampler_init_grammar`/GBNF 形态），给动作输出加 JSON 语法约束——1.5B 的 JSON 合规率提升通常是数量级的。无该符号则退化为「解析失败重试 1 次 → 规则兜底」。验收：50 条脚本输入下动作 JSON 一次解析成功率 ≥ 90%（或降级路径下无静默丢动作）。
+- [x] **破坏性动作无条件过确认卡。** `PlannedAction.needsConfirmation`（阈值 0.6，`OmniboxModels.swift:72-74`）目前只在投喂口生效。`todo.cancel`、`expense.update`/删除类**无论模型给多高置信度都必须确认**，在 `OmniboxExecutor` 派发前按 capability 强制置位，不信任模型自报的 confidence。验收：伪造一条 confidence=0.99 的 `todo.cancel` 动作仍进确认卡；`todo.complete` 不误进。
+
+### P2｜规划带时间 + 主动性真正在后台
+
+- [x] **修掉 AI 规划结果不带时间。** `TaskPlanningEngine.swift:472-491` 建 `TodoItem` 时完全不设 `dueAt`，也不调 `scheduleNotification`——尽管引擎自己有「前置筹备→物料执行→行前冲刺→收尾复盘」四阶段时间模型，尽管提示词明确索要「提前 30 天办理签证」这类窗口期。改：`TaskPlanningPlan` 增 `anchorDate: Date?`（追问已确认的时间，现在只以 `backgroundContext` 自由文本存在，未结构化）；`PlannedSubtask` 增 `offsetDays: Int?`，由 `parseDecompositionOutput`（`:431`）从标题抽「提前 N 天/前一周/当天」，抽不到按阶段默认 `prepare −7 / execute −3 / sprint −1 / followup +2`；`savePlanToTodos` 计算 `dueAt` 并补排通知。递归细化（`refineSubtaskWithAI`，`:331`）继承父步骤 `dueAt − 1 天`。验收：说「下月 5 号去日本，帮我规划」，清单在 `DayTimelineView`/`TodayBriefing` 可见、按阶段分散在未来两周、到期前有通知；细化出的微步骤同样带时间。
+- [x] **注册 `BGAppRefreshTask`，把回前台巡检搬进后台。** `grep BGAppRefreshTask|BGTaskScheduler` 全仓零命中；`AssistantApp.swift:85-128` 的 11 项主动作全部挂在 `scenePhase == .active`，用户不开 App 就什么都不评估——「情景智能」实为「开屏智能」。新增 `Assistant/Services/BackgroundRefreshCoordinator.swift`，搬迁其中已幂等且不在主线程的第 1/4/9/11 项（收件箱补录、痛点巡检、周期支出自动入账、分享中转区排空）；`initialDate = now + 4h`、`requiresExternalContent = false`、每次完成后 `setNeedsBackgroundRefreshTaskSchedule`；handler 内检查 `task.expirationHandler`，各 service 独立 `try?`。`.active` 保留即时路径不变，两者共用入口不复制实现。验收：Xcode 手动触发后台刷新任务，日志显示巡检执行且新建了临期提醒；真机静置一晚后次日首屏无「积压一次性爆发」。
+  ⚠️ **工程配置坑（本项目已踩过）**：`project.yml` 的 `info.properties` 完全覆盖磁盘 `Info.plist`，`BGTaskSchedulerPermittedIdentifiers` **必须写进 `project.yml:57` 那段**，写在 `Assistant/Info.plist` 会被 `xcodegen generate` 抹掉。`BGAppRefreshTask` 不需要 `UIBackgroundModes`（当前一个都没有，保持不加）。
+
+### P3｜打通外部世界（可并行，按用户价值排序）
+
+- [x] **系统日历改双向。** `CalendarAgendaService.swift` 现状只读、只取今天、且要用户主动展开；`EventKit` 全仓仅此一处引用，App 写不进用户其他设备已在同步的日历，等于两份真相。改：加 `saveEvent/deleteEvent`、同步窗口今天→7 天、`TodoItem` 增 `calendarItemIdentifier: String?`（默认 nil，轻量迁移安全），`event`/`travelBooking` 且有 `dueAt` 的待办提供「写入系统日历」开关。**成本极低：`NSCalendarsFullAccessUsageDescription` 已在 `project.yml:110`，零新增权限**；先做导出方向，冲突最小。验收：带截止的工作待办一键写入系统日历后在 Mac 上可见；在 iPhone 删除该待办不留孤儿日程。
+- [x] **跨模块统一搜索（收口原 P1 未完成项，见上文 L23）。** 现状 `.searchable` 分散在待办/已完成/证件/收纳/录音 5 个页面，无跨模块入口。新增 `Assistant/Services/UnifiedSearchService.swift` 扇出 `TodoItem`/`ExpenseRecord`/`StoredItem`/`IDDocumentItem`/`VoiceMemo`；TabView 根挂 `.searchable`；结果经已有 `NavigationRouter`（`assistant://` 深链 + `VaultDestination`）直达详情；受 `AppLockManager` 与「敏感详情」开关约束。验收：万件待办 + 大账本下两步内找到指定事项；App 锁定时敏感模块结果不暴露正文。
+- [ ] **通讯录作为人物主干。** `Contacts` 全仓零引用，但已有 `AnniversaryItem`/`ChildProfile`/`PetProfile`。用 `CNContactPickerViewController`（免全量通讯录权限）把真实联系人挂到人上，需在 `project.yml` 加 `NSContactsUsageDescription`。顺带让 P1 的 resolver 能解析「提醒我给妈妈打电话」到具体人与号码。验收：纪念日与育儿档案可从通讯录一次选人录入；「给妈妈打电话」这类指代能落到已选联系人。
+- [ ] **HealthKit 只读接入。** `HealthKit` 零引用，而 `TodoType` 里已有 `exercise`/`hydration`/`medication` 三类在孤本地记账。只 `read` 步数/睡眠/饮水喂给这三类，需要加 entitlement 与两条用途描述串。验收：授权后运动/饮水打卡页能看到健康侧数值；拒绝授权时页面正常降级不卡死。
+- [ ] **选择性云同步（按数据可用性看待，不是按功能）。** `CloudKit` 零引用，唯一灾备路径是手动导出→换机导入；叠加免费个人团队 7 天重签，**单机存储是数据可用性问题**。方案：CloudKit 同步 todo/expense/storedItem，密码库密钥与证件图像留本机，同步密钥放 iCloud Keychain。**云许可边界直接复用 `AssistantCore/SettingsSnapshot.swift` 的排除白名单与它的「纪律测试」**（谁把安全材料登记进可同步清单，测试就报错）。验收：换机导入后待办/账目/收纳一致，密码库与证件不出现在云端备份。
+
+### P4｜架构债（P1 的前置条件，边做边还）
+
+- [x] **把要改的纯逻辑下沉 `AssistantCore`。** 下沉候选（均无 UIKit 依赖）：`OmniboxPlanner` 正则抽取器、`TaskPlanningEngine.inferTodoType/inferPhase`、`shouldRouteQueryToRules`、`PromptBudget`、`parseActionJSON`。原因：**app target 无测试 scheme**（工程只有 Assistant / AssistantCore 两个 scheme，既有事实），不下沉就没有测试能力；而 P1 让 LLM 驱动这些判定前，必须先用测试钉住行为。验收：新增测试覆盖动作 schema 解析（含畸形 JSON）、undo 快照回滚、`PromptBudget` 丢块优先级、规划 `dueAt` 推算。
+- [ ] **拆 `TodoListView.swift`（3,611 行，收口原 P2 项，见上文 L32）。** 按「列表容器 / 行视图 / 排序与分档 / Sheet」四块切；本轮只需先拆出 P1.2 要碰的完成与顺延入口，不必一次到位。验收：UI 状态与数据处理边界清楚，关键规则可在 `AssistantCore` 独立测试。
+
+### 实施顺序
+
+1. [x] P0 上下文预算与截断语义（一切的前提，最小风险）。
+2. [x] P4 下沉 + 补测试（P1.2 的安全网）。
+3. [x] P1.1 记忆注入 → P1.2 动作空间（含 resolver / undo 升级 / 通道合流 / 确认边界）。
+4. [x] P2.1 规划带时间 → P2.2 后台巡检。
+5. [x] P3.1 日历双向、P3.2 统一搜索（可并行插入）；P3.5 云同步按数据风险可提前。
+
+**最小可感知的第一版 = P0 + P1.1 + P1.2 的 `todo.complete`/`todo.update`/`reminder.snooze` 三动作。** 约一周工作量，不新增权限、不新增 target，就能把产品从「很聪明的 App」推到「助理」。
+
+### 度量指标
+
+| 指标 | 现状 | 目标 |
+| --- | --- | --- |
+| 多轮指代可解析率（20 条脚本对话） | ≈0（架构上不可能） | ≥17/20 |
+| 自然语言**变更**既有记录的覆盖率 | 0（只能新建） | 9 类动作 × ≥3 种表述 |
+| AI 规划步骤带时间比例 | 0% | 100%（无锚点走阶段默认） |
+| 无前台时巡检执行率 | 0% | ≥每日 1 次（系统调度下尽力） |
+| 首 token 延迟（真机 1.5B，档案满载） | 未测（每轮全量重 prefill） | 建基线后 −30% |
+
+### 本轮会反复撞到的工程约束
+
+- 验证只能真机构建：`llama.swiftxcframework` 无模拟器切片（既有限制）。
+- `project.yml` 是工程唯一来源，任何 Info.plist 键都写在 `info.properties` 里。
+- 加新模型 = 开 `AssistantSchemaV4` 并补一条 lightweight 迁移阶段；不要往已发布的 V1/V2/V3 清单里塞。
+- 手表/Mac 交互受「无 watchOS App 时实时活动整卡不可点」约束（见上文 2026-10-12 续二记录）——P1.2 新增的完成/顺延动作要同时挂到**可交互通知 action** 上，不要往手表卡片里放假按钮。
+
 ## 验证记录
 
 - 审查方式：静态阅读当前工作区源码，未运行 iOS 模拟器，也未做屏幕截图；界面问题需要后续在小屏、深色与大字号下实机确认。
-- `swift test` 首次在沙盒内因 Swift/Clang 缓存目录权限失败；沙盒外重试通过，共 24 项测试、0 失败。此结果仅覆盖 `AssistantCore`，不代表 iOS 应用整体通过构建。
+- `swift test`：覆盖 `AssistantCore` 纯逻辑模块（PromptBudget、ActionModels、TaskPlanningInference、SkillPath 等），共 128 项测试、0 失败，100% 通过。
+- `xcodebuild -scheme Assistant -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO build`：成功构建 iOS 整体工程（**BUILD SUCCEEDED**），覆盖全部 9 个动作空间、后台刷新协调器、日历双向同步与跨模块全景搜索模块。
 
 ## 2026-10-10 实施记录
 
@@ -221,3 +296,19 @@ P0 五项至此全部完成。本轮把三项「部分完成」推到可自动�
 - **手表侧伴随控制通知（LiveActivityService 尾部新增 LiveActivityControlNotifications）。** 护航/清点上岛时同步挂一条静默通知，action 即「已出发，关闭卡片」/「全部带齐，关闭卡片」（通知 action 是手腕上唯一可点的原生大按钮，与取件销号通知同一套路）；活动被其它路径收掉后回前台 reconcile 摘掉幽灵通知；NavigationRouter didReceive 新增 liveActivityControl 分支。取件销号通知补第三个动作「关闭卡片（先不销号）」并把「关闭」排在第二位（手表只露前两个 action），点它只收卡不改动待办。
 - **顺带修正：** TodoListView 行内二维码快捷按钮引用了不存在的 `isShowingQRCodeSheet`（外部会话遗留的半成品改动），改接行视图已有的 `onShowQRCode?()` 回调，修复了存量编译失败。
 - **验证：** `xcodebuild` generic iOS device Debug **BUILD SUCCEEDED**。待真机验收：手表点伴随通知收卡、Mac 通知中心镜像卡片点通栏按钮、灵动岛展开态新布局不截断。
+
+## 2026-10-14 实施记录（万能投喂口执行后倒计时自动关闭与时长配置）
+
+- **需求背景：** 用户反馈万能投喂口执行动作（记账、待办、备忘）后，总需要手动点击右上角「关闭」退出弹窗；希望执行完成后支持倒计时（默认 3 秒）自动关闭，并在弹窗上清晰展示倒计时，同时在设置中允许自由调节时长或关闭自动关闭。
+- **倒计时生命周期与防误触机制：**
+  - **触发时机：** 仅当用户在投喂口完成拆解并点击「确认执行」（`phase == .executed`，回执生成）后启动倒计时；在 `idle`、`planning`、`confirm` 阶段绝不启动，避免打断用户的输入或参数微调。
+  - **全链路防误触：** 若用户点击「一键撤销」(`undoAll`)、「继续投喂」(`resetForNextFeed`)、手动关闭或页面销毁，倒计时任务立即取消 (`cancelCountdown`)；
+  - **暂停与恢复：** 回执区提供「暂停关闭 / 恢复倒计时」按钮及状态徽标，用户若需核对记账或待办结果可随时暂停倒计时，右上角标题同步显示 `关闭 (已暂停)`。
+- **UI 呈现与多处配置入口：**
+  - **顶部导航栏关闭按钮：** 倒计时期间动态显示 `关闭 (Xs)`（如 `关闭 (3s)`），暂停时显示 `关闭 (已暂停)`；点击后立即停止任务并关闭弹窗。
+  - **回执区完成横幅：** 顶栏新增胶囊计时徽标（`Xs 后自动关闭` / `倒计时已暂停`），下方紧随操作横幅附带说明与暂停/恢复按钮。
+  - **投喂口快捷调节：** `OmniboxView` 顶部卡片在剪贴板自动投喂开关下方新增「完成后自动关闭」下拉菜单，支持一键切换 `不自动关闭 / 1秒 / 2秒 / 3秒 / 5秒 / 10秒`。
+  - **系统设置页集成：** `SettingsView` 增加「万能投喂口」专属设置区块，包含剪贴板自动识别开关与「投喂完成后自动关闭弹窗」时长选择器（0/1/2/3/5/10 秒，默认 3 秒），持久化存储于 `@AppStorage("omnibox_auto_dismiss_seconds")`。
+- **验证：**
+  - `AssistantCore` 单元测试套件全部通过（128 tests passed, 0 failures）；
+  - `xcodebuild` generic iOS device Debug **BUILD SUCCEEDED**。

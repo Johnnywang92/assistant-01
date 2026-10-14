@@ -24,6 +24,7 @@ struct EditTodoSheet: View {
     @State private var recurrenceRule: TodoRecurrenceRule
     @State private var customIntervalDays: Int
     @State private var isDone: Bool
+    @State private var syncToCalendar: Bool
 
     @State private var qrCodePayload: String?
     @State private var qrCodeImageData: Data?
@@ -56,6 +57,7 @@ struct EditTodoSheet: View {
         self._recurrenceRule = State(initialValue: rule)
         self._customIntervalDays = State(initialValue: item.recurrenceIntervalDays > 0 ? item.recurrenceIntervalDays : (rule.dayInterval() > 0 ? rule.dayInterval() : 3))
         self._isDone = State(initialValue: item.status == .done)
+        self._syncToCalendar = State(initialValue: item.calendarItemIdentifier != nil)
         self._qrCodePayload = State(initialValue: item.qrCodePayload)
         self._qrCodeImageData = State(initialValue: item.qrCodeImageData)
         self._attachmentImageData = State(initialValue: item.attachmentImageData)
@@ -289,6 +291,15 @@ struct EditTodoSheet: View {
                         if remindBeforeMinutes == -1 {
                             Stepper("提前 \(customRemindBeforeMinutes) 分钟", value: $customRemindBeforeMinutes, in: 1...10080, step: 5)
                         }
+
+                        Toggle("写入系统日历", isOn: $syncToCalendar)
+                            .onChange(of: syncToCalendar) { _, enabled in
+                                if enabled {
+                                    Task {
+                                        _ = try? await CalendarAgendaService.shared.requestAccessIfNeeded()
+                                    }
+                                }
+                            }
                     }
 
                     Picker("重复周期", selection: $recurrenceRule) {
@@ -450,13 +461,40 @@ struct EditTodoSheet: View {
             }
         }
 
+        if syncToCalendar && hasDueDate {
+            let calTitle = title
+            let calStart = dueDate
+            let calDetail = detail.isEmpty ? nil : detail
+            let calLoc = station.isEmpty ? nil : station
+            let existingCalID = item.calendarItemIdentifier
+            Task {
+                if let newCalID = try? await CalendarAgendaService.shared.saveEvent(
+                    title: calTitle,
+                    startDate: calStart,
+                    notes: calDetail,
+                    location: calLoc,
+                    existingIdentifier: existingCalID
+                ) {
+                    await MainActor.run {
+                        item.calendarItemIdentifier = newCalID
+                        try? context.save()
+                    }
+                }
+            }
+        } else if !syncToCalendar, let oldCalID = item.calendarItemIdentifier {
+            item.calendarItemIdentifier = nil
+            Task {
+                try? await CalendarAgendaService.shared.deleteEvent(identifier: oldCalID)
+            }
+        }
+
         try? context.save()
         Haptic.success()
         dismiss()
     }
 
     private func deleteItem() {
-        TodoNotificationManager.shared.cancelNotification(for: item.id)
+        item.cleanupExternalIntegrations()
         context.delete(item)
         try? context.save()
         Haptic.warning()

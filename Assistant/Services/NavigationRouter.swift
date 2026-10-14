@@ -75,6 +75,7 @@ public final class NavigationRouter: ObservableObject {
         case settings
         case qrScanner
         case omnibox
+        case unifiedSearch
 
         public var id: String { rawValue }
     }
@@ -88,6 +89,10 @@ public final class NavigationRouter: ObservableObject {
     @Published public var omniboxPrefill: OmniboxPayload?
     /// 深链触发：切到生活档案后直接推入技能学习路径列表（由 LifeVaultView 消费后置 false）
     @Published public var requestedSkillPathList: Bool = false
+    /// 深链/统一搜索触发：切到生活档案后直接推入指定子板块
+    @Published public var requestedVaultDestination: String? = nil
+    /// 全局统一搜索预填入检索词
+    @Published public var prefilledSearchQuery: String? = nil
 
     private init() {}
 
@@ -96,12 +101,35 @@ public final class NavigationRouter: ObservableObject {
         focusedTodoID = id
     }
 
+    /// 跨模块统一导航路由：若对应 Tab 处于活跃列表则直达 Tab，否则切至生活档案大厅并推入对应子页面
+    public func navigateTo(tab: AppTab, vaultDestination: String? = nil, focusTodoID: UUID? = nil) {
+        if let focusTodoID {
+            self.focusTodo(focusTodoID)
+            return
+        }
+        if TabBarManager.shared.isTabActive(tab) {
+            selectedTab = tab
+        } else {
+            selectedTab = .vault
+            requestedVaultDestination = vaultDestination ?? tab.rawValue
+        }
+    }
+
     /// 处理 URL Scheme 跳转 (assistant://...)
     public func handleURL(_ url: URL) {
         guard let scheme = url.scheme?.lowercased(), scheme == "assistant" else { return }
 
         // 支持 host 或 path 格式，如 assistant://voice 或 assistant:///voice
         let host = (url.host?.lowercased() ?? url.pathComponents.filter { $0 != "/" }.first?.lowercased()) ?? ""
+
+        // 检查是否有直接指定的事项 ID 参数 (assistant://todo?id=UUID 或 assistant://todos?id=UUID)
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let queryItem = components.queryItems?.first(where: { $0.name == "id" }),
+           let idStr = queryItem.value,
+           let uuid = UUID(uuidString: idStr) {
+            focusTodo(uuid)
+            return
+        }
 
         switch host {
         case "import", "import-todo", "import-qr":
@@ -126,15 +154,17 @@ public final class NavigationRouter: ObservableObject {
             selectedTab = .expenses
         case "vault", "id-vault", "ids":
             selectedTab = .vault
+        case "storage", "store", "items":
+            navigateTo(tab: .vault, vaultDestination: "storage")
         case "skills", "skill", "learning", "practice":
             selectedTab = .vault
             requestedSkillPathList = true
         case "passwords", "password":
-            selectedTab = .passwords
+            navigateTo(tab: .passwords, vaultDestination: "passwords")
         case "documents", "document", "cards":
-            selectedTab = .documents
+            navigateTo(tab: .documents, vaultDestination: "documents")
         case "memo", "memos", "recorder":
-            selectedTab = .memos
+            navigateTo(tab: .memos, vaultDestination: "voiceMemos")
         case "parcels", "express", "package":
             selectedTab = .todos
             requestedFilter = "快递"

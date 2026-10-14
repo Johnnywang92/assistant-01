@@ -70,6 +70,8 @@ struct SettingsView: View {
     @AppStorage("user_lifestyle_profile") private var lifestyleProfile: UserLifestyleProfile = .officeWorker
     @AppStorage("user_off_work_minutes") private var offWorkMinutes: Int = 18 * 60
     @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true
+    @AppStorage(ClipboardIngestionService.autoIngestKey) private var autoIngest: Bool = true
+    @AppStorage("omnibox_auto_dismiss_seconds") private var autoDismissSeconds: Int = 3
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @ObservedObject private var tabManager = TabBarManager.shared
     @ObservedObject private var seniorManager = SeniorModeManager.shared
@@ -520,6 +522,23 @@ struct SettingsView: View {
                         }
                 } header: {
                     Text("生活习惯")
+                }
+
+                // MARK: - 万能投喂口
+                Section {
+                    Toggle("剪贴板检测自动打开投喂口", isOn: $autoIngest)
+                    Picker("投喂完成后自动关闭弹窗", selection: $autoDismissSeconds) {
+                        Text("不自动关闭").tag(0)
+                        Text("1 秒").tag(1)
+                        Text("2 秒").tag(2)
+                        Text("3 秒（默认）").tag(3)
+                        Text("5 秒").tag(5)
+                        Text("10 秒").tag(10)
+                    }
+                } header: {
+                    Text("万能投喂口")
+                } footer: {
+                    Text("执行投喂动作（记账、待办、备忘）后，弹窗将在指定秒数后自动关闭；期间点击页面任何操作可随时暂停或撤销。")
                 }
 
                 Section("AI 模型") {

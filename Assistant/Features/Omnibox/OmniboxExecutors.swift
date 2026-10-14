@@ -1,9 +1,11 @@
+import AssistantCore
 import Foundation
 import SwiftData
 
 // MARK: - 执行器：模块只认识 Capability，不认识输入形态
 
 /// 执行器注册与派发。新增模块 = 在 `execute` 中注册一个分支并实现 undo，Omnibox 其余部分零改动。
+@MainActor
 enum OmniboxExecutor {
 
     /// 按拓扑序执行一批已勾选动作，返回逐条回执
@@ -55,10 +57,22 @@ enum OmniboxExecutor {
             switch action.capability {
             case .expenseCreate:
                 return try executeExpense(action, context: context)
+            case .expenseUpdate:
+                return try executeExpenseUpdate(action, context: context)
             case .todoCreate:
                 return try executeTodo(action, prior: prior, context: context)
+            case .todoUpdate:
+                return try executeTodoUpdate(action, context: context)
+            case .todoComplete:
+                return try executeTodoComplete(action, context: context)
+            case .todoCancel:
+                return try executeTodoCancel(action, context: context)
+            case .reminderSnooze:
+                return try executeReminderSnooze(action, context: context)
             case .memoInbox:
                 return try executeMemo(action, context: context)
+            case .queryLookup:
+                return executeLookup(action, context: context)
             }
         } catch {
             return ActionExecutionOutcome(
@@ -100,6 +114,47 @@ enum OmniboxExecutor {
         )
     }
 
+    // MARK: expense.update
+
+    private static func executeExpenseUpdate(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let mention = action.params["target"] ?? action.params["title"] ?? ""
+        let amt = Double(action.params["amount"] ?? "")
+        let resolution = ActionTargetResolver.resolveExpense(mention: mention, amount: amt, context: context)
+        guard case .unique(let record) = resolution else {
+            switch resolution {
+            case .ambiguous(let candidates):
+                throw OmniboxError.invalidParams("匹配到多笔账目（\(candidates.map(\.displayTitle).joined(separator: " / "))），请明确指定")
+            case .none, .unique:
+                throw OmniboxError.invalidParams("未找到与「\(mention)」相符的账单记录")
+            }
+        }
+
+        let snapshot: [String: String] = [
+            "title": record.title,
+            "amount": String(record.amount),
+            "categoryRaw": record.categoryRaw
+        ]
+        let snapshotData = ActionUndoToken.makeSnapshotData(snapshot)
+
+        if let newAmt = Double(action.params["newAmount"] ?? action.params["amount"] ?? ""), newAmt > 0 {
+            record.amount = newAmt
+        }
+        if let newTitle = action.params["newTitle"], !newTitle.isEmpty {
+            record.title = newTitle
+        }
+        if let newCat = action.params["newCategory"], let cat = ExpenseCategory(rawValue: newCat) {
+            record.category = cat
+        }
+        try context.save()
+
+        return ActionExecutionOutcome(
+            id: action.id,
+            action: action,
+            summary: "已修改账目：\(record.title) ¥\(String(format: "%.2f", record.amount))",
+            undo: OmniboxUndoToken(kind: .expense, recordID: record.id, snapshotJSON: snapshotData)
+        )
+    }
+
     // MARK: todo.create
 
     private static func executeTodo(
@@ -133,6 +188,177 @@ enum OmniboxExecutor {
             action: action,
             summary: OmniboxPlanner.summary(for: .todoCreate, params: displayParams),
             undo: OmniboxUndoToken(kind: .todo, recordID: todo.id)
+        )
+    }
+
+    // MARK: todo.update
+
+    private static func executeTodoUpdate(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let mention = action.params["target"] ?? action.params["title"] ?? ""
+        let resolution = ActionTargetResolver.resolveTodo(mention: mention, context: context)
+        guard case .unique(let todo) = resolution else {
+            switch resolution {
+            case .ambiguous(let candidates):
+                throw OmniboxError.invalidParams("匹配到多项待办（\(candidates.map(\.displayTitle).joined(separator: " / "))），请明确指定")
+            case .none, .unique:
+                throw OmniboxError.invalidParams("未找到与「\(mention)」相符的待办事项")
+            }
+        }
+
+        var snapshot: [String: String] = [
+            "title": todo.title,
+            "detail": todo.detail ?? "",
+            "statusRaw": todo.status.rawValue
+        ]
+        if let due = todo.dueAt {
+            snapshot["dueAtISO"] = ISO8601DateFormatter().string(from: due)
+        }
+        let snapshotData = ActionUndoToken.makeSnapshotData(snapshot)
+
+        if let newTitle = action.params["newTitle"], !newTitle.isEmpty {
+            todo.title = newTitle
+        }
+        if let newDetail = action.params["newDetail"] {
+            todo.detail = newDetail
+        }
+        if let due = Self.resolveDueAt(params: action.params) {
+            todo.dueAt = due
+            TodoNotificationManager.shared.scheduleNotification(for: todo)
+        }
+        try context.save()
+
+        return ActionExecutionOutcome(
+            id: action.id,
+            action: action,
+            summary: "已修改待办：\(todo.title)",
+            undo: OmniboxUndoToken(kind: .todo, recordID: todo.id, snapshotJSON: snapshotData)
+        )
+    }
+
+    // MARK: todo.complete
+
+    private static func executeTodoComplete(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let mention = action.params["target"] ?? action.params["title"] ?? ""
+        let resolution = ActionTargetResolver.resolveTodo(mention: mention, context: context)
+        guard case .unique(let todo) = resolution else {
+            switch resolution {
+            case .ambiguous(let candidates):
+                throw OmniboxError.invalidParams("匹配到多项待办（\(candidates.map(\.displayTitle).joined(separator: " / "))），请明确指定")
+            case .none, .unique:
+                throw OmniboxError.invalidParams("未找到与「\(mention)」相符的待办事项")
+            }
+        }
+
+        let snapshot: [String: String] = [
+            "title": todo.title,
+            "statusRaw": todo.status.rawValue
+        ]
+        let snapshotData = ActionUndoToken.makeSnapshotData(snapshot)
+
+        todo.markAsCompleted(in: context)
+        TodoNotificationManager.shared.cancelNotification(for: todo.id)
+        try context.save()
+
+        return ActionExecutionOutcome(
+            id: action.id,
+            action: action,
+            summary: "已完成待办：\(todo.title)",
+            undo: OmniboxUndoToken(kind: .todo, recordID: todo.id, snapshotJSON: snapshotData)
+        )
+    }
+
+    // MARK: todo.cancel
+
+    private static func executeTodoCancel(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let mention = action.params["target"] ?? action.params["title"] ?? ""
+        let resolution = ActionTargetResolver.resolveTodo(mention: mention, context: context)
+        guard case .unique(let todo) = resolution else {
+            switch resolution {
+            case .ambiguous(let candidates):
+                throw OmniboxError.invalidParams("匹配到多项待办（\(candidates.map(\.displayTitle).joined(separator: " / "))），请明确指定")
+            case .none, .unique:
+                throw OmniboxError.invalidParams("未找到与「\(mention)」相符的待办事项")
+            }
+        }
+
+        var snapshot: [String: String] = [
+            "title": todo.title,
+            "detail": todo.detail ?? "",
+            "typeRaw": todo.type.rawValue,
+            "statusRaw": todo.status.rawValue
+        ]
+        if let due = todo.dueAt {
+            snapshot["dueAtISO"] = ISO8601DateFormatter().string(from: due)
+        }
+        let snapshotData = ActionUndoToken.makeSnapshotData(snapshot)
+
+        todo.cleanupExternalIntegrations()
+        context.delete(todo)
+        try context.save()
+
+        return ActionExecutionOutcome(
+            id: action.id,
+            action: action,
+            summary: "已取消待办：\(snapshot["title"] ?? "")",
+            undo: OmniboxUndoToken(kind: .todo, recordID: todo.id, snapshotJSON: snapshotData)
+        )
+    }
+
+    // MARK: reminder.snooze
+
+    private static func executeReminderSnooze(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let mention = action.params["target"] ?? action.params["title"] ?? ""
+        let resolution = ActionTargetResolver.resolveTodo(mention: mention, context: context)
+        guard case .unique(let todo) = resolution else {
+            switch resolution {
+            case .ambiguous(let candidates):
+                throw OmniboxError.invalidParams("匹配到多项提醒（\(candidates.map(\.displayTitle).joined(separator: " / "))），请明确指定")
+            case .none, .unique:
+                throw OmniboxError.invalidParams("未找到与「\(mention)」相符的提醒事项")
+            }
+        }
+
+        var snapshot: [String: String] = [
+            "title": todo.title
+        ]
+        if let due = todo.dueAt {
+            snapshot["dueAtISO"] = ISO8601DateFormatter().string(from: due)
+        }
+        let snapshotData = ActionUndoToken.makeSnapshotData(snapshot)
+
+        let duration = action.params["duration"] ?? "1小时"
+        let baseDate = todo.dueAt ?? .now
+        let newDate: Date
+        if duration.contains("10分") {
+            newDate = Calendar.current.date(byAdding: .minute, value: 10, to: baseDate) ?? baseDate
+        } else if duration.contains("明早") || duration.contains("明天") {
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: .now) ?? .now
+            newDate = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow) ?? tomorrow
+        } else {
+            newDate = Calendar.current.date(byAdding: .hour, value: 1, to: baseDate) ?? baseDate
+        }
+
+        todo.dueAt = newDate
+        TodoNotificationManager.shared.scheduleNotification(for: todo)
+        try context.save()
+
+        return ActionExecutionOutcome(
+            id: action.id,
+            action: action,
+            summary: "已顺延提醒至 \(newDate.formatted(date: .abbreviated, time: .shortened))：\(todo.title)",
+            undo: OmniboxUndoToken(kind: .todo, recordID: todo.id, snapshotJSON: snapshotData)
+        )
+    }
+
+    // MARK: query.lookup
+
+    private static func executeLookup(_ action: PlannedAction, context: ModelContext) -> ActionExecutionOutcome {
+        let mention = action.params["target"] ?? action.params["query"] ?? "查询事项"
+        return ActionExecutionOutcome(
+            id: action.id,
+            action: action,
+            summary: "查询完成：\(mention)",
+            undo: OmniboxUndoToken(kind: .memoLine)
         )
     }
 
@@ -205,14 +431,55 @@ enum OmniboxExecutor {
             guard let id = token.recordID else { return }
             let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == id })
             if let todo = try context.fetch(descriptor).first {
-                TodoNotificationManager.shared.cancelNotification(for: id)
-                context.delete(todo)
+                if let snapshot = token.decodeSnapshot() {
+                    // 修改式回滚：按快照还原旧值
+                    if let title = snapshot["title"] { todo.title = title }
+                    if let detail = snapshot["detail"] { todo.detail = detail }
+                    if let statusRaw = snapshot["statusRaw"], let status = TodoStatus(rawValue: statusRaw) {
+                        todo.status = status
+                    }
+                    if let dueAtISO = snapshot["dueAtISO"] {
+                        todo.dueAt = ISO8601DateFormatter().date(from: dueAtISO)
+                    } else if snapshot.keys.contains("dueAtISO") {
+                        todo.dueAt = nil
+                    }
+                    TodoNotificationManager.shared.scheduleNotification(for: todo)
+                } else {
+                    // 创建式回滚：删除新建待办
+                    TodoNotificationManager.shared.cancelNotification(for: id)
+                    context.delete(todo)
+                }
+            } else if let snapshot = token.decodeSnapshot() {
+                // 已删除待办（取消式）回滚：按快照重新建回
+                let title = snapshot["title"] ?? "未命名事项"
+                let detail = snapshot["detail"]
+                let typeRaw = snapshot["typeRaw"] ?? TodoType.general.rawValue
+                let type = TodoType(rawValue: typeRaw) ?? .general
+                let recreated = TodoItem(type: type, title: title, detail: detail)
+                recreated.id = id
+                if let dueAtISO = snapshot["dueAtISO"] {
+                    recreated.dueAt = ISO8601DateFormatter().date(from: dueAtISO)
+                }
+                context.insert(recreated)
+                TodoNotificationManager.shared.scheduleNotification(for: recreated)
             }
         case .expense:
             guard let id = token.recordID else { return }
             let descriptor = FetchDescriptor<ExpenseRecord>(predicate: #Predicate { $0.id == id })
             if let record = try context.fetch(descriptor).first {
-                context.delete(record)
+                if let snapshot = token.decodeSnapshot() {
+                    // 修改式回滚
+                    if let amtStr = snapshot["amount"], let amt = Double(amtStr) {
+                        record.amount = amt
+                    }
+                    if let title = snapshot["title"] { record.title = title }
+                    if let catRaw = snapshot["categoryRaw"], let cat = ExpenseCategory(rawValue: catRaw) {
+                        record.category = cat
+                    }
+                } else {
+                    // 创建式回滚
+                    context.delete(record)
+                }
             }
         case .memoLine:
             guard let line = token.memoLine else { return }

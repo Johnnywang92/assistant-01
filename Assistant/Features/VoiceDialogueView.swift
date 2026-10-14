@@ -557,13 +557,13 @@ struct VoiceDialogueView: View {
                             reply = planningCardReply(plan: plan, usedBackground: !background.isEmpty)
                             planningPlan = plan
                         } else {
-                            reply = await LLMInferenceService.shared.generate(query: trimmed, context: context)
+                            reply = await LLMInferenceService.shared.generate(query: trimmed, sessionID: currentSessionID, context: context)
                         }
                     case .cancelled:
                         reply = "好的，需要规划时随时叫我。"
                     }
                 } else {
-                    reply = await LLMInferenceService.shared.generate(query: trimmed, context: context)
+                    reply = await LLMInferenceService.shared.generate(query: trimmed, sessionID: currentSessionID, context: context)
                 }
             } else {
                 let processor = VoiceIntentProcessor(context: context)

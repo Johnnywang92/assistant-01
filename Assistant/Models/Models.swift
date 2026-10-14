@@ -227,6 +227,8 @@ final class TodoItem {
     var isSkillPractice: Bool = false
     /// 该条打卡的预估投入分钟数
     var skillPracticeMinutes: Int = 0
+    /// 写入系统日历后的 EKEvent identifier（用于双向同步与删除，防止孤儿日程）
+    var calendarItemIdentifier: String?
 
     init(type: TodoType, status: TodoStatus = .active, title: String, detail: String? = nil,
          pickupCode: String? = nil, courier: String? = nil, station: String? = nil, location: String? = nil,
@@ -235,7 +237,8 @@ final class TodoItem {
          remindBeforeMinutes: Int = 0,
          qrCodePayload: String? = nil, qrCodeImageData: Data? = nil, attachmentImageData: Data? = nil,
          skillPathID: UUID? = nil, skillStageIndex: Int = 0,
-         isSkillPractice: Bool = false, skillPracticeMinutes: Int = 0) {
+         isSkillPractice: Bool = false, skillPracticeMinutes: Int = 0,
+         calendarItemIdentifier: String? = nil) {
         self.id = UUID()
         self.typeRaw = type.rawValue
         self.statusRaw = status.rawValue
@@ -259,6 +262,7 @@ final class TodoItem {
         self.skillStageIndex = skillStageIndex
         self.isSkillPractice = isSkillPractice
         self.skillPracticeMinutes = skillPracticeMinutes
+        self.calendarItemIdentifier = calendarItemIdentifier
     }
 
     /// 是否包含可快速调出的预约二维码或图片凭证
@@ -411,6 +415,16 @@ final class TodoItem {
         context.insert(nextItem)
         TodoNotificationManager.shared.scheduleNotification(for: nextItem)
         return nextItem
+    }
+
+    /// 同步清除外部集成（本地通知与系统日历关联日程，防止孤儿日程）
+    func cleanupExternalIntegrations() {
+        TodoNotificationManager.shared.cancelNotification(for: self.id)
+        if let calId = self.calendarItemIdentifier {
+            Task { @MainActor in
+                try? await CalendarAgendaService.shared.deleteEvent(identifier: calId)
+            }
+        }
     }
 }
 

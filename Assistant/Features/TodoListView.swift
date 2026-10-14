@@ -391,6 +391,16 @@ struct TodoListView: View {
                         }
                     } else {
                         Button {
+                            router.prefilledSearchQuery = searchText.isEmpty ? nil : searchText
+                            router.activeSheet = .unifiedSearch
+                            Haptic.light()
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.body.weight(.semibold))
+                        }
+                        .accessibilityLabel("全景搜索")
+
+                        Button {
                             showAddTodo = true
                             Haptic.light()
                         } label: {
@@ -2300,7 +2310,7 @@ struct TodoRow: View {
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
                 Haptic.warning()
-                TodoNotificationManager.shared.cancelNotification(for: item.id)
+                item.cleanupExternalIntegrations()
                 context.delete(item)
                 try? context.save()
             } label: { Label("删除", systemImage: "trash") }
