@@ -20,8 +20,8 @@ struct LLMModelManagementView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(modelManager.isModelDownloaded ? Color.green.gradient : Color.purple.gradient)
+                            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                                .fill(badgeIconColor.gradient)
                                 .frame(width: 48, height: 48)
                             Image(systemName: "brain.head.profile")
                                 .font(.title2.bold())
@@ -38,20 +38,14 @@ struct LLMModelManagementView: View {
 
                         Spacer()
 
-                        Text(modelManager.isModelDownloaded ? "文件已下载" : (modelManager.isDownloading ? "下载中" : "未下载"))
+                        Text(L10n.tr(badgeText))
                             .font(.caption2.bold())
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .background(
-                                Capsule().fill(
-                                    modelManager.isModelDownloaded ? Color.green.opacity(0.15) :
-                                    (modelManager.isDownloading ? Color.orange.opacity(0.15) : Color.secondary.opacity(0.15))
-                                )
+                                Capsule().fill(badgeColor.opacity(0.15))
                             )
-                            .foregroundStyle(
-                                modelManager.isModelDownloaded ? Color.green :
-                                (modelManager.isDownloading ? Color.orange : Color.secondary)
-                            )
+                            .foregroundStyle(badgeColor)
                     }
 
                     Divider()
@@ -128,6 +122,54 @@ struct LLMModelManagementView: View {
                                 modelManager.discardProgressAndReset()
                             }
                             .font(.caption.bold())
+                        }
+                    }
+                    .padding(.vertical, 4)
+                } else if modelManager.validationStatus == .validating {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                            .controlSize(.small)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("正在校验模型完整性…")
+                                .font(.subheadline)
+                            Text("首次校验大文件约需数十秒，校验通过前模型不可用。")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("删除", role: .destructive) {
+                            modelManager.deleteModel()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                    .padding(.vertical, 4)
+                } else if case .validationFailed(let reason) = modelManager.validationStatus {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("模型文件校验未通过", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(AppColor.danger)
+                            .font(.subheadline)
+                        Text(L10n.tr(reason))
+                            .font(.caption)
+                            .foregroundStyle(AppColor.danger)
+                        HStack(spacing: 10) {
+                            Button("重新校验") {
+                                modelManager.checkModelStatus()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            Button("重新导入") {
+                                showFileImporter = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(AppColor.feature)
+                            .controlSize(.small)
+                            Button("删除", role: .destructive) {
+                                modelManager.deleteModel()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            Spacer()
                         }
                     }
                     .padding(.vertical, 4)
@@ -350,6 +392,43 @@ struct LLMModelManagementView: View {
     }
 
     // MARK: - 辅助操作
+
+    // 仅「校验通过」视为就绪；SHA-256 结论前不显示绿色徽标，避免状态误报
+    private var badgeText: String {
+        if modelManager.isDownloading { return "下载中" }
+        switch modelManager.validationStatus {
+        case .validated: return "校验通过"
+        case .validating: return "校验中"
+        case .validationFailed: return "校验失败"
+        case .noModelFile: return "未下载"
+        }
+    }
+
+    private var badgeColor: Color {
+        if modelManager.isDownloading { return AppColor.warning }
+        switch modelManager.validationStatus {
+        case .validated: return AppColor.success
+        case .validating: return AppColor.warning
+        case .validationFailed: return AppColor.danger
+        case .noModelFile: return .secondary
+        }
+    }
+
+    private var badgeIconColor: Color {
+        if modelManager.isDownloading { return AppColor.feature }
+        switch modelManager.validationStatus {
+        case .validated: return AppColor.success
+        case .validating: return AppColor.warning
+        case .validationFailed: return AppColor.danger
+        case .noModelFile: return AppColor.feature
+        }
+    }
+
+    private var isAnyInferenceEntryAvailable: Bool {
+        let remoteConfigured = inferenceService.remoteContextConsent
+            && !inferenceService.developerEndpoint.trimmingCharacters(in: .whitespaces).isEmpty
+        return modelManager.isModelDownloaded || remoteConfigured
+    }
 
     @ViewBuilder
     private func samplePromptButton(_ prompt: String) -> some View {

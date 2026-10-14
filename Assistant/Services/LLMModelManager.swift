@@ -22,6 +22,14 @@ public enum LLMDownloadSource: String, CaseIterable, Identifiable {
     }
 }
 
+/// 模型完整性校验状态：把「文件存在」与「校验通过」拆开，校验未出结论前 UI 不得显示就绪
+public enum LLMModelValidationStatus: Equatable {
+    case noModelFile
+    case validating
+    case validated
+    case validationFailed(reason: String)
+}
+
 /// Qwen2.5-1.5B-Instruct 本地大模型文件管理与极速下载器
 @MainActor
 public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
@@ -49,7 +57,9 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
     }
 
     // 状态发布
-    @Published public var isModelDownloaded: Bool = false
+    @Published public var validationStatus: LLMModelValidationStatus = .noModelFile
+    /// 兼容旧调用方的语义并收紧为「完整性校验通过」：修复校验完成前误报就绪的缺陷
+    public var isModelDownloaded: Bool { validationStatus == .validated }
     @Published public var isDownloading: Bool = false
     @Published public var hasResumeData: Bool = false
     @Published public var downloadProgress: Double = 0.0
@@ -94,26 +104,24 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         return true
     }
 
-    /// 检查本地模型是否存在且完整
+    /// 检查本地模型是否存在，并异步进行完整性校验；校验通过前状态保持「校验中」
     public func checkModelStatus() {
         validationGeneration += 1
         let generation = validationGeneration
         let url = localModelURL
         guard FileManager.default.fileExists(atPath: url.path) else {
-            isModelDownloaded = false
+            validationStatus = .noModelFile
             UserDefaults.standard.removeObject(forKey: validatedDigestKey)
             hasResumeData = FileManager.default.fileExists(atPath: resumeDataURL.path)
             return
         }
 
-        if hasValidLocalGGUFFile,
-           let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value {
+        if let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value {
             self.downloadedBytes = size
             self.totalBytes = size
-            self.isModelDownloaded = true
-        } else {
-            self.isModelDownloaded = false
         }
+        // 文件存在 ≠ 完整：SHA-256 结论前不得放行「就绪」，防止断网推理加载截断文件
+        validationStatus = .validating
 
         let expectedDigest = UserDefaults.standard.string(forKey: validatedDigestKey)
         Task.detached(priority: .utility) {
@@ -123,37 +131,42 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
                 switch result {
                 case .success(let validated):
                     if let expectedDigest, expectedDigest != validated.digest {
-                        self.isModelDownloaded = false
-                        self.errorMessage = L10n.tr("模型文件校验值已变化，请重新导入。")
+                        self.markValidationFailed("模型文件校验值已变化，请重新导入。")
                         return
                     }
                     UserDefaults.standard.set(validated.digest, forKey: self.validatedDigestKey)
                     self.downloadedBytes = validated.size
                     self.totalBytes = validated.size
-                    self.isModelDownloaded = true
+                    self.errorMessage = nil
+                    self.validationStatus = .validated
                     self.clearResumeData()
                 case .failure(let error):
-                    self.isModelDownloaded = false
-                    self.errorMessage = L10n.choose("模型文件无效：\(error.localizedDescription)", "Invalid model file: \(error.localizedDescription)")
+                    self.markValidationFailed(L10n.choose("模型文件无效：\(error.localizedDescription)", "Invalid model file: \(error.localizedDescription)"))
                 }
             }
         }
         hasResumeData = FileManager.default.fileExists(atPath: resumeDataURL.path)
     }
 
-    /// 等待完整校验结束后返回模型是否可用。加载前调用此方法，避免后台 SHA-256 校验尚未完成时误判为未下载。
+    private func markValidationFailed(_ reason: String) {
+        // 失败原因随状态发布，由 UI 直接展示，避免 errorMessage 与状态徽标双重来源
+        validationStatus = .validationFailed(reason: reason)
+    }
+
+    /// 等待完整校验结束后返回模型是否可用。加载前调用此方法，仅「校验通过」才放行推理。
     public func validateModelStatusAndWait() async -> Bool {
         validationGeneration += 1
         let generation = validationGeneration
         let url = localModelURL
 
         guard FileManager.default.fileExists(atPath: url.path) else {
-            isModelDownloaded = false
+            validationStatus = .noModelFile
             UserDefaults.standard.removeObject(forKey: validatedDigestKey)
             hasResumeData = FileManager.default.fileExists(atPath: resumeDataURL.path)
             return false
         }
 
+        validationStatus = .validating
         let result = await Task.detached(priority: .utility) {
             Result { try Self.validateModel(at: url) }
         }.value
@@ -165,19 +178,18 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         case .success(let validated):
             if let expectedDigest = UserDefaults.standard.string(forKey: validatedDigestKey),
                expectedDigest != validated.digest {
-                isModelDownloaded = false
-                errorMessage = "模型文件校验值已变化，请重新导入。"
+                markValidationFailed("模型文件校验值已变化，请重新导入。")
                 return false
             }
             UserDefaults.standard.set(validated.digest, forKey: validatedDigestKey)
             downloadedBytes = validated.size
             totalBytes = validated.size
-            isModelDownloaded = true
+            errorMessage = nil
+            validationStatus = .validated
             clearResumeData()
             return true
         case .failure(let error):
-            isModelDownloaded = false
-            errorMessage = "模型文件无效：\(error.localizedDescription)"
+            markValidationFailed(L10n.choose("模型文件无效：\(error.localizedDescription)", "Invalid model file: \(error.localizedDescription)"))
             return false
         }
     }
@@ -194,7 +206,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         let version = header.suffix(4).enumerated().reduce(UInt32(0)) { value, byte in
             value | (UInt32(byte.element) << (UInt32(byte.offset) * 8))
         }
-        guard version == 2 || version == 3 else { throw ModelValidationError.invalidHeader }
+        guard version == 2 || version == 3 else { throw ModelValidationError.invalidVersion }
         try handle.seek(toOffset: 0)
         var hasher = SHA256()
         while let chunk = try handle.read(upToCount: 1024 * 1024), !chunk.isEmpty {
@@ -204,11 +216,12 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
     }
 
     private enum ModelValidationError: LocalizedError {
-        case invalidSize, invalidHeader
+        case invalidSize, invalidHeader, invalidVersion
         var errorDescription: String? {
             switch self {
             case .invalidSize: L10n.tr("文件体积与预期模型不符。")
             case .invalidHeader: L10n.tr("文件不是支持的 GGUF 格式。")
+            case .invalidVersion: L10n.tr("GGUF 文件格式版本不支持。")
             }
         }
     }

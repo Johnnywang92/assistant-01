@@ -471,7 +471,6 @@ struct PeriodicReportView: View {
                 Spacer()
 
                 if LLMModelManager.shared.isModelDownloaded ||
-                    LLMModelManager.shared.hasValidLocalGGUFFile ||
                     (LLMInferenceService.shared.remoteContextConsent && !LLMInferenceService.shared.developerEndpoint.isEmpty) {
                     Button {
                         polishWithLLM()
