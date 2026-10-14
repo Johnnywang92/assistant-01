@@ -71,6 +71,7 @@ struct SettingsView: View {
     @AppStorage("user_off_work_minutes") private var offWorkMinutes: Int = 18 * 60
     @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true
     @AppStorage(ClipboardIngestionService.autoIngestKey) private var autoIngest: Bool = true
+    @AppStorage("omnibox_clipboard_auto_dismiss_seconds") private var clipboardAutoDismissSeconds: Int = 5
     @AppStorage("omnibox_auto_dismiss_seconds") private var autoDismissSeconds: Int = 3
     @ObservedObject private var bgManager = AppBackgroundManager.shared
     @ObservedObject private var tabManager = TabBarManager.shared
@@ -527,18 +528,24 @@ struct SettingsView: View {
                 // MARK: - 万能投喂口
                 Section {
                     Toggle("剪贴板检测自动打开投喂口", isOn: $autoIngest)
-                    Picker("投喂完成后自动关闭弹窗", selection: $autoDismissSeconds) {
+                    Picker("剪贴板唤起后无操作自动退出", selection: $clipboardAutoDismissSeconds) {
+                        Text("不自动退出").tag(0)
+                        Text("3 秒").tag(3)
+                        Text("5 秒（默认）").tag(5)
+                        Text("8 秒").tag(8)
+                        Text("10 秒").tag(10)
+                    }
+                    Picker("确认执行后自动关闭弹窗", selection: $autoDismissSeconds) {
                         Text("不自动关闭").tag(0)
                         Text("1 秒").tag(1)
                         Text("2 秒").tag(2)
                         Text("3 秒（默认）").tag(3)
                         Text("5 秒").tag(5)
-                        Text("10 秒").tag(10)
                     }
                 } header: {
                     Text("万能投喂口")
                 } footer: {
-                    Text("执行投喂动作（记账、待办、备忘）后，弹窗将在指定秒数后自动关闭；期间点击页面任何操作可随时暂停或撤销。")
+                    Text("检测到剪贴板有内容自动唤起投喂口时，若您无意添加到 App，无需任何操作，弹窗将在指定秒数后自动关闭退出；期间点击任意位置或操作可暂停倒计时。")
                 }
 
                 Section("AI 模型") {

@@ -87,6 +87,8 @@ public final class NavigationRouter: ObservableObject {
     @Published public var pendingImportPayload: TodoSharePayload?
     /// 万能投喂口的剪贴板预填充载荷（由投喂口消费后置 nil）
     @Published public var omniboxPrefill: OmniboxPayload?
+    /// 是否为剪贴板自动唤起投喂口（用于支持无意添加时的倒计时自动关闭）
+    @Published public var omniboxIsClipboardAutoIngest: Bool = false
     /// 深链触发：切到生活档案后直接推入技能学习路径列表（由 LifeVaultView 消费后置 false）
     @Published public var requestedSkillPathList: Bool = false
     /// 深链/统一搜索触发：切到生活档案后直接推入指定子板块

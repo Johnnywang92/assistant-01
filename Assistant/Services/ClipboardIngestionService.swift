@@ -78,10 +78,25 @@ final class ClipboardIngestionService: ObservableObject {
             kind = .unsupported
         }
         suggestion = Suggestion(kind: kind, changeCount: changeCount)
+        scheduleBannerAutoDismiss(for: changeCount)
+    }
+
+    private var bannerDismissTask: Task<Void, Never>?
+
+    private func scheduleBannerAutoDismiss(for changeCount: Int) {
+        bannerDismissTask?.cancel()
+        bannerDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            if !Task.isCancelled, suggestion?.changeCount == changeCount {
+                markHandled(changeCount)
+            }
+        }
     }
 
     /// 标记该 changeCount 已处理，不再重复提示
     func markHandled(_ changeCount: Int) {
+        bannerDismissTask?.cancel()
+        bannerDismissTask = nil
         UserDefaults.standard.set(changeCount, forKey: Self.handledKey)
         if suggestion?.changeCount == changeCount {
             suggestion = nil

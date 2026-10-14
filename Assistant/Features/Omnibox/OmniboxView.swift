@@ -24,6 +24,7 @@ struct OmniboxView: View {
     @ObservedObject private var router = NavigationRouter.shared
     @ObservedObject private var clipboard = ClipboardIngestionService.shared
     @AppStorage(ClipboardIngestionService.autoIngestKey) private var autoIngest = true
+    @AppStorage("omnibox_clipboard_auto_dismiss_seconds") private var clipboardAutoDismissSeconds: Int = 5
     @AppStorage("omnibox_auto_dismiss_seconds") private var autoDismissSeconds: Int = 3
 
     @State private var inputText = ""
@@ -41,6 +42,10 @@ struct OmniboxView: View {
     @State private var remainingSeconds: Int = 3
     @State private var isCountdownPaused: Bool = false
     @State private var countdownTask: Task<Void, Never>?
+    @State private var isClipboardAutoTriggered: Bool = false
+    @State private var clipboardRemainingSeconds: Int = 5
+    @State private var isClipboardDismissPaused: Bool = false
+    @State private var clipboardDismissTask: Task<Void, Never>?
 
     private var images: [UIImage] { attachments.map(\.image) }
 
@@ -48,6 +53,10 @@ struct OmniboxView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    if isClipboardAutoTriggered && clipboardAutoDismissSeconds > 0 && phase != .executed {
+                        clipboardAutoDismissBanner
+                    }
+
                     headerCard
                     inputCard
 
@@ -66,7 +75,12 @@ struct OmniboxView: View {
             }
             .background(Color(.systemGroupedBackground))
             .scrollDismissesKeyboard(.interactively)
-            .onTapGesture { dismissKeyboard() }
+            .onTapGesture {
+                dismissKeyboard()
+                if isClipboardAutoTriggered {
+                    pauseClipboardDismiss()
+                }
+            }
             .navigationTitle(L10n.tr("万能投喂口"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -85,6 +99,7 @@ struct OmniboxView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(closeButtonTitle) {
                         cancelCountdown()
+                        cancelClipboardDismiss()
                         dismiss()
                     }
                 }
@@ -99,7 +114,15 @@ struct OmniboxView: View {
                 }
             }
         }
+        .onChange(of: inputText) { oldValue, newValue in
+            if isClipboardAutoTriggered && !oldValue.isEmpty && oldValue != newValue {
+                cancelClipboardDismiss()
+            }
+        }
         .onChange(of: pickerItems) { _, items in
+            if isClipboardAutoTriggered {
+                cancelClipboardDismiss()
+            }
             Task { await reloadPickerAttachments(items) }
         }
         .onAppear {
@@ -107,6 +130,7 @@ struct OmniboxView: View {
         }
         .onDisappear {
             cancelCountdown()
+            cancelClipboardDismiss()
         }
         .sheet(isPresented: $showMemos) {
             OmniboxMemoListView()
@@ -119,7 +143,13 @@ struct OmniboxView: View {
     }
 
     private var closeButtonTitle: String {
-        if phase == .executed && autoDismissSeconds > 0 {
+        if isClipboardAutoTriggered && clipboardAutoDismissSeconds > 0 && phase != .executed {
+            if isClipboardDismissPaused {
+                return "\(L10n.tr("关闭")) (\(L10n.tr("已暂停")))"
+            } else if clipboardRemainingSeconds > 0 {
+                return "\(L10n.tr("关闭")) (\(clipboardRemainingSeconds)s)"
+            }
+        } else if phase == .executed && autoDismissSeconds > 0 {
             if isCountdownPaused {
                 return "\(L10n.tr("关闭")) (\(L10n.tr("已暂停")))"
             } else if remainingSeconds > 0 {
@@ -136,8 +166,13 @@ struct OmniboxView: View {
             return
         }
         router.omniboxPrefill = nil
+        isClipboardAutoTriggered = router.omniboxIsClipboardAutoIngest
+        router.omniboxIsClipboardAutoIngest = false
         apply(payload: payload)
         Task { await runPlan() }
+        if isClipboardAutoTriggered {
+            startClipboardDismissCountdown()
+        }
     }
 
     private func apply(payload: OmniboxPayload) {
@@ -191,12 +226,50 @@ struct OmniboxView: View {
                 .padding(.top, 2)
 
                 HStack(spacing: 4) {
-                    Text(L10n.tr("完成后自动关闭"))
+                    Text(L10n.tr("剪贴板唤起后无操作自动退出"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Spacer()
                     Menu {
-                        ForEach([0, 1, 2, 3, 5, 10], id: \.self) { seconds in
+                        ForEach([0, 3, 5, 8, 10], id: \.self) { seconds in
+                            Button {
+                                clipboardAutoDismissSeconds = seconds
+                                if seconds == 0 {
+                                    cancelClipboardDismiss()
+                                } else if isClipboardAutoTriggered {
+                                    clipboardRemainingSeconds = seconds
+                                }
+                            } label: {
+                                HStack {
+                                    Text(seconds == 0 ? L10n.tr("不自动退出") : "\(seconds) \(L10n.tr("秒"))\(seconds == 5 ? " (\(L10n.tr("默认")))" : "")")
+                                    if clipboardAutoDismissSeconds == seconds {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(clipboardAutoDismissSeconds == 0 ? L10n.tr("不自动退出") : "\(clipboardAutoDismissSeconds)s")
+                                .font(.caption2.bold())
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 9))
+                        }
+                        .foregroundStyle(.purple)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.purple.opacity(0.1), in: Capsule())
+                    }
+                }
+                .padding(.top, 2)
+
+                HStack(spacing: 4) {
+                    Text(L10n.tr("确认执行后自动关闭"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Menu {
+                        ForEach([0, 1, 2, 3, 5], id: \.self) { seconds in
                             Button {
                                 autoDismissSeconds = seconds
                                 if seconds == 0 {
@@ -206,7 +279,7 @@ struct OmniboxView: View {
                                 }
                             } label: {
                                 HStack {
-                                    Text(seconds == 0 ? L10n.tr("不自动关闭") : "\(seconds) \(L10n.tr("秒"))")
+                                    Text(seconds == 0 ? L10n.tr("不自动关闭") : "\(seconds) \(L10n.tr("秒"))\(seconds == 3 ? " (\(L10n.tr("默认")))" : "")")
                                     if autoDismissSeconds == seconds {
                                         Image(systemName: "checkmark")
                                     }
@@ -301,6 +374,7 @@ struct OmniboxView: View {
                 }
                 if inputText.isEmpty && images.isEmpty && clipboard.hasIngestibleContent {
                     Button {
+                        cancelClipboardDismiss()
                         if let payload = clipboard.resolvePayload() {
                             apply(payload: payload)
                             Haptic.selection()
@@ -318,6 +392,7 @@ struct OmniboxView: View {
             }
 
             Button {
+                cancelClipboardDismiss()
                 Task { await runPlan() }
             } label: {
                 Label(L10n.tr("智能拆解"), systemImage: "sparkles")
@@ -332,6 +407,7 @@ struct OmniboxView: View {
         .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .dropDestination(for: Data.self) { payload, _ in
+            cancelClipboardDismiss()
             let dropped = payload.compactMap(UIImage.init(data:))
             guard !dropped.isEmpty else { return false }
             for image in dropped {
@@ -386,6 +462,7 @@ struct OmniboxView: View {
                     .foregroundStyle(.purple)
                 Spacer()
                 Button(L10n.tr("重新拆解")) {
+                    cancelClipboardDismiss()
                     Task { await runPlan(force: true) }
                 }
                 .font(.caption)
@@ -428,7 +505,13 @@ struct OmniboxView: View {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Toggle("", isOn: action.isSelected)
+                Toggle("", isOn: Binding(
+                    get: { action.isSelected.wrappedValue },
+                    set: {
+                        cancelClipboardDismiss()
+                        action.isSelected.wrappedValue = $0
+                    }
+                ))
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .scaleEffect(0.72, anchor: .leading)
@@ -593,6 +676,7 @@ struct OmniboxView: View {
 
     /// 一键切换动作类型时的平滑兜底迁移
     private func switchCapability(action: Binding<PlannedAction>, to newCap: OmniboxCapability) {
+        cancelClipboardDismiss()
         guard action.wrappedValue.capability != newCap else { return }
         var currentParams = action.wrappedValue.params
         switch newCap {
@@ -639,6 +723,7 @@ struct OmniboxView: View {
         Binding(
             get: { action.wrappedValue.params[key] ?? "" },
             set: { newValue in
+                cancelClipboardDismiss()
                 action.wrappedValue.params[key] = newValue
                 action.wrappedValue.summary = OmniboxPlanner.summary(
                     for: action.wrappedValue.capability, params: action.wrappedValue.params
@@ -651,6 +736,7 @@ struct OmniboxView: View {
         Binding(
             get: { action.wrappedValue.params[key] ?? "" },
             set: { newValue in
+                cancelClipboardDismiss()
                 let digits = newValue.filter { "0123456789.".contains($0) }
                 action.wrappedValue.params[key] = digits
                 action.wrappedValue.summary = OmniboxPlanner.summary(
@@ -665,6 +751,7 @@ struct OmniboxView: View {
         Binding(
             get: { OmniboxPlanner.parseParamDate(action.wrappedValue.params[key]) ?? .now },
             set: { newDate in
+                cancelClipboardDismiss()
                 action.wrappedValue.params[key] = OmniboxPlanner.dateTimeFormatter.string(from: newDate)
                 action.wrappedValue.summary = OmniboxPlanner.summary(
                     for: action.wrappedValue.capability, params: action.wrappedValue.params
@@ -682,6 +769,7 @@ struct OmniboxView: View {
                     ?? .now
             },
             set: { newDate in
+                cancelClipboardDismiss()
                 action.wrappedValue.params["dueAtISO"] = OmniboxPlanner.dateTimeFormatter.string(from: newDate)
                 action.wrappedValue.params.removeValue(forKey: "dueAtDays")
                 action.wrappedValue.params.removeValue(forKey: "dueAtTime")
@@ -839,6 +927,8 @@ struct OmniboxView: View {
     }
 
     private func executeSelected() {
+        cancelCountdown()
+        cancelClipboardDismiss()
         let selected = actions.filter(\.isSelected)
         guard !selected.isEmpty else { return }
         Haptic.success()
@@ -868,6 +958,7 @@ struct OmniboxView: View {
 
     private func undoAll() {
         cancelCountdown()
+        cancelClipboardDismiss()
         do {
             try OmniboxExecutor.undo(outcomes, context: context)
             lastTransaction?.status = .undone
@@ -882,6 +973,7 @@ struct OmniboxView: View {
 
     private func resetForNextFeed() {
         cancelCountdown()
+        cancelClipboardDismiss()
         inputText = ""
         attachments = []
         pickerItems = []
@@ -891,6 +983,113 @@ struct OmniboxView: View {
         lastCapture = nil
         lastTransaction = nil
         phase = .idle
+    }
+
+    // MARK: - 剪贴板自动唤起倒计时横幅与控制
+
+    private var clipboardAutoDismissBanner: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: isClipboardDismissPaused ? "pause.circle.fill" : "timer")
+                    .foregroundStyle(isClipboardDismissPaused ? Color.orange : Color.purple)
+                    .font(.subheadline)
+
+                Text(L10n.tr("已识别剪贴板内容"))
+                    .font(.subheadline.weight(.semibold))
+
+                Spacer()
+
+                Text(isClipboardDismissPaused
+                     ? L10n.tr("倒计时已暂停")
+                     : "\(clipboardRemainingSeconds)s \(L10n.tr("后自动退出"))")
+                    .font(.caption2.bold())
+                    .foregroundStyle(isClipboardDismissPaused ? Color.orange : Color.purple)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill(isClipboardDismissPaused ? Color.orange.opacity(0.12) : Color.purple.opacity(0.12))
+                    )
+            }
+
+            Text(L10n.tr("若无需添加到 App，等待倒计时结束将自动关闭退出；点击任意操作或暂停可保留。"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+                Button {
+                    if isClipboardDismissPaused {
+                        resumeClipboardDismiss()
+                    } else {
+                        pauseClipboardDismiss()
+                    }
+                } label: {
+                    Label(isClipboardDismissPaused ? L10n.tr("恢复倒计时") : L10n.tr("暂停倒计时"),
+                          systemImage: isClipboardDismissPaused ? "play.fill" : "pause.fill")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.bordered)
+                .tint(.purple)
+
+                Button(role: .cancel) {
+                    cancelClipboardDismiss()
+                    dismiss()
+                } label: {
+                    Label(L10n.tr("无需添加，立即关闭"), systemImage: "xmark")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(.tertiarySystemFill))
+                .foregroundStyle(.primary)
+
+                Spacer()
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(isClipboardDismissPaused ? Color.orange.opacity(0.08) : Color.purple.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(isClipboardDismissPaused ? Color.orange.opacity(0.25) : Color.purple.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    private func startClipboardDismissCountdown() {
+        cancelClipboardDismiss()
+        guard clipboardAutoDismissSeconds > 0 else { return }
+        isClipboardAutoTriggered = true
+        clipboardRemainingSeconds = clipboardAutoDismissSeconds
+        isClipboardDismissPaused = false
+        clipboardDismissTask = Task { @MainActor in
+            while clipboardRemainingSeconds > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled { return }
+                if !isClipboardDismissPaused {
+                    clipboardRemainingSeconds -= 1
+                }
+            }
+            if !Task.isCancelled && !isClipboardDismissPaused && phase != .executed {
+                dismiss()
+            }
+        }
+    }
+
+    private func cancelClipboardDismiss() {
+        clipboardDismissTask?.cancel()
+        clipboardDismissTask = nil
+        isClipboardAutoTriggered = false
+    }
+
+    private func pauseClipboardDismiss() {
+        isClipboardDismissPaused = true
+    }
+
+    private func resumeClipboardDismiss() {
+        if clipboardRemainingSeconds <= 0 {
+            clipboardRemainingSeconds = max(1, clipboardAutoDismissSeconds)
+        }
+        isClipboardDismissPaused = false
     }
 
     // MARK: - 倒计时自动关闭

@@ -178,6 +178,7 @@ struct MainTabView: View {
             return
         }
         router.omniboxPrefill = payload
+        router.omniboxIsClipboardAutoIngest = true
         router.activeSheet = .omnibox
         clipboard.markHandled(suggestion.changeCount)
     }
