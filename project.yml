@@ -22,9 +22,14 @@ settings:
 packages:
   AssistantCore:
     path: Packages/AssistantCore
-  # LlamaSwift:
-  #   url: https://github.com/mattt/llama.swift
-  #   from: "2.0.0"
+  # 端侧推理运行时。产物为 llama.cpp 的 xcframework（binaryTarget）。
+  # 注意：该发布产物仅含真机切片，不含 iphonesimulator 架构。
+  # 因此模拟器目标下仍会解析失败——这是上游产物限制，不是配置错误。
+  # 端侧推理相关功能请在真机验证；`LlamaCppEngine.isEngineLinked` 会在
+  # 未链接二进制时返回 false，UI 据此如实降级，不会误报「模型损坏」。
+  LlamaSwift:
+    url: https://github.com/mattt/llama.swift
+    from: "2.0.0"
 
 targets:
   Assistant:
@@ -35,8 +40,8 @@ targets:
       - WidgetShared
     dependencies:
       - package: AssistantCore
-      # - package: LlamaSwift
-      #   product: LlamaSwift
+      - package: LlamaSwift
+        product: LlamaSwift
       - target: AssistantWidgetExtension
       - target: AssistantShareExtension
     entitlements:
@@ -110,6 +115,7 @@ targets:
         NSPhotoLibraryUsageDescription: "需要相册权限以选择壁纸、证件和小票照片"
         NSCalendarsUsageDescription: "需要日历权限以在今日安排中显示你的日程"
         NSCalendarsFullAccessUsageDescription: "需要完整日历权限以在今日安排中显示你的日程"
+        NSMotionUsageDescription: "需要运动与健身权限以识别你正在乘车或骑行，到站前提醒清点随身物品"
 
   AssistantWidgetExtension:
     type: app-extension

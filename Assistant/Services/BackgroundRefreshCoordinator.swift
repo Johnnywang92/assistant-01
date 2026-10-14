@@ -90,5 +90,11 @@ final class BackgroundRefreshCoordinator {
         if !isExpired() {
             await ShareInboxService.processAll(context: context)
         }
+
+        // 5. 到站/落地清点提醒：先按到达时间对账排期，再用运动证据判断是否已停下
+        if !isExpired() {
+            TripArrivalService.shared.syncAllReminders(context: context)
+            await TripArrivalService.shared.evaluate(context: context)
+        }
     }
 }

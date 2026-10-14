@@ -149,6 +149,18 @@
         }
       }
     },
+    "NSMotionUsageDescription" : {
+      "comment" : "Privacy - Motion Usage Description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "需要运动与健身权限以识别你正在乘车或骑行，到站前提醒清点随身物品"
+          }
+        }
+      }
+    },
     "NSPhotoLibraryAddUsageDescription" : {
       "extractionState" : "manual",
       "localizations" : {

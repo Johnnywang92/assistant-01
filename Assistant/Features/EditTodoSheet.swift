@@ -25,6 +25,10 @@ struct EditTodoSheet: View {
     @State private var customIntervalDays: Int
     @State private var isDone: Bool
     @State private var syncToCalendar: Bool
+    // 到站/落地前的随身物品清点提醒
+    @State private var hasArrivalCheck: Bool
+    @State private var arrivalDate: Date
+    @State private var arrivalTransport: TripArrivalSchedule.TransportKind
 
     @State private var qrCodePayload: String?
     @State private var qrCodeImageData: Data?
@@ -58,6 +62,9 @@ struct EditTodoSheet: View {
         self._customIntervalDays = State(initialValue: item.recurrenceIntervalDays > 0 ? item.recurrenceIntervalDays : (rule.dayInterval() > 0 ? rule.dayInterval() : 3))
         self._isDone = State(initialValue: item.status == .done)
         self._syncToCalendar = State(initialValue: item.calendarItemIdentifier != nil)
+        self._hasArrivalCheck = State(initialValue: item.arrivalReminderAt != nil)
+        self._arrivalDate = State(initialValue: item.arrivalReminderAt ?? (Calendar.current.date(byAdding: .hour, value: 2, to: .now) ?? .now))
+        self._arrivalTransport = State(initialValue: item.arrivalTransportKind)
         self._qrCodePayload = State(initialValue: item.qrCodePayload)
         self._qrCodeImageData = State(initialValue: item.qrCodeImageData)
         self._attachmentImageData = State(initialValue: item.attachmentImageData)
@@ -319,12 +326,36 @@ struct EditTodoSheet: View {
                     }
                 }
 
-                // 5. 状态切换
+                // 5. 到站/落地前清点随身物品
+                Section("到站清点") {
+                    Toggle("到站/落地时提醒我清点", isOn: $hasArrivalCheck)
+                        .onChange(of: hasArrivalCheck) { _, enabled in
+                            guard enabled else { return }
+                            Task { await NotificationService.requestAuthorization() }
+                            TripArrivalService.shared.requestMotionAuthorizationIfNeeded(for: arrivalTransport)
+                        }
+                    if hasArrivalCheck {
+                        Picker("交通方式", selection: $arrivalTransport) {
+                            ForEach(TripArrivalSchedule.TransportKind.allCases, id: \.self) { kind in
+                                Label(kind.displayName, systemImage: kind.iconName).tag(kind)
+                            }
+                        }
+                        .onChange(of: arrivalTransport) { _, kind in
+                            TripArrivalService.shared.requestMotionAuthorizationIfNeeded(for: kind)
+                        }
+                        DatePicker("预计到达时间", selection: $arrivalDate, displayedComponents: [.date, .hourAndMinute])
+                        Text(String(format: L10n.tr("到达前 %d 分钟提醒清点随身物品。开车与骑行会读取运动状态，刚停下就提醒；其余方式按预计到达时间兜底。"), arrivalTransport.advanceLeadMinutes))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // 6. 状态切换
                 Section("完成状态") {
                     Toggle("标记为已完成", isOn: $isDone)
                 }
 
-                // 6. 危险操作区
+                // 7. 危险操作区
                 Section {
                     Button(role: .destructive) {
                         showingDeleteConfirmation = true
@@ -427,6 +458,25 @@ struct EditTodoSheet: View {
         }
     }
 
+    /// 到站清点落库：改到达时间要清掉上一趟的已触发标记与残留横幅，
+    /// 否则新行程会被判定为「本次已提醒过」而永远不再弹。
+    private func applyArrivalCheck() {
+        if hasArrivalCheck {
+            let arrivalChanged = item.arrivalReminderAt != arrivalDate
+            item.arrivalReminderAt = arrivalDate
+            item.arrivalTransportKind = arrivalTransport
+            if arrivalChanged {
+                item.arrivalCheckFiredAt = nil
+                TripArrivalService.shared.clearHistory(for: item.id)
+            }
+        } else {
+            item.arrivalReminderAt = nil
+            item.arrivalTransportRaw = nil
+            item.arrivalCheckFiredAt = nil
+        }
+        TripArrivalService.shared.syncReminder(for: item)
+    }
+
     private func saveChanges() {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return }
@@ -460,6 +510,8 @@ struct EditTodoSheet: View {
                 TodoNotificationManager.shared.cancelNotification(for: item.id)
             }
         }
+
+        applyArrivalCheck()
 
         if syncToCalendar && hasDueDate {
             let calTitle = title

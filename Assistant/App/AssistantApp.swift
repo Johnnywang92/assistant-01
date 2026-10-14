@@ -60,6 +60,8 @@ struct AssistantApp: App {
                 await PickupCheckoutService.registerCategory()
                 // 护航/清点伴随通知的「关闭卡片」按钮，手表与 Mac 上都能一键收卡
                 await LiveActivityControlNotifications.registerCategories()
+                // 到站/落地清点提醒的「开始清点」按钮，锁屏上点一下就进清单
+                await TripArrivalService.shared.registerCategory()
                 // 优先刷新桌面小组件/锁屏组件共享快照，并对账扩展侧产生的指令
                 WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext)
 
@@ -67,6 +69,7 @@ struct AssistantApp: App {
                 Task {
                     try? await Task.sleep(nanoseconds: 120_000_000)
                     TodoNotificationManager.shared.syncAllTodoNotifications(context: Persistence.shared.mainContext)
+                    TripArrivalService.shared.syncAllReminders(context: Persistence.shared.mainContext)
                     ExpiryReminder.schedule()
                     PeriodicReportManager.shared.scheduleNotifications()
                     // 冷启动也排空一次分享中转区（scenePhase 首帧即为 active 时 onChange 不补触发）
@@ -115,6 +118,10 @@ struct AssistantApp: App {
 
                     // 8. 巡检查验并同步待办事项通知排期
                     TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
+
+                    // 8.1 到站/落地清点提醒：撤掉已失效排期，并在提前窗口内用运动证据判断是否该提醒
+                    TripArrivalService.shared.syncAllReminders(context: context)
+                    await TripArrivalService.shared.evaluate(context: context)
 
                     // 10. 对账扩展侧（小组件/手表卡片）产生的指令并刷新共享快照
                     WidgetSnapshotSyncController.shared.processPendingCommands(context: context)

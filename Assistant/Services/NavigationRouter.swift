@@ -332,6 +332,13 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
                 PickupCheckoutService.handle(response, context: context)
                 WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
             }
+        } else if let type = userInfo["type"] as? String, type == "tripArrival" {
+            // 到站/落地清点提醒：「开始清点」进清单页并把清单推上灵动岛，「稍后」只改下次触发时间
+            Task { @MainActor in
+                let context = Persistence.shared.mainContext
+                TripArrivalService.handle(response, context: context)
+                WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
+            }
         } else if let type = userInfo["type"] as? String, type == "liveActivityControl" {
             // 手腕/Mac 上点护航·清点的伴随关闭动作：一键结束实时活动
             Task { @MainActor in

@@ -197,6 +197,12 @@ final class TodoItem {
     var skillPracticeMinutes: Int = 0
     /// 写入系统日历后的 EKEvent identifier（用于双向同步与删除，防止孤儿日程）
     var calendarItemIdentifier: String?
+    /// 到站/落地前清点随身物品的提醒时刻；非 nil 即表示该待办开启了到站提醒。
+    var arrivalReminderAt: Date?
+    /// 到站提醒的交通方式原始值（TripArrivalSchedule.TransportKind.rawValue）
+    var arrivalTransportRaw: String?
+    /// 本次行程到站提醒的已触发时间，用于去重，避免一次行程反复弹窗
+    var arrivalCheckFiredAt: Date?
 
     init(type: TodoType, status: TodoStatus = .active, title: String, detail: String? = nil,
          pickupCode: String? = nil, courier: String? = nil, station: String? = nil, location: String? = nil,
@@ -206,7 +212,8 @@ final class TodoItem {
          qrCodePayload: String? = nil, qrCodeImageData: Data? = nil, attachmentImageData: Data? = nil,
          skillPathID: UUID? = nil, skillStageIndex: Int = 0,
          isSkillPractice: Bool = false, skillPracticeMinutes: Int = 0,
-         calendarItemIdentifier: String? = nil) {
+         calendarItemIdentifier: String? = nil,
+         arrivalReminderAt: Date? = nil, arrivalTransportRaw: String? = nil) {
         self.id = UUID()
         self.typeRaw = type.rawValue
         self.statusRaw = status.rawValue
@@ -231,6 +238,14 @@ final class TodoItem {
         self.isSkillPractice = isSkillPractice
         self.skillPracticeMinutes = skillPracticeMinutes
         self.calendarItemIdentifier = calendarItemIdentifier
+        self.arrivalReminderAt = arrivalReminderAt
+        self.arrivalTransportRaw = arrivalTransportRaw
+    }
+
+    /// 到站提醒的交通方式；未知时按 unknown 走时间兜底，不会丢提醒
+    var arrivalTransportKind: TripArrivalSchedule.TransportKind {
+        get { TripArrivalSchedule.transportKind(fromRaw: arrivalTransportRaw) }
+        set { arrivalTransportRaw = newValue.rawValue }
     }
 
     /// 是否包含可快速调出的预约二维码或图片凭证
@@ -333,6 +348,8 @@ final class TodoItem {
     func markAsCompleted(in context: ModelContext) -> TodoItem? {
         self.status = .done
         TodoNotificationManager.shared.cancelNotification(for: self.id)
+        // 行程已完成，到站清点提醒随之撤销（递归事项下一期不继承该提醒）
+        Task { @MainActor in TripArrivalService.shared.cancelAllReminders(for: self.id) }
 
         // 学习路径的练习打卡：写一条流水，供连续天数与投入时长统计重算
         if isSkillPractice, let pathID = skillPathID {
@@ -382,6 +399,9 @@ final class TodoItem {
     /// 同步清除外部集成（本地通知与系统日历关联日程，防止孤儿日程）
     func cleanupExternalIntegrations() {
         TodoNotificationManager.shared.cancelNotification(for: self.id)
+        Task { @MainActor in
+            TripArrivalService.shared.cancelAllReminders(for: self.id)
+        }
         if let calId = self.calendarItemIdentifier {
             Task { @MainActor in
                 try? await CalendarAgendaService.shared.deleteEvent(identifier: calId)
