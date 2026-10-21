@@ -219,17 +219,26 @@ struct LLMModelManagementView: View {
                             .font(.caption)
                             .foregroundStyle(AppColor.danger)
                         HStack(spacing: 10) {
+                            Button("重新下载") {
+                                modelManager.deleteModel()
+                                modelManager.startDownload(forceRestart: true)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(AppColor.feature)
+                            .controlSize(.small)
+
                             Button("重新校验") {
                                 modelManager.checkModelStatus()
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
+
                             Button("重新导入") {
                                 showFileImporter = true
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(AppColor.feature)
+                            .buttonStyle(.bordered)
                             .controlSize(.small)
+
                             Button("删除", role: .destructive) {
                                 modelManager.deleteModel()
                             }
@@ -454,6 +463,13 @@ struct LLMModelManagementView: View {
                     .padding(8)
                     .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(AppColor.surface))
 
+                    if !inferenceService.developerEndpoint.trimmingCharacters(in: .whitespaces).isEmpty,
+                       inferenceService.validatedEndpointURL == nil {
+                        Text("地址无效：明文 http 仅支持局域网 / 本机地址，公网请使用 https。")
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                    }
+
                     HStack {
                         Image(systemName: "cube.box")
                             .foregroundStyle(.secondary)
@@ -535,7 +551,7 @@ struct LLMModelManagementView: View {
 
     private var isAnyInferenceEntryAvailable: Bool {
         let remoteConfigured = inferenceService.remoteContextConsent
-            && !inferenceService.developerEndpoint.trimmingCharacters(in: .whitespaces).isEmpty
+            && inferenceService.validatedEndpointURL != nil
         // 本地路径要求二进制确实已链接，否则点击必然抛 frameworkNotLinked
         return (isEngineLinked && modelManager.isModelDownloaded) || remoteConfigured
     }

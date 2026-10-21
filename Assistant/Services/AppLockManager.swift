@@ -1,3 +1,4 @@
+import CommonCrypto
 import CryptoKit
 import Foundation
 import LocalAuthentication
@@ -74,45 +75,72 @@ public final class AppLockManager: ObservableObject {
         if let kcHash = readFromKeychain(key: keyPasscodeHash), !kcHash.isEmpty {
             return true
         }
-        // 向下兼容：如果旧版本存储在 UserDefaults，自动无缝迁移至系统 Keychain
-        if let legacyHash = UserDefaults.standard.string(forKey: keyPasscodeHash), !legacyHash.isEmpty {
-            saveToKeychain(key: keyPasscodeHash, value: legacyHash)
-            UserDefaults.standard.removeObject(forKey: keyPasscodeHash)
-            return true
-        }
-        return false
+        migrateLegacyPasscodeIfNeeded()
+        return readFromKeychain(key: keyPasscodeHash)?.isEmpty == false
     }
 
-    /// 设置 4 位数字密码（存入 iOS 硬件受保护的 Keychain）
-    public func setPasscode(_ code: String) {
-        let hashed = hash(code)
-        saveToKeychain(key: keyPasscodeHash, value: hashed)
+    /// 旧版本把哈希存在 UserDefaults：迁移到 Keychain。仅在 Keychain 无记录时触发，写入成功才删除旧值。
+    private func migrateLegacyPasscodeIfNeeded() {
+        guard let legacyHash = UserDefaults.standard.string(forKey: keyPasscodeHash), !legacyHash.isEmpty else { return }
+        if saveToKeychain(key: keyPasscodeHash, value: legacyHash) {
+            UserDefaults.standard.removeObject(forKey: keyPasscodeHash)
+        }
+    }
+
+    /// 设置 4 位数字密码（随机盐 + PBKDF2，存入 Keychain）。写入失败返回 false，不会启用锁。
+    @discardableResult
+    public func setPasscode(_ code: String) -> Bool {
+        guard saveToKeychain(key: keyPasscodeHash, value: Self.makeHash(code)) else { return false }
         UserDefaults.standard.removeObject(forKey: keyPasscodeHash)
+        resetFailures()
         isAppLockEnabled = true
         isLocked = false
+        return true
     }
 
-    /// 验证数字密码
-    public func verifyPasscode(_ code: String) -> Bool {
-        let targetHash = hash(code)
-        let legacyRawHash = hashLegacy(code)
+    // MARK: - 失败次数限制
 
-        if let kcHash = readFromKeychain(key: keyPasscodeHash) {
-            if kcHash == targetHash || kcHash == legacyRawHash {
-                // 如果是旧无盐哈希，升级为带盐哈希
-                if kcHash == legacyRawHash {
-                    saveToKeychain(key: keyPasscodeHash, value: targetHash)
-                }
-                return true
-            }
+    private let keyFailCount = "app_lock_fail_count"
+    private let keyLockoutUntil = "app_lock_lockout_until"
+
+    /// 距离下次允许尝试的剩余秒数（0 = 可尝试）。
+    public var lockoutRemaining: TimeInterval {
+        let until = UserDefaults.standard.double(forKey: keyLockoutUntil)
+        return max(0, until - Date.now.timeIntervalSince1970)
+    }
+
+    private func resetFailures() {
+        UserDefaults.standard.removeObject(forKey: keyFailCount)
+        UserDefaults.standard.removeObject(forKey: keyLockoutUntil)
+    }
+
+    /// 连续错误 5 次起递增冷却：30s、1m、5m、15m、1h（封顶）。
+    private func recordFailure() {
+        let count = UserDefaults.standard.integer(forKey: keyFailCount) + 1
+        UserDefaults.standard.set(count, forKey: keyFailCount)
+        guard count >= 5 else { return }
+        let delays: [TimeInterval] = [30, 60, 300, 900, 3600]
+        let delay = delays[min(count - 5, delays.count - 1)]
+        UserDefaults.standard.set(Date.now.timeIntervalSince1970 + delay, forKey: keyLockoutUntil)
+    }
+
+    /// 验证数字密码（冷却期内直接拒绝）
+    public func verifyPasscode(_ code: String) -> Bool {
+        guard lockoutRemaining == 0 else { return false }
+        migrateLegacyPasscodeIfNeeded()
+        guard let stored = readFromKeychain(key: keyPasscodeHash) else {
+            recordFailure()
+            return false
         }
-        if let legacyHash = UserDefaults.standard.string(forKey: keyPasscodeHash) {
-            if legacyHash == targetHash || legacyHash == legacyRawHash {
-                saveToKeychain(key: keyPasscodeHash, value: targetHash)
-                UserDefaults.standard.removeObject(forKey: keyPasscodeHash)
-                return true
+        if Self.verify(code, against: stored) {
+            // 旧的固定盐/无盐 SHA256 → 升级为随机盐 PBKDF2
+            if !stored.hasPrefix(Self.hashPrefix) {
+                saveToKeychain(key: keyPasscodeHash, value: Self.makeHash(code))
             }
+            resetFailures()
+            return true
         }
+        recordFailure()
         return false
     }
 
@@ -120,22 +148,27 @@ public final class AppLockManager: ObservableObject {
     public func removePasscode() {
         deleteFromKeychain(key: keyPasscodeHash)
         UserDefaults.standard.removeObject(forKey: keyPasscodeHash)
+        resetFailures()
         isAppLockEnabled = false
         isLocked = false
     }
 
     // MARK: - Keychain 底层安全存取
 
-    private func saveToKeychain(key: String, value: String) {
-        guard let data = value.data(using: .utf8) else { return }
-        let query: [String: Any] = [
+    @discardableResult
+    private func saveToKeychain(key: String, value: String) -> Bool {
+        guard let data = value.data(using: .utf8) else { return false }
+        let match: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: key,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            kSecAttrAccount as String: key
         ]
-        SecItemDelete(query as CFDictionary)
-        SecItemAdd(query as CFDictionary, nil)
+        // 先清掉可能存在的旧条目（含早期未带 service 的），再带 service 写入；检查结果。
+        SecItemDelete(match as CFDictionary)
+        var add = match
+        add[kSecAttrService as String] = Bundle.main.bundleIdentifier ?? "com.yifanwang.assistant01.applock"
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
 
     private func readFromKeychain(key: String) -> String? {
@@ -222,16 +255,51 @@ public final class AppLockManager: ObservableObject {
         }
     }
 
-    private func hash(_ text: String) -> String {
-        let salted = "assistant_secure_salt_\(text)"
-        let inputData = Data(salted.utf8)
-        let hashed = SHA256.hash(data: inputData)
-        return hashed.compactMap { String(format: "%02x", $0) }.joined()
+    // MARK: - 口令哈希
+
+    private static let hashPrefix = "v2$"
+    private static let pbkdf2Rounds: UInt32 = 120_000
+
+    private static func pbkdf2(_ code: String, salt: Data) -> Data {
+        var derived = Data(count: 32)
+        let pwd = Array(code.utf8)
+        _ = derived.withUnsafeMutableBytes { out in
+            salt.withUnsafeBytes { saltPtr in
+                CCKeyDerivationPBKDF(
+                    CCPBKDFAlgorithm(kCCPBKDF2), pwd, pwd.count,
+                    saltPtr.bindMemory(to: UInt8.self).baseAddress, salt.count,
+                    CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), pbkdf2Rounds,
+                    out.bindMemory(to: UInt8.self).baseAddress, 32)
+            }
+        }
+        return derived
     }
 
-    private func hashLegacy(_ text: String) -> String {
-        let inputData = Data(text.utf8)
-        let hashed = SHA256.hash(data: inputData)
-        return hashed.compactMap { String(format: "%02x", $0) }.joined()
+    private static func makeHash(_ code: String) -> String {
+        let salt = Data((0..<16).map { _ in UInt8.random(in: .min ... .max) })
+        return hashPrefix + salt.base64EncodedString() + "$" + pbkdf2(code, salt: salt).base64EncodedString()
+    }
+
+    private static func constantTimeEqual(_ a: Data, _ b: Data) -> Bool {
+        guard a.count == b.count else { return false }
+        return zip(a, b).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+    }
+
+    private static func verify(_ code: String, against stored: String) -> Bool {
+        if stored.hasPrefix(hashPrefix) {
+            let parts = stored.dropFirst(hashPrefix.count).split(separator: "$", omittingEmptySubsequences: false)
+            guard parts.count == 2,
+                  let salt = Data(base64Encoded: String(parts[0])),
+                  let expected = Data(base64Encoded: String(parts[1])) else { return false }
+            return constantTimeEqual(pbkdf2(code, salt: salt), expected)
+        }
+        // 旧版（固定盐 / 无盐 SHA256）仅用于一次性升级
+        let storedData = Data(stored.utf8)
+        return constantTimeEqual(Data(legacyHash("assistant_secure_salt_\(code)").utf8), storedData)
+            || constantTimeEqual(Data(legacyHash(code).utf8), storedData)
+    }
+
+    private static func legacyHash(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).compactMap { String(format: "%02x", $0) }.joined()
     }
 }

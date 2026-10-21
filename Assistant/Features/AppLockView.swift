@@ -138,12 +138,21 @@ struct AppLockScreen: View {
     }
 
     private func verifyCode() {
+        let wait = lockManager.lockoutRemaining
+        if wait > 0 {
+            errorMessage = "尝试次数过多，请 \(Int(wait.rounded(.up))) 秒后再试"
+            inputCode = ""
+            return
+        }
         if lockManager.verifyPasscode(inputCode) {
             lockManager.unlockDirectly()
             inputCode = ""
         } else {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
-            errorMessage = "密码错误，请重新输入"
+            let lockWait = lockManager.lockoutRemaining
+            errorMessage = lockWait > 0
+                ? "尝试次数过多，请 \(Int(lockWait.rounded(.up))) 秒后再试"
+                : "密码错误，请重新输入"
             withAnimation(.default) {
                 shakeOffset = 16
             }
@@ -356,9 +365,14 @@ struct SetPasscodeSheet: View {
 
     private func verifyAndSave() {
         if firstCode == secondCode {
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            lockManager.setPasscode(firstCode)
-            dismiss()
+            if lockManager.setPasscode(firstCode) {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                dismiss()
+            } else {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                message = "无法写入系统钥匙串，密码未保存，请重试"
+                secondCode = ""
+            }
         } else {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             message = "两次输入的密码不一致，请重试"

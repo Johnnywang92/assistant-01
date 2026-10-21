@@ -1,10 +1,13 @@
 import Foundation
+import OSLog
 import SwiftData
 
 /// 负责对话历史记录的端侧持久化、自动滚动过期清理与检索
 @MainActor
 final class DialogueHistoryManager {
     static let shared = DialogueHistoryManager()
+
+    private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Assistant", category: "DialogueHistory")
 
     private init() {}
 
@@ -35,7 +38,7 @@ final class DialogueHistoryManager {
                 }
                 try context.save()
             } catch {
-                print("⚠️ 清理超期对话记录失败: \(error)")
+                Self.log.error("清理超期对话记录失败: \(error.localizedDescription, privacy: .private)")
             }
 
         case .forever:
@@ -60,7 +63,7 @@ final class DialogueHistoryManager {
         do {
             try context.save()
         } catch {
-            print("⚠️ 保存对话记录失败: \(error)")
+            Self.log.error("保存对话记录失败: \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -76,7 +79,7 @@ final class DialogueHistoryManager {
         do {
             return try context.fetch(descriptor)
         } catch {
-            print("⚠️ 读取对话历史失败: \(error)")
+            Self.log.error("读取对话历史失败: \(error.localizedDescription, privacy: .private)")
             return []
         }
     }
@@ -113,7 +116,7 @@ final class DialogueHistoryManager {
             // 查出的是最近倒序记录，反转为按时间正序喂给 ChatML
             return records.reversed().map { (role: $0.roleRaw, text: $0.text) }
         } catch {
-            print("⚠️ 读取近期对话轮次失败: \(error)")
+            Self.log.error("读取近期对话轮次失败: \(error.localizedDescription, privacy: .private)")
             return []
         }
     }
@@ -139,7 +142,7 @@ final class DialogueHistoryManager {
             }
             try context.save()
         } catch {
-            print("⚠️ 清空对话记录失败: \(error)")
+            Self.log.error("清空对话记录失败: \(error.localizedDescription, privacy: .private)")
         }
     }
 }

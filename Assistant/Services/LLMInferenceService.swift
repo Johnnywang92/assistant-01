@@ -554,6 +554,26 @@ public final class LLMInferenceService: ObservableObject {
 
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @AppStorage("llm_developer_endpoint") public var developerEndpoint: String = "" // 如 http://192.168.1.5:11434 (局域网 Ollama)
+
+    /// 远程端点校验：`https` 任意主机可用；明文 `http` 仅允许本机/局域网地址，
+    /// 避免待办、位置等上下文经公网明文传输。
+    public var validatedEndpointURL: URL? {
+        let raw = developerEndpoint.trimmingCharacters(in: .whitespaces)
+        guard !raw.isEmpty, let url = URL(string: raw), let host = url.host?.lowercased() else { return nil }
+        switch url.scheme?.lowercased() {
+        case "https": return url
+        case "http": return Self.isLocalNetworkHost(host) ? url : nil
+        default: return nil
+        }
+    }
+
+    public static func isLocalNetworkHost(_ host: String) -> Bool {
+        if host == "localhost" || host.hasSuffix(".local") || host == "::1" { return true }
+        let p = host.split(separator: ".").compactMap { Int($0) }
+        guard p.count == 4, p.allSatisfy({ (0...255).contains($0) }) else { return false }
+        return p[0] == 10 || p[0] == 127 || (p[0] == 192 && p[1] == 168)
+            || (p[0] == 172 && (16...31).contains(p[1])) || (p[0] == 169 && p[1] == 254)
+    }
     @AppStorage("llm_remote_ollama_model") public var remoteOllamaModel: String = "" // 留空则自动跟随当前选中的预设模型（如 qwen3:1.7b / qwen3:4b）
     @AppStorage("llm_remote_context_consent") public var remoteContextConsent: Bool = false
 
@@ -1048,8 +1068,7 @@ public final class LLMInferenceService: ObservableObject {
 
         // 若启用了局域网 Ollama 联调，也支持作为备选
         if remoteContextConsent,
-           !developerEndpoint.trimmingCharacters(in: .whitespaces).isEmpty,
-           let endpointURL = URL(string: developerEndpoint) {
+           let endpointURL = validatedEndpointURL {
             let apiURL = endpointURL.appendingPathComponent("api/generate")
             var request = URLRequest(url: apiURL)
             request.httpMethod = "POST"
@@ -1203,8 +1222,7 @@ public final class LLMInferenceService: ObservableObject {
 
         // 2. 若未下载本地模型（或本地加载失败），且用户明确授权启用了局域网 Ollama
         if remoteContextConsent,
-           !developerEndpoint.trimmingCharacters(in: .whitespaces).isEmpty,
-           let endpointURL = URL(string: developerEndpoint) {
+           let endpointURL = validatedEndpointURL {
             remoteConnectionStatus = "连接中"
             if let result = await generateViaRemoteOllama(
                 query: query,
