@@ -182,14 +182,16 @@ final class HealthKitService: ObservableObject {
 
     /// 昨夜睡眠时长（小时）。
     ///
-    /// 口径：从昨天中午到今天中午之间，累加处于「已入睡」状态的样本时长。
+    /// 口径：从昨天中午到现在，累加处于「已入睡」状态的样本时长（跨来源重叠区间只算一次）。
     /// **只统计 asleep 类样本，不统计 `inBed`（在床上）**——后者与 asleep 区间重叠，
     /// 一起累加会让睡眠时长翻倍。
     private func sleepHours(start: Date) async -> HealthMetricValue? {
         guard let type = sleepType else { return nil }
-        // 从昨天中午开始，覆盖前一晚入睡到今天醒来的完整窗口
-        let windowStart = calendar.date(byAdding: .day, value: -1, to: start) ?? start
-        let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: .now, options: .strictStartDate)
+        // 昨天中午 12:00 起，覆盖前一晚入睡到今天醒来的完整窗口
+        // （`start` 是今天 0 点，不能直接减一天，否则会把昨天白天小睡和更早的样本一并算进来）
+        let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: start) ?? start
+        let windowStart = calendar.date(byAdding: .hour, value: 12, to: yesterdayStart) ?? yesterdayStart
+        let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: .now, options: [])
         let descriptor = HKSampleQueryDescriptor(
             predicates: [.categorySample(type: type, predicate: predicate)],
             sortDescriptors: []
@@ -203,9 +205,14 @@ final class HealthKitService: ObservableObject {
                 HKCategoryValueSleepAnalysis.asleepREM.rawValue
             ]
             var totalSeconds: TimeInterval = 0
-            for sample in samples {
-                guard asleepValues.contains(sample.value) else { continue }
-                totalSeconds += sample.endDate.timeIntervalSince(sample.startDate)
+            var current: (Date, Date)?
+            for interval in intervals {
+                if let c = current, interval.0 <= c.1 {
+                    current = (c.0, max(c.1, interval.1))
+                } else {
+                    if let c = current { totalSeconds += c.1.timeIntervalSince(c.0) }
+                    current = interval
+                }
             }
             guard totalSeconds > 0 else { return nil }
             let hours = totalSeconds / 3600.0
@@ -244,3 +251,11 @@ final class HealthKitService: ObservableObject {
         }
     }
 }
+            // iPhone / Apple Watch / 第三方 App 可能同时写入重叠的睡眠样本：
+            // 按时间排序后合并重叠区间再求和，避免重复计时；并裁剪到统计窗口内。
+            let intervals = samples
+                .filter { asleepValues.contains($0.value) }
+                .map { (max($0.startDate, windowStart), $0.endDate) }
+                .filter { $0.1 > $0.0 }
+                .sorted { $0.0 < $1.0 }
+            if let c = current { totalSeconds += c.1.timeIntervalSince(c.0) }
