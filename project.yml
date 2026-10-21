@@ -22,14 +22,6 @@ settings:
 packages:
   AssistantCore:
     path: Packages/AssistantCore
-  # 端侧推理运行时。产物为 llama.cpp 的 xcframework（binaryTarget）。
-  # 注意：该发布产物仅含真机切片，不含 iphonesimulator 架构。
-  # 因此模拟器目标下仍会解析失败——这是上游产物限制，不是配置错误。
-  # 端侧推理相关功能请在真机验证；`LlamaCppEngine.isEngineLinked` 会在
-  # 未链接二进制时返回 false，UI 据此如实降级，不会误报「模型损坏」。
-  LlamaSwift:
-    url: https://github.com/mattt/llama.swift
-    from: "2.0.0"
 
 targets:
   Assistant:
@@ -40,8 +32,8 @@ targets:
       - WidgetShared
     dependencies:
       - package: AssistantCore
-      - package: LlamaSwift
-        product: LlamaSwift
+      - framework: Frameworks/llama.xcframework
+        embed: true
       - target: AssistantWidgetExtension
       - target: AssistantShareExtension
     entitlements:
@@ -49,6 +41,14 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.yifanwang.assistant01
+        # Apple 健康只读接入所需的 entitlement。
+        # 基础 HealthKit（步数/睡眠/饮水/能量）免费个人团队可用；
+        # 受限的是「临床健康记录」子能力与后台投递（enableBackgroundDelivery），
+        # 本工程两者都没用到。
+        com.apple.developer.healthkit: true
+        # 随 healthkit capability 自动带上，用于区分「临床健康记录」读取范围。
+        # 本 App 不读临床记录，保留空数组表示不申请任何记录类型。
+        com.apple.developer.healthkit.access: []
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${BUNDLE_ID}
@@ -116,6 +116,9 @@ targets:
         NSCalendarsUsageDescription: "需要日历权限以在今日安排中显示你的日程"
         NSCalendarsFullAccessUsageDescription: "需要完整日历权限以在今日安排中显示你的日程"
         NSMotionUsageDescription: "需要运动与健身权限以识别你正在乘车或骑行，到站前提醒清点随身物品"
+        # Apple 健康：只读步数、活动能量、饮水与睡眠，用于给运动/喝水/服药打卡页提供真实数值。
+        # 本 App 不向「健康」写入任何数据，因此不需要 NSHealthUpdateUsageDescription。
+        NSHealthShareUsageDescription: "需要读取你在「健康」中的步数、运动能量、饮水与睡眠记录，用于在运动、喝水与服药打卡页展示真实数值，帮助你判断当天的完成情况。数据只在本机读取与展示，不会上传。"
 
   AssistantWidgetExtension:
     type: app-extension

@@ -1,3 +1,4 @@
+import Combine
 import SwiftData
 import SwiftUI
 
@@ -6,7 +7,6 @@ struct MainTabView: View {
     @Environment(\.modelContext) private var context
     @ObservedObject private var router = NavigationRouter.shared
     @ObservedObject private var tabManager = TabBarManager.shared
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
     @Query(filter: #Predicate<TodoItem> { $0.statusRaw == "active" }) private var activeTodos: [TodoItem]
     @State private var showVoice = false
     @State private var showScanner = false
@@ -15,7 +15,6 @@ struct MainTabView: View {
     @State private var crossModuleSearchText = ""
     @State private var showClipboardReadError = false
     @State private var autoStartListening = false
-    @ObservedObject private var voice = VoiceDialogueService.shared
     @ObservedObject private var clipboard = ClipboardIngestionService.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var directVoiceStatus = ""
@@ -131,7 +130,8 @@ struct MainTabView: View {
                 router.activeSheet = nil
             }
         }
-        .onChange(of: voice.isListening) { _, listening in
+        .onReceive(VoiceDialogueService.shared.$isListening.removeDuplicates()) { listening in
+            let voice = VoiceDialogueService.shared
             guard isDirectVoiceConversation, !listening, !voice.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             let query = voice.recognizedText
             voice.recognizedText = ""
@@ -146,6 +146,7 @@ struct MainTabView: View {
             }
         }
         .onAppear {
+            StartupMetrics.markOnce("mainTab.onAppear", "activeTodos=\(activeTodos.count) tab=\(router.selectedTab)")
             // 首次启动时引导用户在前置阶段完成核心权限配置，避免后续功能因权限受阻
             if !hasCompletedPermissionOnboarding {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -195,6 +196,7 @@ struct MainTabView: View {
     }
 
     private func startDirectVoiceConversation() {
+        let voice = VoiceDialogueService.shared
         guard !voice.isListening else {
             voice.stopListening()
             return

@@ -14,7 +14,6 @@ struct ItemStorageVaultView: View {
     /// 家庭常备药与健康储备（物品收纳页内统一管理，重点跟踪有效期与用药方法）
     @Query private var medicines: [MedicineItem]
 
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
     @State private var searchText: String = ""
     @State private var selectedArea: String = "全部"
     @State private var showingAddSheet: Bool = false
@@ -436,7 +435,7 @@ struct ItemStorageVaultView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedScrollContentBackground()
         .themedAppBackground()
         .themedRow()
         .navigationTitle("物品收纳找物")

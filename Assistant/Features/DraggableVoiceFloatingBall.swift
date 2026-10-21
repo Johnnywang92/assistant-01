@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// 可拖拽、自由吸附屏幕边缘的语音对话悬浮球（支持长按直启语音输入，单击展开面板，拖拽贴边）
@@ -15,7 +16,7 @@ struct DraggableVoiceFloatingBall: View {
     @State private var dragOffset: CGSize = .zero
     @State private var isDragging: Bool = false
     @State private var isLongPressing: Bool = false
-    @ObservedObject private var memoAudio = VoiceMemoAudioService.shared
+    @State private var isMemoRecording: Bool = VoiceMemoAudioService.shared.isRecording
     @ObservedObject private var seniorManager = SeniorModeManager.shared
 
     private var ballSize: CGFloat {
@@ -31,7 +32,8 @@ struct DraggableVoiceFloatingBall: View {
 
     var body: some View {
         // 语音备忘录制中隐藏悬浮球，避免麦克风被抢占
-        if isFloatingVoiceEnabled && !memoAudio.isRecording {
+        Group {
+        if isFloatingVoiceEnabled && !isMemoRecording {
             GeometryReader { proxy in
             let safeTop = proxy.safeAreaInsets.top
             let safeBottom = proxy.safeAreaInsets.bottom
@@ -174,6 +176,10 @@ struct DraggableVoiceFloatingBall: View {
                     }
             )
         }
+        }
+        }
+        .onReceive(VoiceMemoAudioService.shared.$isRecording.removeDuplicates()) { recording in
+            isMemoRecording = recording
         }
     }
 }

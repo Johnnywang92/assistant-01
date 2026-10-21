@@ -6,7 +6,7 @@ struct PeriodicReportView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var reportManager = PeriodicReportManager.shared
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @AppStorage(AppBackgroundStyle.defaultsKey) private var bgStyleRaw = AppBackgroundStyle.system.rawValue
 
     @State private var selectedPeriod: ReportPeriodType = .daily
     @State private var currentDate: Date = .now
@@ -17,6 +17,11 @@ struct PeriodicReportView: View {
     @State private var sharingFileURL: URL? = nil
     @State private var showingShareSheet: Bool = false
     @State private var showingPreviewSheet: Bool = false
+
+    /// 只订阅风格 key，判断是否自定主题底图
+    private var isCustomThemedBackground: Bool {
+        AppBackgroundStyle(rawValue: bgStyleRaw) != .system
+    }
 
     init(initialPeriod: ReportPeriodType = .daily) {
         _selectedPeriod = State(initialValue: initialPeriod)
@@ -107,8 +112,8 @@ struct PeriodicReportView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
             }
-            .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
-            .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
+            .themedScrollContentBackground()
+            .background(isCustomThemedBackground ? Color.clear : Color(.systemGroupedBackground))
             .themedAppBackground()
             .navigationTitle("复盘报告")
             .navigationBarTitleDisplayMode(.inline)

@@ -174,6 +174,8 @@ public final class NavigationRouter: ObservableObject {
         case "skills", "skill", "learning", "practice":
             selectedTab = .vault
             requestedSkillPathList = true
+        case "food", "calorie", "calories", "meal":
+            navigateTo(tab: .vault, vaultDestination: "foodCalorie")
         case "passwords", "password":
             navigateTo(tab: .passwords, vaultDestination: "passwords")
         case "documents", "document", "cards":

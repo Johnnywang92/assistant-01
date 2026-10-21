@@ -20,11 +20,53 @@ struct LifeVaultView: View {
     @Query private var children: [ChildProfile]
     @Query(sort: [SortDescriptor(\LifeEventProject.targetDate, order: .forward)]) private var lifeProjects: [LifeEventProject]
     @Query private var skillPaths: [SkillPath]
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @Query(sort: \FoodIntakeRecord.date, order: .reverse) private var foodRecords: [FoodIntakeRecord]
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var selectedDestination: VaultDestination?
     @ObservedObject private var router = NavigationRouter.shared
+    /// 订阅健康服务，快照状态变化时健康数据入口的摘要能实时刷新
+    @ObservedObject private var health = HealthKitService.shared
+
+    /// 单次渲染窗口内只算一遍的看板统计快照（与 ExpenseTrackerView 同款的 0.05s 访问窗口缓存）
+    private struct VaultStats {
+        var uncheckedDeparture = 0
+        var needCareVehicles = 0
+        var nearestAnniversary: (item: AnniversaryItem, days: Int)?
+        var expiringDocs = 0
+        var activeMeds = 0
+        var needAttentionPets = 0
+        var pendingVaccineDoses = 0
+    }
+
+    private final class VaultStatsCache {
+        var stats: VaultStats?
+        var lastComputed: CFAbsoluteTime = 0
+    }
+
+    @State private var statsCache = VaultStatsCache()
+
+    /// 一次遍历产出全部看板统计，body 里 24 处引用在同一渲染窗口内共享
+    private var stats: VaultStats {
+        let now = CFAbsoluteTimeGetCurrent()
+        if let cached = statsCache.stats, now - statsCache.lastComputed < 0.05 {
+            return cached
+        }
+        var s = VaultStats()
+        s.uncheckedDeparture = departureItems.reduce(0) { $0 + ($1.isEssential && !$1.isChecked ? 1 : 0) }
+        s.needCareVehicles = vehicles.reduce(0) { $0 + ($1.needsAttention ? 1 : 0) }
+        s.nearestAnniversary = anniversaries
+            .map { (item: $0, days: $0.daysUntilNext) }
+            .sorted { $0.days < $1.days }
+            .first
+        s.expiringDocs = documents.reduce(0) { $0 + ($1.isExpiringSoon || $1.isExpired ? 1 : 0) }
+        s.activeMeds = medications.reduce(0) { $0 + ($1.isEnabled ? 1 : 0) }
+        s.needAttentionPets = pets.reduce(0) { $0 + ($1.needsAttention ? 1 : 0) }
+        s.pendingVaccineDoses = children.reduce(0) { $0 + $1.pendingVaccines.count }
+        statsCache.stats = s
+        statsCache.lastComputed = now
+        return s
+    }
 
     private enum VaultDestination: Hashable, Identifiable {
         case lifeEvents
@@ -39,44 +81,25 @@ struct LifeVaultView: View {
         case pets
         case children
         case skillPaths
+        case foodCalorie
 
         var id: Self { self }
     }
 
-    // 随身防丢未清点核心件
-    private var uncheckedDepartureCount: Int {
-        departureItems.filter { $0.isEssential && !$0.isChecked }.count
-    }
+    // 随身防丢未清点核心件（统计来自 stats 快照）
+    private var uncheckedDepartureCount: Int { stats.uncheckedDeparture }
 
     // 爱车需要关注补能或保养/保险/年检的数量
-    private var needCareVehicleCount: Int {
-        var count = 0
-        for v in vehicles {
-            if v.needsAttention {
-                count += 1
-            }
-        }
-        return count
-    }
+    private var needCareVehicleCount: Int { stats.needCareVehicles }
 
     // 最近即将到来的纪念日
-    private var nearestAnniversary: (item: AnniversaryItem, days: Int)? {
-        let list = anniversaries.compactMap { item -> (AnniversaryItem, Int)? in
-            let days = item.daysUntilNext
-            return (item, days)
-        }.sorted { $0.1 < $1.1 }
-        return list.first
-    }
+    private var nearestAnniversary: (item: AnniversaryItem, days: Int)? { stats.nearestAnniversary }
 
     // 临期证件数量
-    private var expiringDocCount: Int {
-        documents.filter { $0.isExpiringSoon || $0.isExpired }.count
-    }
+    private var expiringDocCount: Int { stats.expiringDocs }
 
     // 活跃服药计划
-    private var activeMedCount: Int {
-        medications.filter { $0.isEnabled }.count
-    }
+    private var activeMedCount: Int { stats.activeMeds }
 
     // 人生大事状态摘要
     private var lifeEventsSummary: String {
@@ -296,10 +319,34 @@ struct LifeVaultView: View {
                 // MARK: - 4. 健康与习惯
                 Section("健康与习惯") {
                     NavigationLink {
-                        HabitAndMedicationView()
+                        FoodPhotoCalorieView()
+                    } label: {
+                        vaultRow(
+                            icon: "fork.knife.circle.fill",
+                            color: .orange,
+                            title: "饮食热量估算",
+                            status: foodStatusSummary,
+                            isAlert: false
+                        )
+                    }
+
+                    NavigationLink {
+                        HealthDataView()
                     } label: {
                         vaultRow(
                             icon: "heart.text.square.fill",
+                            color: .red,
+                            title: "健康数据",
+                            status: healthStatusSummary,
+                            isAlert: false
+                        )
+                    }
+
+                    NavigationLink {
+                        HabitAndMedicationView()
+                    } label: {
+                        vaultRow(
+                            icon: "figure.run",
                             color: .purple,
                             title: "运动与药物保健品",
                             status: "\(habits.count) 项运动 · \(activeMedCount) 项药物与保健品",
@@ -317,8 +364,8 @@ struct LifeVaultView: View {
                             icon: "pawprint.fill",
                             color: .teal,
                             title: "宠物管家",
-                            status: pets.isEmpty ? "未录入爱宠 · 每月驱虫/疫苗提醒" : "\(pets.count) 只毛孩子" + (pets.filter(\.needsAttention).count > 0 ? " · \(pets.filter(\.needsAttention).count) 项待处理" : ""),
-                            isAlert: pets.contains(where: \.needsAttention)
+                            status: pets.isEmpty ? "未录入爱宠 · 每月驱虫/疫苗提醒" : "\(pets.count) 只毛孩子" + (stats.needAttentionPets > 0 ? " · \(stats.needAttentionPets) 项待处理" : ""),
+                            isAlert: stats.needAttentionPets > 0
                         )
                     }
 
@@ -329,7 +376,7 @@ struct LifeVaultView: View {
                             icon: "figure.and.child.holdinghands",
                             color: .pink,
                             title: "亲子育儿",
-                            status: children.isEmpty ? "未录入宝贝 · 国家免疫规划疫苗追踪" : "\(children.count) 位宝贝" + (children.flatMap(\.pendingVaccines).count > 0 ? " · \(children.flatMap(\.pendingVaccines).count) 剂适龄疫苗" : ""),
+                            status: children.isEmpty ? "未录入宝贝 · 国家免疫规划疫苗追踪" : "\(children.count) 位宝贝" + (stats.pendingVaccineDoses > 0 ? " · \(stats.pendingVaccineDoses) 剂适龄疫苗" : ""),
                             isAlert: false
                         )
                     }
@@ -363,7 +410,7 @@ struct LifeVaultView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+            .themedScrollContentBackground()
             .themedAppBackground()
             .themedRow()
             .navigationTitle("生活档案")
@@ -392,6 +439,7 @@ struct LifeVaultView: View {
                 case "pets": selectedDestination = .pets
                 case "children": selectedDestination = .children
                 case "skillPaths": selectedDestination = .skillPaths
+                case "foodCalorie", "food": selectedDestination = .foodCalorie
                 default: break
                 }
                 router.requestedVaultDestination = nil
@@ -428,7 +476,19 @@ struct LifeVaultView: View {
             ChildManagementView()
         case .skillPaths:
             SkillPathListView()
+        case .foodCalorie:
+            FoodPhotoCalorieView()
         }
+    }
+
+    private var foodStatusSummary: String {
+        let cal = Calendar.current
+        let today = foodRecords.filter { cal.isDateInToday($0.date) }
+        if today.isEmpty {
+            return "拍照推测食物热量 · 支持没吃完手动调整百分比"
+        }
+        let total = Int(today.reduce(0.0) { $0 + $1.consumedCalories }.rounded())
+        return "今日已记 \(today.count) 餐 · 共摄入约 \(total) 千卡"
     }
 
     private var vehicleStatusSummary: String {
@@ -438,6 +498,25 @@ struct LifeVaultView: View {
             return "\(needCareVehicleCount) 辆车需关注"
         } else {
             return "\(vehicles.count) 辆车"
+        }
+    }
+
+    /// 健康数据入口的状态摘要。
+    ///
+    /// 只读已缓存的快照状态，**不在这里同步拉取 HealthKit**——
+    /// HealthKit 查询是异步的，放在 body 里会每次滚动都触发一遍。
+    /// 措辞刻意不写「已授权」：HealthKit 不向 App 暴露读权限状态，写了就是谎报。
+    private var healthStatusSummary: String {
+        guard HealthKitService.isAvailable else { return "此设备不支持健康数据" }
+        switch health.snapshot?.readState {
+        case .hasData:
+            return "今日步数、能量、饮水与睡眠可查看"
+        case .requestedNoData:
+            return "已请求读取，暂未读到数据"
+        case .notDetermined:
+            return "未连接 · 可读取步数与睡眠"
+        case nil:
+            return "未连接 · 可读取步数与睡眠"
         }
     }
 

@@ -65,7 +65,8 @@ public enum AssistantSettingsKeys {
         languagePreference,                    // 界面语言
         "user_lifestyle_profile",              // 生活节奏画像
         "senior_font_scale_level",             // 长辈模式字号
-        "departure_selected_scene_raw"         // 上次选择的出门场景
+        "departure_selected_scene_raw",        // 上次选择的出门场景
+        ExpenseCurrency.preferredCurrencyKey   // 记账默认币种（出国游偏好）
     ]
 
     public static let boolKeys: [String] = [
@@ -97,7 +98,7 @@ public enum AssistantSettingsKeys {
         "periodic_report_daily_time_interval",   // 日报推送时间
         "periodic_report_weekly_time_interval",  // 周报推送时间
         "periodic_report_monthly_time_interval"  // 月报推送时间
-    ]
+    ] + ExpenseCurrency.allCases.filter { $0 != .cny }.map(\.customRateDefaultsKey)
 
     /// Data 型：首页 Tab 顺序（JSON 编码的板块列表）
     public static let dataKeys: [String] = [

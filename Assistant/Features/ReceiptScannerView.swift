@@ -15,6 +15,7 @@ struct ReceiptScannerView: View {
     // 可编辑与交互兜底状态
     @State private var hasParsed: Bool = false
     @State private var amountText: String = ""
+    @State private var selectedCurrency: ExpenseCurrency = .cny
     @State private var titleText: String = ""
     @State private var selectedCategory: ExpenseCategory = .food
     @State private var selectedDate: Date = .now
@@ -62,6 +63,7 @@ struct ReceiptScannerView: View {
                                         .clipShape(RoundedRectangle(cornerRadius: 8))
                                         .overlay(alignment: .topTrailing) {
                                             Button {
+                                                guard images.indices.contains(index) else { return }
                                                 images.remove(at: index)
                                                 if images.isEmpty {
                                                     hasParsed = false
@@ -124,10 +126,26 @@ struct ReceiptScannerView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                 Spacer()
+                                Menu {
+                                    ForEach(ExpenseCurrency.allCases) { cur in
+                                        Button(cur.pickerLabel) {
+                                            selectedCurrency = cur
+                                            Haptic.selection()
+                                        }
+                                    }
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Text(selectedCurrency.flag)
+                                        Text(selectedCurrency.symbol)
+                                            .font(.subheadline.bold())
+                                        Image(systemName: "chevron.up.chevron.down")
+                                            .font(.caption2)
+                                    }
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 4)
+                                    .background(Color(.tertiarySystemFill), in: Capsule())
+                                }
                                 HStack(spacing: 2) {
-                                    Text("¥")
-                                        .font(.title2.bold())
-                                        .foregroundStyle(.primary)
                                     TextField("0.00", text: $amountText)
                                         .font(.title2.bold())
                                         .keyboardType(.decimalPad)
@@ -146,6 +164,20 @@ struct ReceiptScannerView: View {
                                 }
                             }
 
+                            if selectedCurrency != .cny,
+                               let rawVal = Double(amountText.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)),
+                               rawVal > 0 {
+                                HStack {
+                                    Text(selectedCurrency.rateDisplayString())
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text(String(format: "折合人民币 ≈ ¥%.2f", selectedCurrency.convertToCNY(rawVal)))
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+
                             if !candidateAmounts.isEmpty {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("备选提取金额（点击快捷填入）：")
@@ -159,7 +191,7 @@ struct ReceiptScannerView: View {
                                                     amountText = candStr
                                                     Haptic.selection()
                                                 } label: {
-                                                    Text("¥\(candStr)")
+                                                    Text("\(selectedCurrency.symbol)\(candStr)")
                                                         .font(.caption.monospaced().bold())
                                                         .padding(.horizontal, 8)
                                                         .padding(.vertical, 4)
@@ -263,6 +295,7 @@ struct ReceiptScannerView: View {
 
             await MainActor.run {
                 recognizedText = text
+                selectedCurrency = ExpenseCurrency.detectExplicitCurrency(in: text) ?? ExpenseCurrency.preferred()
                 amountText = parsed.amount > 0 ? String(format: "%.2f", parsed.amount) : ""
                 titleText = parsed.title
                 selectedCategory = parsed.category
@@ -291,13 +324,19 @@ struct ReceiptScannerView: View {
 
         let cleanTitle = titleText.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedTitle = cleanTitle.isEmpty ? "小票消费" : cleanTitle
+        let isForeign = selectedCurrency != .cny
+        let rate = selectedCurrency.currentRateToCNY
+        let finalCNY = isForeign ? selectedCurrency.convertToCNY(amt, rate: rate) : amt
 
         let finalResult = ExpenseParseResult(
-            amount: amt,
+            amount: finalCNY,
             isIncome: false,
             category: selectedCategory,
             title: resolvedTitle,
-            date: selectedDate
+            date: selectedDate,
+            currency: selectedCurrency,
+            foreignAmount: isForeign ? amt : nil,
+            exchangeRateToCNY: isForeign ? rate : nil
         )
         onSave(finalResult, recognizedText, images.first?.jpegData(compressionQuality: 0.82))
         Haptic.success()

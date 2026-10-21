@@ -65,8 +65,8 @@ struct TravelTicketConfirmationSheet: View {
 
                     // 5. 待确认事项卡片列表（支持用户自主调整与确认预约时间）
                     VStack(spacing: 14) {
-                        ForEach($proposedItems) { $item in
-                            proposedItemRow(item: $item)
+                        ForEach(proposedItems) { item in
+                            proposedItemRow(item: itemBinding(for: item))
                         }
                     }
                     .padding(.horizontal)
@@ -235,6 +235,18 @@ struct TravelTicketConfirmationSheet: View {
     }
 
     // MARK: - 单个建议事项卡片（支持用户自主确认与微调预约时间）
+
+    private func itemBinding(for fallback: ProposedTicketTodo) -> Binding<ProposedTicketTodo> {
+        Binding(
+            get: {
+                proposedItems.first(where: { $0.id == fallback.id }) ?? fallback
+            },
+            set: { updated in
+                guard let idx = proposedItems.firstIndex(where: { $0.id == fallback.id }) else { return }
+                proposedItems[idx] = updated
+            }
+        )
+    }
 
     private func proposedItemRow(item: Binding<ProposedTicketTodo>) -> some View {
         VStack(alignment: .leading, spacing: 10) {

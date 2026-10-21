@@ -142,7 +142,10 @@ extension DataMigrationService {
                 id: $0.id, amount: $0.amount, isIncome: $0.isIncome,
                 categoryRaw: $0.categoryRaw, title: $0.title,
                 rawText: $0.rawText, date: $0.date, createdAt: $0.createdAt,
-                linkedItemID: $0.linkedItemID
+                linkedItemID: $0.linkedItemID,
+                currencyCode: $0.currencyCode,
+                foreignAmount: $0.foreignAmount,
+                exchangeRateToCNY: $0.exchangeRateToCNY
             )
         }
 

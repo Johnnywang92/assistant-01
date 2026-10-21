@@ -14,7 +14,7 @@ struct LifeEventManagementView: View {
                     ContentUnavailableView {
                         Label("还没有人生大事项目", systemImage: "sparkles")
                     } description: {
-                        Text("把订婚、婚礼、乔迁、升学宴等复杂事项整理成清晰的阶段和分工。")
+                        Text("把买房、装修、买车、婚礼、生娃、二胎等复杂事项整理成清晰的阶段和分工。")
                     } actions: {
                         Button("创建人生大事", systemImage: "plus") { showCreate = true }
                             .buttonStyle(.borderedProminent)
@@ -86,21 +86,26 @@ struct LifeEventCreateView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("选择模板") {
-                    ForEach(LifeEventTemplate.allCases) { template in
-                        Button { selectedTemplate = template } label: {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(L10n.tr(template.rawValue)).foregroundStyle(.primary)
-                                    if template != .custom { Text("自动生成阶段与起步清单").font(.caption).foregroundStyle(.secondary) }
+                ForEach(LifeEventTemplate.groupedSelectableCases) { group in
+                    Section(group.category.displayName) {
+                        ForEach(group.templates) { template in
+                            Button { selectedTemplate = template } label: {
+                                Label {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(template.displayName).foregroundStyle(.primary)
+                                        if template != .custom {
+                                            Text("自动生成 \(template.defaultStages.count) 个阶段与 \(template.starterTasks.count) 项起步清单")
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                } icon: {
+                                    Image(systemName: template.icon).foregroundStyle(.tint)
                                 }
-                            } icon: {
-                                Image(systemName: template.icon).foregroundStyle(.tint)
+                                Spacer()
+                                if selectedTemplate == template { Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint) }
                             }
-                            Spacer()
-                            if selectedTemplate == template { Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint) }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 Section("基本信息") {
@@ -116,7 +121,7 @@ struct LifeEventCreateView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("创建") {
-                        let name = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? selectedTemplate.rawValue : title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let name = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? selectedTemplate.displayName : title.trimmingCharacters(in: .whitespacesAndNewlines)
                         _ = LifeEventTemplateFactory.createProject(title: name, template: selectedTemplate, targetDate: targetDate, location: location.isEmpty ? nil : location, budgetLimit: Double(budget) ?? 0, in: context)
                         dismiss()
                     }
@@ -204,7 +209,7 @@ struct LifeEventProjectDetailView: View {
             }
             Section("人物与分工") {
                 if projectPeople.isEmpty {
-                    Text("添加双方父母、亲友或供应商，明确每个人负责的事情。")
+                    Text(project.template.peopleHint)
                         .font(.subheadline).foregroundStyle(.secondary)
                 } else {
                     ForEach(projectPeople) { person in
@@ -249,46 +254,48 @@ struct LifeEventProjectDetailView: View {
                 }
                 Button("添加开销", systemImage: "plus.circle") { showAddExpense = true }
             }
-            Section("宾客与邀请") {
-                HStack {
-                    Label("已确认", systemImage: "checkmark.circle")
-                    Spacer()
-                    Text("\(confirmedGuestCount) / \(projectGuests.count)").foregroundStyle(.secondary)
-                }
-                ForEach(projectGuests) { guest in
-                    HStack(spacing: 10) {
-                        Image(systemName: guest.attendanceRaw == "yes" ? "checkmark.circle.fill" : "person.crop.circle")
-                            .foregroundStyle(guest.attendanceRaw == "yes" ? .green : .secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(guest.name).font(.subheadline.weight(.medium))
-                            Text([guest.relationship, guest.side, guest.tableNumber.isEmpty ? "" : "桌 \(guest.tableNumber)", guest.attendanceTitle].filter { !$0.isEmpty }.joined(separator: " · "))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
+            if project.template.supportsGuests {
+                Section("宾客与邀请") {
+                    HStack {
+                        Label("已确认", systemImage: "checkmark.circle")
                         Spacer()
+                        Text("\(confirmedGuestCount) / \(projectGuests.count)").foregroundStyle(.secondary)
                     }
-                    .contextMenu {
-                        Button("标记已确认", systemImage: "checkmark.circle") {
-                            guest.attendanceRaw = "yes"
-                            try? context.save()
+                    ForEach(projectGuests) { guest in
+                        HStack(spacing: 10) {
+                            Image(systemName: guest.attendanceRaw == "yes" ? "checkmark.circle.fill" : "person.crop.circle")
+                                .foregroundStyle(guest.attendanceRaw == "yes" ? .green : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(guest.name).font(.subheadline.weight(.medium))
+                                Text([guest.relationship, guest.side, guest.tableNumber.isEmpty ? "" : "桌 \(guest.tableNumber)", guest.attendanceTitle].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
                         }
-                        Button("标记待确认", systemImage: "questionmark.circle") {
-                            guest.attendanceRaw = "pending"
-                            try? context.save()
-                        }
-                        Button("标记不出席", systemImage: "xmark.circle") {
-                            guest.attendanceRaw = "no"
-                            try? context.save()
-                        }
-                        ShareLink(item: invitationText(for: guest), preview: SharePreview("邀请：\(guest.name)")) {
-                            Label("分享邀请通知", systemImage: "paperplane")
+                        .contextMenu {
+                            Button("标记已确认", systemImage: "checkmark.circle") {
+                                guest.attendanceRaw = "yes"
+                                try? context.save()
+                            }
+                            Button("标记待确认", systemImage: "questionmark.circle") {
+                                guest.attendanceRaw = "pending"
+                                try? context.save()
+                            }
+                            Button("标记不出席", systemImage: "xmark.circle") {
+                                guest.attendanceRaw = "no"
+                                try? context.save()
+                            }
+                            ShareLink(item: invitationText(for: guest), preview: SharePreview("邀请：\(guest.name)")) {
+                                Label("分享邀请通知", systemImage: "paperplane")
+                            }
                         }
                     }
+                    .onDelete { offsets in
+                        for index in offsets { context.delete(projectGuests[index]) }
+                        try? context.save()
+                    }
+                    Button("添加宾客", systemImage: "person.2.badge.plus") { showAddGuest = true }
                 }
-                .onDelete { offsets in
-                    for index in offsets { context.delete(projectGuests[index]) }
-                    try? context.save()
-                }
-                Button("添加宾客", systemImage: "person.2.badge.plus") { showAddGuest = true }
             }
         }
         .navigationTitle("项目详情")
@@ -297,7 +304,9 @@ struct LifeEventProjectDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("添加人物", systemImage: "person.badge.plus") { showAddPerson = true }
-                    Button("添加宾客", systemImage: "person.2.badge.plus") { showAddGuest = true }
+                    if project.template.supportsGuests {
+                        Button("添加宾客", systemImage: "person.2.badge.plus") { showAddGuest = true }
+                    }
                     ShareLink(item: shareText, preview: SharePreview(project.title)) {
                         Label("分享筹备摘要", systemImage: "square.and.arrow.up")
                     }
@@ -307,8 +316,10 @@ struct LifeEventProjectDetailView: View {
                     ShareLink(item: teamShareText, preview: SharePreview("执行分工流程")) {
                         Label("分享给执行人员", systemImage: "person.3")
                     }
-                    ShareLink(item: guestShareText, preview: SharePreview("宾客通知")) {
-                        Label("分享给宾客", systemImage: "envelope")
+                    if project.template.supportsGuests {
+                        ShareLink(item: guestShareText, preview: SharePreview("宾客通知")) {
+                            Label("分享给宾客", systemImage: "envelope")
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -319,7 +330,7 @@ struct LifeEventProjectDetailView: View {
             LifeEventAddPersonView(projectID: project.id)
         }
         .sheet(isPresented: $showAddExpense) {
-            LifeEventAddExpenseView(projectID: project.id)
+            LifeEventAddExpenseView(projectID: project.id, template: project.template)
         }
         .sheet(isPresented: $showAddGuest) {
             LifeEventAddGuestView(projectID: project.id)
@@ -360,11 +371,13 @@ struct LifeEventProjectDetailView: View {
             let duty = person.responsibility.isEmpty ? "待分工" : person.responsibility
             return "- \(person.name)（\(person.role.isEmpty ? person.relationship : person.role)）：\(duty)"
         }.joined(separator: "\n")
-        return "人生大事筹备摘要\n项目：\(project.title)\n目标日期：\(project.targetDate.formatted(date: .long, time: .omitted))\n进度：\(completed) / \(projectTasks.count) 项已完成\n宾客：\(confirmedGuestCount) / \(projectGuests.count) 人已确认\(peopleText.isEmpty ? "" : "\n\n人物与分工：\n\(peopleText)")"
+        let guestLine = project.template.supportsGuests ? "\n宾客：\(confirmedGuestCount) / \(projectGuests.count) 人已确认" : ""
+        return "人生大事筹备摘要\n项目：\(project.title)\n目标日期：\(project.targetDate.formatted(date: .long, time: .omitted))\n进度：\(completed) / \(projectTasks.count) 项已完成\(guestLine)\(peopleText.isEmpty ? "" : "\n\n人物与分工：\n\(peopleText)")"
     }
 
     private var familyShareText: String {
-        "给家长的筹备全览\n\n项目：\(project.title)\n日期：\(project.targetDate.formatted(date: .long, time: .omitted))\n地点：\(project.location?.isEmpty == false ? project.location! : "待定")\n预算：\(project.budgetLimit > 0 ? project.budgetLimit.formatted(.currency(code: "CNY")) : "待定")\n事项进度：已完成 \(completedCount) / \(projectTasks.count) 项\n宾客确认：\(confirmedGuestCount) / \(projectGuests.count) 人\n\n请在需要调整日期、预算或宾客时及时和我们沟通。"
+        let guestLine = project.template.supportsGuests ? "\n宾客确认：\(confirmedGuestCount) / \(projectGuests.count) 人" : ""
+        return "给家长的筹备全览\n\n项目：\(project.title)\n日期：\(project.targetDate.formatted(date: .long, time: .omitted))\n地点：\(project.location?.isEmpty == false ? project.location! : "待定")\n预算：\(project.budgetLimit > 0 ? project.budgetLimit.formatted(.currency(code: "CNY")) : "待定")\n事项进度：已完成 \(completedCount) / \(projectTasks.count) 项\(guestLine)\n\n请在需要调整日期、预算或分工时及时和我们沟通。"
     }
 
     private var teamShareText: String {
@@ -451,15 +464,22 @@ private struct LifeEventAddExpenseView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     let projectID: UUID
+    let template: LifeEventTemplate
     @State private var title = ""
-    @State private var category = "场地"
+    @State private var category = ""
+
+    init(projectID: UUID, template: LifeEventTemplate) {
+        self.projectID = projectID
+        self.template = template
+        _category = State(initialValue: template.expenseCategories.first ?? "其他")
+    }
     @State private var amount = ""
     @State private var paidAmount = ""
     @State private var payee = ""
     @State private var hasDueDate = false
     @State private var dueDate = Date.now
 
-    private let categories = ["场地", "摄影摄像", "餐饮", "服装礼服", "交通住宿", "物资", "其他"]
+    private var categories: [String] { template.expenseCategories }
 
     var body: some View {
         NavigationStack {

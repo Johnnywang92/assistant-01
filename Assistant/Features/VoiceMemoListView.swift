@@ -5,33 +5,44 @@ import SwiftUI
 struct VoiceMemoListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \VoiceMemo.createdAt, order: .reverse) private var memos: [VoiceMemo]
-    @StateObject private var audio = VoiceMemoAudioService.shared
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
 
     @State private var searchText = ""
     @State private var selectedTag: VoiceMemoTag?
     @State private var showRecorder = false
     @State private var memoToDelete: VoiceMemo?
 
-    private var filtered: [VoiceMemo] {
-        memos.filter { m in
-            (selectedTag == nil || m.tag == selectedTag) &&
-            (searchText.isEmpty
-             || m.title.localizedCaseInsensitiveContains(searchText)
-             || (m.transcription?.localizedCaseInsensitiveContains(searchText) ?? false))
+    private func partitionedMemos() -> (filtered: [VoiceMemo], bookmarked: [VoiceMemo], others: [VoiceMemo]) {
+        var filtered: [VoiceMemo] = []
+        var bookmarked: [VoiceMemo] = []
+        var others: [VoiceMemo] = []
+        for m in memos {
+            guard (selectedTag == nil || m.tag == selectedTag) &&
+                  (searchText.isEmpty
+                   || m.title.localizedCaseInsensitiveContains(searchText)
+                   || (m.transcription?.localizedCaseInsensitiveContains(searchText) ?? false)) else {
+                continue
+            }
+            filtered.append(m)
+            if m.isBookmarked {
+                bookmarked.append(m)
+            } else {
+                others.append(m)
+            }
         }
+        return (filtered, bookmarked, others)
     }
 
     var body: some View {
+        let partitioned = partitionedMemos()
+        let filtered = partitioned.filtered
+        let bookmarked = partitioned.bookmarked
+        let others = partitioned.others
         List {
             if !memos.isEmpty {
                 tagFilterBar
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
-
-            let bookmarked = filtered.filter(\.isBookmarked)
-            let others = filtered.filter { !$0.isBookmarked }
 
             if !bookmarked.isEmpty {
                 Section("星标") { ForEach(bookmarked) { row($0) } }
@@ -43,7 +54,7 @@ struct VoiceMemoListView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedScrollContentBackground()
         .themedAppBackground()
         .themedRow()
         .overlay {
@@ -110,7 +121,7 @@ struct VoiceMemoListView: View {
         NavigationLink {
             VoiceMemoDetailView(memo: memo)
         } label: {
-            VoiceMemoRow(memo: memo, audio: audio)
+            VoiceMemoRow(memo: memo, audio: VoiceMemoAudioService.shared)
         }
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) { memoToDelete = memo } label: { Label("删除", systemImage: "trash") }

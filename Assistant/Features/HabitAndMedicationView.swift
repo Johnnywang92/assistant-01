@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 
@@ -7,15 +8,27 @@ struct HabitAndMedicationView: View {
     @Query(sort: \PeriodicHabit.nextDueAt) private var habits: [PeriodicHabit]
     @Query private var medPlans: [MedicationPlan]
 
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
     @State private var showingAddHabitSheet = false
     @State private var showingAddMedSheet = false
     /// 轻触记录行进入编辑：nil 表示新建，非 nil 表示编辑已有记录
     @State private var editingHabit: PeriodicHabit?
     @State private var editingMed: MedicationPlan?
+    /// 订阅健康服务：打卡页要显示「健康」侧的步数、饮水与睡眠数值
+    @ObservedObject private var health = HealthKitService.shared
 
     var body: some View {
         List {
+            // MARK: - Apple 健康参考数值
+            if HealthKitService.isAvailable {
+                Section {
+                    healthReferenceSection
+                } header: {
+                    Text("今日健康参考")
+                } footer: {
+                    Text("来自「健康」App 的真实数据，只读不写。读不到数据时可能尚未授权，或今天没有记录。")
+                }
+            }
+
             Section {
                 Text("助手会自动根据周期推算下次时间，并在到期当天生成待办。运动与药物、保健品提醒可以长期持续记录。轻触任意记录可编辑。")
                     .font(.footnote)
@@ -49,7 +62,7 @@ struct HabitAndMedicationView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedScrollContentBackground()
         .themedAppBackground()
         .themedRow()
         .navigationTitle("运动与药物保健品")
@@ -67,6 +80,11 @@ struct HabitAndMedicationView: View {
         .sheet(isPresented: $showingAddMedSheet) { MedicationEditorSheet(med: nil) }
         .sheet(item: $editingHabit) { habit in HabitEditorSheet(habit: habit) }
         .sheet(item: $editingMed) { med in MedicationEditorSheet(med: med) }
+        .task {
+            // 进入打卡页时拉一次健康数据；已有快照则跳过，避免重复查询
+            guard HealthKitService.isAvailable, health.snapshot == nil else { return }
+            await health.refreshToday()
+        }
     }
 
     private func deleteHabits(at offsets: IndexSet) {
@@ -77,6 +95,83 @@ struct HabitAndMedicationView: View {
     private func deleteMeds(at offsets: IndexSet) {
         for idx in offsets { context.delete(medPlans[idx]) }
         try? context.save()
+    }
+
+    // MARK: - 健康参考数值
+
+    /// 打卡页的健康侧数值区块。
+    ///
+    /// **读不到数据时显示引导入口，而不是显示 0**——
+    /// 「今天走了 0 步」与「没读到步数」是两回事，混淆会误导用户判断完成情况。
+    @ViewBuilder
+    private var healthReferenceSection: some View {
+        switch health.snapshot?.readState {
+        case .hasData:
+            ForEach(referenceMetrics, id: \.kind) { metric in
+                HStack(spacing: 8) {
+                    Image(systemName: metric.kind.iconName)
+                        .foregroundStyle(AppColor.info)
+                        .frame(width: 22)
+                    Text(metric.kind.displayName)
+                        .font(.subheadline)
+                    Spacer()
+                    Text(HealthMetrics.format(metric.value, for: metric.kind))
+                        .font(.subheadline.bold())
+                        .foregroundStyle(AppColor.text)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(metric.kind.displayName) \(HealthMetrics.format(metric.value, for: metric.kind))")
+            }
+
+        case .requestedNoData:
+            VStack(alignment: .leading, spacing: 6) {
+                Text("还没有读到健康数据")
+                    .font(.subheadline)
+                Text("可能是尚未授权读取，或「健康」里今天还没有记录。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("连接 Apple 健康") {
+                    Task {
+                        await health.requestAuthorization()
+                        await health.refreshToday()
+                    }
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+            }
+
+        case .notDetermined, .none:
+            VStack(alignment: .leading, spacing: 6) {
+                Text("连接 Apple 健康，用真实数值辅助打卡")
+                    .font(.subheadline)
+                Text("读取步数、运动能量、饮水与睡眠；只读不写，数据不会离开本机。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("连接 Apple 健康") {
+                    Task {
+                        await health.requestAuthorization()
+                        await health.refreshToday()
+                    }
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    /// 打卡页展示的三项参考数值：步数（运动）、饮水（喝水）、睡眠（服药/休息）。
+    private struct ReferenceMetric {
+        let kind: HealthMetricKind
+        let value: Double
+    }
+
+    private var referenceMetrics: [ReferenceMetric] {
+        guard let snapshot = health.snapshot else { return [] }
+        let kinds: [HealthMetricKind] = [.stepCount, .dietaryWater, .sleep]
+        return kinds.compactMap { kind in
+            guard let value = snapshot.value(for: kind)?.value else { return nil }
+            return ReferenceMetric(kind: kind, value: value)
+        }
     }
 }
 
@@ -350,7 +445,7 @@ struct MedicationEditorSheet: View {
                     }
 
                     ForEach(timePoints.indices, id: \.self) { idx in
-                        DatePicker("第\(idx + 1)次", selection: $timePoints[idx], displayedComponents: .hourAndMinute)
+                        DatePicker("第\(idx + 1)次", selection: timePointBinding(at: idx), displayedComponents: .hourAndMinute)
                     }
                 }
 
@@ -374,6 +469,19 @@ struct MedicationEditorSheet: View {
                 adjustTimePoints(to: newValue)
             }
         }
+    }
+
+    private func timePointBinding(at index: Int) -> Binding<Date> {
+        Binding(
+            get: {
+                guard timePoints.indices.contains(index) else { return .now }
+                return timePoints[index]
+            },
+            set: { newDate in
+                guard timePoints.indices.contains(index) else { return }
+                timePoints[index] = newDate
+            }
+        )
     }
 
     private func adjustTimePoints(to count: Int) {

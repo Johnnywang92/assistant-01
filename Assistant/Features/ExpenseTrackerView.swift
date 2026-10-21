@@ -1,3 +1,4 @@
+import Combine
 import SwiftData
 import SwiftUI
 import PhotosUI
@@ -9,6 +10,10 @@ fileprivate struct ExpenseSummary {
     var currentMonthExpenses: Double = 0
     var currentMonthIncome: Double = 0
     var currentMonthCategoryBreakdown: [(category: ExpenseCategory, amount: Double, ratio: Double)] = []
+    var flexibleSpentThisMonth: Double = 0
+    var fixedSpentThisMonth: Double = 0
+    var yesterdayFlexibleSpend: Double = 0
+    var todayFlexibleSpend: Double = 0
 
     init(records: [ExpenseRecord], calendar: Calendar = .current, now: Date = .now) {
         let currentYear = calendar.component(.year, from: now)
@@ -17,10 +22,15 @@ fileprivate struct ExpenseSummary {
         var todayExp: Double = 0
         var monthExp: Double = 0
         var monthInc: Double = 0
+        var flexibleMonth: Double = 0
+        var fixedMonth: Double = 0
+        var yesterdayFlex: Double = 0
+        var todayFlex: Double = 0
         var categoryMap: [ExpenseCategory: Double] = [:]
 
         for record in records {
             let isToday = calendar.isDateInToday(record.date)
+            let isYesterday = !isToday && calendar.isDateInYesterday(record.date)
             let recYear = calendar.component(.year, from: record.date)
             let recMonth = calendar.component(.month, from: record.date)
             let isThisMonth = (recYear == currentYear && recMonth == currentMonth)
@@ -30,12 +40,23 @@ fileprivate struct ExpenseSummary {
                     monthInc += record.amount
                 }
             } else {
+                let isFixed = SafeToSpendCalculator.isFixedExpenseRecord(record.rawText)
                 if isToday {
                     todayExp += record.amount
+                    if !isFixed {
+                        todayFlex += record.amount
+                    }
+                } else if isYesterday, !isFixed {
+                    yesterdayFlex += record.amount
                 }
                 if isThisMonth {
                     monthExp += record.amount
                     categoryMap[record.category, default: 0] += record.amount
+                    if isFixed {
+                        fixedMonth += record.amount
+                    } else {
+                        flexibleMonth += record.amount
+                    }
                 }
             }
         }
@@ -43,6 +64,10 @@ fileprivate struct ExpenseSummary {
         self.todayExpenses = todayExp
         self.currentMonthExpenses = monthExp
         self.currentMonthIncome = monthInc
+        self.flexibleSpentThisMonth = flexibleMonth
+        self.fixedSpentThisMonth = fixedMonth
+        self.yesterdayFlexibleSpend = yesterdayFlex
+        self.todayFlexibleSpend = todayFlex
 
         if monthExp > 0 {
             self.currentMonthCategoryBreakdown = categoryMap.map { cat, amount in
@@ -56,11 +81,10 @@ fileprivate struct ExpenseSummary {
 struct ExpenseTrackerView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \ExpenseRecord.date, order: .reverse) private var records: [ExpenseRecord]
-    @StateObject private var voice = VoiceDialogueService.shared
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var quickInputText: String = ""
+    @AppStorage(ExpenseCurrency.preferredCurrencyKey) private var preferredCurrencyRaw: String = ExpenseCurrency.cny.rawValue
     @State private var showingManualAddSheet = false
     @State private var recordToEdit: ExpenseRecord? = nil
     @State private var feedbackBanner: String?
@@ -73,6 +97,11 @@ struct ExpenseTrackerView: View {
     @State private var recordToShare: ExpenseRecord?
 
     private var calendar: Calendar { .current }
+
+    private var preferredCurrency: ExpenseCurrency {
+        get { ExpenseCurrency(rawValue: preferredCurrencyRaw) ?? .cny }
+        nonmutating set { preferredCurrencyRaw = newValue.rawValue }
+    }
 
     // MARK: - 统计数据单次 O(N) 极速归集（引用缓存：同一渲染内多处访问只算一次）
     private final class ExpenseAnalysisCache {
@@ -93,6 +122,8 @@ struct ExpenseTrackerView: View {
             hasher.combine(record.amount)
             hasher.combine(record.isIncome)
             hasher.combine(record.categoryRaw)
+            hasher.combine(record.currencyCode)
+            hasher.combine(record.foreignAmount)
         }
         return hasher.finalize()
     }
@@ -193,19 +224,25 @@ struct ExpenseTrackerView: View {
     }
 
     var body: some View {
+        let currentSummary = summary
         NavigationStack {
             List {
-                // 0. 今日安心花动态额度（设置了月预算后显示）
-                SafeToSpendCard(records: records)
+                // 0. 今日安心花动态额度（未设月预算时显示设置入口）
+                SafeToSpendCard(
+                    flexibleSpentThisMonth: currentSummary.flexibleSpentThisMonth,
+                    fixedSpentThisMonth: currentSummary.fixedSpentThisMonth,
+                    yesterdayFlexibleSpend: currentSummary.yesterdayFlexibleSpend,
+                    todayFlexibleSpend: currentSummary.todayFlexibleSpend
+                )
                     .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
 
                 // 1. 统计卡片与本月支出构成胶囊条
                 Section {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 16) {
-                            statCard(title: "今日支出", amount: todayExpenses, color: AppColor.warning)
-                            statCard(title: "本月支出", amount: currentMonthExpenses, color: AppColor.danger)
-                            statCard(title: "本月收入", amount: currentMonthIncome, color: AppColor.success)
+                            statCard(title: "今日支出", amount: currentSummary.todayExpenses, color: AppColor.warning)
+                            statCard(title: "本月支出", amount: currentSummary.currentMonthExpenses, color: AppColor.danger)
+                            statCard(title: "本月收入", amount: currentSummary.currentMonthIncome, color: AppColor.success)
                         }
 
                         if !currentMonthCategoryBreakdown.isEmpty {
@@ -297,7 +334,43 @@ struct ExpenseTrackerView: View {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
-                            TextField("一句话记账（如：打车花了25.5元）", text: $quickInputText)
+                            Menu {
+                                ForEach(ExpenseCurrency.allCases) { cur in
+                                    Button {
+                                        preferredCurrency = cur
+                                        Haptic.selection()
+                                    } label: {
+                                        HStack {
+                                            Text(cur.pickerLabel)
+                                            if cur == preferredCurrency {
+                                                Image(systemName: "checkmark")
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Text(preferredCurrency.flag)
+                                        .font(.caption)
+                                    Text(preferredCurrency.rawValue)
+                                        .font(.caption2.bold())
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 8, weight: .bold))
+                                }
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 5)
+                                .background(
+                                    Capsule().fill(
+                                        preferredCurrency == .cny
+                                            ? Color(.tertiarySystemFill)
+                                            : Color.orange.opacity(0.16)
+                                    )
+                                )
+                                .foregroundStyle(preferredCurrency == .cny ? Color.secondary : Color.orange)
+                            }
+                            .accessibilityLabel("默认记账币种 \(preferredCurrency.displayName)")
+
+                            TextField("一句话记账（如：麦当劳38、拉面1200日元、$15）", text: $quickInputText)
                                 .textFieldStyle(.plain)
                                 .font(.body)
                                 .onSubmit { submitQuickText() }
@@ -338,8 +411,12 @@ struct ExpenseTrackerView: View {
                             Text("正在聆听... 说完点击话筒即可自动识别记账")
                                 .font(.caption2)
                                 .foregroundStyle(AppColor.danger)
+                        } else if preferredCurrency != .cny {
+                            Text("🌏 出国游模式：未写币种时默认按 \(preferredCurrency.flag) \(preferredCurrency.displayName)（\(preferredCurrency.rateDisplayString())）自动折算人民币；也可直接说“1200日元 / 25美元”")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
                         } else {
-                            Text("💡 支持自然语言：麦当劳吃了38、交房租3200、发工资15000等")
+                            Text("💡 支持自然语言与多国货币：麦当劳38、拉面1200日元、星巴克$6.5、打车300泰铢等，自动折算人民币")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
@@ -413,7 +490,7 @@ struct ExpenseTrackerView: View {
                 }
             }
             .listStyle(.insetGrouped)
-            .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+            .themedScrollContentBackground()
             .themedAppBackground()
             .themedRow()
             .navigationTitle("智能记账")
@@ -455,12 +532,19 @@ struct ExpenseTrackerView: View {
                         category: result.category,
                         title: result.title,
                         rawText: rawText,
-                        date: result.date
+                        date: result.date,
+                        currencyCode: result.isForeignCurrency ? result.currency.rawValue : nil,
+                        foreignAmount: result.foreignAmount,
+                        exchangeRateToCNY: result.exchangeRateToCNY
                     )
                     record.receiptImageData = receiptData
                     context.insert(record)
                     try? context.save()
-                    showFeedback("已从小票记入 ¥\(String(format: "%.2f", result.amount))")
+                    if let badge = record.formattedForeignBadge {
+                        showFeedback("已从小票记入 ¥\(String(format: "%.2f", result.amount))（\(badge)）")
+                    } else {
+                        showFeedback("已从小票记入 ¥\(String(format: "%.2f", result.amount))")
+                    }
                 }
             }
             .overlay(alignment: .bottom) {
@@ -475,8 +559,9 @@ struct ExpenseTrackerView: View {
                         .padding(.bottom, 24)
                 }
             }
-            .onChange(of: voice.isListening) { _, listening in
+            .onReceive(VoiceDialogueService.shared.$isListening.removeDuplicates()) { listening in
                 if !listening && isListeningQuickVoice {
+                    let voice = VoiceDialogueService.shared
                     isListeningQuickVoice = false
                     if !voice.recognizedText.isEmpty {
                         quickInputText = voice.recognizedText
@@ -513,14 +598,17 @@ struct ExpenseTrackerView: View {
         let text = quickInputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        if let result = ExpenseNaturalLanguageParser.parse(text) {
+        if let result = ExpenseNaturalLanguageParser.parse(text, defaultCurrency: preferredCurrency) {
             let record = ExpenseRecord(
                 amount: result.amount,
                 isIncome: result.isIncome,
                 category: result.category,
                 title: result.title,
                 rawText: text,
-                date: result.date
+                date: result.date,
+                currencyCode: result.isForeignCurrency ? result.currency.rawValue : nil,
+                foreignAmount: result.foreignAmount,
+                exchangeRateToCNY: result.exchangeRateToCNY
             )
             record.splitCount = max(result.splitCount, 1)
             record.splitParticipants = result.splitParticipants
@@ -530,7 +618,13 @@ struct ExpenseTrackerView: View {
             quickInputText = ""
 
             let amountStr = String(format: "%.2f", result.amount)
-            let desc = result.isIncome ? "已记入入账 ¥\(amountStr)" : "已记入 ¥\(amountStr)（\(result.category.rawValue)）"
+            let foreignSuffix: String = {
+                guard let badge = record.formattedForeignBadge else { return "" }
+                return " · 原币 \(badge)"
+            }()
+            let desc = result.isIncome
+                ? "已记入入账 ¥\(amountStr)\(foreignSuffix)"
+                : "已记入 ¥\(amountStr)（\(result.category.rawValue)\(foreignSuffix)）"
             showFeedback(desc)
         } else {
             Haptic.warning()
@@ -539,6 +633,7 @@ struct ExpenseTrackerView: View {
     }
 
     private func toggleQuickVoiceInput() {
+        let voice = VoiceDialogueService.shared
         if isListeningQuickVoice {
             // 让 isListening 的 onChange 回调统一接收最终识别文本并提交记账。
             // 这里不能提前将 isListeningQuickVoice 置 false，否则回调会误以为不是一次完整录音而直接丢弃文本。
@@ -721,14 +816,44 @@ struct ExpenseTrackerView: View {
 /// 「今日安心花（Safe-to-Spend）」：月预算扣除固定周期支出后，
 /// 按距月底剩余天数均摊出今日可用额度；昨天花剩的钱自动滚入今天。
 struct SafeToSpendCard: View {
-    let records: [ExpenseRecord]
+    var flexibleSpentThisMonth: Double
+    var fixedSpentThisMonth: Double
+    var yesterdayFlexibleSpend: Double
+    var todayFlexibleSpend: Double
     @ObservedObject private var recurringManager = RecurringExpenseManager.shared
     @State private var showingBudgetSheet = false
 
-    private var result: SafeToSpendResult? {
+    init(
+        flexibleSpentThisMonth: Double,
+        fixedSpentThisMonth: Double = 0,
+        yesterdayFlexibleSpend: Double,
+        todayFlexibleSpend: Double
+    ) {
+        self.flexibleSpentThisMonth = flexibleSpentThisMonth
+        self.fixedSpentThisMonth = fixedSpentThisMonth
+        self.yesterdayFlexibleSpend = yesterdayFlexibleSpend
+        self.todayFlexibleSpend = todayFlexibleSpend
+    }
+
+    init(records: [ExpenseRecord]) {
         let input = SafeToSpendCalculator.inputFromRecords(
             records: records,
-            fixedMonthlyTotal: recurringManager.monthlyEstimatedTotal
+            fixedMonthlyTotal: RecurringExpenseManager.shared.monthlyEstimatedTotal
+        )
+        self.flexibleSpentThisMonth = input.flexibleSpentThisMonth
+        self.fixedSpentThisMonth = input.fixedSpentThisMonth
+        self.yesterdayFlexibleSpend = input.yesterdayFlexibleSpend
+        self.todayFlexibleSpend = input.todayFlexibleSpend
+    }
+
+    private var result: SafeToSpendResult? {
+        let input = SafeToSpendInput(
+            monthlyBudget: BudgetSettings.monthlyBudget,
+            fixedMonthlyTotal: recurringManager.monthlyEstimatedTotal,
+            flexibleSpentThisMonth: flexibleSpentThisMonth,
+            fixedSpentThisMonth: fixedSpentThisMonth,
+            yesterdayFlexibleSpend: yesterdayFlexibleSpend,
+            todayFlexibleSpend: todayFlexibleSpend
         )
         let computed = SafeToSpendCalculator.compute(input: input)
         return computed.isEnabled ? computed : nil
@@ -740,77 +865,111 @@ struct SafeToSpendCard: View {
     }
 
     var body: some View {
-        if let result {
-            Button {
-                showingBudgetSheet = true
-                Haptic.light()
-            } label: {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Label("今日安心花", systemImage: "shield.lefthalf.filled")
-                            .font(.subheadline.bold())
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("距月底 \(result.daysLeft) 天")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    if result.isOverBudget {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(AppColor.danger)
-                            Text("本月弹性预算已超支 ¥\(String(format: "%.0f", -result.remainingThisMonth))，今天尽量少花")
-                                .font(.subheadline)
-                                .foregroundStyle(AppColor.danger)
-                        }
-                    } else {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text("还可以安心花")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Text(String(format: "¥%.0f", result.safeToSpendToday))
-                                .font(.system(.largeTitle, design: .rounded).bold())
-                                .foregroundStyle(result.safeToSpendToday > 0 ? AppColor.success : AppColor.warning)
-                                .contentTransition(.numericText())
-                        }
-                    }
-
-                    // 弹性预算消耗进度条
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(AppColor.fillTertiary)
-                            Capsule()
-                                .fill(result.isOverBudget ? AppColor.danger : AppColor.success)
-                                .frame(width: min(1, result.spentRatio) * geo.size.width)
-                        }
-                    }
-                    .frame(height: 6)
-
-                    HStack(spacing: 12) {
-                        Text("月预算 ¥\(String(format: "%.0f", BudgetSettings.monthlyBudget))")
-                        Text("固定支出 ¥\(String(format: "%.0f", recurringManager.monthlyEstimatedTotal))")
-                        if result.savedYesterday >= 0.5 {
-                            Text("昨日省下 ¥\(String(format: "%.0f", result.savedYesterday)) 已滚入 💰")
-                                .foregroundStyle(.green)
-                        }
-                        Spacer()
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-                .padding(14)
-                .appCard(cornerRadius: AppRadius.banner)
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("查看或编辑月度预算")
-            .sheet(isPresented: $showingBudgetSheet) {
-                BudgetEditSheet()
+        Button {
+            showingBudgetSheet = true
+            Haptic.light()
+        } label: {
+            if let result {
+                configuredCard(result)
+            } else {
+                setUpCard
             }
         }
+        .buttonStyle(.plain)
+        .accessibilityHint("查看或编辑月度预算")
+        .sheet(isPresented: $showingBudgetSheet) {
+            BudgetEditSheet()
+        }
+    }
+
+    /// 未设置月预算时的引导态：保证「月预算设置」入口始终可达
+    private var setUpCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("今日安心花", systemImage: "shield.lefthalf.filled")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "slider.horizontal.3")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Text("设置月预算，开始计算今日安心花")
+                .font(.system(.title3, design: .rounded).bold())
+                .foregroundStyle(.primary)
+
+            Text("填写每月弹性消费上限后，房租、订阅等固定支出会自动扣除，今天省下的钱会滚入明天。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(cornerRadius: AppRadius.banner)
+    }
+
+    @ViewBuilder
+    private func configuredCard(_ result: SafeToSpendResult) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("今日安心花", systemImage: "shield.lefthalf.filled")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("距月底 \(result.daysLeft) 天")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
+            if result.isOverBudget {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(AppColor.danger)
+                    Text("本月弹性预算已超支 ¥\(String(format: "%.0f", -result.remainingThisMonth))，今天尽量少花")
+                        .font(.subheadline)
+                        .foregroundStyle(AppColor.danger)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("还可以安心花")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text(String(format: "¥%.0f", result.safeToSpendToday))
+                        .font(.system(.largeTitle, design: .rounded).bold())
+                        .foregroundStyle(result.safeToSpendToday > 0 ? AppColor.success : AppColor.warning)
+                        .contentTransition(.numericText())
+                }
+            }
+
+            // 弹性预算消耗进度条
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(AppColor.fillTertiary)
+                    Capsule()
+                        .fill(result.isOverBudget ? AppColor.danger : AppColor.success)
+                        .frame(width: min(1, result.spentRatio) * geo.size.width)
+                }
+            }
+            .frame(height: 6)
+
+            HStack(spacing: 12) {
+                Text("月预算 ¥\(String(format: "%.0f", BudgetSettings.monthlyBudget))")
+                Text("固定支出 ¥\(String(format: "%.0f", recurringManager.monthlyEstimatedTotal))")
+                if result.savedYesterday >= 0.5 {
+                    Text("昨日省下 ¥\(String(format: "%.0f", result.savedYesterday)) 已滚入 💰")
+                        .foregroundStyle(.green)
+                }
+                Spacer()
+                Image(systemName: "slider.horizontal.3")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard(cornerRadius: AppRadius.banner)
     }
 }
 
@@ -818,8 +977,12 @@ struct SafeToSpendCard: View {
 
 struct BudgetEditSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     @ObservedObject private var recurringManager = RecurringExpenseManager.shared
     @State private var budgetText: String = ""
+    /// 正在编辑的固定支出；nil 表示当前处于「新增」流程。
+    @State private var editingItem: RecurringExpenseItem?
+    @State private var isAddingItem = false
 
     private var disposableBudget: Double {
         let budget = Double(budgetText) ?? 0
@@ -853,23 +1016,51 @@ struct BudgetEditSheet: View {
                     }
                 }
 
-                Section("自动扣除的固定支出（月均）") {
-                    let active = recurringManager.items.filter { !$0.isPaused }
-                    if active.isEmpty {
-                        Text("暂无固定周期支出，可在「生活档案 → 固定支出」中添加房租、订阅等")
+                Section {
+                    // 暂停项也要展示：否则用户不知道「这条为什么没被扣预算」，
+                    // 也没法在这里把它恢复。合计只统计未暂停项。
+                    if recurringManager.items.isEmpty {
+                        Text("暂无固定周期支出，点下方按钮添加房租、订阅等月度刚性开销。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(active) { item in
-                            HStack {
-                                Text(item.title)
-                                    .font(.subheadline)
-                                Spacer()
-                                Text("¥\(String(format: "%.0f", item.monthlyEquivalentAmount))\(item.cycle.displayUnit)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                        ForEach(recurringManager.items) { item in
+                            Button {
+                                editingItem = item
+                            } label: {
+                                RecurringExpenseRow(item: item)
+                            }
+                            .buttonStyle(.plain)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button("删除", systemImage: "trash", role: .destructive) {
+                                    recurringManager.delete(id: item.id)
+                                    Haptic.impact(style: .light)
+                                }
+                            }
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                Button(item.isPaused ? "恢复" : "暂停", systemImage: item.isPaused ? "play.fill" : "pause.fill") {
+                                    recurringManager.togglePause(for: item)
+                                    Haptic.impact(style: .light)
+                                }
+                                .tint(item.isPaused ? AppColor.success : AppColor.warning)
+                            }
+                            .contextMenu {
+                                Button("编辑", systemImage: "pencil") { editingItem = item }
+                                Button(item.isPaused ? "恢复扣除" : "暂停扣除",
+                                       systemImage: item.isPaused ? "play.fill" : "pause.fill") {
+                                    recurringManager.togglePause(for: item)
+                                }
+                                Button("立即记一笔", systemImage: "plus.circle") {
+                                    recurringManager.recordNow(item: item, in: context)
+                                    Haptic.success()
+                                }
+                                Divider()
+                                Button("删除", systemImage: "trash", role: .destructive) {
+                                    recurringManager.delete(id: item.id)
+                                }
                             }
                         }
+
                         HStack {
                             Text("合计").bold()
                             Spacer()
@@ -877,6 +1068,18 @@ struct BudgetEditSheet: View {
                                 .bold()
                                 .foregroundStyle(.indigo)
                         }
+                    }
+
+                    Button {
+                        isAddingItem = true
+                    } label: {
+                        Label("添加固定支出", systemImage: "plus.circle.fill")
+                    }
+                } header: {
+                    Text("自动扣除的固定支出")
+                } footer: {
+                    if !recurringManager.items.filter({ $0.isPaused }).isEmpty || !recurringManager.items.isEmpty {
+                        Text("点按任意一项可修改金额、周期与提醒。暂停的项目不计入扣除合计。")
                     }
                 }
             }
@@ -899,7 +1102,252 @@ struct BudgetEditSheet: View {
                 let budget = BudgetSettings.monthlyBudget
                 budgetText = budget > 0 ? String(format: "%.0f", budget) : ""
             }
+            .sheet(isPresented: $isAddingItem) {
+                RecurringExpenseEditorSheet(itemToEdit: nil)
+            }
+            // 用 item: nil 表达 dismiss，避免 UUID 被误当"可编辑"标记。
+            .sheet(item: $editingItem) { item in
+                RecurringExpenseEditorSheet(itemToEdit: item)
+            }
         }
+    }
+}
+
+// MARK: - 固定支出列表行
+
+private struct RecurringExpenseRow: View {
+    let item: RecurringExpenseItem
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: item.category.icon)
+                .font(.subheadline)
+                .foregroundStyle(item.isPaused ? Color.secondary : AppColor.primary)
+                .frame(width: 26)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(item.title)
+                        .font(.subheadline)
+                        .foregroundStyle(item.isPaused ? .secondary : .primary)
+                    if item.isPaused {
+                        Text("已暂停")
+                            .font(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(AppColor.fillTertiary))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                // 折算口径必须写清：年费 ÷12、周费 ×52/12 与用户心里的「每月多少」不同源，
+                // 不说明会让「¥15000/年」和列表里其他项无法横向比较。
+                Text("¥\(String(format: "%.0f", item.amount))\(item.cycle.displayUnit) · 月均 ¥\(String(format: "%.0f", item.monthlyEquivalentAmount))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text("¥\(String(format: "%.0f", item.monthlyEquivalentAmount))")
+                .font(.subheadline)
+                .foregroundStyle(item.isPaused ? .secondary : .primary)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color(.tertiaryLabel))
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - 新增 / 编辑固定支出
+
+private struct RecurringExpenseEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    /// nil = 新增；非 nil = 编辑该条目。
+    let itemToEdit: RecurringExpenseItem?
+
+    @State private var title = ""
+    @State private var amountText = ""
+    @State private var category: ExpenseCategory = .living
+    @State private var cycle: RecurringExpenseCycle = .monthly
+    @State private var customDaysText = "30"
+    @State private var nextDueDate = Date.now
+    @State private var isAutoRecord = true
+    @State private var isReminderEnabled = true
+    @State private var reminderDaysText = "2"
+    @State private var notes = ""
+
+    private var isEditing: Bool { itemToEdit != nil }
+
+    private var parsedAmount: Double? {
+        let cleaned = amountText.replacingOccurrences(of: ",", with: "")
+        guard let value = Double(cleaned), value > 0 else { return nil }
+        return value
+    }
+
+    /// 自定义周期间隔需 ≥1，否则 advanceToNextCycleDate 会退化成不推进。
+    private var customDaysInterval: Int {
+        max(1, Int(customDaysText) ?? 30)
+    }
+
+    private var reminderDays: Int {
+        min(60, max(0, Int(reminderDaysText) ?? 2))
+    }
+
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && parsedAmount != nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("名称，例如：房租、Netflix 会员", text: $title)
+                    HStack {
+                        Text("每次扣费金额").foregroundStyle(.secondary)
+                        Spacer()
+                        TextField("0", text: $amountText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .font(.system(.body, design: .rounded).bold())
+                        Text("¥").foregroundStyle(.secondary)
+                    }
+                    Picker("消费类别", selection: $category) {
+                        ForEach(ExpenseCategory.allCases.filter { !$0.isIncome }, id: \.self) { c in
+                            Label(L10n.tr(c.rawValue), systemImage: c.icon).tag(c)
+                        }
+                    }
+                } header: {
+                    Text("基本信息")
+                } footer: {
+                    if !canSave && !title.isEmpty {
+                        Text("金额需为大于 0 的数字")
+                            .foregroundStyle(AppColor.danger)
+                    }
+                }
+
+                Section("周期与排期") {
+                    Picker("周期", selection: $cycle) {
+                        ForEach(RecurringExpenseCycle.allCases) { c in
+                            Label(L10n.tr(c.rawValue), systemImage: c.icon).tag(c)
+                        }
+                    }
+                    if cycle == .customDays {
+                        HStack {
+                            Text("间隔天数").foregroundStyle(.secondary)
+                            Spacer()
+                            TextField("30", text: $customDaysText)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                            Text("天").foregroundStyle(.secondary)
+                        }
+                    }
+                    DatePicker("下次扣费", selection: $nextDueDate, displayedComponents: [.date])
+                }
+
+                Section {
+                    Toggle("到期自动记入账本", isOn: $isAutoRecord)
+                    Toggle("扣费前提醒", isOn: $isReminderEnabled)
+                    if isReminderEnabled {
+                        HStack {
+                            Text("提前天数").foregroundStyle(.secondary)
+                            Spacer()
+                            TextField("2", text: $reminderDaysText)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                            Text("天").foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("记账与提醒")
+                } footer: {
+                    // 提前天数大于扣费周期时，这次提醒毫无意义（提醒日已过扣费日），
+                    // 所以在表单层就说明，不让用户自己撞这个坑。
+                    if isReminderEnabled && cycle == .customDays && reminderDays >= customDaysInterval {
+                        Text("提醒提前 \(reminderDays) 天不少于扣费间隔 \(customDaysInterval) 天，这次提醒会落在下个周期之后，实际不会触发。")
+                            .foregroundStyle(AppColor.warning)
+                    } else if isReminderEnabled && cycle == .monthly && reminderDays > 31 {
+                        Text("按月扣费最多提前 30 天提醒更有效。")
+                            .foregroundStyle(AppColor.warning)
+                    }
+                }
+
+                Section("备注") {
+                    TextField("可选，例如：自动扣款银行卡尾号 1234", text: $notes, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+            }
+            .navigationTitle(isEditing ? "编辑固定支出" : "添加固定支出")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { save() }
+                        .disabled(!canSave)
+                }
+            }
+            .onAppear(perform: loadIfNeeded)
+        }
+    }
+
+    /// 只在首次出现时回填。复用同一个 sheet 时若每次 onAppear 都重置，
+    /// 用户滚动导致的重新呈现会抹掉刚输入的内容。
+    private func loadIfNeeded() {
+        guard title.isEmpty, amountText.isEmpty else { return }
+        guard let item = itemToEdit else {
+            // 新增时默认给一个月后的今天，比「今天」更符合下期扣费的直觉。
+            nextDueDate = Calendar.current.date(byAdding: .month, value: 1, to: .now) ?? .now
+            return
+        }
+        title = item.title
+        amountText = String(format: "%.2f", item.amount)
+        category = item.category
+        cycle = item.cycle
+        customDaysText = String(item.customDaysInterval)
+        nextDueDate = item.nextDueDate
+        isAutoRecord = item.isAutoRecord
+        isReminderEnabled = item.isReminderEnabled
+        reminderDaysText = String(item.reminderDaysBefore)
+        notes = item.notes ?? ""
+    }
+
+    private func save() {
+        guard let amount = parsedAmount else { return }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 以原条目为基底改写：这样 id / createdAt / lastRecordedDate
+        // 这些不属于用户可编辑范围的状态不会被抹掉，也不会因漏写而丢历史。
+        var item = itemToEdit ?? RecurringExpenseItem(
+            title: trimmedTitle,
+            amount: amount,
+            category: category,
+            cycle: cycle,
+            customDaysInterval: customDaysInterval,
+            nextDueDate: nextDueDate
+        )
+        item.title = trimmedTitle
+        item.amount = amount
+        item.category = category
+        item.cycle = cycle
+        item.customDaysInterval = customDaysInterval
+        item.nextDueDate = nextDueDate
+        item.isAutoRecord = isAutoRecord
+        item.isReminderEnabled = isReminderEnabled
+        item.reminderDaysBefore = reminderDays
+        item.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+
+        if isEditing {
+            RecurringExpenseManager.shared.update(item: item)
+        } else {
+            RecurringExpenseManager.shared.add(item: item)
+        }
+        Haptic.success()
+        dismiss()
     }
 }
 
@@ -927,6 +1375,14 @@ struct ExpenseRow: View {
                     Text(L10n.tr(item.category.rawValue))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                    if let foreignBadge = item.formattedForeignBadge {
+                        Text(foreignBadge)
+                            .font(.caption2.monospacedDigit().weight(.medium))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.orange.opacity(0.14)))
+                            .foregroundStyle(.orange)
+                    }
                     Text(item.date.formatted(date: .omitted, time: .shortened))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -935,9 +1391,16 @@ struct ExpenseRow: View {
 
             Spacer()
 
-            Text(String(format: "%@¥%.2f", item.isIncome ? "+" : "-", item.amount))
-                .font(.system(.body, design: .rounded).bold())
-                .foregroundStyle(item.isIncome ? Color.green : Color.primary)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(String(format: "%@¥%.2f", item.isIncome ? "+" : "-", item.amount))
+                    .font(.system(.body, design: .rounded).bold())
+                    .foregroundStyle(item.isIncome ? Color.green : Color.primary)
+                if let foreignText = item.formattedForeignAmount {
+                    Text(foreignText)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 11, weight: .semibold))
@@ -959,6 +1422,10 @@ struct AddOrEditExpenseSheet: View {
 
     @State private var isIncome: Bool = false
     @State private var amountString: String = ""
+    @State private var selectedCurrency: ExpenseCurrency = .cny
+    @State private var exchangeRateString: String = "1.0"
+    @State private var isSyncingOnlineRates: Bool = false
+    @State private var rateStatusMessage: String? = nil
     @State private var selectedCategory: ExpenseCategory = .food
     @State private var title: String = ""
     @State private var date: Date = .now
@@ -971,6 +1438,27 @@ struct AddOrEditExpenseSheet: View {
 
     private var isEditing: Bool {
         recordToEdit != nil
+    }
+
+    private var parsedInputAmount: Double {
+        Double(amountString.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)) ?? 0
+    }
+
+    private var parsedExchangeRate: Double {
+        guard selectedCurrency != .cny else { return 1.0 }
+        if let val = Double(exchangeRateString.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)), val > 0 {
+            return val
+        }
+        return selectedCurrency.currentRateToCNY
+    }
+
+    /// 最终落库的人民币金额（CNY）
+    private var convertedCNYAmount: Double {
+        guard parsedInputAmount > 0 else { return 0 }
+        if selectedCurrency == .cny {
+            return (parsedInputAmount * 100).rounded() / 100
+        }
+        return selectedCurrency.convertToCNY(parsedInputAmount, rate: parsedExchangeRate)
     }
 
     private var availableCategories: [ExpenseCategory] {
@@ -1002,12 +1490,111 @@ struct AddOrEditExpenseSheet: View {
                     }
 
                     HStack {
-                        Text("¥")
-                            .font(.title2.bold())
-                            .foregroundStyle(isIncome ? Color.green : Color.red)
+                        Menu {
+                            ForEach(ExpenseCurrency.allCases) { cur in
+                                Button {
+                                    selectedCurrency = cur
+                                    exchangeRateString = cur.formatRateInput()
+                                    rateStatusMessage = nil
+                                    Haptic.selection()
+                                } label: {
+                                    HStack {
+                                        Text(cur.pickerLabel)
+                                        if cur == selectedCurrency {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(selectedCurrency.flag)
+                                Text(selectedCurrency.symbol)
+                                    .font(.title3.bold())
+                                    .foregroundStyle(isIncome ? Color.green : Color.red)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+                        }
+
                         TextField("0.00", text: $amountString)
                             .keyboardType(.decimalPad)
                             .font(.system(.title2, design: .rounded).bold())
+                    }
+
+                    if selectedCurrency != .cny {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("折合人民币")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(String(format: "¥%.2f", convertedCNYAmount))
+                                    .font(.system(.headline, design: .rounded).bold())
+                                    .foregroundStyle(isIncome ? Color.green : Color.orange)
+                            }
+
+                            HStack(spacing: 8) {
+                                Text("汇率 (1 \(selectedCurrency.rawValue) = )")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                TextField(selectedCurrency.formatRateInput(), text: $exchangeRateString)
+                                    .keyboardType(.decimalPad)
+                                    .font(.caption.monospacedDigit().bold())
+                                    .multilineTextAlignment(.trailing)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 6))
+                                    .frame(width: 96)
+                                Text("CNY")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button {
+                                    syncOnlineExchangeRates()
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        if isSyncingOnlineRates {
+                                            ProgressView().controlSize(.mini)
+                                        } else {
+                                            Image(systemName: "arrow.triangle.2.circlepath")
+                                        }
+                                        Text("实时汇率")
+                                    }
+                                    .font(.caption2.bold())
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                                .disabled(isSyncingOnlineRates)
+                            }
+
+                            HStack {
+                                Text(selectedCurrency.rateDisplayString(rate: parsedExchangeRate))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                if selectedCurrency.hasCustomRate() || abs(parsedExchangeRate - selectedCurrency.defaultRateToCNY) > 0.00001 {
+                                    Button("恢复参考汇率") {
+                                        selectedCurrency.resetRateToDefault()
+                                        exchangeRateString = selectedCurrency.formatRateInput(selectedCurrency.defaultRateToCNY)
+                                        rateStatusMessage = nil
+                                        Haptic.light()
+                                    }
+                                    .font(.caption2)
+                                }
+                            }
+
+                            if let rateStatusMessage {
+                                Text(rateStatusMessage)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.top, 4)
                     }
                 }
 
@@ -1052,7 +1639,7 @@ struct AddOrEditExpenseSheet: View {
                             HStack {
                                 Text("每人应付")
                                 Spacer()
-                                Text(amount / Double(count), format: .currency(code: "CNY")).fontWeight(.semibold)
+                                Text(convertedCNYAmount / Double(count), format: .currency(code: "CNY")).fontWeight(.semibold)
                             }
                             .foregroundStyle(.secondary)
                         }
@@ -1102,11 +1689,15 @@ struct AddOrEditExpenseSheet: View {
             .onAppear {
                 if let record = recordToEdit {
                     isIncome = record.isIncome
-                    if record.amount.truncatingRemainder(dividingBy: 1) == 0 {
-                        amountString = String(format: "%.0f", record.amount)
+                    selectedCurrency = record.currency
+                    let displayAmt = record.isForeignCurrency ? (record.foreignAmount ?? record.amount) : record.amount
+                    if displayAmt.truncatingRemainder(dividingBy: 1) == 0 {
+                        amountString = String(format: "%.0f", displayAmt)
                     } else {
-                        amountString = String(format: "%.2f", record.amount)
+                        amountString = String(format: "%.2f", displayAmt)
                     }
+                    let rate = record.exchangeRateToCNY ?? record.currency.currentRateToCNY
+                    exchangeRateString = record.currency.formatRateInput(rate)
                     selectedCategory = record.category
                     title = record.title
                     date = record.date
@@ -1115,6 +1706,9 @@ struct AddOrEditExpenseSheet: View {
                     splitCountString = String(max(record.splitCount, 1))
                     splitParticipants = record.splitParticipants
                 } else {
+                    let pref = ExpenseCurrency.preferred()
+                    selectedCurrency = pref
+                    exchangeRateString = pref.formatRateInput()
                     if !isIncome {
                         selectedCategory = availableCategories.first ?? .food
                     }
@@ -1130,7 +1724,7 @@ struct AddOrEditExpenseSheet: View {
                     Button(isEditing ? "保存修改" : "保存") {
                         saveRecord()
                     }
-                    .disabled((Double(amountString.trimmingCharacters(in: .whitespaces)) ?? 0) <= 0)
+                    .disabled(convertedCNYAmount <= 0)
                 }
             }
             .alert("确认删除账目", isPresented: $showingDeleteConfirm) {
@@ -1145,15 +1739,25 @@ struct AddOrEditExpenseSheet: View {
     }
 
     private func saveRecord() {
-        guard let amount = Double(amountString.trimmingCharacters(in: .whitespaces)), amount > 0 else { return }
+        let inputAmount = parsedInputAmount
+        let cnyAmount = convertedCNYAmount
+        guard inputAmount > 0, cnyAmount > 0 else { return }
         let cleanTitle = title.trimmingCharacters(in: .whitespaces)
+        let isForeign = selectedCurrency != .cny
+        let rate = parsedExchangeRate
+        if isForeign {
+            selectedCurrency.setCustomRateToCNY(rate)
+        }
 
         if let record = recordToEdit {
-            record.amount = amount
+            record.amount = cnyAmount
             record.isIncome = isIncome
             record.category = selectedCategory
             record.title = cleanTitle.isEmpty ? selectedCategory.rawValue : cleanTitle
             record.date = date
+            record.currencyCode = isForeign ? selectedCurrency.rawValue : nil
+            record.foreignAmount = isForeign ? inputAmount : nil
+            record.exchangeRateToCNY = isForeign ? rate : nil
             record.receiptImageData = receiptImageData
             record.linkedItemID = linkedItemID
             record.splitCount = max(Int(splitCountString) ?? 1, 1)
@@ -1162,11 +1766,14 @@ struct AddOrEditExpenseSheet: View {
             Haptic.success()
         } else {
             let record = ExpenseRecord(
-                amount: amount,
+                amount: cnyAmount,
                 isIncome: isIncome,
                 category: selectedCategory,
                 title: cleanTitle.isEmpty ? selectedCategory.rawValue : cleanTitle,
-                date: date
+                date: date,
+                currencyCode: isForeign ? selectedCurrency.rawValue : nil,
+                foreignAmount: isForeign ? inputAmount : nil,
+                exchangeRateToCNY: isForeign ? rate : nil
             )
             context.insert(record)
             record.receiptImageData = receiptImageData
@@ -1177,6 +1784,25 @@ struct AddOrEditExpenseSheet: View {
             Haptic.success()
         }
         dismiss()
+    }
+
+    private func syncOnlineExchangeRates() {
+        isSyncingOnlineRates = true
+        rateStatusMessage = nil
+        Task {
+            let ok = await ExpenseCurrency.refreshOnlineRates()
+            await MainActor.run {
+                isSyncingOnlineRates = false
+                if ok {
+                    exchangeRateString = selectedCurrency.formatRateInput()
+                    rateStatusMessage = "已同步最新汇率"
+                    Haptic.success()
+                } else {
+                    rateStatusMessage = "当前离线或网络受限，已使用本地汇率（支持手动调整）"
+                    Haptic.warning()
+                }
+            }
+        }
     }
 
     private func deleteCurrentRecord() {
@@ -1200,6 +1826,10 @@ private struct ExpenseShareView: View {
     private var shareText: String {
         let kind = record.isIncome ? "收入" : "支出"
         var lines = ["智能记账 · \(kind)", "项目：\(record.title)", "金额：¥\(String(format: "%.2f", record.amount))", "分类：\(record.category.rawValue)", "日期：\(record.date.formatted(date: .abbreviated, time: .shortened))"]
+        if let foreignBadge = record.formattedForeignBadge {
+            let rateText = record.exchangeRateToCNY.map { String(format: "（汇率 1 %@ = %.4f CNY）", record.currency.rawValue, $0) } ?? ""
+            lines.insert("外币原额：\(foreignBadge)\(rateText)", at: 3)
+        }
         if !record.isIncome && splitCount > 1 {
             lines.append("AA：\(splitCount) 人，每人 ¥\(String(format: "%.2f", record.amount / Double(splitCount)))")
             let participants = record.splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)

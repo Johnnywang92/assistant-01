@@ -5,7 +5,6 @@ import SwiftUI
 struct VehicleManagementView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \VehicleProfile.createdAt, order: .reverse) private var vehicles: [VehicleProfile]
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
 
     @State private var showingAddSheet = false
     @State private var vehicleToEdit: VehicleProfile?
@@ -67,7 +66,7 @@ struct VehicleManagementView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedScrollContentBackground()
         .themedAppBackground()
         .navigationTitle("爱车守护")
         .navigationBarTitleDisplayMode(.inline)

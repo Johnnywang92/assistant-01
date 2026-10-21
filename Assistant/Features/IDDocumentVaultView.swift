@@ -12,7 +12,6 @@ struct IDDocumentVaultView: View {
     @Query(sort: \IDDocumentItem.createdAt, order: .reverse) private var documents: [IDDocumentItem]
     /// 独立实例（非共享单例）：与密码保险箱一致，每次进入页面都需重新身份验证
     @StateObject private var auth = BiometricAuthManager()
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
 
     @State private var showingAddSheet = false
     @State private var selectedDocumentForDetail: IDDocumentItem?
@@ -128,7 +127,7 @@ struct IDDocumentVaultView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedScrollContentBackground()
         .themedRow()
         .searchable(text: $searchText, prompt: "搜索证件名称、持有人或号码")
     }
@@ -169,7 +168,7 @@ struct IDDocumentVaultView: View {
             .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
+        .themedPageBackground()
     }
 
     private func triggerCopyFeedback() {

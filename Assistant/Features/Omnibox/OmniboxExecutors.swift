@@ -94,6 +94,14 @@ enum OmniboxExecutor {
         let title = action.params["title"]?.isEmpty == false ? action.params["title"]! : L10n.tr("投喂记录")
         // 短信/订单截图里识别出的交易时间优先于当前时间
         let transactionDate = OmniboxPlanner.parseParamDate(action.params["dateISO"]) ?? .now
+        let currencyCode: String? = {
+            guard let code = action.params["currency"],
+                  let cur = ExpenseCurrency(rawValue: code),
+                  cur != .cny else { return nil }
+            return cur.rawValue
+        }()
+        let foreignAmount = currencyCode != nil ? Double(action.params["foreignAmount"] ?? "") : nil
+        let exchangeRate = currencyCode != nil ? Double(action.params["exchangeRate"] ?? "") : nil
 
         let record = ExpenseRecord(
             amount: amountValue,
@@ -101,7 +109,10 @@ enum OmniboxExecutor {
             category: category,
             title: title,
             rawText: action.summary,
-            date: transactionDate
+            date: transactionDate,
+            currencyCode: currencyCode,
+            foreignAmount: foreignAmount,
+            exchangeRateToCNY: exchangeRate
         )
         context.insert(record)
         try context.save()

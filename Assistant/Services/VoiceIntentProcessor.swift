@@ -327,13 +327,23 @@ struct VoiceIntentProcessor {
             category: parsed.category,
             title: parsed.title,
             rawText: raw,
-            date: parsed.date
+            date: parsed.date,
+            currencyCode: parsed.isForeignCurrency ? parsed.currency.rawValue : nil,
+            foreignAmount: parsed.foreignAmount,
+            exchangeRateToCNY: parsed.exchangeRateToCNY
         )
         context.insert(record)
         try? context.save()
 
         let dayLabel = relativeDayLabel(for: parsed.date, calendar: cal)
         let amountText = formatAmount(parsed.amount)
+        let foreignNote: String = {
+            guard parsed.isForeignCurrency, let foreignAmount = parsed.foreignAmount else { return "" }
+            return L10n.choose(
+                "（原币 \(parsed.currency.formatAmount(foreignAmount))，折合人民币 \(amountText) 元）",
+                " (original \(parsed.currency.formatAmount(foreignAmount)), ≈ ¥\(amountText))"
+            )
+        }()
         // 日/月窗口谓词下推：只为算两个合计数不再把整本账（含小票 blob 字段）物化到主线程
         let dayInterval = cal.dateInterval(of: .day, for: parsed.date)
         let sameDayTotal = Self.expenseTotal(
@@ -350,15 +360,15 @@ struct VoiceIntentProcessor {
 
         if parsed.isIncome {
             return L10n.choose(
-                "已为你记入\(dayLabel)的一笔【\(parsed.category.rawValue)】入账 \(amountText) 元（\(parsed.title)）。",
-                "Recorded \(dayLabel)'s [\(L10n.tr(parsed.category.rawValue))] income of ¥\(amountText) (\(parsed.title))."
+                "已为你记入\(dayLabel)的一笔【\(parsed.category.rawValue)】入账 \(amountText) 元\(foreignNote)（\(parsed.title)）。",
+                "Recorded \(dayLabel)'s [\(L10n.tr(parsed.category.rawValue))] income of ¥\(amountText)\(foreignNote) (\(parsed.title))."
             )
         } else {
             if L10n.isEnglish {
-                return "Recorded \(dayLabel)'s [\(L10n.tr(parsed.category.rawValue))] expense of ¥\(amountText) (\(parsed.title)). \(dayLabel) total: ¥\(formatAmount(sameDayTotal)); this month: ¥\(formatAmount(monthTotal))."
+                return "Recorded \(dayLabel)'s [\(L10n.tr(parsed.category.rawValue))] expense of ¥\(amountText)\(foreignNote) (\(parsed.title)). \(dayLabel) total: ¥\(formatAmount(sameDayTotal)); this month: ¥\(formatAmount(monthTotal))."
             } else {
                 let prefix = dayLabel == "今天" ? "已为你记录今天" : "已为你补记\(dayLabel)"
-                return "\(prefix)一笔【\(parsed.category.rawValue)】支出 \(amountText) 元（\(parsed.title)）。\(dayLabel)累计消费 \(formatAmount(sameDayTotal)) 元，本月累计支出 \(formatAmount(monthTotal)) 元。"
+                return "\(prefix)一笔【\(parsed.category.rawValue)】支出 \(amountText) 元\(foreignNote)（\(parsed.title)）。\(dayLabel)累计消费 \(formatAmount(sameDayTotal)) 元，本月累计支出 \(formatAmount(monthTotal)) 元。"
             }
         }
     }

@@ -6,17 +6,18 @@ struct TodayBriefingView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.calendar) private var calendar
     @ObservedObject private var calendarService = CalendarAgendaService.shared
-    @Query private var habits: [PeriodicHabit]
-    @Query private var medications: [MedicationPlan]
-    @Query private var anniversaries: [AnniversaryItem]
-    @Query private var subscriptions: [SubscriptionItem]
-    @Query private var expiries: [ItemExpiryItem]
-    @Query private var vehicles: [VehicleProfile]
 
     let items: [TodoItem]
     @State private var isExpanded = false
     @State private var showReminderCenter = false
     @AppStorage("today_briefing_dismissed_date") private var dismissedDateKey = ""
+
+    private struct BriefingSnapshot {
+        let prioritized: [TodoItem]
+        let visible: [TodoItem]
+        let overdueCount: Int
+        let timedCountWithin3Days: Int
+    }
 
     private var isDismissedToday: Bool {
         let components = calendar.dateComponents([.year, .month, .day], from: .now)
@@ -29,11 +30,12 @@ struct TodayBriefingView: View {
         Haptic.light()
     }
 
-    private var prioritizedItems: [TodoItem] {
+    private func makeSnapshot() -> BriefingSnapshot {
+        let now = Date.now
         let start = calendar.startOfDay(for: .now)
         // “今日安排”只展示逾期、今天和未来三天内的事项，避免十几天后的活动过早打扰。
         let horizon = calendar.date(byAdding: .day, value: 4, to: start) ?? .distantFuture
-        return items
+        let prioritized = items
             .filter { item in
                 guard item.status == .active else { return false }
                 guard let date = item.reminderOverrideAt ?? item.dueAt else { return true }
@@ -47,59 +49,21 @@ struct TodayBriefingView: View {
                 default: return lhs.createdAt > rhs.createdAt
                 }
             }
-    }
-
-    private var visibleItems: [TodoItem] {
-        // 首页只保留少量重点事项；完整清单仍在待办页，避免项目多时撑满首页。
-        isExpanded ? Array(prioritizedItems.prefix(6)) : Array(prioritizedItems.prefix(3))
-    }
-
-    private var supplementalItems: [SupplementalAgendaItem] {
-        let start = calendar.startOfDay(for: .now)
-        guard let end = calendar.date(byAdding: .day, value: 1, to: start),
-              let horizon = calendar.date(byAdding: .day, value: 7, to: start) else { return [] }
-        var result: [SupplementalAgendaItem] = []
-
-        for habit in habits where habit.isEnabled && habit.nextDueAt < end {
-            result.append(.init(id: "habit-\(habit.id)", title: habit.title, date: habit.nextDueAt, icon: "repeat", detail: "习惯"))
-        }
-        for medication in medications where medication.isEnabled {
-            for timePoint in medication.dailyTimePoints {
-                let parts = timePoint.split(separator: ":").compactMap { Int($0) }
-                guard parts.count == 2 else { continue }
-                var comps = calendar.dateComponents([.year, .month, .day], from: .now)
-                comps.hour = parts[0]
-                comps.minute = parts[1]
-                if let date = calendar.date(from: comps), date >= start, date < end {
-                    result.append(.init(id: "med-\(medication.id)-\(timePoint)", title: "服用\(medication.medName)", date: date, icon: "pills.fill", detail: medication.dosage))
-                }
+        var overdue = 0
+        var timed = 0
+        for item in prioritized {
+            if let due = item.dueAt {
+                if due < now { overdue += 1 }
+                if due < horizon { timed += 1 }
             }
         }
-        for anniversary in anniversaries where anniversary.nextAnniversaryDate >= start && anniversary.nextAnniversaryDate < horizon {
-            result.append(.init(id: "anniversary-\(anniversary.id)", title: anniversary.title, date: anniversary.nextAnniversaryDate, icon: "gift.fill", detail: "纪念日 · 还有\(anniversary.daysUntilNext)天"))
-        }
-        for subscription in subscriptions {
-            let reminderDate = calendar.date(byAdding: .day, value: -subscription.remindDaysBefore, to: subscription.nextBillingDate) ?? subscription.nextBillingDate
-            if reminderDate < end && subscription.nextBillingDate >= start && subscription.nextBillingDate < horizon {
-                result.append(.init(id: "subscription-\(subscription.id)", title: "续费：\(subscription.name)", date: subscription.nextBillingDate, icon: "creditcard.and.123", detail: subscription.priceString))
-            }
-        }
-        for expiry in expiries where !expiry.isResolved && expiry.expireDate >= start && expiry.expireDate < horizon {
-            result.append(.init(id: "expiry-\(expiry.id)", title: "临期：\(expiry.title)", date: expiry.expireDate, icon: "hourglass.bottomhalf.filled", detail: expiry.category))
-        }
-        for vehicle in vehicles where vehicle.isReminderEnabled {
-            if vehicle.nextMaintenanceDate >= start && vehicle.nextMaintenanceDate < horizon {
-                result.append(.init(id: "vehicle-maintenance-\(vehicle.id)", title: "车辆保养：\(vehicle.name)", date: vehicle.nextMaintenanceDate, icon: "car.fill", detail: "定期保养"))
-            }
-        }
-        return result.sorted { $0.date < $1.date }
-    }
-
-    private var overdueCount: Int {
-        prioritizedItems.filter { item in
-            guard let due = item.dueAt else { return false }
-            return due < .now
-        }.count
+        let visible = isExpanded ? Array(prioritized.prefix(6)) : Array(prioritized.prefix(3))
+        return BriefingSnapshot(
+            prioritized: prioritized,
+            visible: visible,
+            overdueCount: overdue,
+            timedCountWithin3Days: timed
+        )
     }
 
     var body: some View {
@@ -111,9 +75,10 @@ struct TodayBriefingView: View {
     }
 
     private var briefingContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let snapshot = makeSnapshot()
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Label(L10n.tr(summaryTitle), systemImage: "sparkles")
+                Label(L10n.tr(summaryTitle(for: snapshot)), systemImage: "sparkles")
                     .font(.headline)
                 Spacer()
                 Button {
@@ -125,7 +90,7 @@ struct TodayBriefingView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("关闭今日安排")
-                Button(isExpanded ? "收起" : "今日安排 · \(prioritizedItems.count)") {
+                Button(isExpanded ? "收起" : "今日安排 · \(snapshot.prioritized.count)") {
                     withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
                     if isExpanded {
                         Task { await calendarService.loadTodayEvents() }
@@ -135,12 +100,12 @@ struct TodayBriefingView: View {
                 .foregroundStyle(.tint)
             }
 
-            if visibleItems.isEmpty {
+            if snapshot.visible.isEmpty {
                 Text("今天没有待处理事项，需要我帮你记一件吗？")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(visibleItems) { item in
+                ForEach(snapshot.visible) { item in
                     TodayBriefingRow(item: item) {
                         // 统一走完成流程，周期待办需要自动生成下一期并取消旧通知。
                         item.markAsCompleted(in: context)
@@ -148,8 +113,8 @@ struct TodayBriefingView: View {
                         Haptic.success()
                     }
                 }
-                if isExpanded && prioritizedItems.count > visibleItems.count {
-                    Text("还有 \(prioritizedItems.count - visibleItems.count) 项，已在待办列表中保留")
+                if isExpanded && snapshot.prioritized.count > snapshot.visible.count {
+                    Text("还有 \(snapshot.prioritized.count - snapshot.visible.count) 项，已在待办列表中保留")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -159,7 +124,7 @@ struct TodayBriefingView: View {
             if isExpanded {
                 ScrollView(.vertical, showsIndicators: true) {
                     VStack(alignment: .leading, spacing: 10) {
-                        supplementalSection
+                        TodaySupplementalAgendaSection()
                         calendarSection
                     }
                 }
@@ -175,7 +140,7 @@ struct TodayBriefingView: View {
                         .font(.caption.weight(.medium))
                 }
                 Spacer()
-                Text(reminderCountText)
+                Text(reminderCountText(for: snapshot))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -190,51 +155,15 @@ struct TodayBriefingView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("今日摘要，\(prioritizedItems.count) 项待处理")
+        .accessibilityLabel("今日摘要，\(snapshot.prioritized.count) 项待处理")
         .sheet(isPresented: $showReminderCenter) {
             ReminderCenterView()
         }
     }
 
-    private var reminderCountText: String {
-        let start = calendar.startOfDay(for: .now)
-        let horizon = calendar.date(byAdding: .day, value: 4, to: start) ?? .distantFuture
-        let count = prioritizedItems.filter { item in
-            guard let due = item.dueAt else { return false }
-            return due < horizon
-        }.count
+    private func reminderCountText(for snapshot: BriefingSnapshot) -> String {
+        let count = snapshot.timedCountWithin3Days
         return count == 0 ? "未来 3 天暂无定时待办" : "未来 3 天 \(count) 项"
-    }
-
-    @ViewBuilder
-    private var supplementalSection: some View {
-        if !supplementalItems.isEmpty {
-            Divider().padding(.vertical, 2)
-            Label("生活提醒", systemImage: "bell.badge")
-                .font(.subheadline.weight(.medium))
-            ForEach(supplementalItems) { item in
-                HStack(spacing: 10) {
-                    Image(systemName: item.icon)
-                        .font(.caption)
-                        .foregroundStyle(.tint)
-                        .frame(width: 20)
-                    Text(item.date.formatted(date: .omitted, time: .shortened))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(width: 52, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.tr(item.title))
-                            .font(.subheadline)
-                            .lineLimit(1)
-                        Text(item.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                }
-            }
-        }
     }
 
     @ViewBuilder
@@ -291,10 +220,93 @@ struct TodayBriefingView: View {
         }
     }
 
-    private var summaryTitle: String {
-        if overdueCount > 0 { return "现在最该做什么 · \(overdueCount) 项逾期" }
-        if prioritizedItems.isEmpty { return "今天的安排" }
+    private func summaryTitle(for snapshot: BriefingSnapshot) -> String {
+        if snapshot.overdueCount > 0 { return "现在最该做什么 · \(snapshot.overdueCount) 项逾期" }
+        if snapshot.prioritized.isEmpty { return "今天的安排" }
         return "现在最该做什么"
+    }
+}
+
+/// 仅在用户点击「今日安排」展开后才挂载的多表生活提醒视图，避免首页冷启动时无条件发起 6 张表的 @Query 查询。
+private struct TodaySupplementalAgendaSection: View {
+    @Environment(\.calendar) private var calendar
+    @Query private var habits: [PeriodicHabit]
+    @Query private var medications: [MedicationPlan]
+    @Query private var anniversaries: [AnniversaryItem]
+    @Query private var subscriptions: [SubscriptionItem]
+    @Query private var expiries: [ItemExpiryItem]
+    @Query private var vehicles: [VehicleProfile]
+
+    private var supplementalItems: [SupplementalAgendaItem] {
+        let start = calendar.startOfDay(for: .now)
+        guard let end = calendar.date(byAdding: .day, value: 1, to: start),
+              let horizon = calendar.date(byAdding: .day, value: 7, to: start) else { return [] }
+        var result: [SupplementalAgendaItem] = []
+
+        for habit in habits where habit.isEnabled && habit.nextDueAt < end {
+            result.append(.init(id: "habit-\(habit.id)", title: habit.title, date: habit.nextDueAt, icon: "repeat", detail: "习惯"))
+        }
+        for medication in medications where medication.isEnabled {
+            for timePoint in medication.dailyTimePoints {
+                let parts = timePoint.split(separator: ":").compactMap { Int($0) }
+                guard parts.count == 2 else { continue }
+                var comps = calendar.dateComponents([.year, .month, .day], from: .now)
+                comps.hour = parts[0]
+                comps.minute = parts[1]
+                if let date = calendar.date(from: comps), date >= start, date < end {
+                    result.append(.init(id: "med-\(medication.id)-\(timePoint)", title: "服用\(medication.medName)", date: date, icon: "pills.fill", detail: medication.dosage))
+                }
+            }
+        }
+        for anniversary in anniversaries where anniversary.nextAnniversaryDate >= start && anniversary.nextAnniversaryDate < horizon {
+            result.append(.init(id: "anniversary-\(anniversary.id)", title: anniversary.title, date: anniversary.nextAnniversaryDate, icon: "gift.fill", detail: "纪念日 · 还有\(anniversary.daysUntilNext)天"))
+        }
+        for subscription in subscriptions {
+            let reminderDate = calendar.date(byAdding: .day, value: -subscription.remindDaysBefore, to: subscription.nextBillingDate) ?? subscription.nextBillingDate
+            if reminderDate < end && subscription.nextBillingDate >= start && subscription.nextBillingDate < horizon {
+                result.append(.init(id: "subscription-\(subscription.id)", title: "续费：\(subscription.name)", date: subscription.nextBillingDate, icon: "creditcard.and.123", detail: subscription.priceString))
+            }
+        }
+        for expiry in expiries where !expiry.isResolved && expiry.expireDate >= start && expiry.expireDate < horizon {
+            result.append(.init(id: "expiry-\(expiry.id)", title: "临期：\(expiry.title)", date: expiry.expireDate, icon: "hourglass.bottomhalf.filled", detail: expiry.category))
+        }
+        for vehicle in vehicles where vehicle.isReminderEnabled {
+            if vehicle.nextMaintenanceDate >= start && vehicle.nextMaintenanceDate < horizon {
+                result.append(.init(id: "vehicle-maintenance-\(vehicle.id)", title: "车辆保养：\(vehicle.name)", date: vehicle.nextMaintenanceDate, icon: "car.fill", detail: "定期保养"))
+            }
+        }
+        return result.sorted { $0.date < $1.date }
+    }
+
+    var body: some View {
+        let items = supplementalItems
+        if !items.isEmpty {
+            Divider().padding(.vertical, 2)
+            Label("生活提醒", systemImage: "bell.badge")
+                .font(.subheadline.weight(.medium))
+            ForEach(items) { item in
+                HStack(spacing: 10) {
+                    Image(systemName: item.icon)
+                        .font(.caption)
+                        .foregroundStyle(.tint)
+                        .frame(width: 20)
+                    Text(item.date.formatted(date: .omitted, time: .shortened))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 52, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.tr(item.title))
+                            .font(.subheadline)
+                            .lineLimit(1)
+                        Text(item.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
     }
 }
 

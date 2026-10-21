@@ -7,8 +7,13 @@ struct DepartureChecklistView: View {
     @Query(sort: \DepartureCheckItem.createdAt) private var items: [DepartureCheckItem]
     @AppStorage("departure_checklist_seeded") private var hasSeededDefaults = false
     @ObservedObject private var contextEngine = SituationalContextEngine.shared
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @AppStorage(AppBackgroundStyle.defaultsKey) private var bgStyleRaw = AppBackgroundStyle.system.rawValue
     @Environment(\.colorScheme) private var colorScheme
+
+    /// 只订阅风格 key：壁纸调参/预渲染完成时不重建清单页
+    private var isCustomBackgroundActive: Bool {
+        AppBackgroundStyle(rawValue: bgStyleRaw) != .system
+    }
 
     @State private var selectedScene: DepartureScene? = nil
     @State private var showingAddSheet = false
@@ -236,7 +241,7 @@ struct DepartureChecklistView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .scrollContentBackground(isCustomBackgroundActive ? .hidden : .automatic)
         .themedAppBackground()
         .themedRow()
         .navigationTitle("出门防遗忘清单")
@@ -400,7 +405,7 @@ struct DepartureChecklistView: View {
             .background(
                 isChecked.wrappedValue
                     ? Color.indigo
-                    : (bgManager.isCustomBackgroundActive ? Color(.secondarySystemBackground).opacity(0.68) : Color(.secondarySystemBackground))
+                    : (isCustomBackgroundActive ? Color(.secondarySystemBackground).opacity(0.68) : Color(.secondarySystemBackground))
             )
             .foregroundStyle(isChecked.wrappedValue ? .white : .primary)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))

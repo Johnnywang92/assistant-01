@@ -102,7 +102,7 @@ struct TodoListView: View {
     @AppStorage("all_tab_grouping_mode") private var isGroupedByType: Bool = false
     @ObservedObject private var router = NavigationRouter.shared
     @ObservedObject private var weatherAlerts = WeatherAlertService.shared
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @AppStorage(AppBackgroundStyle.defaultsKey) private var bgStyleRaw = AppBackgroundStyle.system.rawValue
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject private var seniorManager = SeniorModeManager.shared
     @ObservedObject private var anniversaryReminder = AnniversaryReminderManager.shared
@@ -127,6 +127,11 @@ struct TodoListView: View {
     @State private var showOverdueTriage = false
     @AppStorage("overdue_triage_last_date") private var lastTriageDateKey = ""
 
+    /// 只订阅风格 key：壁纸预渲染完成或调参时不再重建整个待办页
+    private var isCustomBackgroundActive: Bool {
+        AppBackgroundStyle(rawValue: bgStyleRaw) != .system
+    }
+
     // MARK: - 单次 O(N) 极速分类缓存（彻底消除视图树重复全表遍历）
     /// 分类结果引用缓存：视图树内 200+ 处转发属性访问在同一次渲染中只真正计算一次。
     /// 增加渲染脉冲（50ms）节流保护，单次视图树评估内只哈希校验一次，消除卡顿。
@@ -148,7 +153,9 @@ struct TodoListView: View {
             return cached
         }
 
+        let fingerprintBegin = CFAbsoluteTimeGetCurrent()
         let key = Self.classificationKey(for: todos)
+        StartupMetrics.markOnce("todoList.fingerprint", "n=\(todos.count) cost=\(Int((CFAbsoluteTimeGetCurrent() - fingerprintBegin) * 1000))ms")
         if let cached = classificationCache.value, classificationCache.key == key, classificationCache.query == query {
             classificationCache.lastComputedTime = now
             return cached
@@ -159,7 +166,9 @@ struct TodoListView: View {
         } else {
             source = todos.filter { matchesSearch($0, query: query) }
         }
+        let classifyBegin = CFAbsoluteTimeGetCurrent()
         let result = TodoClassification(from: source)
+        StartupMetrics.markOnce("todoList.classify", "n=\(source.count) cost=\(Int((CFAbsoluteTimeGetCurrent() - classifyBegin) * 1000))ms")
         classificationCache.key = key
         classificationCache.query = query
         classificationCache.lastComputedTime = now
@@ -298,7 +307,7 @@ struct TodoListView: View {
                 }
 
                 Divider()
-                    .opacity(bgManager.isCustomBackgroundActive ? 0.35 : 1.0)
+                    .opacity(isCustomBackgroundActive ? 0.35 : 1.0)
 
                 // 支持横向滑动的分页容器
                 ScrollViewReader { proxy in
@@ -333,7 +342,7 @@ struct TodoListView: View {
                     }
                 }
             }
-            .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
+            .background(isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
             .themedAppBackground()
             .navigationTitle(assistantName.isEmpty ? "小助" : assistantName)
             .searchable(text: $searchText, prompt: "搜索待办、详情、取件码或驿站")
@@ -351,16 +360,6 @@ struct TodoListView: View {
                                 .foregroundStyle(.tint)
                         }
                     } else {
-                        Button {
-                            router.prefilledSearchQuery = searchText.isEmpty ? nil : searchText
-                            router.activeSheet = .unifiedSearch
-                            Haptic.light()
-                        } label: {
-                            Image(systemName: "magnifyingglass")
-                                .font(.body.weight(.semibold))
-                        }
-                        .accessibilityLabel("全景搜索")
-
                         Button {
                             showAddTodo = true
                             Haptic.light()
@@ -472,11 +471,16 @@ struct TodoListView: View {
                 }
             }
             .task {
+                StartupMetrics.markOnce("todoList.task begin", "n=\(todos.count)")
                 await weatherAlerts.checkAlertsIfNeeded()
+                StartupMetrics.markOnce("todoList.task weatherDone")
                 anniversaryReminder.refreshActiveUpcoming(context: context)
+                StartupMetrics.markOnce("todoList.task anniversariesDone")
                 ticketReminder.refreshUpcomingTickets(context: context)
+                StartupMetrics.markOnce("todoList.task ticketsDone")
             }
             .onAppear {
+                StartupMetrics.markOnce("todoList.onAppear")
                 anniversaryReminder.refreshActiveUpcoming(context: context)
                 ticketReminder.refreshUpcomingTickets(context: context)
                 if let id = router.focusedTodoID, let item = todos.first(where: { $0.id == id }) {
@@ -1411,7 +1415,7 @@ struct TodoListView: View {
                 AppMotion.animate(.easeInOut(duration: 0.2)) { proxy.scrollTo(category, anchor: .center) }
             }
         }
-        .background(bgManager.isCustomBackgroundActive ? Color.clear : Color(.systemBackground))
+        .background(isCustomBackgroundActive ? Color.clear : Color(.systemBackground))
     }
 
     @ViewBuilder
@@ -1532,7 +1536,7 @@ struct TodoListView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .scrollContentBackground(isCustomBackgroundActive ? .hidden : .automatic)
         .background(Color.clear)
         .environment(\.editMode, isReordering ? .constant(.active) : .constant(.inactive))
         .themedRow()

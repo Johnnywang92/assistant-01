@@ -5,9 +5,9 @@ import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #endif
-#if canImport(LlamaSwift)
+#if !targetEnvironment(simulator) && canImport(LlamaSwift)
 import LlamaSwift
-#elseif canImport(llama)
+#elseif !targetEnvironment(simulator) && canImport(llama)
 import llama
 #endif
 
@@ -23,6 +23,10 @@ public enum LlamaInferenceError: LocalizedError {
     case frameworkNotLinked
     /// 提示词超出模型窗口。**不再用静默截尾兜底**，改为向上报错由调用方降预算重试。
     case contextOverflow(required: Int, available: Int)
+    /// 读不到最后一个 token 的 logits。分类路径没有它就没有真实概率，只能降级。
+    case logitsUnavailable
+    /// 候选标签无法映射为互不相同的单 token，分类前提不成立。
+    case tokenMapUnavailable
 
     public var errorDescription: String? {
         switch self {
@@ -44,6 +48,10 @@ public enum LlamaInferenceError: LocalizedError {
             return "当前编译环境未链接 LlamaSwift / llama.xcframework 二进制库。这是构建配置问题，与模型文件无关，无需重新下载模型。"
         case .contextOverflow(let required, let available):
             return "提示词需 \(required) token，模型可用仅 \(available) token，已超出上下文窗口"
+        case .logitsUnavailable:
+            return "无法读取模型输出 logits，意图判别不可用"
+        case .tokenMapUnavailable:
+            return "候选标签无法映射为互不相同的单 token，意图判别不可用"
         }
     }
 }
@@ -59,7 +67,7 @@ actor LlamaCppEngine {
     /// 后者才是模型文件本身有问题。上游 xcframework 仅含真机切片，
     /// 因此模拟器目标下 `canImport` 为假、恒返回 false。
     public static var isEngineLinked: Bool {
-        #if canImport(LlamaSwift) || canImport(llama)
+        #if !targetEnvironment(simulator) && (canImport(LlamaSwift) || canImport(llama))
         return true
         #else
         return false
@@ -89,7 +97,7 @@ actor LlamaCppEngine {
         max(256, contextTokens - maxNewTokens - contextSafetyMargin)
     }
 
-    #if canImport(LlamaSwift) || canImport(llama)
+    #if !targetEnvironment(simulator) && (canImport(LlamaSwift) || canImport(llama))
     private var model: OpaquePointer?
     private var vocab: OpaquePointer?
     private var loadedModelPath: String?
@@ -309,8 +317,9 @@ actor LlamaCppEngine {
         for _ in 0..<maxNewTokens {
             try Task.checkCancellation()
 
+            // 注意：llama_sampler_sample 内部在采样出 token 后已自动调用 llama_sampler_accept，
+            // 切勿在此重复调用 llama_sampler_accept，否则挂 GBNF 语法约束时会把同一 token 二次压栈触发 C++ 异常闪退。
             let newTokenId = llama_sampler_sample(sampler, context, -1)
-            llama_sampler_accept(sampler, newTokenId)
 
             if llama_vocab_is_eog(vocab, newTokenId) {
                 break
@@ -354,6 +363,124 @@ actor LlamaCppEngine {
         let finalRaw = String(decoding: utf8Bytes, as: UTF8.self)
         return Self.cleanChatMLOutput(finalRaw)
     }
+
+    // MARK: - 分类（只读 logits，不采样、不生成文本）
+
+    /// 把单个字符串分词，返回 token id 数组。空串或模型未加载时返回空数组。
+    ///
+    /// 与 `generate` 内的分词逻辑同源，但独立出来供分类路径使用：
+    /// 分类需要在「加载模型 → 分词」之间插入候选标签校验，且不应触发采样。
+    /// 标 `async` 是因为它是 actor 隔离方法，闭包内调用需要 await。
+    ///
+    /// - Parameter modelURL: 传入时若模型尚未加载会先加载。未传则用当前已加载的词表，
+    ///   未加载时返回空数组（调用方据此判定判别不可用，而不是拿到错误的 id）。
+    func tokenize(_ text: String, loading modelURL: URL? = nil) async -> [llama_token] {
+        if vocab == nil, let modelURL {
+            try? ensureModelLoaded(at: modelURL)
+        }
+        guard !text.isEmpty, let vocab else { return [] }
+        let utf8Count = Int32(text.utf8.count)
+        var capacity = Int(utf8Count) + 32
+        var buffer = [llama_token](repeating: 0, count: capacity)
+
+        var count = text.withCString { cStr in
+            llama_tokenize(vocab, cStr, utf8Count, &buffer, Int32(capacity), true, true)
+        }
+        if count < 0 {
+            capacity = Int(-count) + 8
+            buffer = [llama_token](repeating: 0, count: capacity)
+            count = text.withCString { cStr in
+                llama_tokenize(vocab, cStr, utf8Count, &buffer, Int32(capacity), true, true)
+            }
+        }
+        guard count > 0 else { return [] }
+        return Array(buffer[0..<Int(count)])
+    }
+
+    /// 判别式分类：prefill 提示词后读取**最后一个 token**的 logits，
+    /// 返回候选 token 上的一组原始 logit（不做 softmax，交给纯逻辑层归一化）。
+    ///
+    /// 与 `generate` 的关键差异：**不采样、不解码新 token**。
+    /// 判别层要的是模型在这个位置对各候选的真实相对偏好，
+    /// 采样会把这份信息抹掉，且 temperature/top-p 还会进一步扭曲分布。
+    ///
+    /// - Parameters:
+    ///   - prompt: 完整提示词，末尾应紧跟「模型此处要输出标签」的引导。
+    ///   - candidateTokens: 候选标签的 token id，每个必须落在词表范围内。
+    /// - Returns: 与 `candidateTokens` 同序的原始 logit。
+    func classify(
+        prompt: String,
+        modelURL: URL,
+        candidateTokens: [llama_token]
+    ) async throws -> [Float] {
+        guard !candidateTokens.isEmpty else { return [] }
+        try ensureModelLoaded(at: modelURL)
+        guard let model, let vocab else {
+            throw LlamaInferenceError.modelLoadFailed(modelURL.lastPathComponent)
+        }
+
+        let nVocab = Int(llama_vocab_n_tokens(vocab))
+        guard candidateTokens.allSatisfy({ $0 >= 0 && Int($0) < nVocab }) else {
+            throw LlamaInferenceError.tokenMapUnavailable
+        }
+
+        var ctxParams = llama_context_default_params()
+        ctxParams.n_ctx = UInt32(Self.requestedContextTokens(for: model))
+        ctxParams.n_batch = 512
+        let cpuCount = ProcessInfo.processInfo.activeProcessorCount
+        let threadCount = Int32(max(2, min(6, cpuCount - 1)))
+        ctxParams.n_threads = threadCount
+        ctxParams.n_threads_batch = threadCount
+
+        guard let context = llama_init_from_model(model, ctxParams) else {
+            throw LlamaInferenceError.contextInitFailed
+        }
+        defer { llama_free(context) }
+
+        // 已在 ensureModelLoaded 后拿到 vocab，但 tokenize 是 actor隔离的 async 方法，
+        // 同 actor 内调用仍需 await。
+        var promptTokens = await tokenize(prompt)
+        guard !promptTokens.isEmpty else { throw LlamaInferenceError.tokenizationFailed }
+
+        // 分类不需要任何生成，maxNewTokens 记0 —— 预算因此更宽，
+        // 长提示词在分类路径上比生成路径更容易装进窗口。
+        let effectiveContextTokens = Int(llama_n_ctx(context))
+        let availableForPrompt = max(0, effectiveContextTokens - Self.contextSafetyMargin)
+        guard promptTokens.count <= availableForPrompt else {
+            throw LlamaInferenceError.contextOverflow(required: promptTokens.count, available: availableForPrompt)
+        }
+        if promptTokens.count < availableForPrompt {
+            promptTokens.reserveCapacity(availableForPrompt)
+        }
+
+        // 分批 prefill。llama_batch_get_one 在logits == NULL 时**只输出最后一个 token**，
+        // 这正是分类需要的：无需为每个位置分配 n_vocab 宽的输出缓冲。
+        let batchSize = Int(ctxParams.n_batch)
+        var offset = 0
+        while offset < promptTokens.count {
+            try Task.checkCancellation()
+            let end = min(offset + batchSize, promptTokens.count)
+            var chunk = Array(promptTokens[offset..<end])
+            let batch = chunk.withUnsafeMutableBufferPointer { buf in
+                llama_batch_get_one(buf.baseAddress, Int32(buf.count))
+            }
+            let decodeStatus = llama_decode(context, batch)
+            if decodeStatus != 0 {
+                throw LlamaInferenceError.decodeFailed(decodeStatus)
+            }
+            offset = end
+        }
+
+        llama_synchronize(context)
+        guard let logits = llama_get_logits_ith(context, -1) else {
+            throw LlamaInferenceError.logitsUnavailable
+        }
+
+        // 只取候选 token 那一列，避免把整行n_vocab 拷进Swift。
+        return candidateTokens.map { token in
+            logits[Int(token)]
+        }
+    }
     #else
     private init() {}
 
@@ -379,9 +506,24 @@ actor LlamaCppEngine {
     func promptTokenBudget(at modelURL: URL, reservingForGeneration maxNewTokens: Int) -> Int {
         Self.promptBudget(contextTokens: Self.fallbackContextTokens, maxNewTokens: maxNewTokens)
     }
+
+    /// 未链接二进制时的桩实现：与 generate 一样抛 frameworkNotLinked，
+    /// 由调用方降级到规则引擎。不要在这里返回伪造的均匀分布——
+    /// 那会让上层以为「模型很确定」，直接把低信息量当成高置信度写库。
+    func tokenize(_ text: String, loading modelURL: URL? = nil) async -> [Int32] {
+        []
+    }
+
+    func classify(
+        prompt: String,
+        modelURL: URL,
+        candidateTokens: [Int32]
+    ) async throws -> [Float] {
+        throw LlamaInferenceError.frameworkNotLinked
+    }
     #endif
 
-    private static func cleanChatMLOutput(_ text: String) -> String {
+    static func cleanChatMLOutput(_ text: String) -> String {
         var result = text
         let stopMarkers = ["<|im_end|>", "<|endoftext|>", "<|im_start|>"]
         for marker in stopMarkers {
@@ -389,18 +531,37 @@ actor LlamaCppEngine {
                 result = String(result[..<range.lowerBound])
             }
         }
+        // 剥离 Qwen3 思考模式标签 `<think>...</think>`（含流式生成中尚未闭合的 `<think>` 块）
+        while let thinkStart = result.range(of: "<think>") {
+            if let thinkEnd = result.range(of: "</think>", range: thinkStart.upperBound..<result.endIndex) {
+                result.removeSubrange(thinkStart.lowerBound..<thinkEnd.upperBound)
+            } else {
+                result = String(result[..<thinkStart.lowerBound])
+                break
+            }
+        }
+        if let strayClose = result.range(of: "</think>") {
+            result = String(result[strayClose.upperBound...])
+        }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
-/// 端侧 Qwen2.5-1.5B GGUF (llama.cpp) 推理服务，兼顾局域网 Ollama 联调与规则助手兜底
+/// 端侧 Qwen3 / Qwen2.5 GGUF (llama.cpp) 推理服务，兼顾局域网 Ollama 联调与规则助手兜底
 @MainActor
 public final class LLMInferenceService: ObservableObject {
     public static let shared = LLMInferenceService()
 
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @AppStorage("llm_developer_endpoint") public var developerEndpoint: String = "" // 如 http://192.168.1.5:11434 (局域网 Ollama)
+    @AppStorage("llm_remote_ollama_model") public var remoteOllamaModel: String = "" // 留空则自动跟随当前选中的预设模型（如 qwen3:1.7b / qwen3:4b）
     @AppStorage("llm_remote_context_consent") public var remoteContextConsent: Bool = false
+
+    /// 实际用于局域网 Ollama 请求的模型标识
+    public var effectiveOllamaModel: String {
+        let custom = remoteOllamaModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return custom.isEmpty ? LLMModelManager.shared.selectedPreset.ollamaModelTag : custom
+    }
     @Published public var isGenerating: Bool = false
     @Published public var currentOutput: String = ""
     @Published public var remoteConnectionStatus: String = "未连接"
@@ -523,9 +684,10 @@ public final class LLMInferenceService: ObservableObject {
 
         // 必留：Persona
         let userTitle = AppSettings.userTitle
+        let activeModelName = LLMModelManager.shared.selectedPreset.shortName
         let personaText = """
         <|im_start|>system
-        你是运行在用户 iPhone 本地的全能私人管家「\(name)」（基于 Qwen2.5-1.5B 与 llama.cpp 端侧引擎）。
+        你是运行在用户 iPhone 本地的全能私人管家「\(name)」（基于 \(activeModelName) 与 llama.cpp 端侧引擎）。
         当前对用户的称呼：\(userTitle)
         当前时间：\(now)
         """
@@ -671,9 +833,14 @@ public final class LLMInferenceService: ObservableObject {
             }.joined(separator: "；")
             blocks.append(PromptBlock(id: .storage, text: "• 物品收纳位置：\(storageText)"))
 
-            // 6. 习惯打卡与每日服药计划
+            // 6. 习惯打卡、每日服药计划与今日饮食热量记录
             let habits = ((try? context.fetch(FetchDescriptor<PeriodicHabit>())) ?? []).filter { $0.isEnabled }
             let meds = ((try? context.fetch(FetchDescriptor<MedicationPlan>())) ?? []).filter { $0.isEnabled }
+            let startOfToday = Calendar.current.startOfDay(for: .now)
+            let todayFoodRecords = (try? context.fetch(FetchDescriptor<FoodIntakeRecord>(
+                predicate: #Predicate { $0.date >= startOfToday },
+                sortBy: [SortDescriptor(\.date, order: .reverse)]
+            ))) ?? []
             var habitMedParts: [String] = []
             if !meds.isEmpty {
                 habitMedParts.append("用药：" + meds.prefix(4).map { "\($0.medName) \($0.dosage)（\($0.dailyTimePoints.joined(separator: "/"))）" }.joined(separator: "、"))
@@ -681,8 +848,16 @@ public final class LLMInferenceService: ObservableObject {
             if !habits.isEmpty {
                 habitMedParts.append("习惯：" + habits.prefix(4).map { "\($0.title)（\($0.recurrenceRaw)）" }.joined(separator: "、"))
             }
+            if !todayFoodRecords.isEmpty {
+                let totalCalories = Int(todayFoodRecords.reduce(0.0) { $0 + $1.consumedCalories }.rounded())
+                let itemsDesc = todayFoodRecords.prefix(4).map { rec in
+                    let ratioText = rec.consumedRatio < 0.999 ? "（吃了\(Int((rec.consumedRatio * 100).rounded()))%）" : ""
+                    return "\(rec.foodName)\(ratioText)\(Int(rec.consumedCalories.rounded()))千卡"
+                }.joined(separator: "、")
+                habitMedParts.append("今日饮食摄入：共 \(totalCalories) 千卡（\(itemsDesc)）")
+            }
             let habitMedText = habitMedParts.isEmpty ? "无" : habitMedParts.joined(separator: "；")
-            blocks.append(PromptBlock(id: .habit, text: "• 用药与习惯打卡：\(habitMedText)"))
+            blocks.append(PromptBlock(id: .habit, text: "• 用药、习惯与今日饮食：\(habitMedText)"))
 
             // 7. 订阅扣费与物品/证件保质期预警
             let subs = (try? context.fetch(FetchDescriptor<SubscriptionItem>())) ?? []
@@ -774,11 +949,12 @@ public final class LLMInferenceService: ObservableObject {
             blocks.append(PromptBlock(id: .history, text: historyText))
         }
 
-        // 必留：用户问句
+        // 必留：用户问句（Qwen3 架构默认预填闭合 `<think>` 块以跳过长思考链，直出端侧低延迟回答）
+        let assistantStartSuffix = LLMModelManager.shared.selectedPreset.isQwen3Family ? "\n<think>\n\n</think>\n\n" : ""
         let queryBlockText = """
         <|im_start|>user
         \(query)<|im_end|>
-        <|im_start|>assistant
+        <|im_start|>assistant\(assistantStartSuffix)
         """
         blocks.append(PromptBlock(id: .query, text: queryBlockText))
 
@@ -830,12 +1006,13 @@ public final class LLMInferenceService: ObservableObject {
         let modelManager = LLMModelManager.shared
         let modelReady = await modelManager.validateModelStatusAndWait()
 
+        let assistantStartSuffix = modelManager.selectedPreset.isQwen3Family ? "\n<think>\n\n</think>\n\n" : ""
         let chatMLPrompt = """
         <|im_start|>system
         \(systemInstruction)<|im_end|>
         <|im_start|>user
         \(userContent)<|im_end|>
-        <|im_start|>assistant
+        <|im_start|>assistant\(assistantStartSuffix)
         """
 
         if modelReady {
@@ -879,7 +1056,7 @@ public final class LLMInferenceService: ObservableObject {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.timeoutInterval = 15
             let body: [String: Any] = [
-                "model": "qwen2.5:1.5b",
+                "model": effectiveOllamaModel,
                 "prompt": chatMLPrompt,
                 "stream": false
             ]
@@ -889,7 +1066,7 @@ public final class LLMInferenceService: ObservableObject {
                    (response as? HTTPURLResponse)?.statusCode == 200,
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let reply = json["response"] as? String {
-                    let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let trimmed = LlamaCppEngine.cleanChatMLOutput(reply)
                     if !trimmed.isEmpty { return trimmed }
                 }
             }
@@ -1055,13 +1232,13 @@ public final class LLMInferenceService: ObservableObject {
             return "\(baseReply)\n\n⚠️ 模型文件校验未通过（\(L10n.tr(reason))），已切换至本机规则助手回答，可在「设置 → AI 模型」中重新校验或重新导入。"
         }
         if !modelManager.isModelDownloaded {
-            return "\(baseReply)\n\n💡 当前尚未下载本地 GGUF 模型，已使用本机规则助手回答（可在「设置 → AI 模型」中下载 Qwen2.5-1.5B 开启端侧推理）。"
+            return "\(baseReply)\n\n💡 当前尚未下载本地 GGUF 模型，已使用本机规则助手回答（可在「设置 → AI 模型」中下载 \(modelManager.selectedPreset.shortName) 开启端侧推理）。"
         } else {
             return "\(baseReply)\n\n⚠️ 端侧模型推理未就绪（\(localEngineStatus)），已切换至本机规则助手回答。"
         }
     }
 
-    /// 局域网 Ollama 快速对接（方便电脑开启 `ollama run qwen2.5:1.5b` 时手机直接联调）
+    /// 局域网 Ollama 快速对接（方便电脑开启 `ollama run qwen3:4b` 或 `qwen3:1.7b` 时手机直接联调）
     private func generateViaRemoteOllama(
         query: String,
         endpoint: URL,
@@ -1084,7 +1261,7 @@ public final class LLMInferenceService: ObservableObject {
         request.timeoutInterval = 15
 
         let body: [String: Any] = [
-            "model": "qwen2.5:1.5b",
+            "model": effectiveOllamaModel,
             "prompt": prompt,
             "stream": false
         ]
@@ -1096,7 +1273,7 @@ public final class LLMInferenceService: ObservableObject {
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let reply = json["response"] as? String {
-                return reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                return LlamaCppEngine.cleanChatMLOutput(reply)
             }
         } catch {
             return nil

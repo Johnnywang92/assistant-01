@@ -73,7 +73,7 @@ struct SettingsView: View {
     @AppStorage(ClipboardIngestionService.autoIngestKey) private var autoIngest: Bool = true
     @AppStorage("omnibox_clipboard_auto_dismiss_seconds") private var clipboardAutoDismissSeconds: Int = 5
     @AppStorage("omnibox_auto_dismiss_seconds") private var autoDismissSeconds: Int = 3
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
+    @AppStorage("expense_monthly_budget") private var monthlyBudget: Double = 0
     @ObservedObject private var tabManager = TabBarManager.shared
     @ObservedObject private var seniorManager = SeniorModeManager.shared
     @ObservedObject private var reportManager = PeriodicReportManager.shared
@@ -87,6 +87,7 @@ struct SettingsView: View {
     @State private var showingClearDialogueAlert: Bool = false
     @State private var showingPermissionOnboarding: Bool = false
     @State private var showingLifeEventTabAlert: Bool = false
+    @State private var showingBudgetSheet: Bool = false
     @State private var lifeEventTabAlertMessage = ""
 
     var isSheet: Bool = false
@@ -456,6 +457,35 @@ struct SettingsView: View {
                     Text("到期自动清理；待办和账单不受影响。")
                 }
 
+                // MARK: - 月预算（今日安心花）
+                Section {
+                    Button {
+                        showingBudgetSheet = true
+                        Haptic.light()
+                    } label: {
+                        HStack {
+                            Text("月预算")
+                            Spacer()
+                            Text(monthlyBudget > 0
+                                 ? "¥\(String(format: "%.0f", monthlyBudget))"
+                                 : "未设置")
+                                .font(.subheadline)
+                                .foregroundStyle(monthlyBudget > 0 ? .secondary : Color.orange)
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .sheet(isPresented: $showingBudgetSheet) {
+                        BudgetEditSheet()
+                    }
+                } header: {
+                    Text("消费预算")
+                } footer: {
+                    Text("设置后每天在「智能记账」页顶部计算今日安心花额度，房租、订阅等固定支出自动扣除。")
+                }
+
                 // MARK: - 定期复盘报告 (日报 / 周报 / 月报 / 年报)
                 Section {
                     NavigationLink {
@@ -553,9 +583,11 @@ struct SettingsView: View {
                         LLMModelManagementView()
                     } label: {
                         HStack {
-                            Label("AI 端侧大模型 (Qwen2.5)", systemImage: "brain.head.profile")
+                            Label("AI 端侧大模型 (Qwen3 / Qwen2.5)", systemImage: "brain.head.profile")
                             Spacer()
-                            Text(LLMModelManager.shared.isModelDownloaded ? L10n.tr("GGUF 已就绪") : L10n.tr("可下载"))
+                            Text(LLMModelManager.shared.isModelDownloaded
+                                 ? "\(LLMModelManager.shared.selectedPreset.shortName) · \(L10n.tr("GGUF 已就绪"))"
+                                 : "\(LLMModelManager.shared.selectedPreset.shortName) · \(L10n.tr("可下载"))")
                                 .font(.caption2)
                                 .foregroundStyle(LLMModelManager.shared.isModelDownloaded ? .green : .secondary)
                         }
@@ -592,7 +624,7 @@ struct SettingsView: View {
                     NavigationLink("最近收到的原生消息") { RawMessagesView() }
                 }
             }
-            .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+            .themedScrollContentBackground()
             .themedAppBackground()
             .themedRow()
             .navigationTitle("助手设置")
@@ -868,7 +900,6 @@ struct ShortcutsGuideView: View {
 /// 应用语言切换独立设置页
 struct AppLanguageSettingsView: View {
     @ObservedObject private var langManager = LanguageManager.shared
-    @ObservedObject private var bgManager = AppBackgroundManager.shared
 
     var body: some View {
         List {
@@ -917,7 +948,7 @@ struct AppLanguageSettingsView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .scrollContentBackground(bgManager.isCustomBackgroundActive ? .hidden : .automatic)
+        .themedScrollContentBackground()
         .themedAppBackground()
         .themedRow()
         .navigationTitle(L10n.choose("语言 / Language", "Language"))

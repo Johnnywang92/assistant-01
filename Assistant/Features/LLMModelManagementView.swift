@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Qwen2.5-1.5B 本地大模型管理与测试面板
+/// 本地大模型（Qwen3 / Qwen2.5）管理与测试面板
 struct LLMModelManagementView: View {
     @Environment(\.modelContext) private var context
     @StateObject private var modelManager = LLMModelManager.shared
@@ -15,6 +15,54 @@ struct LLMModelManagementView: View {
 
     var body: some View {
         List {
+            // MARK: - 0. 模型规格切换（支持更换更强大的 Qwen3 模型）
+            Section {
+                ForEach(LLMModelPreset.allCases) { preset in
+                    let isSelected = modelManager.selectedPreset == preset
+                    let isInstalled = modelManager.hasModelFileOnDisk(for: preset)
+                    Button {
+                        guard modelManager.selectedPreset != preset else { return }
+                        modelManager.selectedPreset = preset
+                        Haptic.light()
+                    } label: {
+                        HStack(alignment: .center, spacing: 12) {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.title3)
+                                .foregroundStyle(isSelected ? AppColor.feature : .secondary)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 6) {
+                                    Text(L10n.tr(preset.displayName))
+                                        .font(.subheadline.bold())
+                                        .foregroundStyle(.primary)
+                                    if isInstalled {
+                                        Text(L10n.tr("已下载"))
+                                            .font(.caption2.bold())
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Capsule().fill(AppColor.success.opacity(0.15)))
+                                            .foregroundStyle(AppColor.success)
+                                    }
+                                }
+                                Text(preset.subtitle)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(preset.formattedExpectedSize)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } header: {
+                Text("切换端侧模型规格 (支持 Qwen3)")
+            } footer: {
+                Text("推荐使用新一代 Qwen3-1.7B（速度与推理能力均衡）或更强大的 Qwen3-4B（复杂拆解与食物热量推算更准）。已下载的模型在切换时不会丢失，可随时自由切换。")
+            }
+
             // MARK: - 1. 模型状态卡片
             Section {
                 VStack(alignment: .leading, spacing: 12) {
@@ -29,7 +77,7 @@ struct LLMModelManagementView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Qwen2.5-1.5B-Instruct")
+                            Text(modelManager.selectedPreset.shortName)
                                 .font(.headline)
                             Text("阿里通义千问端侧大模型")
                                 .font(.caption)
@@ -54,15 +102,15 @@ struct LLMModelManagementView: View {
                     Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                         GridRow {
                             Text("模型参数").foregroundStyle(.secondary).font(.caption)
-                            Text("15.4 亿 (1.54B)").font(.caption.bold())
+                            Text(modelManager.selectedPreset.parameterCountText).font(.caption.bold())
                             Text("量化精度").foregroundStyle(.secondary).font(.caption)
                             Text("Q4_K_M (4-bit)").font(.caption.bold())
                         }
                         GridRow {
                             Text("文件体积").foregroundStyle(.secondary).font(.caption)
-                            Text("约 986 MB").font(.caption.bold())
+                            Text(modelManager.selectedPreset.formattedExpectedSize).font(.caption.bold())
                             Text("运行内存").foregroundStyle(.secondary).font(.caption)
-                            Text("约 980 MB").font(.caption.bold())
+                            Text(modelManager.selectedPreset.estimatedRAMText).font(.caption.bold())
                         }
                         GridRow {
                             Text("推理引擎").foregroundStyle(.secondary).font(.caption)
@@ -77,7 +125,7 @@ struct LLMModelManagementView: View {
                         }
                         GridRow {
                             Text("存储位置").foregroundStyle(.secondary).font(.caption)
-                            Text("沙盒 / Documents / Models").font(.caption.monospaced()).lineLimit(1)
+                            Text("Models/\(modelManager.selectedPreset.fileName)").font(.caption.monospaced()).lineLimit(1)
                         }
                     }
                 }
@@ -284,7 +332,7 @@ struct LLMModelManagementView: View {
                             HStack {
                                 Spacer()
                                 Image(systemName: "arrow.down.circle.fill")
-                                Text("一键极速下载 (~986 MB)")
+                                Text("一键极速下载 \(modelManager.selectedPreset.shortName) (\(modelManager.selectedPreset.formattedExpectedSize))")
                                     .bold()
                                 Spacer()
                             }
@@ -308,7 +356,7 @@ struct LLMModelManagementView: View {
             } header: {
                 Text("模型文件获取与管理")
             } footer: {
-                Text("💡 提示：您也可以在 Mac 上下载好 `qwen2.5-1.5b-instruct-q4_k_m.gguf` 后，通过 AirDrop 发送至 iPhone「文件」App，或通过访达连线拖入本 App 的「Models」目录。")
+                Text("💡 提示：您也可以在 Mac 上下载好 `\(modelManager.selectedPreset.fileName)`（或任意 Qwen3 / Qwen2.5 GGUF 模型）后，通过 AirDrop 发送至 iPhone「文件」App 导入。")
             }
 
             // MARK: - 3. 本地推理与问答沙盒测试
@@ -389,8 +437,8 @@ struct LLMModelManagementView: View {
 
             // MARK: - 4. 开发者联调模式 (可选局域网 Ollama)
             Section("局域网免下载联调 (可选)") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("如果 Mac 电脑同一 Wi-Fi 下正在运行 `ollama run qwen2.5:1.5b`，填入 Mac 局域网 IP 即可免下载手机直接联调。")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("如果 Mac 电脑同一 Wi-Fi 下正在运行 `ollama run \(inferenceService.effectiveOllamaModel)`（支持 `qwen3:4b`、`qwen3:8b`、`qwen3:1.7b` 等更强大的模型），填入 Mac 局域网 IP 即可免下载手机直接联调。")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
@@ -405,8 +453,34 @@ struct LLMModelManagementView: View {
                     }
                     .padding(8)
                     .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(AppColor.surface))
+
+                    HStack {
+                        Image(systemName: "cube.box")
+                            .foregroundStyle(.secondary)
+                        TextField("远端模型名（留空默认 \(modelManager.selectedPreset.ollamaModelTag)）", text: $inferenceService.remoteOllamaModel)
+                            .textFieldStyle(.plain)
+                            .font(.caption.monospaced())
+                            .textInputAutocapitalization(.never)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(AppColor.surface))
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(["qwen3:1.7b", "qwen3:4b", "qwen3:8b", "qwen2.5:1.5b"], id: \.self) { tag in
+                                Button(tag) {
+                                    inferenceService.remoteOllamaModel = tag
+                                    Haptic.light()
+                                }
+                                .font(.caption2.monospaced())
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+                        }
+                    }
+
                     Toggle("允许向此局域网端点发送待办、快递码、开销等生活数据", isOn: $inferenceService.remoteContextConsent)
-                    Text("连接状态：\(inferenceService.remoteConnectionStatus)")
+                    Text("连接状态：\(inferenceService.remoteConnectionStatus)（当前远端模型：\(inferenceService.effectiveOllamaModel)）")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

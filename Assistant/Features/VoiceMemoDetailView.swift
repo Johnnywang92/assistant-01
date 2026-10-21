@@ -312,13 +312,14 @@ struct VoiceMemoTodoExtractorSheet: View {
                 }
 
                 Section {
-                    ForEach($items) { $item in
+                    ForEach(items) { item in
+                        let binding = itemBinding(for: item)
                         HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: item.selected ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(item.selected ? Color.accentColor : .secondary)
+                            Image(systemName: binding.wrappedValue.selected ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(binding.wrappedValue.selected ? Color.accentColor : .secondary)
                                 .font(.title3)
-                                .onTapGesture { item.selected.toggle(); Haptic.selection() }
-                            TextField("待办内容", text: $item.text, axis: .vertical)
+                                .onTapGesture { binding.wrappedValue.selected.toggle(); Haptic.selection() }
+                            TextField("待办内容", text: binding.text, axis: .vertical)
                         }
                     }
                 } header: {
@@ -356,6 +357,18 @@ struct VoiceMemoTodoExtractorSheet: View {
 
     private var selectedCount: Int {
         items.filter { $0.selected && !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }.count
+    }
+
+    private func itemBinding(for fallback: Candidate) -> Binding<Candidate> {
+        Binding(
+            get: {
+                items.first(where: { $0.id == fallback.id }) ?? fallback
+            },
+            set: { updated in
+                guard let idx = items.firstIndex(where: { $0.id == fallback.id }) else { return }
+                items[idx] = updated
+            }
+        )
     }
 
     private func load() {

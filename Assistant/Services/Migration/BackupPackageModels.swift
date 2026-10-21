@@ -187,6 +187,9 @@ public struct ExpenseDTO: Codable {
     public var date: Date
     public var createdAt: Date
     public var linkedItemID: UUID?
+    public var currencyCode: String?
+    public var foreignAmount: Double?
+    public var exchangeRateToCNY: Double?
 }
 
 public struct IDDocumentDTO: Codable {

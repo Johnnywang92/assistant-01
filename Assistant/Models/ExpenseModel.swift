@@ -1,5 +1,20 @@
 import Foundation
 import SwiftData
+@_exported import AssistantCore
+
+public extension ExpenseCurrency {
+    var displayName: String {
+        L10n.isEnglish ? englishName : chineseName
+    }
+
+    var pickerLabel: String {
+        "\(flag) \(L10n.tr(chineseName)) (\(rawValue))"
+    }
+
+    var shortBadge: String {
+        "\(flag) \(rawValue)"
+    }
+}
 
 /// 收支类别
 public enum ExpenseCategory: String, Codable, CaseIterable, Sendable {
@@ -54,6 +69,9 @@ public final class ExpenseRecord {
     public var date: Date                   // 账单归属日期时间
     public var createdAt: Date
     public var linkedItemID: UUID?          // 关联的收纳物品（StoredItem.id），用于日均持有成本归集
+    public var currencyCode: String?        // 记账原币种代码（nil 或 "CNY" 表示人民币，如 "JPY"、"USD"）
+    public var foreignAmount: Double?       // 外币原币金额（amount 始终存折算后的人民币金额）
+    public var exchangeRateToCNY: Double?   // 记账时使用的汇率（1 外币 = x 人民币）
     @Transient public var receiptImageData: Data?
     // Kept out of the legacy ExpenseRecord schema so old stores can open safely.
     @Transient public var splitCount: Int = 1
@@ -65,7 +83,10 @@ public final class ExpenseRecord {
         category: ExpenseCategory = .other,
         title: String,
         rawText: String = "",
-        date: Date = .now
+        date: Date = .now,
+        currencyCode: String? = nil,
+        foreignAmount: Double? = nil,
+        exchangeRateToCNY: Double? = nil
     ) {
         self.id = UUID()
         self.amount = abs(amount)
@@ -76,6 +97,9 @@ public final class ExpenseRecord {
         self.date = date
         self.createdAt = .now
         self.linkedItemID = nil
+        self.currencyCode = currencyCode
+        self.foreignAmount = foreignAmount
+        self.exchangeRateToCNY = exchangeRateToCNY
         self.receiptImageData = nil
         self.splitCount = 1
         self.splitParticipants = ""
@@ -85,28 +109,93 @@ public final class ExpenseRecord {
         get { ExpenseCategory(rawValue: categoryRaw) ?? (isIncome ? .otherIncome : .other) }
         set { categoryRaw = newValue.rawValue }
     }
+
+    public var currency: ExpenseCurrency {
+        get {
+            guard let code = currencyCode else { return .cny }
+            return ExpenseCurrency(rawValue: code) ?? .cny
+        }
+        set {
+            currencyCode = newValue == .cny ? nil : newValue.rawValue
+        }
+    }
+
+    /// 是否为外币记账且存有有效原币金额
+    public var isForeignCurrency: Bool {
+        currency != .cny && (foreignAmount ?? 0) > 0
+    }
+
+    /// 格式化外币原币金额（如 "JP¥1500"、"$25.50"；人民币返回 nil）
+    public var formattedForeignAmount: String? {
+        guard isForeignCurrency, let foreignAmount else { return nil }
+        return currency.formatAmount(foreignAmount)
+    }
+
+    /// 带国旗与原币符号的展示徽章（如 "🇯🇵 JP¥1500"）
+    public var formattedForeignBadge: String? {
+        guard let formatted = formattedForeignAmount else { return nil }
+        return "\(currency.flag) \(formatted)"
+    }
 }
 
 /// 智能自然语言记账解析器（离线正则与语义关键词分析）
 public struct ExpenseParseResult: Equatable {
-    public var amount: Double
+    public var amount: Double               // 折算后的人民币金额（CNY）
     public var isIncome: Bool
     public var category: ExpenseCategory
     public var title: String
     public var date: Date
     public var splitCount: Int = 1
     public var splitParticipants: String = ""
+    public var currency: ExpenseCurrency = .cny
+    public var foreignAmount: Double? = nil
+    public var exchangeRateToCNY: Double? = nil
+
+    public var isForeignCurrency: Bool {
+        currency != .cny && (foreignAmount ?? 0) > 0
+    }
 }
 
 public enum ExpenseNaturalLanguageParser {
-    /// 解析一句话记账文本，例如："中午吃麦当劳花了 38 块"、"打车 25.5 元"、"发工资 15000"
-    public static func parse(_ text: String) -> ExpenseParseResult? {
+
+    private static let titleAmountCleanupRegex: NSRegularExpression? = {
+        let currencyUnitPattern = "(?:日元|日币|日圓|円|JPY|yen|美元|美金|美刀|刀|USD|dollars?|bucks?|欧元|欧|EUR|euros?|港币|港元|HKD|韩元|韩币|KRW|won|泰铢|铢|THB|baht|英镑|镑|GBP|pounds?|新币|新加坡元|新元|SGD|新台币|台币|TWD|NTD|林吉特|马币|令吉|MYR|RM|澳元|澳币|AUD|加元|加币|CAD|瑞郎|瑞士法郎|CHF|澳门元|葡币|MOP|元|块钱|块|RMB|CNY|yuan)"
+        let spokenFractionTail = "(?:\\s*(?:[0-9]+|[零〇一二两三四五六七八九十]+)\\s*(?:毛|角)?)?"
+        return try? NSRegularExpression(
+            pattern: "(?:JP[¥￥]|HK\\$|NT\\$|US\\$|MOP\\$|S\\$|A\\$|C\\$|RM|CHF|[¥￥\\$€£₩฿])?\\s*(?:[0-9]+(?:[.．][0-9]{1,2})?\\s*(?:\(currencyUnitPattern)\(spokenFractionTail)|毛|角)?|[零〇一二两三四五六七八九十百千万]+\\s*\(currencyUnitPattern)\(spokenFractionTail))",
+            options: [.caseInsensitive]
+        )
+    }()
+
+    /// 供其它模块（如万能框兜底解析）复用的文本归一化：剥千分位逗号 + 口语单位统一。
+    public static func normalizeForLooseExtraction(_ text: String) -> String {
+        ExpenseAmountExtractor.normalize(text)
+    }
+
+    /// 解析一句话记账文本，例如："中午吃麦当劳花了 38 块"、"一兰拉面 1200日元"、"星巴克 $6.5"
+    public static func parse(_ text: String, defaultCurrency: ExpenseCurrency = .cny) -> ExpenseParseResult? {
+        let explicitCurrency = ExpenseCurrency.detectExplicitCurrency(in: text)
         let trimmed = normalizeSpeechText(text)
         guard !trimmed.isEmpty else { return nil }
 
-        // 1. 提取金额
-        guard let amount = extractAmount(from: trimmed), amount > 0 else {
+        // 1. 提取原始数值金额
+        guard let rawAmount = extractAmount(from: trimmed), rawAmount > 0 else {
             return nil
+        }
+
+        let resolvedCurrency = explicitCurrency ?? defaultCurrency
+        let cnyAmount: Double
+        let foreignAmt: Double?
+        let rateToCNY: Double?
+        if resolvedCurrency != .cny {
+            let rate = resolvedCurrency.currentRateToCNY
+            cnyAmount = resolvedCurrency.convertToCNY(rawAmount, rate: rate)
+            foreignAmt = rawAmount
+            rateToCNY = rate
+        } else {
+            cnyAmount = (rawAmount * 100).rounded() / 100
+            foreignAmt = nil
+            rateToCNY = nil
         }
 
         // 2. 判断收支类型
@@ -119,66 +208,23 @@ public enum ExpenseNaturalLanguageParser {
         let date = extractDate(from: trimmed)
 
         // 5. 提炼项目标题
-        let title = extractTitle(from: trimmed, amount: amount, isIncome: isIncome)
+        let title = extractTitle(from: trimmed, amount: rawAmount, isIncome: isIncome)
 
         var result = ExpenseParseResult(
-            amount: amount,
+            amount: cnyAmount,
             isIncome: isIncome,
             category: category,
             title: title,
-            date: date
+            date: date,
+            currency: resolvedCurrency,
+            foreignAmount: foreignAmt,
+            exchangeRateToCNY: rateToCNY
         )
         if let match = trimmed.range(of: "(?:AA|split|平摊|均摊|分摊)\\s*[：:]?\\s*(\\d+)\\s*(?:人|份|people|ways)?", options: [.regularExpression, .caseInsensitive]),
            let count = Int(trimmed[match].filter(\.isNumber)), count > 1 {
             result.splitCount = count
         }
         return result
-    }
-
-    // MARK: - 金额提取
-    private static func extractAmount(from text: String) -> Double? {
-        let chineseAmountPattern = "(?:花了|付了|收入|进账|到账|工资|奖金|支出|消费|共计|借出)\\s*([零〇一二两三四五六七八九十百千万]+)"
-        if let regex = try? NSRegularExpression(pattern: chineseAmountPattern),
-           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-           let range = Range(match.range(at: 1), in: text),
-           let value = numberValue(String(text[range])), value > 0 {
-            return value
-        }
-
-        // 先处理口语金额："二十五块五"、"12块5毛"、"12元5角"。
-        let spokenAmountPattern = "([0-9]+|[零〇一二两三四五六七八九十百千万]+)\\s*(?:元|块|块钱)\\s*([0-9]+|[零〇一二两三四五六七八九十百千万]+)?\\s*(?:毛|角)?"
-        if let regex = try? NSRegularExpression(pattern: spokenAmountPattern),
-           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-           let wholeRange = Range(match.range(at: 1), in: text),
-           let whole = numberValue(String(text[wholeRange])), whole > 0 {
-            if match.numberOfRanges > 2, match.range(at: 2).location != NSNotFound,
-               let fractionRange = Range(match.range(at: 2), in: text),
-               let fractionValue = numberValue(String(text[fractionRange])) {
-                let fraction = fractionValue >= 10 ? fractionValue / 100 : fractionValue / 10
-                return whole + fraction
-            }
-            return whole
-        }
-
-        // 常见语法 "花了/付了/用去/收入/支出/消费/为/是 38.5" 或英文 "$38.5", "spent 38.5"
-        let patterns = [
-            "(?:花了|付了|用去|支出|消费|收入|进账|共计|为|是|买.*?花了?|借出|spent|paid|cost|earned|received)\\s*\\$?([0-9]+(?:[.．][0-9]{1,2})?)",
-            "([0-9]+(?:[.．][0-9]{1,2})?)\\s*(?:元|块钱|块|RMB|rmb|\\¥|USD|usd|dollars?|bucks?|yuan)",
-            "(?:\\¥|￥|\\$)\\s*([0-9]+(?:\\.[0-9]{1,2})?)",
-            "\\b([0-9]+(?:[.．][0-9]{1,2})?)\\b" // 末尾或独立的数字
-        ]
-
-        for p in patterns {
-            if let regex = try? NSRegularExpression(pattern: p, options: [.caseInsensitive]),
-               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-               match.numberOfRanges > 1,
-               let range = Range(match.range(at: 1), in: text) {
-                if let val = Double(text[range].replacingOccurrences(of: "．", with: ".")), val > 0 {
-                    return val
-                }
-            }
-        }
-        return nil
     }
 
     // MARK: - 收入/支出判断
@@ -263,7 +309,7 @@ public enum ExpenseNaturalLanguageParser {
         }
 
         // 移除数字金额与货币单位（如 "69.9元"、"69.9块"、"¥69.9"、"$69.9"、"69.9"）
-        if let amtRegex = try? NSRegularExpression(pattern: "(?:\\¥|￥|\\$)?\\s*[0-9]+(?:[.．][0-9]{1,2})?\\s*(?:元|块钱|块|毛|角|RMB|rmb|USD|usd|dollars?|bucks?|yuan)?", options: [.caseInsensitive]) {
+        if let amtRegex = titleAmountCleanupRegex {
             clean = amtRegex.stringByReplacingMatches(
                 in: clean,
                 range: NSRange(clean.startIndex..., in: clean),
@@ -271,7 +317,7 @@ public enum ExpenseNaturalLanguageParser {
             )
         }
 
-        clean = clean.trimmingCharacters(in: CharacterSet(charactersIn: " ，。、,!？?元块¥￥$"))
+        clean = clean.trimmingCharacters(in: CharacterSet(charactersIn: " ，。、,!？?元块¥￥$€£₩฿円"))
         if clean.hasPrefix("我") {
             clean = String(clean.dropFirst()).trimmingCharacters(in: CharacterSet(charactersIn: " ，。、,!？?的"))
         }
@@ -281,33 +327,16 @@ public enum ExpenseNaturalLanguageParser {
         return clean
     }
 
-    // MARK: - 语音文本归一化与中文数字
+    // MARK: - 语音文本归一化与中文数字（实现已下沉至 AssistantCore.ExpenseAmountExtractor）
     private static func normalizeSpeechText(_ text: String) -> String {
-        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let replacements = [
-            "元钱": "元", "圆": "元", "园": "元", "块 q": "块", "块钱": "块",
-            "人民币": "元", "点": ".", "．": "."
-        ]
-        for (from, to) in replacements { value = value.replacingOccurrences(of: from, with: to) }
-        return value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        ExpenseAmountExtractor.normalize(text)
+    }
+
+    private static func extractAmount(from text: String) -> Double? {
+        ExpenseAmountExtractor.extractAmount(from: text)
     }
 
     private static func numberValue(_ value: String) -> Double? {
-        if let arabic = Double(value.replacingOccurrences(of: "．", with: ".")) { return arabic }
-        let digits: [Character: Double] = ["零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9]
-        var total = 0.0
-        var section = 0.0
-        var current = 0.0
-        for char in value {
-            if let digit = digits[char] { current = digit; continue }
-            switch char {
-            case "十": section += (current == 0 ? 1 : current) * 10; current = 0
-            case "百": section += (current == 0 ? 1 : current) * 100; current = 0
-            case "千": section += (current == 0 ? 1 : current) * 1_000; current = 0
-            case "万": total += (section + current) * 10_000; section = 0; current = 0
-            default: return nil
-            }
-        }
-        return total + section + current
+        ExpenseAmountExtractor.numberValue(value)
     }
 }

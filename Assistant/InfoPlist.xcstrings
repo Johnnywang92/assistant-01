@@ -98,6 +98,18 @@
         }
       }
     },
+    "NSHealthShareUsageDescription" : {
+      "comment" : "Privacy - Health Share Usage Description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "需要读取你在「健康」中的步数、运动能量、饮水与睡眠记录，用于在运动、喝水与服药打卡页展示真实数值，帮助你判断当天的完成情况。数据只在本机读取与展示，不会上传。"
+          }
+        }
+      }
+    },
     "NSLocationAlwaysAndWhenInUseUsageDescription" : {
       "extractionState" : "manual",
       "localizations" : {

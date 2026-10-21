@@ -23,18 +23,23 @@ enum Persistence {
     }
 
     static let shared: ModelContainer = {
+        StartupMetrics.mark("store.open begin")
         do {
-            return try openStore()
+            let container = try openStore()
+            StartupMetrics.mark("store.open ready")
+            return container
         } catch {
             // 真机旧库由引入迁移计划前的「无版本容器」创建，版本标识/内容可能与此处 V1 声明不符，
             // 带计划的轻量迁移会找不到源库。退回旧路径：无迁移计划、由系统自动轻量升级
             // （纯加法变更，历次发布在真机上就是这么升级的）；仍不动磁盘文件。
             do {
-                return try openStoreAutoMigrate()
+                let container = try openStoreAutoMigrate()
+                StartupMetrics.mark("store.open ready(autoMigrate)")
+                return container
             } catch {
                 // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
                 storedRecoveryError = Self.diagnose(openError: error)
-                let memSchema = Schema(AssistantSchemaV3.models)
+                let memSchema = Schema(AssistantSchemaV4.models)
                 if let memContainer = try? ModelContainer(for: memSchema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
                     return memContainer
                 }
@@ -47,19 +52,23 @@ enum Persistence {
     /// 旧库（V1）经 lightweight 阶段自动升级到 V2；**任何失败都不动磁盘文件**，
     /// 由调用方走恢复页导出原库。详见 `AssistantMigrationPlan`。
     private static func openStore() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV3.models)
+        let schema = Schema(AssistantSchemaV4.models)
         let config = ModelConfiguration(schema: schema)
         #if DEBUG
         Self.assertSchemaCoverage()
         #endif
-        return try ModelContainer(for: schema, migrationPlan: AssistantMigrationPlan.self, configurations: config)
+        return try StartupMetrics.measure("openStore(versioned)") {
+            try ModelContainer(for: schema, migrationPlan: AssistantMigrationPlan.self, configurations: config)
+        }
     }
 
     /// 无迁移计划的旧路径：仅作为版本化计划识别不了真机遗留库时的兜底。
     private static func openStoreAutoMigrate() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV3.models)
+        let schema = Schema(AssistantSchemaV4.models)
         let config = ModelConfiguration(schema: schema)
-        return try ModelContainer(for: schema, configurations: config)
+        return try StartupMetrics.measure("openStore(autoMigrate)") {
+            try ModelContainer(for: schema, configurations: config)
+        }
     }
 
     /// 打开失败时生成可诊断的错误描述：附带库文件路径与体积，
@@ -83,7 +92,7 @@ enum Persistence {
     /// 删模型会让旧库升级后静默丢表。DEBUG 下断言，发布构建不增开销。
     private static func assertSchemaCoverage() {
         let v1 = Set(AssistantSchemaV1.models.map { String(describing: $0) })
-        let current = Set(AssistantSchemaV3.models.map { String(describing: $0) })
+        let current = Set(AssistantSchemaV4.models.map { String(describing: $0) })
         let missing = v1.subtracting(current)
         assert(missing.isEmpty, "V1 模型从当前版本消失，旧库升级会丢数据：\(missing.sorted())")
     }
@@ -188,20 +197,32 @@ enum AssistantSchemaV3: VersionedSchema {
     }
 }
 
+/// Schema V4：当前版本。V4 相对 V3 纯加法（新增饮食热量记录 FoodIntakeRecord），
+/// 走 lightweight 迁移即可。已发布版本 V3 清单不可再改；后续再有加法请新开 V5。
+enum AssistantSchemaV4: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        AssistantSchemaV3.models + [
+            FoodIntakeRecord.self
+        ]
+    }
+}
+
 /// 显式版本化迁移计划。**不要再回到「打不开就删库重建」**——
 /// 旧代码首次失败即删 default.store，用户数据直接蒸发；现在失败走恢复页导出原库。
 enum AssistantMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [AssistantSchemaV1.self, AssistantSchemaV2.self, AssistantSchemaV3.self]
+        [AssistantSchemaV1.self, AssistantSchemaV2.self, AssistantSchemaV3.self, AssistantSchemaV4.self]
     }
 
     static var stages: [MigrationStage] {
-        // V1→V2→V3 全是「加字段（带默认值）+ 加模型」，系统 lightweight 迁移可完成。
+        // V1→V2→V3→V4 全是「加字段（带默认值）+ 加模型」，系统 lightweight 迁移可完成。
         // 若未来出现不兼容变更（删字段/改类型），在此插自定义阶段，
         // 并把目标版本的该字段改回可选或提供默认值——不要静默丢数据。
         [
             .lightweight(fromVersion: AssistantSchemaV1.self, toVersion: AssistantSchemaV2.self),
-            .lightweight(fromVersion: AssistantSchemaV2.self, toVersion: AssistantSchemaV3.self)
+            .lightweight(fromVersion: AssistantSchemaV2.self, toVersion: AssistantSchemaV3.self),
+            .lightweight(fromVersion: AssistantSchemaV3.self, toVersion: AssistantSchemaV4.self)
         ]
     }
 }

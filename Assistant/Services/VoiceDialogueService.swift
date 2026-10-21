@@ -22,6 +22,8 @@ final class VoiceDialogueService: NSObject, ObservableObject {
     @Published public var recognizedText = ""
     @Published public var lastAssistantReply = ""
     @Published public var errorMessage: String?
+    /// 实时麦克风音量强度（0...1），供语音聆听动画的声波条跳动使用
+    @Published public var audioLevel: Float = 0
 
     private override init() {
         super.init()
@@ -88,12 +90,19 @@ final class VoiceDialogueService: NSObject, ObservableObject {
         let recordingFormat = inputNode.outputFormat(forBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             self?.recognitionRequest?.append(buffer)
+            let rms = Self.computeRMS(buffer)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let target = min(1.0, rms * 9.0)
+                self.audioLevel = self.audioLevel * 0.55 + target * 0.45
+            }
         }
 
         audioEngine.prepare()
         try audioEngine.start()
 
         isListening = true
+        audioLevel = 0
 
         recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self = self else { return }
@@ -156,6 +165,18 @@ final class VoiceDialogueService: NSObject, ObservableObject {
         isSpeaking = false
     }
 
+    /// 计算音频缓冲的 RMS 均方根能量，作为麦克风音量大小的近似度量
+    private static func computeRMS(_ buffer: AVAudioPCMBuffer) -> Float {
+        guard let channelData = buffer.floatChannelData, buffer.frameLength > 0 else { return 0 }
+        let frames = Int(buffer.frameLength)
+        let samples = channelData[0]
+        var sum: Float = 0
+        for i in 0..<frames {
+            let s = samples[i]
+            sum += s * s
+        }
+        return sqrt(sum / Float(frames))
+    }
 }
 
 // MARK: - AVSpeechSynthesizerDelegate & SFSpeechRecognizerDelegate

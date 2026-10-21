@@ -34,6 +34,10 @@ struct OmniboxView: View {
     @State private var actions: [PlannedAction] = []
     @State private var planEngine = "rules"
     @State private var planFallbackReason: String?
+    /// 意图判别把握不足：确认卡顶部给出可读提示，避免把不确定当确定写库。
+    @State private var planNeedsClarification = false
+    /// 意图分布的可读摘要（如「记账 78%（次选 新建待办 12%）」）。
+    @State private var planIntentReason: String?
     @State private var outcomes: [ActionExecutionOutcome] = []
     @State private var errorMessage: String?
     @State private var lastCapture: OmniboxCapture?
@@ -476,8 +480,16 @@ struct OmniboxView: View {
                     .foregroundStyle(.secondary)
             }
 
-            ForEach($actions) { $action in
-                actionCard($action)
+            // 意图把握度：模型分不清时明说，而不是照样给用户一个看着很确定的错误动作。
+            // 这是判别层相对生成式路径最实际的用户可感知收益。
+            if planNeedsClarification, let text = planIntentReason {
+                Text(L10n.tr("不太确定你要做什么（\(text)），请核对下方参数后再执行。"))
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+
+            ForEach(actions) { action in
+                actionCard(actionBinding(for: action))
             }
 
             if let errorMessage {
@@ -506,6 +518,20 @@ struct OmniboxView: View {
     }
 
     private var selectedCount: Int { actions.filter(\.isSelected).count }
+
+    /// 按 ID 安全索引动作 Binding：避免 `actions` 清空或重算过渡帧中，
+    /// UIKit `UISwitch` / `TextField` 持有的旧下标 Binding 触发 Array 越界断言闪退。
+    private func actionBinding(for fallback: PlannedAction) -> Binding<PlannedAction> {
+        Binding(
+            get: {
+                actions.first(where: { $0.id == fallback.id }) ?? fallback
+            },
+            set: { updated in
+                guard let idx = actions.firstIndex(where: { $0.id == fallback.id }) else { return }
+                actions[idx] = updated
+            }
+        )
+    }
 
     private func actionCard(_ action: Binding<PlannedAction>) -> some View {
         let wrapped = action.wrappedValue
@@ -575,12 +601,40 @@ struct OmniboxView: View {
             // 关键字段可直接编辑
             switch wrapped.capability {
             case .expenseCreate:
+                let selectedCurrency = ExpenseCurrency(rawValue: action.wrappedValue.params["currency"] ?? "CNY") ?? .cny
                 HStack(spacing: 8) {
-                    TextField(L10n.tr("金额"), text: numericBinding(action, key: "amount"))
+                    Menu {
+                        ForEach(ExpenseCurrency.allCases) { cur in
+                            Button(cur.pickerLabel) {
+                                switchExpenseCurrency(action: action, to: cur)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(selectedCurrency.flag)
+                            Text(selectedCurrency.symbol)
+                                .font(.caption.bold())
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    }
+
+                    TextField(L10n.tr("金额"), text: expenseAmountBinding(action, currency: selectedCurrency))
                         .keyboardType(.decimalPad)
                         .frame(width: 84)
                         .padding(6)
                         .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+
+                    if selectedCurrency != .cny {
+                        Text("≈ ¥\(action.wrappedValue.params["amount"] ?? "0.00")")
+                            .font(.caption.monospacedDigit().bold())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
                     Menu {
                         ForEach(ExpenseCategory.allCases, id: \.rawValue) { category in
                             Button(category.rawValue) {
@@ -754,6 +808,61 @@ struct OmniboxView: View {
         )
     }
 
+    /// 记账卡片金额绑定：支持外币原币编辑并实时折算为人民币
+    private func expenseAmountBinding(_ action: Binding<PlannedAction>, currency: ExpenseCurrency) -> Binding<String> {
+        Binding(
+            get: {
+                if currency == .cny {
+                    return action.wrappedValue.params["amount"] ?? ""
+                }
+                return action.wrappedValue.params["foreignAmount"] ?? action.wrappedValue.params["amount"] ?? ""
+            },
+            set: { newValue in
+                cancelClipboardDismiss()
+                let digits = newValue.filter { "0123456789.".contains($0) }
+                if currency == .cny {
+                    action.wrappedValue.params["amount"] = digits
+                } else {
+                    action.wrappedValue.params["foreignAmount"] = digits
+                    let rate = Double(action.wrappedValue.params["exchangeRate"] ?? "") ?? currency.currentRateToCNY
+                    let foreignVal = Double(digits) ?? 0
+                    let cnyVal = currency.convertToCNY(foreignVal, rate: rate)
+                    action.wrappedValue.params["amount"] = String(format: "%.2f", cnyVal)
+                }
+                action.wrappedValue.summary = OmniboxPlanner.summary(
+                    for: .expenseCreate, params: action.wrappedValue.params
+                )
+            }
+        )
+    }
+
+    private func switchExpenseCurrency(action: Binding<PlannedAction>, to newCurrency: ExpenseCurrency) {
+        cancelClipboardDismiss()
+        let currentForeign = Double(action.wrappedValue.params["foreignAmount"] ?? "")
+        let currentCNY = Double(action.wrappedValue.params["amount"] ?? "") ?? 0
+        let baseNumber = (currentForeign ?? 0) > 0 ? (currentForeign ?? 0) : currentCNY
+
+        if newCurrency == .cny {
+            action.wrappedValue.params.removeValue(forKey: "currency")
+            action.wrappedValue.params.removeValue(forKey: "foreignAmount")
+            action.wrappedValue.params.removeValue(forKey: "exchangeRate")
+            action.wrappedValue.params["amount"] = String(format: "%.2f", baseNumber)
+        } else {
+            let rate = newCurrency.currentRateToCNY
+            let cny = newCurrency.convertToCNY(baseNumber, rate: rate)
+            action.wrappedValue.params["currency"] = newCurrency.rawValue
+            action.wrappedValue.params["foreignAmount"] = baseNumber.truncatingRemainder(dividingBy: 1) == 0
+                ? String(format: "%.0f", baseNumber)
+                : String(format: "%.2f", baseNumber)
+            action.wrappedValue.params["exchangeRate"] = String(format: "%.6f", rate)
+            action.wrappedValue.params["amount"] = String(format: "%.2f", cny)
+        }
+        action.wrappedValue.summary = OmniboxPlanner.summary(
+            for: .expenseCreate, params: action.wrappedValue.params
+        )
+        Haptic.selection()
+    }
+
     /// 通用日期编辑（记账交易时间 dateISO）
     private func dateBinding(_ action: Binding<PlannedAction>, key: String) -> Binding<Date> {
         Binding(
@@ -921,6 +1030,8 @@ struct OmniboxView: View {
         let plan = await OmniboxPlanner().plan(capture: capture)
         planEngine = plan.engine
         planFallbackReason = plan.fallbackReason
+        planNeedsClarification = plan.needsClarification
+        planIntentReason = plan.intentDistribution?.reasonText
         if plan.actions.isEmpty {
             // 纯图片但 OCR 颗粒无收时给出针对性提示
             let hasImages = !images.isEmpty

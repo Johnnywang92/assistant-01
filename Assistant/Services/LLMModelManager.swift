@@ -3,6 +3,134 @@ import CryptoKit
 import Foundation
 import SwiftUI
 
+/// 端侧可选大模型规格预设（支持升级切换至 Qwen3 系列）
+public enum LLMModelPreset: String, CaseIterable, Identifiable, Sendable {
+    case qwen3_1_7b = "qwen3_1_7b"
+    case qwen3_4b = "qwen3_4b"
+    case qwen2_5_1_5b = "qwen2_5_1_5b"
+
+    public var id: String { rawValue }
+
+    /// 模型展示名称
+    public var displayName: String {
+        switch self {
+        case .qwen3_1_7b: return "Qwen3-1.7B-Instruct (推荐)"
+        case .qwen3_4b: return "Qwen3-4B-Instruct (增强版)"
+        case .qwen2_5_1_5b: return "Qwen2.5-1.5B-Instruct (轻量兼容)"
+        }
+    }
+
+    /// 简短名称（用于导航栏、状态栏与提示词）
+    public var shortName: String {
+        switch self {
+        case .qwen3_1_7b: return "Qwen3-1.7B"
+        case .qwen3_4b: return "Qwen3-4B"
+        case .qwen2_5_1_5b: return "Qwen2.5-1.5B"
+        }
+    }
+
+    /// 模型能力与适用机型说明
+    public var subtitle: String {
+        switch self {
+        case .qwen3_1_7b:
+            return L10n.tr("新一代千问 Qwen3 架构 · 推理与指令遵循大幅提升，兼顾速度与低内存")
+        case .qwen3_4b:
+            return L10n.tr("40 亿参数高阶端侧模型 · 食物热量推断与复杂拆解更强（建议 8GB+ 内存机型）")
+        case .qwen2_5_1_5b:
+            return L10n.tr("经典轻量端侧模型 · 体积最小，兼容旧版已下载模型文件")
+        }
+    }
+
+    /// 参数规模展示文案
+    public var parameterCountText: String {
+        switch self {
+        case .qwen3_1_7b: return "17.2 亿 (1.7B)"
+        case .qwen3_4b: return "40.2 亿 (4.0B)"
+        case .qwen2_5_1_5b: return "15.4 亿 (1.54B)"
+        }
+    }
+
+    /// 文件体积可读说明
+    public var formattedExpectedSize: String {
+        switch self {
+        case .qwen3_1_7b: return L10n.tr("约 1.11 GB")
+        case .qwen3_4b: return L10n.tr("约 2.50 GB")
+        case .qwen2_5_1_5b: return L10n.tr("约 986 MB")
+        }
+    }
+
+    /// 运行内存预估说明
+    public var estimatedRAMText: String {
+        switch self {
+        case .qwen3_1_7b: return L10n.tr("约 1.2 GB")
+        case .qwen3_4b: return L10n.tr("约 2.6 GB")
+        case .qwen2_5_1_5b: return L10n.tr("约 980 MB")
+        }
+    }
+
+    /// 本地存储文件名
+    public var fileName: String {
+        switch self {
+        case .qwen3_1_7b: return "Qwen3-1.7B-Q4_K_M.gguf"
+        case .qwen3_4b: return "Qwen3-4B-Q4_K_M.gguf"
+        case .qwen2_5_1_5b: return "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+        }
+    }
+
+    /// 预期字节大小（用于下载进度预估）
+    public var expectedSizeApproxBytes: Int64 {
+        switch self {
+        case .qwen3_1_7b: return 1_110_000_000
+        case .qwen3_4b: return 2_500_000_000
+        case .qwen2_5_1_5b: return 986_000_000
+        }
+    }
+
+    /// 校验时的最小合法字节数
+    public var minValidSizeBytes: Int64 {
+        switch self {
+        case .qwen3_1_7b: return 900_000_000
+        case .qwen3_4b: return 2_000_000_000
+        case .qwen2_5_1_5b: return 850_000_000
+        }
+    }
+
+    /// 对应局域网 Ollama 推荐模型名
+    public var ollamaModelTag: String {
+        switch self {
+        case .qwen3_1_7b: return "qwen3:1.7b"
+        case .qwen3_4b: return "qwen3:4b"
+        case .qwen2_5_1_5b: return "qwen2.5:1.5b"
+        }
+    }
+
+    /// 是否属于 Qwen3 架构家族（支持 `<think>` 思考标签控制）
+    public var isQwen3Family: Bool {
+        switch self {
+        case .qwen3_1_7b, .qwen3_4b: return true
+        case .qwen2_5_1_5b: return false
+        }
+    }
+
+    /// 获取指定下载源的下载地址
+    public func downloadURL(for source: LLMDownloadSource) -> URL {
+        switch (self, source) {
+        case (.qwen3_1_7b, .modelScope):
+            return URL(string: "https://www.modelscope.cn/models/Qwen/Qwen3-1.7B-GGUF/resolve/master/Qwen3-1.7B-Q4_K_M.gguf")!
+        case (.qwen3_1_7b, .huggingFace):
+            return URL(string: "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf")!
+        case (.qwen3_4b, .modelScope):
+            return URL(string: "https://www.modelscope.cn/models/Qwen/Qwen3-4B-GGUF/resolve/master/Qwen3-4B-Q4_K_M.gguf")!
+        case (.qwen3_4b, .huggingFace):
+            return URL(string: "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf")!
+        case (.qwen2_5_1_5b, .modelScope):
+            return URL(string: "https://www.modelscope.cn/models/qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/master/qwen2.5-1.5b-instruct-q4_k_m.gguf")!
+        case (.qwen2_5_1_5b, .huggingFace):
+            return URL(string: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf")!
+        }
+    }
+}
+
 /// 下载源选择
 public enum LLMDownloadSource: String, CaseIterable, Identifiable {
     case modelScope = "ModelScope (魔搭社区 · 阿里国内极速)"
@@ -13,12 +141,7 @@ public enum LLMDownloadSource: String, CaseIterable, Identifiable {
     public var displayName: String { L10n.tr(rawValue) }
 
     public var downloadURL: URL {
-        switch self {
-        case .modelScope:
-            return URL(string: "https://www.modelscope.cn/models/qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/master/qwen2.5-1.5b-instruct-q4_k_m.gguf")!
-        case .huggingFace:
-            return URL(string: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf")!
-        }
+        LLMModelPreset.qwen3_1_7b.downloadURL(for: self)
     }
 }
 
@@ -30,13 +153,14 @@ public enum LLMModelValidationStatus: Equatable {
     case validationFailed(reason: String)
 }
 
-/// Qwen2.5-1.5B-Instruct 本地大模型文件管理与极速下载器
+/// 本地大模型（Qwen3 / Qwen2.5）文件管理与极速下载器
 @MainActor
 public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     public static let shared = LLMModelManager()
 
-    nonisolated public static let modelFileName = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
-    nonisolated public static let expectedSizeApproxBytes: Int64 = 986_000_000 // 约 986 MB
+    nonisolated public static let modelFileName = LLMModelPreset.qwen2_5_1_5b.fileName
+    nonisolated public static let expectedSizeApproxBytes: Int64 = LLMModelPreset.qwen3_1_7b.expectedSizeApproxBytes
+    private static let selectedPresetKey = "llm_selected_model_preset_v1"
 
     // 模型存储目录
     public var modelsDirectory: URL {
@@ -47,13 +171,48 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         return dir
     }
 
-    public var localModelURL: URL {
-        modelsDirectory.appendingPathComponent(Self.modelFileName)
+    /// 当前选中的端侧模型规格（支持在 Qwen3-1.7B / Qwen3-4B / Qwen2.5-1.5B 之间切换）
+    @Published public var selectedPreset: LLMModelPreset = .qwen3_1_7b {
+        didSet {
+            guard oldValue != selectedPreset else { return }
+            UserDefaults.standard.set(selectedPreset.rawValue, forKey: Self.selectedPresetKey)
+            handlePresetSwitch(from: oldValue, to: selectedPreset)
+        }
     }
 
-    /// 断点续传数据持久化路径
+    public func modelURL(for preset: LLMModelPreset) -> URL {
+        modelsDirectory.appendingPathComponent(preset.fileName)
+    }
+
+    public var localModelURL: URL {
+        modelURL(for: selectedPreset)
+    }
+
+    /// 断点续传数据持久化路径（按模型规格隔离，切换模型不会冲掉另一模型的下载进度）
     public var resumeDataURL: URL {
-        modelsDirectory.appendingPathComponent("qwen_download.resume_data")
+        resumeDataURL(for: selectedPreset)
+    }
+
+    private func resumeDataURL(for preset: LLMModelPreset) -> URL {
+        modelsDirectory.appendingPathComponent("\(preset.rawValue)_download.resume_data")
+    }
+
+    private func validatedDigestKey(for preset: LLMModelPreset) -> String {
+        switch preset {
+        case .qwen2_5_1_5b:
+            return "llm_model_validated_sha256_v1"
+        default:
+            return "llm_model_validated_sha256_\(preset.rawValue)"
+        }
+    }
+
+    private var validatedDigestKey: String {
+        validatedDigestKey(for: selectedPreset)
+    }
+
+    /// 判断某个预设模型文件是否已存在于本地磁盘
+    public func hasModelFileOnDisk(for preset: LLMModelPreset) -> Bool {
+        FileManager.default.fileExists(atPath: modelURL(for: preset).path)
     }
 
     // 状态发布
@@ -64,14 +223,14 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
     @Published public var hasResumeData: Bool = false
     @Published public var downloadProgress: Double = 0.0
     @Published public var downloadedBytes: Int64 = 0
-    @Published public var totalBytes: Int64 = expectedSizeApproxBytes
+    @Published public var totalBytes: Int64 = LLMModelPreset.qwen3_1_7b.expectedSizeApproxBytes
     @Published public var downloadSpeedMBps: Double = 0.0
     @Published public var errorMessage: String?
     @Published public var selectedSource: LLMDownloadSource = .modelScope
 
     private var downloadTask: URLSessionDownloadTask?
+    private var downloadingPreset: LLMModelPreset?
     private var validationGeneration = 0
-    private let validatedDigestKey = "llm_model_validated_sha256_v1"
     private var lastSpeedCheckTime: Date = .now
     private var lastSpeedBytes: Int64 = 0
     private lazy var urlSession: URLSession = {
@@ -83,15 +242,49 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
 
     private override init() {
         super.init()
+        if let savedRaw = UserDefaults.standard.string(forKey: Self.selectedPresetKey),
+           let saved = LLMModelPreset(rawValue: savedRaw) {
+            self.selectedPreset = saved
+        } else {
+            // 若旧版已下载过 Qwen2.5-1.5B 且尚未下载 Qwen3，则自动保持选中已下载的模型；新用户默认选中 Qwen3-1.7B
+            let qwen3_1_7bExists = FileManager.default.fileExists(atPath: modelsDirectory.appendingPathComponent(LLMModelPreset.qwen3_1_7b.fileName).path)
+            let qwen3_4bExists = FileManager.default.fileExists(atPath: modelsDirectory.appendingPathComponent(LLMModelPreset.qwen3_4b.fileName).path)
+            let legacyExists = FileManager.default.fileExists(atPath: modelsDirectory.appendingPathComponent(LLMModelPreset.qwen2_5_1_5b.fileName).path)
+            if qwen3_4bExists {
+                self.selectedPreset = .qwen3_4b
+            } else if qwen3_1_7bExists {
+                self.selectedPreset = .qwen3_1_7b
+            } else if legacyExists {
+                self.selectedPreset = .qwen2_5_1_5b
+            } else {
+                self.selectedPreset = .qwen3_1_7b
+            }
+        }
+        self.totalBytes = selectedPreset.expectedSizeApproxBytes
+        checkModelStatus()
+    }
+
+    private func handlePresetSwitch(from oldPreset: LLMModelPreset, to newPreset: LLMModelPreset) {
+        if isDownloading {
+            pauseDownload()
+        }
+        errorMessage = nil
+        downloadProgress = 0.0
+        downloadedBytes = 0
+        totalBytes = newPreset.expectedSizeApproxBytes
+        Task {
+            await LLMInferenceService.shared.unloadLocalModel()
+        }
         checkModelStatus()
     }
 
     /// 快速同步校验本地 GGUF 模型文件头与体积是否有效（毫秒级，不阻塞主线程）
     public var hasValidLocalGGUFFile: Bool {
         let url = localModelURL
+        let minSize = selectedPreset.minValidSizeBytes
         guard FileManager.default.fileExists(atPath: url.path),
               let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value,
-              size >= 850_000_000,
+              size >= min(minSize, 300_000_000),
               let handle = try? FileHandle(forReadingFrom: url) else {
             return false
         }
@@ -124,8 +317,9 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         validationStatus = .validating
 
         let expectedDigest = UserDefaults.standard.string(forKey: validatedDigestKey)
+        let minSize = selectedPreset.minValidSizeBytes
         Task.detached(priority: .utility) {
-            let result = Result { try Self.validateModel(at: url) }
+            let result = Result { try Self.validateModel(at: url, minSizeBytes: minSize) }
             await MainActor.run {
                 guard generation == self.validationGeneration else { return }
                 switch result {
@@ -158,6 +352,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         validationGeneration += 1
         let generation = validationGeneration
         let url = localModelURL
+        let minSize = selectedPreset.minValidSizeBytes
 
         guard FileManager.default.fileExists(atPath: url.path) else {
             validationStatus = .noModelFile
@@ -168,7 +363,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
 
         validationStatus = .validating
         let result = await Task.detached(priority: .utility) {
-            Result { try Self.validateModel(at: url) }
+            Result { try Self.validateModel(at: url, minSizeBytes: minSize) }
         }.value
 
         guard generation == validationGeneration else { return isModelDownloaded }
@@ -194,9 +389,9 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         }
     }
 
-    nonisolated private static func validateModel(at url: URL) throws -> (size: Int64, digest: String) {
+    nonisolated private static func validateModel(at url: URL, minSizeBytes: Int64 = 300_000_000) throws -> (size: Int64, digest: String) {
         let size = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
-        guard size >= 850_000_000 else { throw ModelValidationError.invalidSize }
+        guard size >= minSizeBytes else { throw ModelValidationError.invalidSize }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         let header = try handle.read(upToCount: 8) ?? Data()
@@ -256,7 +451,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         if isModelDownloaded {
             return formatter.string(fromByteCount: downloadedBytes)
         }
-        return L10n.tr("约 986 MB")
+        return selectedPreset.formattedExpectedSize
     }
 
     /// 开启或继续模型下载（支持断点续传）
@@ -264,10 +459,12 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         guard !isDownloading else { return }
         let src = source ?? selectedSource
         self.selectedSource = src
+        self.downloadingPreset = selectedPreset
         self.errorMessage = nil
         self.downloadSpeedMBps = 0.0
         self.lastSpeedCheckTime = .now
         self.lastSpeedBytes = 0
+        self.totalBytes = selectedPreset.expectedSizeApproxBytes
 
         // 确保目标目录存在
         _ = modelsDirectory
@@ -289,7 +486,8 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
             clearResumeData()
             self.downloadProgress = 0.0
             self.downloadedBytes = 0
-            let task = urlSession.downloadTask(with: src.downloadURL)
+            let downloadURL = selectedPreset.downloadURL(for: src)
+            let task = urlSession.downloadTask(with: downloadURL)
             downloadTask = task
             task.resume()
             isDownloading = true
@@ -384,7 +582,8 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
     ) {
         Task { @MainActor in
             self.downloadedBytes = totalBytesWritten
-            let expected = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : Self.expectedSizeApproxBytes
+            let fallbackExpected = (self.downloadingPreset ?? self.selectedPreset).expectedSizeApproxBytes
+            let expected = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : fallbackExpected
             self.totalBytes = expected
             self.downloadProgress = Double(totalBytesWritten) / Double(expected)
 
@@ -439,11 +638,12 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
             }
             return
         }
-        Task.detached(priority: .utility) {
-            let result = Result { try Self.validateModel(at: candidateURL) }
-            await MainActor.run {
-                self.completeDownloadedModel(candidateURL: candidateURL, validation: result)
-            }
+        Task { @MainActor in
+            let minSize = (self.downloadingPreset ?? self.selectedPreset).minValidSizeBytes
+            let result = await Task.detached(priority: .utility) {
+                Result { try Self.validateModel(at: candidateURL, minSizeBytes: minSize) }
+            }.value
+            self.completeDownloadedModel(candidateURL: candidateURL, validation: result)
         }
     }
 

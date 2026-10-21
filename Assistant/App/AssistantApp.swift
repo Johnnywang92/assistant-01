@@ -1,23 +1,64 @@
 import SwiftData
 import SwiftUI
+import os
+
+/// 冷启动埋点：进程内相对时刻 + 单段同步耗时。仅 DEBUG 构建输出，发布构建为空操作。
+enum StartupMetrics {
+    private static let start = CFAbsoluteTimeGetCurrent()
+    private static let logger = Logger(subsystem: "assistant.startup", category: "timing")
+    #if DEBUG
+    private static let seenNodesLock = OSAllocatedUnfairLock(initialState: Set<String>())
+    #endif
+
+    static func mark(_ node: String) {
+        #if DEBUG
+        let elapsed = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
+        logger.log("t+\(elapsed, privacy: .public)ms  \(node, privacy: .public)")
+        #endif
+    }
+
+    /// 只输出一次的节点（SwiftUI body / onAppear 会被反复求值）。key 固定用于去重，detail 懒求值。
+    static func markOnce(_ key: String, _ detail: @autoclosure () -> String = "") {
+        #if DEBUG
+        let inserted = seenNodesLock.withLock { $0.insert(key).inserted }
+        if !inserted { return }
+        let extra = detail()
+        mark(extra.isEmpty ? key : "\(key) \(extra)")
+        #endif
+    }
+
+    @discardableResult
+    static func measure<R>(_ node: String, _ body: () throws -> R) rethrows -> R {
+        #if DEBUG
+        let begin = CFAbsoluteTimeGetCurrent()
+        let result = try body()
+        logger.log("cost \(Int((CFAbsoluteTimeGetCurrent() - begin) * 1000), privacy: .public)ms  \(node, privacy: .public)")
+        return result
+        #else
+        return try body()
+        #endif
+    }
+}
 
 @main
 struct AssistantApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var lockManager = AppLockManager.shared
+    @StateObject private var lockManager = StartupMetrics.measure("appLockManagerInit") { AppLockManager.shared }
     @StateObject private var router = NavigationRouter.shared
     @StateObject private var bgManager = AppBackgroundManager.shared
     @StateObject private var seniorManager = SeniorModeManager.shared
     @StateObject private var langManager = LanguageManager.shared
-    @StateObject private var pinManager = MigrationPinManager.shared
+    @StateObject private var pinManager = StartupMetrics.measure("migrationPinManagerInit") { MigrationPinManager.shared }
 
     init() {
+        StartupMetrics.mark("app.init begin")
         // 注册小组件/实时活动桥接钩子：AppIntent 在主应用进程（Siri、操作按钮、快捷指令）
         // 执行时直连 SwiftData；扩展进程执行时走 App Group 指令队列。
-        WidgetBridge.appHook = WidgetSnapshotSyncController.shared
+        WidgetBridge.appHook = StartupMetrics.measure("widgetHookInstall") { WidgetSnapshotSyncController.shared }
         // 注册后台定时巡检任务 (BGAppRefreshTask)
-        BackgroundRefreshCoordinator.shared.registerBackgroundTask()
+        StartupMetrics.measure("bgTaskRegister") { BackgroundRefreshCoordinator.shared.registerBackgroundTask() }
+        StartupMetrics.mark("app.init end")
     }
 
     private var isAppLocked: Bool {
@@ -53,9 +94,10 @@ struct AssistantApp: App {
             .responsiveAnimation(.easeInOut(duration: 0.25), value: isAppLocked)
             .task {
                 guard Persistence.recoveryError == nil else { return }
+                StartupMetrics.mark("root.task begin")
                 // 密码迁移不再在冷启动主线程执行：全表拉取 + 可触发 SQLite VACUUM，
                 // 改由打开保险箱时（PasswordVaultView.onAppear）惰性地按需迁移。
-                router.registerDynamicShortcuts()
+                StartupMetrics.measure("registerDynamicShortcuts") { router.registerDynamicShortcuts() }
                 TodoNotificationManager.shared.registerCategories()
                 // 取件销号通知的「已取件 / 全部取齐」按钮，抬腕即可点
                 await PickupCheckoutService.registerCategory()
@@ -63,8 +105,10 @@ struct AssistantApp: App {
                 await LiveActivityControlNotifications.registerCategories()
                 // 到站/落地清点提醒的「开始清点」按钮，锁屏上点一下就进清单
                 await TripArrivalService.shared.registerCategory()
+                StartupMetrics.mark("notifyCategories ready")
                 // 优先刷新桌面小组件/锁屏组件共享快照，并对账扩展侧产生的指令
-                WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext)
+                StartupMetrics.measure("refreshSnapshot") { WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext) }
+                StartupMetrics.mark("root.task end")
 
                 // 延后耗时的后台通知全量对账与排期，优先保证首帧渲染顺畅秒开
                 Task {
@@ -89,8 +133,10 @@ struct AssistantApp: App {
 
                 // 异步平滑派发前台巡检与收件箱任务，避免阻塞首屏渲染与用户交互手势
                 Task {
+                    StartupMetrics.mark("foreground.audit scheduled")
                     // 让出主线程，等待首帧转场动画和手势响应完成
                     try? await Task.sleep(nanoseconds: 350_000_000)
+                    StartupMetrics.mark("foreground.audit begin")
 
                     let context = Persistence.shared.mainContext
                     // 1/4/9/11: 共用 BackgroundRefreshCoordinator 幂等巡检

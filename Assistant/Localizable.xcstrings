@@ -55,6 +55,9 @@
         }
       }
     },
+    " 千卡" : {
+
+    },
     " 日报" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1597,6 +1600,16 @@
         }
       }
     },
+    "%@ %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
     "%@ %lld%%" : {
       "localizations" : {
         "zh-Hans" : {
@@ -1828,6 +1841,16 @@
     },
     "%@.md" : {
 
+    },
+    "%@%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$@"
+          }
+        }
+      }
     },
     "%@周期：每 %@ 天提醒一次" : {
       "extractionState" : "manual",
@@ -2356,6 +2379,9 @@
       }
     },
     "%lld 件" : {
+
+    },
+    "%lld 千卡" : {
 
     },
     "%lld 处" : {
@@ -4799,6 +4825,9 @@
         }
       }
     },
+    "≈ ¥%@" : {
+
+    },
     "⚙️ 基础设置向导" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5152,6 +5181,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "✓ 已将报告完整 Markdown 复制到剪贴板"
+          }
+        }
+      }
+    },
+    "🌏 出国游模式：未写币种时默认按 %@ %@（%@）自动折算人民币；也可直接说“1200日元 / 25美元”" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "🌏 出国游模式：未写币种时默认按 %1$@ %2$@（%3$@）自动折算人民币；也可直接说“1200日元 / 25美元”"
           }
         }
       }
@@ -5570,6 +5609,9 @@
     "💡 二手交易如何影响实际持有成本" : {
 
     },
+    "💡 提示：您也可以在 Mac 上下载好 `%@`（或任意 Qwen3 / Qwen2.5 GGUF 模型）后，通过 AirDrop 发送至 iPhone「文件」App 导入。" : {
+
+    },
     "💡 提示：您也可以在 Mac 上下载好 `qwen2.5-1.5b-instruct-q4_k_m.gguf` 后，通过 AirDrop 发送至 iPhone「文件」App，或通过访达连线拖入本 App 的「Models」目录。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5603,6 +5645,9 @@
           }
         }
       }
+    },
+    "💡 支持自然语言与多国货币：麦当劳38、拉面1200日元、星巴克$6.5、打车300泰铢等，自动折算人民币" : {
+
     },
     "💡 科学原理：人类大脑擅长记忆具象画面和语义关联，计算机暴力破解依靠指数穷举。使用 3 组自然意象词搭配符号与数字，密码熵达 50~70 bits，暴力穷举需数千万年，既固若金汤又过目不忘。" : {
       "extractionState" : "manual",
@@ -6395,12 +6440,12 @@
     "¥%@" : {
 
     },
-    "¥%@%@" : {
+    "¥%@%@ · 月均 ¥%@" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "¥%1$@%2$@"
+            "value" : "¥%1$@%2$@ · 月均 ¥%3$@"
           }
         }
       }
@@ -6421,6 +6466,9 @@
           }
         }
       }
+    },
+    "0" : {
+
     },
     "0.00" : {
 
@@ -6512,6 +6560,9 @@
           }
         }
       }
+    },
+    "2" : {
+
     },
     "2 秒" : {
 
@@ -7118,6 +7169,9 @@
         }
       }
     },
+    "30" : {
+
+    },
     "30天保留" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7308,6 +7362,9 @@
         }
       }
     },
+    "AI 端侧大模型 (Qwen3 / Qwen2.5)" : {
+
+    },
     "AI 端侧提炼核心要点" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7410,6 +7467,23 @@
         }
       }
     },
+    "Apple 健康" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Health"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 健康"
+          }
+        }
+      }
+    },
     "Apple 服务按月连续扣款" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7495,6 +7569,9 @@
         }
       }
     },
+    "CNY" : {
+
+    },
     "GGUF 已就绪" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7576,6 +7653,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iOS 不允许 App 读取短信，需要用「快捷指令」在收到短信时把内容交给助手。每个关键词建一个自动化，约 3 分钟配完。"
+          }
+        }
+      }
+    },
+    "iPad 等设备上没有「健康」数据源，本页无法展示任何数值。其它功能不受影响。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devices such as iPad have no Health data source, so this page cannot show any numbers. Other features are unaffected."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPad 等设备上没有「健康」数据源，本页无法展示任何数值。其它功能不受影响。"
           }
         }
       }
@@ -7667,6 +7761,9 @@
           }
         }
       }
+    },
+    "Models/%@" : {
+
     },
     "ModelScope (魔搭社区 · 阿里国内极速)" : {
       "extractionState" : "manual",
@@ -7828,9 +7925,6 @@
       }
     },
     "Q4_K_M (4-bit)" : {
-
-    },
-    "Qwen2.5-1.5B-Instruct" : {
 
     },
     "Rh阳性" : {
@@ -8037,6 +8131,9 @@
         }
       }
     },
+    "一句话记账（如：麦当劳38、拉面1200日元、$15）" : {
+
+    },
     "一周岁生日抓周礼" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8192,6 +8289,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "一键极速下载 (~986 MB)"
+          }
+        }
+      }
+    },
+    "一键极速下载 %@ (%@)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "一键极速下载 %1$@ (%2$@)"
           }
         }
       }
@@ -8385,6 +8492,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上海文博：上海博物馆提前7天12:00放票、迪士尼提前10-30天早鸟票、中华艺术宫提前实名预约"
+          }
+        }
+      }
+    },
+    "上牌" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registration"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上牌"
+          }
+        }
+      }
+    },
+    "上牌与保险" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Registration & Insurance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上牌与保险"
           }
         }
       }
@@ -8640,6 +8781,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下周"
+          }
+        }
+      }
+    },
+    "下次扣费" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next Charge"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下次扣费"
           }
         }
       }
@@ -8987,6 +9145,23 @@
         }
       }
     },
+    "不太确定你要做什么（），请核对下方参数后再执行。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not sure what you mean (\\(text)). Check the details below before running."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不太确定你要做什么（），请核对下方参数后再执行。"
+          }
+        }
+      }
+    },
     "不常用的物品转卖为二手后，在此记录回血金额：实际持有成本 = 累计投入 − 转卖所得，持有天数截至转卖日。" : {
 
     },
@@ -9135,6 +9310,57 @@
         }
       }
     },
+    "与伴侣及大宝沟通计划" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discuss the plan with partner & first child"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与伴侣及大宝沟通计划"
+          }
+        }
+      }
+    },
+    "与本地打卡的关系" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relation to Local Check-ins"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与本地打卡的关系"
+          }
+        }
+      }
+    },
+    "与销售确认价格与赠品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm price & bonuses with sales"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "与销售确认价格与赠品"
+          }
+        }
+      }
+    },
     "专为生活高频痛点设计：\n1. 连续包月与免费试用常在不知不觉中扣款；\n2. 护照/驾照/开封药品常在急用时才发现过期。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9267,6 +9493,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "个人常备药品"
+          }
+        }
+      }
+    },
+    "中介服务" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent Fee"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中介服务"
           }
         }
       }
@@ -9594,6 +9837,23 @@
         }
       }
     },
+    "为大宝调整作息与入学" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjust the older child's routine & schooling"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为大宝调整作息与入学"
+          }
+        }
+      }
+    },
     "为明日外出备电" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9661,6 +9921,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "主屏幕长按快捷菜单"
+          }
+        }
+      }
+    },
+    "主材" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Main Materials"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主材"
+          }
+        }
+      }
+    },
+    "主材与安装" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Materials & Installation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主材与安装"
           }
         }
       }
@@ -9920,6 +10214,23 @@
         }
       }
     },
+    "买房" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy a Home"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "买房"
+          }
+        }
+      }
+    },
     "买票" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9984,6 +10295,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "买衣服"
+          }
+        }
+      }
+    },
+    "买车" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy a Car"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "买车"
           }
         }
       }
@@ -10092,6 +10420,23 @@
     },
     "二手购入" : {
 
+    },
+    "二胎" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Second Child"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "二胎"
+          }
+        }
+      }
     },
     "五一假期" : {
       "extractionState" : "manual",
@@ -10208,6 +10553,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "交通方式"
+          }
+        }
+      }
+    },
+    "产检与分娩" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checkups & Delivery"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "产检与分娩"
           }
         }
       }
@@ -10330,6 +10692,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "人像面（正面）"
+          }
+        }
+      }
+    },
+    "人工" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Labor"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "人工"
           }
         }
       }
@@ -10870,10 +11249,30 @@
         }
       }
     },
+    "今日健康参考" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today's Health Reference"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日健康参考"
+          }
+        }
+      }
+    },
     "今日安心花" : {
 
     },
     "今日安排 · %lld" : {
+
+    },
+    "今日尚未记录饮食，拍张照片或选菜名即可估算" : {
 
     },
     "今日已支出 ¥38.00" : {
@@ -10892,6 +11291,19 @@
           }
         }
       }
+    },
+    "今日已记 %lld 餐 · 共摄入约 %lld 千卡" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "今日已记 %1$lld 餐 · 共摄入约 %2$lld 千卡"
+          }
+        }
+      }
+    },
+    "今日已记录摄入" : {
+
     },
     "今日待办完成情况与消费账单已复盘完毕，点击查看今日专属总结。" : {
       "extractionState" : "manual",
@@ -10974,6 +11386,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "今日支出"
+          }
+        }
+      }
+    },
+    "今日步数、能量、饮水与睡眠可查看" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today's steps, energy, water and sleep available"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日步数、能量、饮水与睡眠可查看"
           }
         }
       }
@@ -11222,6 +11651,9 @@
         }
       }
     },
+    "从相册选择" : {
+
+    },
     "从相册选择照片壁纸" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11409,6 +11841,9 @@
         }
       }
     },
+    "份量" : {
+
+    },
     "休闲娱乐" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11476,6 +11911,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "会议室对齐本周阻塞项"
+          }
+        }
+      }
+    },
+    "伴手礼" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Souvenirs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "伴手礼"
           }
         }
       }
@@ -11982,6 +12434,23 @@
         }
       }
     },
+    "保养维修" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maintenance & Repair"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保养维修"
+          }
+        }
+      }
+    },
     "保存" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12101,6 +12570,9 @@
         }
       }
     },
+    "保存本次记录" : {
+
+    },
     "保存相册遇到未知状态" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12186,6 +12658,23 @@
         }
       }
     },
+    "保洁通风" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cleaning & Air-out"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保洁通风"
+          }
+        }
+      }
+    },
     "保留周期: %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12250,6 +12739,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保质期预警（如：鲜牛奶到期、家庭常备药有效期、换驾照）"
+          }
+        }
+      }
+    },
+    "保险" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insurance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保险"
           }
         }
       }
@@ -12495,6 +13001,23 @@
         }
       }
     },
+    "停车车位" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parking"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停车车位"
+          }
+        }
+      }
+    },
     "健康" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12559,6 +13082,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "健康备忘"
+          }
+        }
+      }
+    },
+    "健康数据" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health Data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "健康数据"
+          }
+        }
+      }
+    },
+    "健康数据入口的状态摘要。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health data entry status summary."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "健康数据入口的状态摘要。"
           }
         }
       }
@@ -13468,6 +14025,19 @@
         }
       }
     },
+    "共 %lld 道菜品" : {
+
+    },
+    "共 %lld 餐 · 因未吃完少摄入约 %lld 千卡" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "共 %1$lld 餐 · 因未吃完少摄入约 %2$lld 千卡"
+          }
+        }
+      }
+    },
     "共享单车" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13552,6 +14122,9 @@
           }
         }
       }
+    },
+    "共记录 %lld 餐 · 点击下方记录可随时修改吃剩比例" : {
+
     },
     "关心父母近况" : {
       "extractionState" : "manual",
@@ -14232,6 +14805,40 @@
         }
       }
     },
+    "准备上牌材料与保险" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepare registration & insurance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备上牌材料与保险"
+          }
+        }
+      }
+    },
+    "准备二宝专属用品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy supplies for the new baby"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备二宝专属用品"
+          }
+        }
+      }
+    },
     "准备前期所需物资、工具与必要协作人员" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14317,6 +14924,23 @@
         }
       }
     },
+    "准备宝宝服装与道具" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepare outfits & props"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备宝宝服装与道具"
+          }
+        }
+      }
+    },
     "准备宝宝用品" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14364,6 +14988,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "准备搞"
+          }
+        }
+      }
+    },
+    "准备新生儿衣物与用品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buy newborn clothes & supplies"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备新生儿衣物与用品"
           }
         }
       }
@@ -14432,6 +15073,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "准备纪念礼物"
+          }
+        }
+      }
+    },
+    "准备纸箱与打包材料" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get boxes & packing supplies"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备纸箱与打包材料"
+          }
+        }
+      }
+    },
+    "准备网签与过户资料" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prepare contract & transfer papers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备网签与过户资料"
           }
         }
       }
@@ -14707,6 +15382,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "出行"
+          }
+        }
+      }
+    },
+    "出行与座驾" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cars & Travel"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "出行与座驾"
           }
         }
       }
@@ -15754,6 +16446,9 @@
     "切换待办的展示方式：板块分组或全局自由排序" : {
 
     },
+    "切换端侧模型规格 (支持 Qwen3)" : {
+
+    },
     "切至日常轻装" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16060,6 +16755,9 @@
         }
       }
     },
+    "删除这条饮食记录" : {
+
+    },
     "删除这笔账目" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16233,6 +16931,23 @@
         }
       }
     },
+    "到期自动记入账本" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-record to Ledger"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "到期自动记入账本"
+          }
+        }
+      }
+    },
     "到站/落地时提醒我清点" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16335,6 +17050,23 @@
         }
       }
     },
+    "制定大宝陪伴规则" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set rules for time with the older sibling"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "制定大宝陪伴规则"
+          }
+        }
+      }
+    },
     "制定当天流程" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16348,6 +17080,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "制定当天流程"
+          }
+        }
+      }
+    },
+    "制定搬家计划" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan the Move"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "制定搬家计划"
           }
         }
       }
@@ -16653,6 +17402,40 @@
         }
       }
     },
+    "办理出生医学证明" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handle the birth certificate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "办理出生医学证明"
+          }
+        }
+      }
+    },
+    "办理水电燃气与网络过户" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transfer utilities & internet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "办理水电燃气与网络过户"
+          }
+        }
+      }
+    },
     "办理生活缴费结算与宽带移机" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16737,6 +17520,9 @@
           }
         }
       }
+    },
+    "加入本餐" : {
+
     },
     "加密备份生成成功！" : {
       "extractionState" : "manual",
@@ -17256,6 +18042,9 @@
           }
         }
       }
+    },
+    "千卡" : {
+
     },
     "午饭" : {
       "extractionState" : "manual",
@@ -18476,6 +19265,43 @@
         }
       }
     },
+    "可点击加入本餐累加热量" : {
+
+    },
+    "可能是尚未授权读取，或「健康」里今天还没有记录。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read access may not be granted yet, or there are no records for today in Health."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可能是尚未授权读取，或「健康」里今天还没有记录。"
+          }
+        }
+      }
+    },
+    "可选，例如：自动扣款银行卡尾号 1234" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional, e.g. auto-debit card ending 1234"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选，例如：自动扣款银行卡尾号 1234"
+          }
+        }
+      }
+    },
     "可选：防丢（签名过期期间）" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18492,6 +19318,9 @@
           }
         }
       }
+    },
+    "吃了 %lld%%" : {
+
     },
     "吃麦当劳" : {
       "extractionState" : "manual",
@@ -18594,6 +19423,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "名称"
+          }
+        }
+      }
+    },
+    "名称，例如：房租、Netflix 会员" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name, e.g. Rent, Netflix"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称，例如：房租、Netflix 会员"
           }
         }
       }
@@ -18999,6 +19845,23 @@
         }
       }
     },
+    "周期与排期" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cycle & Schedule"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "周期与排期"
+          }
+        }
+      }
+    },
     "周期回顾 · 与上期对比" : {
 
     },
@@ -19341,6 +20204,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "四川文博：三星堆博物馆提前5天20:00放票、成都大熊猫繁育基地提前7天预约、成都博物馆提前3天"
+          }
+        }
+      }
+    },
+    "回家与育婴" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home & Baby Care"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回家与育婴"
           }
         }
       }
@@ -19935,6 +20815,23 @@
         }
       }
     },
+    "场地与菜单" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Venue & Menu"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "场地与菜单"
+          }
+        }
+      }
+    },
     "场馆 / 地点（选填，如：西岸国际会展中心）" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20002,6 +20899,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "填入密码"
+          }
+        }
+      }
+    },
+    "填写每月弹性消费上限后，房租、订阅等固定支出会自动扣除，今天省下的钱会滚入明天。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once you set a monthly flexible spending limit, fixed costs such as rent and subscriptions are deducted automatically, and what you save today rolls over to tomorrow."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "填写每月弹性消费上限后，房租、订阅等固定支出会自动扣除，今天省下的钱会滚入明天。"
           }
         }
       }
@@ -20103,6 +21017,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "备份数据文件损坏或已被篡改。"
+          }
+        }
+      }
+    },
+    "备孕与孕期" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing & Pregnancy"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "备孕与孕期"
           }
         }
       }
@@ -20833,6 +21764,23 @@
         }
       }
     },
+    "大宝过渡" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "First Child Transition"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "大宝过渡"
+          }
+        }
+      }
+    },
     "大容量充电宝与快充线" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21403,6 +22351,9 @@
         }
       }
     },
+    "如果 Mac 电脑同一 Wi-Fi 下正在运行 `ollama run %@`（支持 `qwen3:4b`、`qwen3:8b`、`qwen3:1.7b` 等更强大的模型），填入 Mac 局域网 IP 即可免下载手机直接联调。" : {
+
+    },
     "如果 Mac 电脑同一 Wi-Fi 下正在运行 `ollama run qwen2.5:1.5b`，填入 Mac 局域网 IP 即可免下载手机直接联调。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21590,6 +22541,23 @@
         }
       }
     },
+    "婚恋与家庭" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wedding & Family"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "婚恋与家庭"
+          }
+        }
+      }
+    },
     "婚礼前冲刺" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21620,6 +22588,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "婚礼当天"
+          }
+        }
+      }
+    },
+    "婴儿医疗" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Baby Medical"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "婴儿医疗"
+          }
+        }
+      }
+    },
+    "婴儿用品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Baby Essentials"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "婴儿用品"
+          }
+        }
+      }
+    },
+    "孕期与产检" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pregnancy & Checkups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "孕期与产检"
           }
         }
       }
@@ -22118,6 +23137,108 @@
         }
       }
     },
+    "安排开荒保洁与通风" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Book post-construction cleaning & airing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安排开荒保洁与通风"
+          }
+        }
+      }
+    },
+    "安排摄影摄像与主持" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Book photography & host"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安排摄影摄像与主持"
+          }
+        }
+      }
+    },
+    "安排满月与百日宴" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan the 100-day banquet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安排满月与百日宴"
+          }
+        }
+      }
+    },
+    "安排看房并记录对比" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schedule viewings and compare"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安排看房并记录对比"
+          }
+        }
+      }
+    },
+    "安排老人或月嫂支援" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrange grandparent or nurse support"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安排老人或月嫂支援"
+          }
+        }
+      }
+    },
+    "安排首保与停车位" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrange first service & parking"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安排首保与停车位"
+          }
+        }
+      }
+    },
     "安静模式" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -22576,6 +23697,23 @@
         }
       }
     },
+    "定金与网签" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deposit & Contract"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "定金与网签"
+          }
+        }
+      }
+    },
     "宝宝儿保复查" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -22711,6 +23849,9 @@
           }
         }
       }
+    },
+    "实时汇率" : {
+
     },
     "实时活动不可用" : {
 
@@ -23007,6 +24148,23 @@
         }
       }
     },
+    "宴席与升学" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Banquets & Milestones"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "宴席与升学"
+          }
+        }
+      }
+    },
     "宴席当天" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -23024,6 +24182,23 @@
         }
       }
     },
+    "宴席礼金" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Banquet Gifts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "宴席礼金"
+          }
+        }
+      }
+    },
     "宴席筹备" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -23037,6 +24212,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "宴席筹备"
+          }
+        }
+      }
+    },
+    "宴请温居" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Housewarming"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "宴请温居"
           }
         }
       }
@@ -23126,6 +24318,23 @@
         }
       }
     },
+    "家庭共识与准备" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Family Alignment"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "家庭共识与准备"
+          }
+        }
+      }
+    },
     "家政" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -23156,6 +24365,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "家电"
+          }
+        }
+      }
+    },
+    "家电家具" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appliances & Furniture"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "家电家具"
           }
         }
       }
@@ -23755,6 +24981,40 @@
         }
       }
     },
+    "对比装修公司方案与报价" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compare contractor plans & quotes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对比装修公司方案与报价"
+          }
+        }
+      }
+    },
+    "对比车型配置与口碑" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compare models & reviews"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对比车型配置与口碑"
+          }
+        }
+      }
+    },
     "对话历史" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -24006,6 +25266,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "导航"
+          }
+        }
+      }
+    },
+    "寿桃寿礼" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Longevity Gifts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "寿桃寿礼"
           }
         }
       }
@@ -24347,6 +25624,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未转写。转写全程在本机完成，可随时编辑校对。"
+          }
+        }
+      }
+    },
+    "尚未连接「健康」。连接后可读取步数、运动能量、饮水与睡眠，让打卡页显示真实数值。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not connected to Health yet. Connect to read steps, active energy, water intake and sleep, so check-in pages can show real numbers."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未连接「健康」。连接后可读取步数、运动能量、饮水与睡眠，让打卡页显示真实数值。"
           }
         }
       }
@@ -25378,6 +26672,23 @@
     "已取消确认" : {
 
     },
+    "已向系统请求过读取权限，但没有读到数据。可能是你拒绝了读取权限，或「健康」里今天还没有记录。可前往「健康」App 确认权限与数据。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read permission was requested but no data came back. You may have denied access, or there may be no records for today. Check permissions and data in the Health app."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已向系统请求过读取权限，但没有读到数据。可能是你拒绝了读取权限，或「健康」里今天还没有记录。可前往「健康」App 确认权限与数据。"
+          }
+        }
+      }
+    },
     "已处理" : {
 
     },
@@ -25991,6 +27302,23 @@
         }
       }
     },
+    "已暂停" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暂停"
+          }
+        }
+      }
+    },
     "已暂停 · 点击继续" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -26557,6 +27885,9 @@
         }
       }
     },
+    "已计入本餐 ✓" : {
+
+    },
     "已记录，打开小助后确认详情" : {
 
     },
@@ -26631,6 +27962,23 @@
         }
       }
     },
+    "已请求读取，暂未读到数据" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read requested, no data yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已请求读取，暂未读到数据"
+          }
+        }
+      }
+    },
     "已读取备份包" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -26653,6 +28001,23 @@
     },
     "已转卖" : {
 
+    },
+    "已达标" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Goal met"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已达标"
+          }
+        }
+      }
     },
     "已达驱虫周期（30天）" : {
       "extractionState" : "manual",
@@ -28907,6 +30272,40 @@
         }
       }
     },
+    "待产准备" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hospital Bag Ready"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待产准备"
+          }
+        }
+      }
+    },
+    "待产用品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hospital Bag"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待产用品"
+          }
+        }
+      }
+    },
     "待分工" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -29823,6 +31222,26 @@
         }
       }
     },
+    "恢复参考汇率" : {
+
+    },
+    "恢复扣除" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume Deduction"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复扣除"
+          }
+        }
+      }
+    },
     "恢复系统默认背景" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -29981,6 +31400,40 @@
     },
     "想记一笔什么？例如：咖啡 18 元" : {
 
+    },
+    "意图判断：" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intent: "
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "意图判断："
+          }
+        }
+      }
+    },
+    "意图判断把握度：" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Intent confidence: "
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "意图判断把握度："
+          }
+        }
+      }
     },
     "感冒药" : {
       "extractionState" : "manual",
@@ -30543,6 +31996,23 @@
         }
       }
     },
+    "房款首付" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Down Payment"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "房款首付"
+          }
+        }
+      }
+    },
     "房租" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30835,6 +32305,9 @@
         }
       }
     },
+    "手动选择食物" : {
+
+    },
     "手机" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30886,6 +32359,40 @@
         }
       }
     },
+    "手足适应" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sibling Bonding"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手足适应"
+          }
+        }
+      }
+    },
+    "打包耗材" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Packing Supplies"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打包耗材"
+          }
+        }
+      }
+    },
     "打卡" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30933,6 +32440,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开 iPhone 系统 **设置** → **辅助功能** → **触控** → **轻点背面**，设置「轻点两下」或「轻点三下」运行快捷指令打开链接。"
+          }
+        }
+      }
+    },
+    "打开「健康」" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Health"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开「健康」"
           }
         }
       }
@@ -31086,6 +32610,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "扣款"
+          }
+        }
+      }
+    },
+    "扣费前提醒" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remind Before Charge"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "扣费前提醒"
           }
         }
       }
@@ -31297,6 +32838,23 @@
         }
       }
     },
+    "把买房、装修、买车、婚礼、生娃、二胎等复杂事项整理成清晰的阶段和分工。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn buying a home, renovation, a car, a wedding, a new baby or a second child into clear stages and responsibilities."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把买房、装修、买车、婚礼、生娃、二胎等复杂事项整理成清晰的阶段和分工。"
+          }
+        }
+      }
+    },
     "把出门清点推上灵动岛" : {
 
     },
@@ -31353,6 +32911,9 @@
           }
         }
       }
+    },
+    "折合人民币" : {
+
     },
     "抢购往返高铁票（提前15天）" : {
       "extractionState" : "manual",
@@ -31507,6 +33068,23 @@
         }
       }
     },
+    "拆改与施工" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demolition & Build"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拆改与施工"
+          }
+        }
+      }
+    },
     "拆解" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -31543,6 +33121,9 @@
           }
         }
       }
+    },
+    "拍一张食物照片，自动估算热量" : {
+
     },
     "拍小票记账" : {
       "extractionState" : "manual",
@@ -31582,6 +33163,9 @@
       }
     },
     "拍照或从相册添加药盒照片" : {
+
+    },
+    "拍照或选图推测热量 · 没吃完可手动调整百分比" : {
 
     },
     "拖动排序" : {
@@ -31808,6 +33392,9 @@
         }
       }
     },
+    "按描述重新估算" : {
+
+    },
     "按摩" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -31889,6 +33476,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按月固定刚性支出，到期前3天提醒"
+          }
+        }
+      }
+    },
+    "按月扣费最多提前 30 天提醒更有效。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For monthly charges, a lead of at most 30 days works better."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按月扣费最多提前 30 天提醒更有效。"
           }
         }
       }
@@ -32114,6 +33718,9 @@
         }
       }
     },
+    "推荐使用新一代 Qwen3-1.7B（速度与推理能力均衡）或更强大的 Qwen3-4B（复杂拆解与食物热量推算更准）。已下载的模型在切换时不会丢失，可随时自由切换。" : {
+
+    },
     "推荐候选分类（点击一键修正）：" : {
 
     },
@@ -32232,6 +33839,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "提交"
+          }
+        }
+      }
+    },
+    "提前 \\(reminderDays) 天不少于扣费间隔 \\(customDaysInterval) 天，这次提醒会落在下个周期之后，实际不会触发。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A \\(reminderDays)-day lead is not shorter than the \\(customDaysInterval)-day interval, so this reminder falls after the next cycle and will never fire."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提前 \\(reminderDays) 天不少于扣费间隔 \\(customDaysInterval) 天，这次提醒会落在下个周期之后，实际不会触发。"
           }
         }
       }
@@ -32698,6 +34322,23 @@
         }
       }
     },
+    "提前天数" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Days Before"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提前天数"
+          }
+        }
+      }
+    },
     "提前打包好包裹" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -32871,6 +34512,23 @@
         }
       }
     },
+    "提车与装饰" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pickup & Accessories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提车与装饰"
+          }
+        }
+      }
+    },
     "提醒" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -32952,6 +34610,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "提醒我明天下午3点买咖啡"
+          }
+        }
+      }
+    },
+    "提醒提前 %lld 天不少于扣费间隔 %lld 天，这次提醒会落在下个周期之后，实际不会触发。" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "提醒提前 %1$lld 天不少于扣费间隔 %2$lld 天，这次提醒会落在下个周期之后，实际不会触发。"
           }
         }
       }
@@ -33129,6 +34797,9 @@
         }
       }
     },
+    "搜索食物" : {
+
+    },
     "搬家" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -33159,6 +34830,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搬家与整理"
+          }
+        }
+      }
+    },
+    "搬家乔迁" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move House"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搬家乔迁"
+          }
+        }
+      }
+    },
+    "搬家入住" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move In"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搬家入住"
+          }
+        }
+      }
+    },
+    "搬家公司" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moving Company"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搬家公司"
           }
         }
       }
@@ -33197,6 +34919,40 @@
         }
       }
     },
+    "搬迁安置" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move-in Costs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搬迁安置"
+          }
+        }
+      }
+    },
+    "搬迁当天" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moving Day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搬迁当天"
+          }
+        }
+      }
+    },
     "携带必备肠胃药及常用药品" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -33213,6 +34969,9 @@
           }
         }
       }
+    },
+    "摄入比例" : {
+
     },
     "摄影摄像" : {
       "extractionState" : "manual",
@@ -33977,6 +35736,42 @@
         }
       }
     },
+    "整份 %lld" : {
+
+    },
+    "整份 %lld 千卡 · 实入 %lld 千卡" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "整份 %1$lld 千卡 · 实入 %2$lld 千卡"
+          }
+        }
+      }
+    },
+    "整份合计约 %lld 千卡" : {
+
+    },
+    "整份约 %lld 千卡" : {
+
+    },
+    "整理与打包" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort & Pack"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理与打包"
+          }
+        }
+      }
+    },
     "整理亲友名单" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34011,6 +35806,23 @@
         }
       }
     },
+    "整理宾客名单与伴手礼" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List guests & souvenirs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理宾客名单与伴手礼"
+          }
+        }
+      }
+    },
     "整理待产包" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34024,6 +35836,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "整理待产包"
+          }
+        }
+      }
+    },
+    "整理待产包与证件" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pack the hospital bag & documents"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理待产包与证件"
+          }
+        }
+      }
+    },
+    "整理收入证明与贷款材料" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gather income & loan documents"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整理收入证明与贷款材料"
           }
         }
       }
@@ -34112,6 +35958,12 @@
           }
         }
       }
+    },
+    "整餐份量" : {
+
+    },
+    "整餐吃了多少" : {
+
     },
     "文件不是支持的 GGUF 格式。" : {
       "extractionState" : "manual",
@@ -34245,6 +36097,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新增记账"
+          }
+        }
+      }
+    },
+    "新居安顿" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settle In"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新居安顿"
           }
         }
       }
@@ -35349,6 +37218,40 @@
         }
       }
     },
+    "明确购车预算与用途" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set budget & intended use"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明确购车预算与用途"
+          }
+        }
+      }
+    },
+    "明确需求与风格" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs & Style"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明确需求与风格"
+          }
+        }
+      }
+    },
     "星巴克" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35891,6 +37794,23 @@
         }
       }
     },
+    "暂停扣除" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause Deduction"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂停扣除"
+          }
+        }
+      }
+    },
     "暂无临期监控项" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35925,8 +37845,22 @@
         }
       }
     },
-    "暂无固定周期支出，可在「生活档案 → 固定支出」中添加房租、订阅等" : {
-
+    "暂无固定周期支出，点下方按钮添加房租、订阅等月度刚性开销。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No recurring expenses yet. Tap the button below to add rent, subscriptions and other monthly fixed costs."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无固定周期支出，点下方按钮添加房租、订阅等月度刚性开销。"
+          }
+        }
+      }
     },
     "暂无宠物待办，可添加喂食、驱虫、洗护或就医提醒。" : {
       "extractionState" : "manual",
@@ -36012,6 +37946,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暂无待取快递或待退货事项，点击右上角 ➕ 可快速添加。"
+          }
+        }
+      }
+    },
+    "暂无数据" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无数据"
           }
         }
       }
@@ -36498,6 +38449,23 @@
     "更新" : {
 
     },
+    "更新快递与证件地址" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update delivery & ID addresses"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新快递与证件地址"
+          }
+        }
+      }
+    },
     "更新核心账号强密码" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -36511,6 +38479,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新核心账号强密码"
+          }
+        }
+      }
+    },
+    "月子与家庭分工" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recovery & Duty Split"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月子与家庭分工"
+          }
+        }
+      }
+    },
+    "月子与康复" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recovery & Confinement"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月子与康复"
+          }
+        }
+      }
+    },
+    "月子中心" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confinement Center"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "月子中心"
           }
         }
       }
@@ -36771,6 +38790,23 @@
         }
       }
     },
+    "服务费" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Service Fees"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务费"
+          }
+        }
+      }
+    },
     "服用频次与时间" : {
 
     },
@@ -36804,6 +38840,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服装礼服"
+          }
+        }
+      }
+    },
+    "服装造型" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attire & Styling"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服装造型"
           }
         }
       }
@@ -37367,6 +39420,40 @@
         }
       }
     },
+    "未读取到数据" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No data read"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未读取到数据"
+          }
+        }
+      }
+    },
+    "未连接 · 可读取步数与睡眠" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not connected · steps and sleep available"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未连接 · 可读取步数与睡眠"
+          }
+        }
+      }
+    },
     "未链接" : {
 
     },
@@ -37521,6 +39608,9 @@
           }
         }
       }
+    },
+    "本餐菜品明细" : {
+
     },
     "机动车行驶证" : {
       "extractionState" : "manual",
@@ -37824,6 +39914,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "来自 %lld · %lld"
+          }
+        }
+      }
+    },
+    "来自「健康」App 的真实数据，只读不写。读不到数据时可能尚未授权，或今天没有记录。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Real data from the Health app, read-only. If nothing shows, access may not be granted yet or there are no records today."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "来自「健康」App 的真实数据，只读不写。读不到数据时可能尚未授权，或今天没有记录。"
           }
         }
       }
@@ -38208,6 +40315,19 @@
         }
       }
     },
+    "标准份约 %lld 千卡" : {
+
+    },
+    "标准份约 %lld 千卡 · 识别度 %lld%%" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "标准份约 %1$lld 千卡 · 识别度 %2$lld%%"
+          }
+        }
+      }
+    },
     "标准智能提醒模式：环境变化、出门带伞、到达驿站等主动弹出提醒与语音交互。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -38441,6 +40561,23 @@
     "核对记账数据" : {
 
     },
+    "核对购房资格与征信" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check eligibility & credit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "核对购房资格与征信"
+          }
+        }
+      }
+    },
     "核心必带" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -38641,6 +40778,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌面触感触控 (Haptic Touch)"
+          }
+        }
+      }
+    },
+    "梳理功能需求与预算" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List functional needs & budget"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "梳理功能需求与预算"
           }
         }
       }
@@ -39178,6 +41332,26 @@
         }
       }
     },
+    "正在显示「健康」中的今日数据。数据只在本机读取，不会离开这台设备。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing today's data from Health. Data is read on this device only and never leaves it."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在显示「健康」中的今日数据。数据只在本机读取，不会离开这台设备。"
+          }
+        }
+      }
+    },
+    "正在本机多区域识别菜品与估算热量…" : {
+
+    },
     "正在校验模型完整性…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -39472,6 +41646,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此操作将永久删除 %lld 条已完成历史记录，无法撤销。"
+          }
+        }
+      }
+    },
+    "此设备不支持健康数据" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Health data is not supported on this device"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此设备不支持健康数据"
           }
         }
       }
@@ -40109,6 +42300,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每次 1 片"
+          }
+        }
+      }
+    },
+    "每次扣费金额" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amount per Cycle"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次扣费金额"
           }
         }
       }
@@ -40759,6 +42967,23 @@
         }
       }
     },
+    "水电改造" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Electrical & Plumbing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "水电改造"
+          }
+        }
+      }
+    },
     "水痘" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -40877,6 +43102,9 @@
           }
         }
       }
+    },
+    "汇率 (1 %@ = )" : {
+
     },
     "汽车常规小保养" : {
       "extractionState" : "manual",
@@ -41474,6 +43702,23 @@
     "消费时间" : {
 
     },
+    "消费类别" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Category"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "消费类别"
+          }
+        }
+      }
+    },
     "消费类型" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41493,6 +43738,23 @@
     },
     "消费金额" : {
 
+    },
+    "消费预算" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spending budget"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "消费预算"
+          }
+        }
+      }
     },
     "深圳" : {
       "extractionState" : "manual",
@@ -41579,6 +43841,23 @@
         }
       }
     },
+    "添加中介、贷款专员、验房师等角色，明确谁对接首付、过户与验房。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add your agent, loan officer and inspector so everyone knows who handles the deposit, transfer and inspection."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加中介、贷款专员、验房师等角色，明确谁对接首付、过户与验房。"
+          }
+        }
+      }
+    },
     "添加临期预警" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41592,6 +43871,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加临期预警"
+          }
+        }
+      }
+    },
+    "添加亲戚代表、司仪与摄像，明确寿宴当天谁操办。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add family representatives, the emcee and the photographer, and decide who runs the birthday banquet."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加亲戚代表、司仪与摄像，明确寿宴当天谁操办。"
           }
         }
       }
@@ -41664,6 +43960,23 @@
         }
       }
     },
+    "添加双方亲友与摄像、主持等供应商，明确当天分工。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add both families plus vendors like photographer and host, and assign duties for the day."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加双方亲友与摄像、主持等供应商，明确当天分工。"
+          }
+        }
+      }
+    },
     "添加双方父母、亲友或供应商，明确每个人负责的事情。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41677,6 +43990,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加双方父母、亲友或供应商，明确每个人负责的事情。"
+          }
+        }
+      }
+    },
+    "添加固定支出" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Recurring Expense"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加固定支出"
+          }
+        }
+      }
+    },
+    "添加学校老师、亲友与摄像，明确到场与流程分工。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add teachers, relatives and the photographer, and confirm attendance and day-of roles."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加学校老师、亲友与摄像，明确到场与流程分工。"
           }
         }
       }
@@ -41837,6 +44184,23 @@
         }
       }
     },
+    "添加搬家公司、保洁与安装师傅，明确每个人的到场时间。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add the moving company, cleaning crew and installers, and note each person's arrival time."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加搬家公司、保洁与安装师傅，明确每个人的到场时间。"
+          }
+        }
+      }
+    },
     "添加操作 1：「拍摄屏幕快照」" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41907,6 +44271,40 @@
     },
     "添加收纳物品或常备药" : {
 
+    },
+    "添加月嫂、医院陪护与双方长辈，明确谁负责哪一段照护。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add your maternity nurse, hospital companion and both families, and clarify who covers which caregiving shift."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加月嫂、医院陪护与双方长辈，明确谁负责哪一段照护。"
+          }
+        }
+      }
+    },
+    "添加月嫂、老人与幼儿园老师，明确大宝过渡与二宝照护的分工。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add the maternity nurse, grandparents and kindergarten teacher, and split up elder-child transition and baby care duties."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加月嫂、老人与幼儿园老师，明确大宝过渡与二宝照护的分工。"
+          }
+        }
+      }
     },
     "添加服药提醒" : {
       "extractionState" : "manual",
@@ -42027,6 +44425,23 @@
         }
       }
     },
+    "添加设计师、装修公司、监理与主材供应商，明确各自的交付范围。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add your designer, contractor, supervisor and material suppliers, and clarify who delivers what."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加设计师、装修公司、监理与主材供应商，明确各自的交付范围。"
+          }
+        }
+      }
+    },
     "添加运动计划" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -42044,6 +44459,26 @@
         }
       }
     },
+    "添加配菜/主食" : {
+
+    },
+    "添加销售顾问、保险与上牌代办，明确购车流程中的对接人。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add the sales advisor, insurer and registration agent, and note who owns each step of the purchase."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加销售顾问、保险与上牌代办，明确购车流程中的对接人。"
+          }
+        }
+      }
+    },
     "添加随身防丢装备" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -42057,6 +44492,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加随身防丢装备"
+          }
+        }
+      }
+    },
+    "添加需要协调的人或供应商，明确每个人负责的事情。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add the people or vendors to coordinate, and spell out what each of them owns."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加需要协调的人或供应商，明确每个人负责的事情。"
           }
         }
       }
@@ -42233,6 +44685,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清理家庭小药箱"
+          }
+        }
+      }
+    },
+    "清理闲置与断舍离" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Declutter & let go"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清理闲置与断舍离"
           }
         }
       }
@@ -42556,6 +45025,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "满月"
+          }
+        }
+      }
+    },
+    "满月宴席" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full-Moon Banquet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "满月宴席"
+          }
+        }
+      }
+    },
+    "满月百日 / 周岁宴" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Moon / 100-Day / 1st Birthday Banquet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "满月百日 / 周岁宴"
           }
         }
       }
@@ -43073,6 +45576,23 @@
         }
       }
     },
+    "点按任意一项可修改金额、周期与提醒。暂停的项目不计入扣除合计。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap any item to edit its amount, cycle and reminder. Paused items are excluded from the total."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点按任意一项可修改金额、周期与提醒。暂停的项目不计入扣除合计。"
+          }
+        }
+      }
+    },
     "烧烤" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -43123,6 +45643,9 @@
           }
         }
       }
+    },
+    "照片没能认出具体食物" : {
+
     },
     "照顾不同朋友的饮食偏好与忌口" : {
       "extractionState" : "manual",
@@ -44085,6 +46608,23 @@
         }
       }
     },
+    "珠宝聘礼" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jewelry & Betrothal Gifts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "珠宝聘礼"
+          }
+        }
+      }
+    },
     "理一下" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -44170,6 +46710,23 @@
         }
       }
     },
+    "生产与住院" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delivery & Stay"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生产与住院"
+          }
+        }
+      }
+    },
     "生产准备" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -44183,6 +46740,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "生产准备"
+          }
+        }
+      }
+    },
+    "生娃待产" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pregnancy & Birth"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生娃待产"
           }
         }
       }
@@ -44465,6 +47039,23 @@
     "用药方法与注意事项会展示在详情页，方便急用时确认怎么吃、吃多少、谁能用。" : {
 
     },
+    "用车与保养" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Driving & Maintenance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用车与保养"
+          }
+        }
+      }
+    },
     "用途/主治（如：退烧止痛）" : {
 
     },
@@ -44722,6 +47313,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "疫苗"
+          }
+        }
+      }
+    },
+    "疫苗与体检" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vaccines & Checkups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "疫苗与体检"
           }
         }
       }
@@ -45126,6 +47734,23 @@
         }
       }
     },
+    "看房与选筹" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viewing & Shortlisting"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "看房与选筹"
+          }
+        }
+      }
+    },
     "看电影" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -45466,6 +48091,23 @@
         }
       }
     },
+    "确定宴席日期与规模" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set banquet date & size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确定宴席日期与规模"
+          }
+        }
+      }
+    },
     "确定宴席流程" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -45479,6 +48121,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "确定宴席流程"
+          }
+        }
+      }
+    },
+    "确定总价上限与首付比例" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set price cap & down-payment ratio"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确定总价上限与首付比例"
           }
         }
       }
@@ -45500,6 +48159,23 @@
         }
       }
     },
+    "确定搬家日期与预算" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set moving date & budget"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确定搬家日期与预算"
+          }
+        }
+      }
+    },
     "确定日期与场地" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -45513,6 +48189,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "确定日期与场地"
+          }
+        }
+      }
+    },
+    "确定日期与形式" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick Date & Format"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确定日期与形式"
           }
         }
       }
@@ -45551,6 +48244,23 @@
         }
       }
     },
+    "确定装修风格" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decide on the design style"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确定装修风格"
+          }
+        }
+      }
+    },
     "确定要彻底清空本地保存的所有历史对话消息吗？此操作不可撤销（已提取的待办事项和账单不会受到影响）。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -45581,6 +48291,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "确定要清空本地历史对话记录吗？已提取的待办事项不受影响。"
+          }
+        }
+      }
+    },
+    "确定购房资格与预算" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm Eligibility & Budget"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确定购房资格与预算"
+          }
+        }
+      }
+    },
+    "确定需求与预算" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs & Budget"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确定需求与预算"
           }
         }
       }
@@ -45649,6 +48393,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "确认"
+          }
+        }
+      }
+    },
+    "确认交车与验车流程" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm delivery & pre-delivery check"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认交车与验车流程"
+          }
+        }
+      }
+    },
+    "确认产检与分娩安排" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm checkups & delivery plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认产检与分娩安排"
           }
         }
       }
@@ -45755,6 +48533,23 @@
         }
       }
     },
+    "确认孕检与分娩医院" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose hospital & checkups"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认孕检与分娩医院"
+          }
+        }
+      }
+    },
     "确认导入到我的待办 (共 %lld 项)" : {
 
     },
@@ -45808,6 +48603,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "确认放票提醒时间"
+          }
+        }
+      }
+    },
+    "确认施工合同与工期" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm contract & timeline"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认施工合同与工期"
           }
         }
       }
@@ -45930,6 +48742,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "确认长辈意愿"
+          }
+        }
+      }
+    },
+    "确认陪产与家属陪护" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrange birth companion"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认陪产与家属陪护"
           }
         }
       }
@@ -46481,6 +49310,23 @@
         }
       }
     },
+    "税费" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Taxes & Fees"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "税费"
+          }
+        }
+      }
+    },
     "稳步推进 🚀" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -46579,6 +49425,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "立即授权"
+          }
+        }
+      }
+    },
+    "立即记一笔" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record Now"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "立即记一笔"
           }
         }
       }
@@ -47075,6 +49938,23 @@
     "第一阶段 · %@" : {
 
     },
+    "筛选搬家公司并询价" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortlist movers & get quotes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "筛选搬家公司并询价"
+          }
+        }
+      }
+    },
     "筹备" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -47417,6 +50297,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "红包收入"
+          }
+        }
+      }
+    },
+    "红包礼金" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cash Gifts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "红包礼金"
           }
         }
       }
@@ -48258,6 +51155,23 @@
         }
       }
     },
+    "编辑固定支出" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit Recurring Expense"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑固定支出"
+          }
+        }
+      }
+    },
     "编辑宝贝档案" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -48521,6 +51435,26 @@
           }
         }
       }
+    },
+    "置业与安家" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home & Living"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "置业与安家"
+          }
+        }
+      }
+    },
+    "置信度 %lld%%" : {
+
     },
     "置顶" : {
       "extractionState" : "manual",
@@ -48828,6 +51762,23 @@
         }
       }
     },
+    "育儿与成长" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Baby & Growth"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "育儿与成长"
+          }
+        }
+      }
+    },
     "背上小书包迈进集体生活，虽然有不舍，但勇敢结识了新伙伴与老师。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -48998,8 +51949,22 @@
         }
       }
     },
-    "自动扣除的固定支出（月均）" : {
-
+    "自动扣除的固定支出" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recurring Expenses Deducted"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动扣除的固定支出"
+          }
+        }
+      }
     },
     "自动推算体内外驱虫、联苗狂犬与日常洗澡清洁周期" : {
       "extractionState" : "manual",
@@ -49031,6 +51996,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自动提取事件名称、活动时间、场馆地址与核销二维码"
+          }
+        }
+      }
+    },
+    "自动生成 %lld 个阶段与 %lld 项起步清单" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-generates %lld stages and %lld starter tasks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动生成 %lld 个阶段与 %lld 项起步清单"
           }
         }
       }
@@ -49591,6 +52573,9 @@
         }
       }
     },
+    "菜品与实际摄入热量" : {
+
+    },
     "菜场" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -50138,6 +53123,9 @@
         }
       }
     },
+    "补充描述（支持多菜，如：米饭、辣椒炒肉、凉拌海带丝）" : {
+
+    },
     "补充水分 300ml" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -50253,6 +53241,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "装修"
+          }
+        }
+      }
+    },
+    "装饰美容" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessories & Detailing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "装饰美容"
           }
         }
       }
@@ -51377,6 +54382,23 @@
         }
       }
     },
+    "记账与提醒" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording & Reminders"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "记账与提醒"
+          }
+        }
+      }
+    },
     "记账时间" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -51567,6 +54589,23 @@
         }
       }
     },
+    "设置后每天在「智能记账」页顶部计算今日安心花额度，房租、订阅等固定支出自动扣除。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once set, the Smart Ledger tab calculates your daily safe-to-spend amount every day and deducts fixed costs such as rent and subscriptions automatically."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置后每天在「智能记账」页顶部计算今日安心花额度，房租、订阅等固定支出自动扣除。"
+          }
+        }
+      }
+    },
     "设置备份口令 (8 - 64 位)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -51669,6 +54708,23 @@
         }
       }
     },
+    "设置月预算，开始计算今日安心花" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set a monthly budget to start your daily safe-to-spend"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置月预算，开始计算今日安心花"
+          }
+        }
+      }
+    },
     "设置有效期" : {
 
     },
@@ -51725,6 +54781,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设计与施工"
+          }
+        }
+      }
+    },
+    "设计当天流程与环节" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plan the day-of program"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设计当天流程与环节"
           }
         }
       }
@@ -52018,6 +55091,23 @@
         }
       }
     },
+    "评估居住空间与预算" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assess space & budget"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "评估居住空间与预算"
+          }
+        }
+      }
+    },
     "识别到剪贴板有相关通知" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -52034,6 +55124,9 @@
           }
         }
       }
+    },
+    "识别到的可能食物" : {
+
     },
     "识别到的待办事项（可编辑）" : {
       "extractionState" : "manual",
@@ -52736,6 +55829,23 @@
         }
       }
     },
+    "请在需要调整日期、预算或分工时及时和我们沟通。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please let us know if the date, budget or assignments need to change."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在需要调整日期、预算或分工时及时和我们沟通。"
+          }
+        }
+      }
+    },
     "请客" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -52957,6 +56067,29 @@
         }
       }
     },
+    "读取步数、运动能量、饮水与睡眠；只读不写，数据不会离开本机。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reads steps, active energy, water intake and sleep. Read-only; data never leaves this device."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取步数、运动能量、饮水与睡眠；只读不写，数据不会离开本机。"
+          }
+        }
+      }
+    },
+    "调整份量" : {
+
+    },
+    "调整吃掉的百分比（没吃完可下调）" : {
+
+    },
     "调整字号" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -52987,6 +56120,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "调整排序"
+          }
+        }
+      }
+    },
+    "调整饮食热量" : {
+
+    },
+    "谈价与金融方案" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Negotiation & Financing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "谈价与金融方案"
           }
         }
       }
@@ -53275,6 +56428,23 @@
         }
       }
     },
+    "贷款费用" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loan Costs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "贷款费用"
+          }
+        }
+      }
+    },
     "费用周期（如：¥18/月、¥198/年）" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -53464,6 +56634,23 @@
     "跟踪物品" : {
 
     },
+    "跟进水电改造验收" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Track electrical & plumbing sign-off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟进水电改造验收"
+          }
+        }
+      }
+    },
     "跨模块搜索" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -53630,6 +56817,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "车架号/保险单号/机油标号等备忘"
+          }
+        }
+      }
+    },
+    "车款" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vehicle Price"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "车款"
           }
         }
       }
@@ -53884,6 +57088,40 @@
         }
       }
     },
+    "软装与入住" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Styling & Move In"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "软装与入住"
+          }
+        }
+      }
+    },
+    "软装饰品" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soft Furnishing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "软装饰品"
+          }
+        }
+      }
+    },
     "轻点放大预览" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -53951,6 +57189,9 @@
           }
         }
       }
+    },
+    "轻触记录可调整吃剩百分比" : {
+
     },
     "较弱" : {
       "extractionState" : "manual",
@@ -54144,6 +57385,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "输入解锁 PIN 码"
+          }
+        }
+      }
+    },
+    "过户与税费" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transfer & Taxes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过户与税费"
           }
         }
       }
@@ -54471,6 +57729,9 @@
         }
       }
     },
+    "近期饮食记录" : {
+
+    },
     "返乡" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -54718,6 +57979,26 @@
         }
       }
     },
+    "还没有读到健康数据" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No health data read yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有读到健康数据"
+          }
+        }
+      }
+    },
+    "这在沙拉、混合菜这类菜品上很常见——照片里看不出用了什么食材。手动选一个或添加多道菜品，热量依然只是参考值。" : {
+
+    },
     "这笔支出将计入对应物品的累计投入，日均持有成本随之更新。" : {
 
     },
@@ -54846,6 +58127,43 @@
         }
       }
     },
+    "远端模型名（留空默认 %@）" : {
+
+    },
+    "连接 Apple 健康" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect Apple Health"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接 Apple 健康"
+          }
+        }
+      }
+    },
+    "连接 Apple 健康，用真实数值辅助打卡" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect Apple Health to check in with real numbers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接 Apple 健康，用真实数值辅助打卡"
+          }
+        }
+      }
+    },
     "连接分隔符" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -54876,6 +58194,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接状态：%@"
+          }
+        }
+      }
+    },
+    "连接状态：%@（当前远端模型：%@）" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "连接状态：%1$@（当前远端模型：%2$@）"
           }
         }
       }
@@ -55107,6 +58435,23 @@
         }
       }
     },
+    "选定目标房源" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortlist the final unit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选定目标房源"
+          }
+        }
+      }
+    },
     "选择「轻点两下」或「轻点三下」，勾选刚才创建的「助手剪贴板导入」" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55120,6 +58465,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择「轻点两下」或「轻点三下」，勾选刚才创建的「助手剪贴板导入」"
+          }
+        }
+      }
+    },
+    "选择场地与餐饮形式" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick venue & catering style"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择场地与餐饮形式"
           }
         }
       }
@@ -55229,6 +58591,9 @@
         }
       }
     },
+    "选择食物" : {
+
+    },
     "选晴好天气晾晒，空调滤网顺带拆洗" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55242,6 +58607,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选晴好天气晾晒，空调滤网顺带拆洗"
+          }
+        }
+      }
+    },
+    "选车与试驾" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortlist & Test Drive"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选车与试驾"
           }
         }
       }
@@ -55473,6 +58855,23 @@
         }
       }
     },
+    "采购" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purchases"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "采购"
+          }
+        }
+      }
+    },
     "采购打包物资：准备纸箱、气泡膜、封箱胶带与记号笔" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55696,6 +59095,23 @@
     },
     "重新识别" : {
 
+    },
+    "重新请求" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Request Again"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新请求"
+          }
+        }
+      }
     },
     "重新转写" : {
       "extractionState" : "manual",
@@ -55952,6 +59368,9 @@
         }
       }
     },
+    "重选主菜" : {
+
+    },
     "野营" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55982,6 +59401,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "量化精度"
+          }
+        }
+      }
+    },
+    "量房与设计" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Measure & Design"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "量房与设计"
           }
         }
       }
@@ -56033,6 +59469,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "金额 (¥)"
+          }
+        }
+      }
+    },
+    "金额需为大于 0 的数字" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Amount must be a number greater than 0"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "金额需为大于 0 的数字"
           }
         }
       }
@@ -56339,6 +59792,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "问答结果："
+          }
+        }
+      }
+    },
+    "间隔天数" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interval"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "间隔天数"
           }
         }
       }
@@ -57450,6 +60920,23 @@
         }
       }
     },
+    "预算与报价对比" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Budget & Quotes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预算与报价对比"
+          }
+        }
+      }
+    },
     "预算与账本" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -57626,6 +61113,23 @@
         }
       }
     },
+    "预约搬运" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Book Movers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预约搬运"
+          }
+        }
+      }
+    },
     "预约政策变动兜底提示" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -57639,6 +61143,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "预约政策变动兜底提示"
+          }
+        }
+      }
+    },
+    "预约新居保洁与换锁" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Book cleaning & lock change"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预约新居保洁与换锁"
+          }
+        }
+      }
+    },
+    "预约月嫂或月子中心" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Book a maternity nurse or center"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预约月嫂或月子中心"
           }
         }
       }
@@ -57660,6 +61198,23 @@
         }
       }
     },
+    "预约试驾体验" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Book a test drive"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预约试驾体验"
+          }
+        }
+      }
+    },
     "预约详情" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -57673,6 +61228,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "预约详情"
+          }
+        }
+      }
+    },
+    "预约量房与设计沟通" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Book measuring & design talks"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预约量房与设计沟通"
+          }
+        }
+      }
+    },
+    "预约验房与房屋验收" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Book inspection & handover check"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预约验房与房屋验收"
           }
         }
       }
@@ -57996,6 +61585,12 @@
         }
       }
     },
+    "食物热量估算" : {
+
+    },
+    "食物照片热量估算" : {
+
+    },
     "饭后随餐服用" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -58077,6 +61672,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "餐饮美食"
+          }
+        }
+      }
+    },
+    "首付与贷款准备" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Down Payment & Mortgage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首付与贷款准备"
           }
         }
       }
@@ -58270,6 +61882,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "驿站"
+          }
+        }
+      }
+    },
+    "验房与交付" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inspection & Handover"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验房与交付"
+          }
+        }
+      }
+    },
+    "验房加固" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inspection & Repairs"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验房加固"
+          }
+        }
+      }
+    },
+    "验收与保修" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handover & Warranty"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验收与保修"
           }
         }
       }
@@ -58630,6 +62293,9 @@
           }
         }
       }
+    },
+    "默认记账币种 %@" : {
+
     },
     "鼓浪屿" : {
       "extractionState" : "manual",

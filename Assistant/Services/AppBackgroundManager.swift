@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import SwiftUI
 import UIKit
 
@@ -55,12 +56,17 @@ public enum AppBackgroundStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// 主题风格的 UserDefaults key；背景修饰器用 @AppStorage 只订阅此 key，而非整个 manager
+public extension AppBackgroundStyle {
+    static let defaultsKey = "app_background_style"
+}
+
 /// 全局背景主题管理器
 @MainActor
 public final class AppBackgroundManager: ObservableObject {
     public static let shared = AppBackgroundManager()
 
-    private let styleKey = "app_background_style"
+    private let styleKey = AppBackgroundStyle.defaultsKey
     private let blurKey = "app_background_blur"
     private let dimKey = "app_background_dim"
 
@@ -73,6 +79,7 @@ public final class AppBackgroundManager: ObservableObject {
     @Published public var blurRadius: Double {
         didSet {
             UserDefaults.standard.set(blurRadius, forKey: blurKey)
+            scheduleBlurRefresh()
         }
     }
 
@@ -82,9 +89,20 @@ public final class AppBackgroundManager: ObservableObject {
         }
     }
 
-    @Published public var customImage: UIImage?
+    @Published public var customImage: UIImage? {
+        didSet {
+            scheduleBlurRefresh()
+        }
+    }
+
+    /// 预渲染的模糊壁纸位图：视图层滚动时只贴静态图，不再每帧实时高斯
+    @Published public private(set) var blurredWallpaper: UIImage?
+
+    private var blurWorkItem: DispatchWorkItem?
 
     private let imageFileName = "custom_app_wallpaper.jpg"
+    nonisolated private static let maxWallpaperPixelDimension: CGFloat = 1280
+    nonisolated private static let sharedCIContext = CIContext(options: [.useSoftwareRenderer: false, .cacheIntermediates: false])
 
     public var currentStyle: AppBackgroundStyle {
         get { AppBackgroundStyle(rawValue: currentStyleRaw) ?? .system }
@@ -101,17 +119,21 @@ public final class AppBackgroundManager: ObservableObject {
         self.currentStyleRaw = UserDefaults.standard.string(forKey: styleKey) ?? AppBackgroundStyle.system.rawValue
         self.blurRadius = UserDefaults.standard.object(forKey: blurKey) as? Double ?? 8.0
         self.dimOpacity = UserDefaults.standard.object(forKey: dimKey) as? Double ?? 0.25
-        loadCustomImage()
+        StartupMetrics.measure("bgManager.loadWallpaper") { loadCustomImage() }
     }
 
     /// 保存从相册挑选的照片到沙盒（自动降采样至适中尺寸，避免 4800 万像素巨幅图片导致内存飙升与 GPU 掉帧）
     public func saveCustomImage(_ image: UIImage) {
-        let maxDimension: CGFloat = 1280
+        let maxDimension = Self.maxWallpaperPixelDimension
+        let pixelWidth = image.size.width * image.scale
+        let pixelHeight = image.size.height * image.scale
         let resized: UIImage
-        if max(image.size.width, image.size.height) > maxDimension {
-            let scale = maxDimension / max(image.size.width, image.size.height)
-            let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-            let renderer = UIGraphicsImageRenderer(size: newSize)
+        if max(pixelWidth, pixelHeight) > maxDimension {
+            let scale = maxDimension / max(pixelWidth, pixelHeight)
+            let newSize = CGSize(width: round(pixelWidth * scale), height: round(pixelHeight * scale))
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = 1.0
+            let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
             resized = renderer.image { _ in
                 image.draw(in: CGRect(origin: .zero, size: newSize))
             }
@@ -159,9 +181,76 @@ public final class AppBackgroundManager: ObservableObject {
 
     private func loadCustomImage() {
         let url = getWallpaperFileURL()
-        if let data = try? Data(contentsOf: url), let img = UIImage(data: data) {
-            self.customImage = img
+        let data = StartupMetrics.measure("wallpaperRead") { try? Data(contentsOf: url) }
+        guard let data else { return }
+        let img = StartupMetrics.measure("wallpaperDecode(\(data.count / 1024)KB)") {
+            Self.downsampledImage(from: data, maxPixelDimension: Self.maxWallpaperPixelDimension) ?? UIImage(data: data)
         }
+        if let img {
+            self.customImage = img
+            // 若磁盘上残留旧版 3x 高清大图（> 600KB），后台静默写回降采样后的轻量文件，根治后续冷启动读盘与解码耗时
+            if data.count > 600_000 {
+                DispatchQueue.global(qos: .utility).async {
+                    if let compact = img.jpegData(compressionQuality: 0.85), compact.count < data.count {
+                        try? compact.write(to: url, options: .atomic)
+                    }
+                }
+            }
+        }
+    }
+
+    nonisolated private static func downsampledImage(from data: Data, maxPixelDimension: CGFloat) -> UIImage? {
+        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {
+            return nil
+        }
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int(maxPixelDimension)
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage, scale: 1.0, orientation: .up)
+    }
+
+    /// 选图/载入/拖动模糊度后，防抖 150ms 在后台一次性渲出模糊位图；
+    /// 滚动期间视图只贴这张静态图，避免每个页面每帧做全屏实时高斯。
+    private func scheduleBlurRefresh() {
+        blurWorkItem?.cancel()
+        guard let source = customImage, blurRadius > 0.5 else {
+            blurredWallpaper = customImage
+            return
+        }
+        // 按实际位图分辨率折算模糊像素半径（壁纸已降采样至 <=1280px，避免按 3x 放大半径拖慢高斯卷积）
+        let maxPixelEdge = max(source.size.width * source.scale, source.size.height * source.scale)
+        let effectiveScale = max(1.0, Double(maxPixelEdge) / 852.0)
+        let pixelRadius = blurRadius * effectiveScale
+        let work = DispatchWorkItem { [weak self, source, pixelRadius] in
+            let blurred = StartupMetrics.measure("wallpaperBlur(radius \(Int(pixelRadius))px, \(source.size.width)x\(source.size.height))") {
+                Self.gaussianBlurred(source, radius: pixelRadius) ?? source
+            }
+            DispatchQueue.main.async {
+                StartupMetrics.mark("wallpaperBlur publish")
+                self?.blurredWallpaper = blurred
+            }
+        }
+        blurWorkItem = work
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
+    nonisolated private static func gaussianBlurred(_ image: UIImage, radius: Double) -> UIImage? {
+        guard radius > 0.5, let cgImage = image.cgImage else { return image }
+        let input = CIImage(cgImage: cgImage).clampedToExtent()
+        guard let filter = CIFilter(name: "CIGaussianBlur") else { return image }
+        filter.setValue(input, forKey: kCIInputImageKey)
+        filter.setValue(radius, forKey: kCIInputRadiusKey)
+        guard let output = filter.outputImage else { return image }
+        let extent = CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height)
+        guard let outCG = sharedCIContext.createCGImage(output.cropped(to: extent), from: extent) else { return image }
+        return UIImage(cgImage: outCG, scale: image.scale, orientation: image.imageOrientation)
     }
 
     private func getWallpaperFileURL() -> URL {
@@ -242,15 +331,14 @@ public struct AppBackgroundView: View {
                 Color.black
 
             case .customImage:
-                // 用户自选相册照片
-                if let uiImage = manager.customImage {
+                // 用户自选相册照片（模糊位图已预渲染，滚动时零实时高斯成本）
+                if let uiImage = manager.blurredWallpaper ?? manager.customImage {
                     GeometryReader { geo in
                         Image(uiImage: uiImage)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .frame(width: geo.size.width, height: geo.size.height)
                             .clipped()
-                            .blur(radius: manager.blurRadius)
                             .overlay(
                                 Color.black.opacity(manager.dimOpacity)
                             )
@@ -296,14 +384,15 @@ extension Color {
 // MARK: - 主题全局背景与列表卡片透光修饰器
 
 /// 全局主题背景修饰器（当激活自定主题时，在底层渲染全屏高质感背景）
+/// 只订阅风格 key：调节模糊度/压暗度时不触发 content 子树重建
 public struct ThemedBackgroundModifier: ViewModifier {
-    @ObservedObject private var manager = AppBackgroundManager.shared
+    @AppStorage(AppBackgroundStyle.defaultsKey) private var styleRaw = AppBackgroundStyle.system.rawValue
 
     public init() {}
 
     public func body(content: Content) -> some View {
         ZStack {
-            if manager.isCustomBackgroundActive {
+            if AppBackgroundStyle(rawValue: styleRaw) != .system {
                 AppBackgroundView()
             }
             content
@@ -312,14 +401,15 @@ public struct ThemedBackgroundModifier: ViewModifier {
 }
 
 /// 列表卡片毛玻璃通透质感修饰器
+/// 只订阅风格 key，不订阅 manager 的 blurRadius/dimOpacity 高频变动
 public struct ThemedRowModifier: ViewModifier {
-    @ObservedObject private var manager = AppBackgroundManager.shared
+    @AppStorage(AppBackgroundStyle.defaultsKey) private var styleRaw = AppBackgroundStyle.system.rawValue
     @Environment(\.colorScheme) private var colorScheme
 
     public init() {}
 
     public func body(content: Content) -> some View {
-        if manager.isCustomBackgroundActive {
+        if AppBackgroundStyle(rawValue: styleRaw) != .system {
             content
                 .listRowBackground(
                     Color(.secondarySystemGroupedBackground)
@@ -328,6 +418,32 @@ public struct ThemedRowModifier: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// 列表底色跟随主题，但只订阅风格 key（替代页面对整个 bgManager 的 @ObservedObject 订阅）
+public struct ThemedScrollContentBackgroundModifier: ViewModifier {
+    @AppStorage(AppBackgroundStyle.defaultsKey) private var styleRaw = AppBackgroundStyle.system.rawValue
+
+    public init() {}
+
+    public func body(content: Content) -> some View {
+        let isCustom = AppBackgroundStyle(rawValue: styleRaw) != .system
+        content.scrollContentBackground(isCustom ? .hidden : .automatic)
+    }
+}
+
+/// 页面底色跟随主题：自定义主题时透出壁纸层，系统风格时用给定底色
+public struct ThemedPageBackgroundModifier: ViewModifier {
+    @AppStorage(AppBackgroundStyle.defaultsKey) private var styleRaw = AppBackgroundStyle.system.rawValue
+    private let baseColor: Color
+
+    public init(baseColor: Color) {
+        self.baseColor = baseColor
+    }
+
+    public func body(content: Content) -> some View {
+        content.background(AppBackgroundStyle(rawValue: styleRaw) != .system ? Color.clear : baseColor)
     }
 }
 
@@ -340,6 +456,16 @@ public extension View {
     /// 应用主题磨砂半透明行背景
     func themedRow() -> some View {
         modifier(ThemedRowModifier())
+    }
+
+    /// 列表滚动底色跟随主题（只订阅风格 key）
+    func themedScrollContentBackground() -> some View {
+        modifier(ThemedScrollContentBackgroundModifier())
+    }
+
+    /// 页面底色跟随主题（只订阅风格 key）
+    func themedPageBackground(_ baseColor: Color = Color(.systemGroupedBackground)) -> some View {
+        modifier(ThemedPageBackgroundModifier(baseColor: baseColor))
     }
 }
 

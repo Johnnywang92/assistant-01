@@ -17,6 +17,11 @@ struct OmniboxPlanner {
         /// LLM 路径未采纳的原因（解析失败/空数组/模型不可用）；nil 表示未降级或 LLM 成功。
         /// 「无静默丢动作」验收凭据：engine == "rules" 且 LLM 曾被尝试时此字段必非空并进日志。
         var fallbackReason: String? = nil
+        /// 判别层输出的意图分布（若判别成功）。UI 用它解释「为什么判成这一类」，
+        /// 也用于把真实置信度透传给确认卡，而不是靠硬编码常量。
+        var intentDistribution: IntentDistribution? = nil
+        /// 判别成功但置信不足：应提示用户补充，而非硬猜。
+        var needsClarification: Bool = false
     }
 
     func plan(capture: OmniboxCapture) async -> PlanResult {
@@ -66,54 +71,106 @@ struct OmniboxPlanner {
             return PlanResult(actions: [], engine: "rules", normalizedText: "")
         }
 
-        // 2. LLM 优先：解析失败先带一次纠正重试，仍失败才降级规则兜底，且降级原因必须留痕
+        // 2. 意图判别：先分类再抽取。判别层只决定「是哪一类」，参数仍由 LLM 抽。
+        //    这一步的收益是把 9 类判别与参数抽取解耦——抽取阶段的提示词只需讲 1 类，
+        //    且我们第一次拿到了**真实概率**（生成式路径的 confidence 是写死的常量）。
+        var distribution: IntentDistribution?
         if !normalizedText.isEmpty {
-            let outcome = await Self.llmPlan(normalizedText)
+            do {
+                let routed = try await OmniboxIntentRouter().route(normalizedText)
+                distribution = routed.distribution
+            } catch {
+                // 判别失败（模型未就绪 / logits 不可读 / 标签映射不成立）不是致命错误，
+                // 直接降级到原有的生成式路径，保持既有行为不退化。
+                print("⚠️ [Omnibox] 意图判别不可用，回退生成式路径：\(error.localizedDescription)")
+            }
+        }
+
+        // 3. LLM 优先：解析失败先带一次纠正重试，仍失败才降级规则兜底，且降级原因必须留痕
+        if !normalizedText.isEmpty {
+            let outcome = await Self.llmPlan(normalizedText, intentHint: distribution)
             if let actions = outcome.actions, !actions.isEmpty {
-                return PlanResult(actions: actions, engine: "llm", normalizedText: normalizedText)
+                let enriched = Self.enrichForeignCurrencyIfNeeded(actions: actions, sourceText: normalizedText)
+                let calibrated = Self.applyIntentConfidence(enriched, distribution: distribution)
+                return PlanResult(
+                    actions: calibrated,
+                    engine: "llm",
+                    normalizedText: normalizedText,
+                    intentDistribution: distribution,
+                    needsClarification: Self.needsClarification(calibrated)
+                )
             }
             let reason = outcome.fallbackReason ?? "未知原因"
             print("⚠️ [Omnibox] LLM 路径未采纳，已降级规则引擎：\(reason)｜归一文 \(normalizedText.count) 字")
+            let ruleActions = Self.rulePlan(normalizedText)
             return PlanResult(
-                actions: Self.rulePlan(normalizedText),
+                actions: ruleActions,
                 engine: "rules",
                 normalizedText: normalizedText,
-                fallbackReason: reason
+                fallbackReason: reason,
+                intentDistribution: distribution,
+                // 规则引擎自己带置信度（短信模板 0.9、松散金额 0.55），
+                // 不该被模型判别层的低置信覆盖——模板命中本来就是确定信号。
+                needsClarification: Self.needsClarification(ruleActions)
             )
         }
         return PlanResult(actions: Self.rulePlan(normalizedText), engine: "rules", normalizedText: normalizedText)
     }
 
+    /// 是否需要提示用户核对。按**最终动作的置信度**推导，而不是直接用判别层的结论：
+    /// 判别层说不确定，但规则引擎从扣款短信里抽出了 0.9 置信的完整动作时，
+    /// 展示「不太确定」反而与用户看到的确定结果矛盾。
+    private static func needsClarification(_ actions: [PlannedAction]) -> Bool {
+        !actions.isEmpty && actions.contains { $0.confidence < PlannedAction.lowConfidenceThreshold }
+    }
+
+    /// 用判别层的真实概率校准动作置信度。
+    ///
+    /// 生成式路径过去把 `confidence` 写死成 0.85，导致 `needsConfirmation`
+    /// （阈值 0.6）永远为false——模型不确定时系统也察觉不到。
+    /// 这里只在判别成功且指向同一能力时校准，避免用「判别A能力」的概率去标注「B能力」的动作。
+    /// 校准后低于阈值 → 动作自动进入确认卡，而非直接写库。
+    private static func applyIntentConfidence(
+        _ actions: [PlannedAction],
+        distribution: IntentDistribution?
+    ) -> [PlannedAction] {
+        guard let distribution, let top = distribution.top else { return actions }
+        // 破坏性动作本就强制确认，不需要概率；破坏性动作置信度被压低反而会
+        // 让 UI 出现「模型不确定要删」的误导性解释。
+        let probability = distribution.topProbability
+        let rounded = (probability * 20).rounded() / 20 // 保留一位有效小数，避免日志噪声
+        return actions.map { action in
+            guard action.capability == top.capability, !action.capability.isDestructive else {
+                return action
+            }
+            var updated = action
+            updated.confidence = rounded
+            updated.confidenceReason = distribution.needsClarification
+                ? L10n.tr("意图判断把握度：\(distribution.reasonText)")
+                : L10n.tr("意图判断：\(distribution.reasonText)")
+            return updated
+        }
+    }
+
     // MARK: - LLM 路径
 
     /// 返回动作数组与降级原因：actions 为 nil/空时 fallbackReason 必非空（审计凭据）
-    private static func llmPlan(_ text: String) async -> (actions: [PlannedAction]?, fallbackReason: String?) {
-        let systemInstruction = """
-        你是个人助手的万能投喂口与智能助理理解引擎。把用户输入拆解为可执行动作，只输出一个 JSON 数组，不要输出任何解释、markdown 或多余文字。
-        可用动作：
-        1) 记账：{"capability":"expense.create","amount":"数字","isIncome":"false","category":"餐饮美食|交通出行|居家日用|购物消费|休闲娱乐|医疗健康|宠物萌宠|数码家电|人情社交|职业收入|其它收入|其它支出","title":"简短事项名","dateISO":"yyyy-MM-dd HH:mm 可省"}
-        2) 修改账目：{"capability":"expense.update","target":"原账单事项名或关键词","newAmount":"修改后金额"}
-        3) 待办新建：{"capability":"todo.create","title":"待办标题","detail":"补充说明，可省","dueAtDays":"相对今天的天数，可省","dueAtTime":"HH:mm，可省"}
-        4) 修改待办：{"capability":"todo.update","target":"原待办匹配关键词","newTitle":"新标题（可省）","dueAtDays":"新截止相对天数（可省）"}
-        5) 完成待办：{"capability":"todo.complete","target":"待完成事项匹配词"}
-        6) 取消待办：{"capability":"todo.cancel","target":"待取消事项匹配词"}
-        7) 推迟提醒：{"capability":"reminder.snooze","target":"提醒事项匹配词","duration":"10分钟|1小时|明早"}
-        8) 查询事项：{"capability":"query.lookup","target":"查询关键词"}
-        9) 收集箱：{"capability":"memo.inbox","memo":"原文摘录"}
-        规则：
-        - 提到“完成”、“搞定”、“做好了”某个待办时，必须输出 todo.complete 动作，target 为事项名。
-        - 提到“取消”、“删掉”、“不要提醒”某个事项时，输出 todo.cancel 动作。
-        - 提到“推迟”、“稍后提醒”、“延后”时，输出 reminder.snooze 动作。
-        - 识别到消费/支出金额且非修改时，输出 expense.create 动作。
-        - 识别到针对已有记录改金额、改标题时，输出对应的 expense.update 或 todo.update。
-        - 输入是扣款短信或订单截图时，提取商户名作为 title 并记账。
-        - 提到收货、保修、还款、到期、预约等未来事项时输出 todo.create 动作。
-        - 完全无法归类时输出一个收集箱 memo.inbox 动作。
-        """
+    ///
+    /// - Parameter intentHint: 判别层给出的意图分布。为 nil 时行为与旧版完全一致
+    ///   （列出全部 9 类让模型自己判）；非 nil 时按判别结果收窄候选能力，
+    ///   让抽取阶段的提示词只讲最可能的 2~3 类，弱模型受益明显。
+    private static func llmPlan(
+        _ text: String,
+        intentHint: IntentDistribution? = nil
+    ) async -> (actions: [PlannedAction]?, fallbackReason: String?) {
+        let systemInstruction = Self.makeSystemInstruction(intentHint: intentHint)
         let now = Date()
         let dateText = Self.yyyyMMdd.string(from: now)
         let weekdayText = Self.weekdayFormatter.string(from: now)
-        let baseUserContent = "今天是\(dateText) \(weekdayText)。\n输入：\n\(text)"
+        var baseUserContent = "今天是\(dateText) \(weekdayText)。\n输入：\n\(text)"
+        if let hint = intentHint, let top = hint.top {
+            baseUserContent += "\n（意图判别结果：\(hint.reasonText)，请据此抽取参数）"
+        }
 
         // GBNF 约束下的生成理论上必是合法数组；分类+重试兜住文法未生效的场景
         // （局域网 Ollama 通道、grammar sampler 初始化失败降级）
@@ -154,6 +211,84 @@ struct OmniboxPlanner {
         ActionParser.parseActionJSON(raw)
     }
 
+    /// 抽取阶段的系统提示词。
+    ///
+    /// 有判别结论时只讲最可能的 2~3 类能力，让弱模型的注意力集中在少数选项上；
+    /// 判别不可用或分布过于分散（top1 概率低于 0.4，说明模型确实没分清）时，
+    /// 退回列出全部 9 类，避免用错误的先验把模型锁死在错的那一类。
+    private static func makeSystemInstruction(intentHint: IntentDistribution?) -> String {
+        let schema = Self.capabilitySchema
+
+        guard let hint = intentHint, let top = hint.top, hint.topProbability >= 0.4 else {
+            return Self.basePrompt(schema: schema)
+        }
+
+        // 次选保留，用于给模型一个纠错出口；概率都低于 0.15 的类别不列出，纯属噪声。
+        let candidates = hint.ranked
+            .filter { $0.label != top && $0.probability >= 0.15 }
+            .prefix(1)
+            .map(\.label)
+
+        guard !candidates.isEmpty else {
+            return Self.basePrompt(schema: schema, narrowed: [top.capability], hint: hint)
+        }
+        return Self.basePrompt(schema: schema, narrowed: [top.capability] + candidates.map(\.capability), hint: hint)
+    }
+
+    /// 9 类能力的字段模板。判别收窄时按capability 过滤，
+    /// 保证收窄后模型看到的模板与允许的动作严格一致（不一致会诱发幻觉字段）。
+    private static var capabilitySchema: [(capability: ActionCapability, line: String)] {
+        [
+            (.expenseCreate, #"1) 记账：{"capability":"expense.create","amount":"数字","isIncome":"false","category":"餐饮美食|交通出行|居家日用|购物消费|休闲娱乐|医疗健康|宠物萌宠|数码家电|人情社交|职业收入|其它收入|其它支出","title":"简短事项名","dateISO":"yyyy-MM-dd HH:mm 可省"}"#),
+            (.expenseUpdate, #"修改账目：{"capability":"expense.update","target":"原账单事项名或关键词","newAmount":"修改后金额"}"#),
+            (.todoCreate, #"待办新建：{"capability":"todo.create","title":"待办标题","detail":"补充说明，可省","dueAtDays":"相对今天的天数，可省","dueAtTime":"HH:mm，可省"}"#),
+            (.todoUpdate, #"修改待办：{"capability":"todo.update","target":"原待办匹配关键词","newTitle":"新标题（可省）","dueAtDays":"新截止相对天数（可省）"}"#),
+            (.todoComplete, #"完成待办：{"capability":"todo.complete","target":"待完成事项匹配词"}"#),
+            (.todoCancel, #"取消待办：{"capability":"todo.cancel","target":"待取消事项匹配词"}"#),
+            (.reminderSnooze, #"推迟提醒：{"capability":"reminder.snooze","target":"提醒事项匹配词","duration":"10分钟|1小时|明早"}"#),
+            (.queryLookup, #"查询事项：{"capability":"query.lookup","target":"查询关键词"}"#),
+            (.memoInbox, #"收集箱：{"capability":"memo.inbox","memo":"原文摘录"}"#)
+        ]
+    }
+
+    private static func basePrompt(
+        schema: [(capability: ActionCapability, line: String)],
+        narrowed: [ActionCapability]? = nil,
+        hint: IntentDistribution? = nil
+    ) -> String {
+        let lines: String
+        if let narrowed {
+            lines = schema.filter { narrowed.contains($0.capability) }
+                .map(\.line)
+                .joined(separator: "\n")
+        } else {
+            lines = schema.map { "\($0.line)" }.joined(separator: "\n")
+        }
+
+        var prompt = """
+        你是个人助手的万能投喂口与智能助理理解引擎。把用户输入拆解为可执行动作，只输出一个 JSON 数组，不要输出任何解释、markdown 或多余文字。
+        可用动作：
+        \(lines)
+        规则：
+        """
+        if let hint, let top = hint.top {
+            prompt += """
+            - 意图判别倾向于「\(top.displayName)」，但仍需按输入实际内容核对；若明显不符，输出更合适的动作。
+            """
+        }
+        prompt += """
+        - 提到“完成”、“搞定”、“做好了”某个待办时，必须输出 todo.complete 动作，target 为事项名。
+        - 提到“取消”、“删掉”、“不要提醒”某个事项时，输出 todo.cancel 动作。
+        - 提到“推迟”、“稍后提醒”、“延后”时，输出 reminder.snooze 动作。
+        - 识别到消费/支出金额且非修改时，输出 expense.create 动作。
+        - 识别到针对已有记录改金额、改标题时，输出对应的 expense.update 或 todo.update。
+        - 输入是扣款短信或订单截图时，提取商户名作为 title 并记账。
+        - 提到收货、保修、还款、到期、预约等未来事项时输出 todo.create 动作。
+        - 完全无法归类时输出一个收集箱 memo.inbox 动作。
+        """
+        return prompt
+    }
+
     // MARK: - 规则兜底路径
 
     static func rulePlan(_ text: String) -> [PlannedAction] {
@@ -176,22 +311,23 @@ struct OmniboxPlanner {
         // 1. 记账：优先按短信/订单截图结构化模板提取（最高置信），再复用既有自然语言解析器，最后宽松正则兜底
         if let structured = Self.extractStructuredExpense(from: text) {
             actions.append(structured)
-        } else if let parsed = ExpenseNaturalLanguageParser.parse(text) {
+        } else if let parsed = ExpenseNaturalLanguageParser.parse(text, defaultCurrency: ExpenseCurrency.preferred()) {
+            var params: [String: String] = [
+                "amount": String(format: "%.2f", parsed.amount),
+                "isIncome": parsed.isIncome ? "true" : "false",
+                "category": parsed.category.rawValue,
+                "title": parsed.title
+            ]
+            if parsed.isForeignCurrency, let foreignAmt = parsed.foreignAmount {
+                params["currency"] = parsed.currency.rawValue
+                params["foreignAmount"] = String(format: "%.2f", foreignAmt)
+                params["exchangeRate"] = String(format: "%.6f", parsed.exchangeRateToCNY ?? parsed.currency.currentRateToCNY)
+            }
             actions.append(PlannedAction(
                 capability: .expenseCreate,
-                params: [
-                    "amount": String(format: "%.2f", parsed.amount),
-                    "isIncome": parsed.isIncome ? "true" : "false",
-                    "category": parsed.category.rawValue,
-                    "title": parsed.title
-                ],
+                params: params,
                 confidence: 0.8,
-                summary: Self.summary(for: .expenseCreate, params: [
-                    "amount": String(format: "%.2f", parsed.amount),
-                    "isIncome": parsed.isIncome ? "true" : "false",
-                    "category": parsed.category.rawValue,
-                    "title": parsed.title
-                ])
+                summary: Self.summary(for: .expenseCreate, params: params)
             ))
         } else if let amount = Self.extractLooseAmount(from: text) {
             let isIncome = Self.containsAny(text, ["收到", "入账", "工资", "报销", "退款", "红包", "收入"])
@@ -276,6 +412,13 @@ struct OmniboxPlanner {
             let income = params["isIncome"] == "true"
             let category = params["category"] ?? L10n.tr("其它支出")
             let title = params["title"]?.isEmpty == false ? params["title"]! : L10n.tr("未命名事项")
+            if let code = params["currency"],
+               let currency = ExpenseCurrency(rawValue: code),
+               currency != .cny,
+               let foreignAmt = Double(params["foreignAmount"] ?? ""),
+               foreignAmt > 0 {
+                return "\(income ? "+" : "-")¥\(Self.trimAmount(amount))（\(currency.formatAmount(foreignAmt))） · \(category) · \(title)"
+            }
             return "\(income ? "+" : "-")¥\(Self.trimAmount(amount)) · \(category) · \(title)"
         case .todoCreate:
             guard let title = params["title"]?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return "" }
@@ -418,6 +561,42 @@ struct OmniboxPlanner {
         )
     }
 
+    /// 当原文包含明确外币（如“1500日元”、“$25”），而端侧 LLM 仅提取了原币数字时，自动补齐币种与人民币折算
+    private static func enrichForeignCurrencyIfNeeded(actions: [PlannedAction], sourceText: String) -> [PlannedAction] {
+        guard let explicit = ExpenseCurrency.detectExplicitCurrency(in: sourceText),
+              explicit != .cny else {
+            return actions
+        }
+        let parsed = ExpenseNaturalLanguageParser.parse(sourceText, defaultCurrency: explicit)
+        return actions.map { action in
+            guard action.capability == .expenseCreate,
+                  action.params["currency"] == nil,
+                  let rawAmt = Double(action.params["amount"] ?? ""),
+                  rawAmt > 0 else {
+                return action
+            }
+            var updated = action
+            let rate = explicit.currentRateToCNY
+            // 若 LLM 填的是外币原币数值（或未折算），自动折算为人民币并记录外币原值
+            let foreignAmt: Double
+            if let parsedForeign = parsed?.foreignAmount, abs(rawAmt - parsedForeign) < 0.01 {
+                foreignAmt = parsedForeign
+            } else {
+                foreignAmt = rawAmt
+            }
+            let cnyAmt = explicit.convertToCNY(foreignAmt, rate: rate)
+            updated.params["currency"] = explicit.rawValue
+            updated.params["foreignAmount"] = String(format: "%.2f", foreignAmt)
+            updated.params["exchangeRate"] = String(format: "%.6f", rate)
+            updated.params["amount"] = String(format: "%.2f", cnyAmt)
+            if let cleanTitle = parsed?.title, !cleanTitle.isEmpty {
+                updated.params["title"] = cleanTitle
+            }
+            updated.summary = Self.summary(for: .expenseCreate, params: updated.params)
+            return updated
+        }
+    }
+
     /// 按可信度从高到低匹配「明确的支付金额」表述
     private static func extractExplicitPayAmount(from text: String) -> Double? {
         let patterns: [String] = [
@@ -529,17 +708,21 @@ struct OmniboxPlanner {
         return value
     }
 
+    /// 万能框的宽松金额兜底。主解析器失败时才走到这里，因此只覆盖最常见的写法。
+    /// 注意与 `ExpenseNaturalLanguageParser` 保持同样的两条约束：
+    /// 千分位逗号要先剥掉、数字要有边界断言，否则 "1,250元" 会被截成 "250"。
     static func extractLooseAmount(from text: String) -> Double? {
+        let normalized = ExpenseNaturalLanguageParser.normalizeForLooseExtraction(text)
         let patterns = [
             "[¥￥]\\s*([0-9]+(?:\\.[0-9]+)?)",
-            "([0-9]+(?:\\.[0-9]+)?)\\s*(?:元|块钱|块)"
+            "(?<![0-9.．])([0-9]+(?:\\.[0-9]+)?)(?![0-9])\\s*(?:元|块钱|块)"
         ]
         for pattern in patterns {
             if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: text.utf16.count)),
+               let match = regex.firstMatch(in: normalized, range: NSRange(location: 0, length: normalized.utf16.count)),
                match.range(at: 1).location != NSNotFound,
-               let range = Range(match.range(at: 1), in: text),
-               let value = Double(text[range]), value > 0 {
+               let range = Range(match.range(at: 1), in: normalized),
+               let value = Double(normalized[range]), value > 0 {
                 return value
             }
         }

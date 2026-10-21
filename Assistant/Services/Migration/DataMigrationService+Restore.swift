@@ -300,7 +300,10 @@ extension DataMigrationService {
                 category: ExpenseCategory(rawValue: ex.categoryRaw) ?? (ex.isIncome ? .otherIncome : .other),
                 title: ex.title,
                 rawText: ex.rawText,
-                date: ex.date
+                date: ex.date,
+                currencyCode: ex.currencyCode,
+                foreignAmount: ex.foreignAmount,
+                exchangeRateToCNY: ex.exchangeRateToCNY
             )
             item.id = ex.id
             item.linkedItemID = ex.linkedItemID

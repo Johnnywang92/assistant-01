@@ -28,6 +28,12 @@ struct VoiceDialogueView: View {
     @State private var isMuted: Bool = !AppSettings.voiceReplyEnabled
     @FocusState private var isInputFocused: Bool
 
+    // 语音聆听动画三阶段状态机（聆听中 -> 识别中 -> 识别结果）
+    @State private var voicePhase: VoiceVisualPhase = .idle
+    @State private var voicePhaseChangedAt = Date()
+    @State private var typedResultText = ""
+    @State private var recognitionSequenceTask: Task<Void, Never>? = nil
+
     // 快捷推荐问题（根据工作日/节假日/周末情境动态适配，并附带规划与设置快捷入口）
     private var quickPrompts: [String] {
         var prompts = SituationalContextEngine.shared.dynamicVoicePrompts()
@@ -175,18 +181,6 @@ struct VoiceDialogueView: View {
                                 }
                                 .id("llm-streaming-bubble")
                             }
-
-                            // 实时转写中的文字
-                            if voice.isListening && !voice.recognizedText.isEmpty {
-                                HStack {
-                                    Text(voice.recognizedText)
-                                        .font(.body)
-                                        .multilineTextAlignment(.leading)
-                                        .padding()
-                                        .background(RoundedRectangle(cornerRadius: 16).fill(.tint.opacity(0.2)))
-                                    Spacer()
-                                }
-                            }
                         }
                         .padding()
                     }
@@ -226,6 +220,19 @@ struct VoiceDialogueView: View {
                 .padding(.vertical, 6)
 
                 Divider()
+
+                // 语音聆听 / 识别动画可视化（根据 voicePhase 三阶段切换）
+                if voicePhase != .idle {
+                    VoiceListeningVisualizer(
+                        phase: voicePhase,
+                        level: CGFloat(voice.audioLevel),
+                        changedAt: voicePhaseChangedAt,
+                        liveText: voice.recognizedText,
+                        resultText: typedResultText,
+                        tint: .accentColor
+                    )
+                    .padding(.top, 8)
+                }
 
                 // 底部双模交互区（语音麦克风 / 键盘手动打字）
                 if isTextInputMode {
@@ -370,10 +377,45 @@ struct VoiceDialogueView: View {
                 ConversationSettingsEngine.shared.currentWizardStep = nil
             }
             .onChange(of: voice.isListening) { _, listening in
-                if !listening && !voice.recognizedText.isEmpty {
-                    let query = voice.recognizedText
+                if listening {
+                    // 重新开始时取消上一个未完成的结果动画序列
+                    recognitionSequenceTask?.cancel()
+                    typedResultText = ""
+                    setVoicePhase(.listening)
+                } else {
+                    let finalText = voice.recognizedText
                     voice.recognizedText = ""
-                    processUserQuery(query)
+                    guard !finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        setVoicePhase(.idle)
+                        return
+                    }
+                    // 进入「识别中」短暂跳动，再逐字打出「识别结果」，最后提交到对话
+                    setVoicePhase(.recognizing)
+                    recognitionSequenceTask = Task { [finalText] in
+                        do {
+                            try await Task.sleep(nanoseconds: 650_000_000)
+                        } catch { return }
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run {
+                            setVoicePhase(.result)
+                            typedResultText = ""
+                        }
+                        for ch in finalText {
+                            guard !Task.isCancelled else { return }
+                            do {
+                                try await Task.sleep(nanoseconds: 70_000_000)
+                            } catch { return }
+                            typedResultText.append(ch)
+                        }
+                        do {
+                            try await Task.sleep(nanoseconds: 900_000_000)
+                        } catch { return }
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run {
+                            setVoicePhase(.idle)
+                            processUserQuery(finalText)
+                        }
+                    }
                 }
             }
         }
@@ -440,6 +482,7 @@ struct VoiceDialogueView: View {
                         .foregroundStyle(.tint)
                 }
             }
+            .opacity(voicePhase == .idle ? 1 : 0)
         }
         .padding(.bottom, 14)
     }
@@ -499,6 +542,11 @@ struct VoiceDialogueView: View {
                 voice.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func setVoicePhase(_ p: VoiceVisualPhase) {
+        voicePhase = p
+        voicePhaseChangedAt = Date()
     }
 
     private func submitManualInput() {
@@ -915,8 +963,7 @@ struct PlanningTaskCardView: View {
 
             // 任务拆分子项
             VStack(spacing: 6) {
-                ForEach(plan.subtasks.indices, id: \.self) { idx in
-                    let subtask = plan.subtasks[idx]
+                ForEach(plan.subtasks) { subtask in
                     HStack(alignment: .top, spacing: 8) {
                         if plan.isSaved {
                             Image(systemName: subtask.isSelected ? "checkmark.circle.fill" : "circle")
@@ -925,7 +972,9 @@ struct PlanningTaskCardView: View {
                                 .padding(.top, 2)
                         } else {
                             Button {
-                                plan.subtasks[idx].isSelected.toggle()
+                                if let idx = plan.subtasks.firstIndex(where: { $0.id == subtask.id }) {
+                                    plan.subtasks[idx].isSelected.toggle()
+                                }
                                 Haptic.light()
                             } label: {
                                 Image(systemName: subtask.isSelected ? "checkmark.circle.fill" : "circle")
