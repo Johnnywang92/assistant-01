@@ -36,6 +36,9 @@ public final class FoodIntakeRecord {
     /// 估算来源：vision（照片识别）/ manual（手动录入）
     public var sourceRaw: String
     public var createdAt: Date
+    /// 关联的记账条目（`ExpenseRecord.id`）。由记账推测生成的记录带此值，
+    /// 用于账单编辑/删除时同步热量记录；其它来源为 nil。
+    public var linkedExpenseID: UUID?
     /// 照片缩略图（压缩后存储，避免撑大数据库）
     @Attribute(.externalStorage)
     public var imageData: Data?
@@ -50,7 +53,8 @@ public final class FoodIntakeRecord {
         confidence: Double = 0.5,
         isManuallyAdjusted: Bool = false,
         source: FoodIntakeSource = .vision,
-        imageData: Data? = nil
+        imageData: Data? = nil,
+        linkedExpenseID: UUID? = nil
     ) {
         self.id = UUID()
         self.date = date
@@ -65,6 +69,7 @@ public final class FoodIntakeRecord {
         self.sourceRaw = source.rawValue
         self.createdAt = .now
         self.imageData = imageData
+        self.linkedExpenseID = linkedExpenseID
     }
 
     public var portion: FoodPortion {
@@ -89,11 +94,14 @@ public enum FoodIntakeSource: String, Codable, CaseIterable, Sendable {
     case vision
     /// 用户手动录入
     case manual
+    /// 由记账条目（奶茶/咖啡/零食/餐饮）推测，经用户确认后写入
+    case expense
 
     public var displayName: String {
         switch self {
         case .vision: return "照片估算"
         case .manual: return "手动录入"
+        case .expense: return "记账推测"
         }
     }
 
@@ -101,6 +109,7 @@ public enum FoodIntakeSource: String, Codable, CaseIterable, Sendable {
         switch self {
         case .vision: return "camera.viewfinder"
         case .manual: return "hand.point.up.left"
+        case .expense: return "yensign.circle"
         }
     }
 }

@@ -524,6 +524,8 @@ struct ExpenseTrackerView: View {
             .sheet(item: $recordToShare) { record in
                 ExpenseShareView(record: record)
             }
+            .expenseCalorieConfirmation()
+            .task { ExpenseCalorieService.reconcileOrphans(context: context) }
             .sheet(isPresented: $showingReceiptScanner) {
                 ReceiptScannerView { result, rawText, receiptData in
                     let record = ExpenseRecord(
@@ -540,6 +542,7 @@ struct ExpenseTrackerView: View {
                     record.receiptImageData = receiptData
                     context.insert(record)
                     try? context.save()
+                    ExpenseCalorieService.handleSaved(record, propose: true, context: context)
                     if let badge = record.formattedForeignBadge {
                         showFeedback("已从小票记入 ¥\(String(format: "%.2f", result.amount))（\(badge)）")
                     } else {
@@ -614,6 +617,7 @@ struct ExpenseTrackerView: View {
             record.splitParticipants = result.splitParticipants
             context.insert(record)
             try? context.save()
+            ExpenseCalorieService.handleSaved(record, propose: true, context: context)
             Haptic.success()
             quickInputText = ""
 
@@ -796,6 +800,7 @@ struct ExpenseTrackerView: View {
     }
 
     private func deleteRecord(_ item: ExpenseRecord) {
+        ExpenseCalorieService.handleDeleted(expenseID: item.id, context: context)
         context.delete(item)
         try? context.save()
         Haptic.medium()
@@ -805,6 +810,7 @@ struct ExpenseTrackerView: View {
     private func deleteRecords(offsets: IndexSet, from items: [ExpenseRecord]) {
         for index in offsets {
             let item = items[index]
+            ExpenseCalorieService.handleDeleted(expenseID: item.id, context: context)
             context.delete(item)
         }
         try? context.save()
@@ -1778,6 +1784,9 @@ struct AddOrEditExpenseSheet: View {
             context.insert(record)
             record.receiptImageData = receiptImageData
             record.linkedItemID = linkedItemID
+            // 同步热量记录需要知道账单改动前的状态
+            let oldTitle = record.title
+            let wasFoodExpense = record.category == .food && !record.isIncome
             record.splitCount = max(Int(splitCountString) ?? 1, 1)
             record.splitParticipants = splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
             try? context.save()
@@ -1791,6 +1800,11 @@ struct AddOrEditExpenseSheet: View {
         rateStatusMessage = nil
         Task {
             let ok = await ExpenseCurrency.refreshOnlineRates()
+            ExpenseCalorieService.handleSaved(
+                record,
+                propose: record.title != oldTitle || !wasFoodExpense,
+                context: context
+            )
             await MainActor.run {
                 isSyncingOnlineRates = false
                 if ok {
@@ -1809,6 +1823,7 @@ struct AddOrEditExpenseSheet: View {
         guard let record = recordToEdit else { return }
         context.delete(record)
         try? context.save()
+            ExpenseCalorieService.handleSaved(record, propose: true, context: context)
         Haptic.warning()
         dismiss()
     }
@@ -1835,6 +1850,7 @@ private struct ExpenseShareView: View {
             let participants = record.splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
             if !participants.isEmpty {
                 lines.append("参与人：\(participants)")
+        ExpenseCalorieService.handleDeleted(expenseID: record.id, context: context)
             }
         }
         return lines.joined(separator: "\n")

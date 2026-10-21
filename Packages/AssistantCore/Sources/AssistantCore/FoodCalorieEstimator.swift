@@ -100,6 +100,9 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
         case "cookie": return 30
         case "coffee": return 250
         case "milk_tea": return 500
+        case "latte": return 350
+        case "chips": return 40
+        case "chocolate": return 30
         case "cola": return 330
         case "juice": return 250
         case "fruit": return 150
@@ -238,13 +241,20 @@ public enum FoodCatalog {
 
         // MARK: 饮品
         FoodItem(id: "coffee", name: "咖啡", nameEn: "Coffee", caloriesPer100g: 2,
-                 visionIdentifiers: ["coffee", "coffee_bean"], aliases: ["咖啡", "美式", "拿铁", "coffee"]),
+                 visionIdentifiers: ["coffee", "coffee_bean"], aliases: ["咖啡", "美式", "coffee"]),
+        // 带奶咖啡（拿铁/卡布奇诺/摩卡…）热量远高于黑咖啡，单列；连锁咖啡品牌名也归入此类
+        FoodItem(id: "latte", name: "拿铁", nameEn: "Latte", caloriesPer100g: 40,
+                 visionIdentifiers: ["latte", "cappuccino"], aliases: ["拿铁", "卡布奇诺", "摩卡", "焦糖玛奇朵", "生椰", "星巴克", "瑞幸", "库迪", "latte", "cappuccino", "mocha"]),
         FoodItem(id: "milk_tea", name: "奶茶", nameEn: "Milk Tea", caloriesPer100g: 70,
-                 visionIdentifiers: ["bubble_tea", "juice", "drink"], aliases: ["奶茶", "珍珠奶茶", "milk tea", "bubble tea"]),
+                 visionIdentifiers: ["bubble_tea", "juice", "drink"], aliases: ["奶茶", "珍珠奶茶", "喜茶", "奈雪", "蜜雪冰城", "霸王茶姬", "茶颜悦色", "古茗", "一点点", "milk tea", "bubble tea"]),
         FoodItem(id: "cola", name: "可乐", nameEn: "Cola", caloriesPer100g: 42,
                  visionIdentifiers: ["cola", "soda"], aliases: ["可乐", "汽水", "cola"]),
         FoodItem(id: "juice", name: "果汁", nameEn: "Juice", caloriesPer100g: 45,
                  visionIdentifiers: ["juice", "juicer"], aliases: ["果汁", "juice"]),
+        FoodItem(id: "chips", name: "薯片", nameEn: "Potato Chips", caloriesPer100g: 540,
+                 visionIdentifiers: ["potato_chips"], aliases: ["薯片", "薯条", "chips"]),
+        FoodItem(id: "chocolate", name: "巧克力", nameEn: "Chocolate", caloriesPer100g: 540,
+                 visionIdentifiers: ["chocolate"], aliases: ["巧克力", "chocolate"]),
         FoodItem(id: "alcohol", name: "酒类", nameEn: "Alcoholic Drink", caloriesPer100g: 70,
                  visionIdentifiers: ["beer", "red_wine", "sparkling_wine", "wine"], aliases: ["啤酒", "红酒", "白酒", "beer", "wine"])
     ]
