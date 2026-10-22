@@ -7820,6 +7820,9 @@
     "JohnnyBoyStudio" : {
 
     },
+    "KEY ACCOMPLISHMENTS · 重点成果" : {
+
+    },
     "llama.cpp (Metal GPU)" : {
 
     },
@@ -12757,6 +12760,9 @@
         }
       }
     },
+    "保存复盘卡片至相册 (社交分享)" : {
+
+    },
     "保存失败" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -16316,6 +16322,9 @@
           }
         }
       }
+    },
+    "分享复盘报告" : {
+
     },
     "分享形式" : {
       "extractionState" : "manual",
@@ -25433,6 +25442,9 @@
         }
       }
     },
+    "导出 .md 文档" : {
+
+    },
     "导出为 .md 文档" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -33412,6 +33424,9 @@
           }
         }
       }
+    },
+    "报告导出与社交分享" : {
+
     },
     "报告推送设置" : {
       "extractionState" : "manual",
@@ -47314,6 +47329,9 @@
         }
       }
     },
+    "生成图片卡片 (分享至小红书/朋友圈)" : {
+
+    },
     "生成模式" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -47330,6 +47348,9 @@
           }
         }
       }
+    },
+    "生成社交图片卡片 (小红书/朋友圈)" : {
+
     },
     "生成结果与记忆助记" : {
       "extractionState" : "manual",

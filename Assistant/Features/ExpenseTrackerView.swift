@@ -969,7 +969,7 @@ struct SafeToSpendCard: View {
                             .foregroundStyle(.secondary)
                         Text(String(format: "¥%.0f", result.todayOverspentAmount))
                             .font(.system(.largeTitle, design: .rounded).bold())
-                            .foregroundStyle(AppColor.warning)
+                            .foregroundStyle(AppColor.danger)
                             .contentTransition(.numericText())
                     }
                     Text("今日起始额度 ¥\(String(format: "%.0f", result.todayAllowance)) · 今日已花 ¥\(String(format: "%.0f", result.todayFlexibleSpend))")
@@ -1000,7 +1000,7 @@ struct SafeToSpendCard: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(AppColor.fillTertiary)
                     Capsule()
-                        .fill(result.isOverBudget ? AppColor.danger : (result.isTodayOverspent ? AppColor.warning : AppColor.success))
+                        .fill(result.isOverBudget || result.isTodayOverspent ? AppColor.danger : AppColor.success)
                         .frame(width: min(1, max(0, result.todaySpentRatio)) * geo.size.width)
                 }
             }

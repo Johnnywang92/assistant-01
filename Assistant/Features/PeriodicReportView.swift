@@ -20,6 +20,7 @@ struct PeriodicReportView: View {
     @State private var sharingFileURL: URL? = nil
     @State private var showingShareSheet: Bool = false
     @State private var showingPreviewSheet: Bool = false
+    @State private var showingImageShareSheet: Bool = false
 
     /// 只订阅风格 key，判断是否自定主题底图
     private var isCustomThemedBackground: Bool {
@@ -151,6 +152,15 @@ struct PeriodicReportView: View {
                     HStack(spacing: 12) {
                         Menu {
                             Button {
+                                showingImageShareSheet = true
+                                Haptic.light()
+                            } label: {
+                                Label("生成社交图片卡片 (小红书/朋友圈)", systemImage: "photo.badge.plus")
+                            }
+
+                            Divider()
+
+                            Button {
                                 exportAsMarkdownFile()
                             } label: {
                                 Label("导出为 .md 文档 (保存/分享)", systemImage: "doc.badge.arrow.up")
@@ -182,6 +192,9 @@ struct PeriodicReportView: View {
                         .accessibilityLabel("报告提醒设置")
                     }
                 }
+            }
+            .sheet(isPresented: $showingImageShareSheet) {
+                ReportShareSheet(reportData: reportData, polishedSummary: polishedText)
             }
             .sheet(isPresented: $showingSettingsSheet) {
                 PeriodicReportSettingsSheet()
@@ -840,7 +853,7 @@ struct PeriodicReportView: View {
                             .foregroundStyle(.secondary)
                         Text(String(format: "¥%.0f", sts.todayOverspentAmount))
                             .font(.system(.title, design: .rounded).bold())
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.red)
                     }
                     Text("今日起始额度 ¥\(String(format: "%.0f", sts.todayAllowance)) · 今日已花 ¥\(String(format: "%.0f", sts.todayFlexibleSpend))")
                         .font(.caption2)
@@ -869,7 +882,7 @@ struct PeriodicReportView: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(.tertiarySystemFill))
                     Capsule()
-                        .fill(sts.isOverBudget ? Color.red : (sts.isTodayOverspent ? Color.orange : Color.green))
+                        .fill((sts.isOverBudget || sts.isTodayOverspent) ? Color.red : Color.green)
                         .frame(width: geo.size.width * CGFloat(min(max(sts.todaySpentRatio, 0), 1)))
                 }
             }
@@ -1281,7 +1294,7 @@ struct PeriodicReportView: View {
     private var exportActionCard: some View {
         VStack(spacing: 12) {
             HStack {
-                Label("报告导出与存档", systemImage: "doc.badge.arrow.up")
+                Label("报告导出与社交分享", systemImage: "square.and.arrow.up")
                     .font(.subheadline.bold())
                     .foregroundStyle(.primary)
 
@@ -1292,13 +1305,37 @@ struct PeriodicReportView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // 社交媒体图片分享主操作按钮
+            Button {
+                showingImageShareSheet = true
+                Haptic.light()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "photo.badge.plus")
+                    Text("生成图片卡片 (分享至小红书/朋友圈)")
+                }
+                .font(.subheadline.bold())
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    LinearGradient(
+                        colors: [Color.indigo, Color.purple],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
             HStack(spacing: 12) {
                 Button {
                     exportAsMarkdownFile()
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "square.and.arrow.up")
-                        Text("导出为 .md 文档")
+                        Image(systemName: "doc.badge.arrow.up")
+                        Text("导出 .md 文档")
                     }
                     .font(.subheadline.bold())
                     .foregroundStyle(.white)
