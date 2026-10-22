@@ -116,6 +116,10 @@ struct AddTodoSheet: View {
             defaultType = .pet
             defaultHasDueDate = true
             defaultDue = Calendar.current.date(byAdding: .day, value: 1, to: .now) ?? .now
+        case .other:
+            defaultType = .other
+            defaultHasDueDate = false
+            defaultDue = Calendar.current.date(byAdding: .hour, value: 2, to: .now) ?? .now
         }
 
         self._type = State(initialValue: defaultType)
@@ -132,7 +136,7 @@ struct AddTodoSheet: View {
     private var availableTypesForCategory: [TodoType] {
         switch selectedCategory {
         case .all:
-            return [.general, .work, .travelBooking, .parcel, .medication, .housework, .exercise, .charging, .subscription, .vehicleCare, .bill, .itemExpiry, .anniversary, .hydration, .event, .childVaccine, .childGrowth, .childMilestone, .childHealth, .pet]
+            return [.general, .work, .travelBooking, .parcel, .medication, .housework, .exercise, .charging, .subscription, .vehicleCare, .bill, .itemExpiry, .anniversary, .hydration, .event, .childVaccine, .childGrowth, .childMilestone, .childHealth, .pet, .other]
         case .general:
             return [.general, .travelBooking, .event]
         case .work:
@@ -149,6 +153,8 @@ struct AddTodoSheet: View {
             return [.childVaccine, .childGrowth, .childMilestone, .childHealth]
         case .pet:
             return [.pet]
+        case .other:
+            return [.other]
         }
     }
 
@@ -183,6 +189,8 @@ struct AddTodoSheet: View {
             return .parenting
         case .pet:
             return .pet
+        case .other:
+            return .other
         default:
             return .general
         }
@@ -243,6 +251,8 @@ struct AddTodoSheet: View {
             return "宠物事项（如：喂食、驱虫、洗护或宠物就医）"
         case .skillLearning:
             return "学习任务（如：练 20 分钟和弦切换、读完第 3 章并做笔记）"
+        case .other:
+            return "待办名称（其它待办事项）"
         case .general, .data:
             return "待办名称（如：去超市买牛奶、准备工作周报、下午开会）"
         }

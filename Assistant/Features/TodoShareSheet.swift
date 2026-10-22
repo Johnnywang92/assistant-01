@@ -409,6 +409,8 @@ struct TodoShareSheet: View {
             return allTodos.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }
         case .pet:
             return allTodos.filter { $0.type == .pet }
+        case .other:
+            return allTodos.filter { $0.type == .other }
         }
     }
 
@@ -443,6 +445,8 @@ struct TodoShareSheet: View {
             return L10n.tr("亲子育儿清单")
         case .pet:
             return L10n.tr("宠物照护")
+        case .other:
+            return L10n.tr("其它清单")
         }
     }
 

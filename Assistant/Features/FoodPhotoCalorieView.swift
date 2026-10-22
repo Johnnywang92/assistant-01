@@ -766,7 +766,7 @@ struct FoodPhotoCalorieView: View {
                 Text("近期饮食记录")
                     .font(.subheadline.bold())
                 Spacer()
-                Text("轻触记录可调整吃剩百分比")
+                Text("轻触查看详情与调整热量")
                     .font(.caption2)
                     .foregroundStyle(AppColor.secondaryText)
             }
@@ -793,17 +793,22 @@ struct FoodPhotoCalorieView: View {
                                 }
                         }
 
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(record.foodName)
+                                .font(.subheadline.bold())
+                                .foregroundStyle(AppColor.text)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+
                             HStack(spacing: 6) {
-                                Text(record.foodName)
-                                    .font(.subheadline.bold())
-                                    .foregroundStyle(AppColor.text)
                                 Text(record.portion.displayName)
                                     .font(.caption2)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(Capsule().fill(Color.secondary.opacity(0.15)))
                                     .foregroundStyle(AppColor.secondaryText)
+                                    .fixedSize()
+
                                 if record.consumedRatio < 0.999 {
                                     Text("吃了 \(Int((record.consumedRatio * 100).rounded()))%")
                                         .font(.caption2.bold())
@@ -811,29 +816,34 @@ struct FoodPhotoCalorieView: View {
                                         .padding(.vertical, 2)
                                         .background(Capsule().fill(AppColor.primary.opacity(0.15)))
                                         .foregroundStyle(AppColor.primary)
+                                        .fixedSize()
                                 }
+
+                                Text("· \(record.date.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.caption2)
+                                    .foregroundStyle(AppColor.secondaryText)
+                                    .lineLimit(1)
                             }
-                            Text(record.date.formatted(date: .abbreviated, time: .shortened))
-                                .font(.caption2)
-                                .foregroundStyle(AppColor.secondaryText)
                         }
 
-                        Spacer()
+                        Spacer(minLength: 8)
 
                         VStack(alignment: .trailing, spacing: 2) {
                             Text("\(Int(record.consumedCalories.rounded())) 千卡")
                                 .font(.subheadline.bold().monospacedDigit())
                                 .foregroundStyle(AppColor.primary)
+                                .fixedSize()
                             if record.consumedRatio < 0.999 {
                                 Text("整份 \(Int(record.fullPortionCalories.rounded()))")
                                     .font(.caption2)
                                     .foregroundStyle(AppColor.secondaryText)
+                                    .fixedSize()
                             }
                         }
 
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.caption)
-                            .foregroundStyle(AppColor.secondaryText)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.bold())
+                            .foregroundStyle(AppColor.secondaryText.opacity(0.6))
                     }
                     .padding(.vertical, 6)
                 }
@@ -1234,29 +1244,37 @@ struct FoodIntakeRecordAdjustmentSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("菜品与实际摄入热量") {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(foodName.isEmpty ? record.foodName : foodName)
-                                .font(.headline)
+                Section("食物全称与摄入热量") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(foodName.isEmpty ? record.foodName : foodName)
+                            .font(.headline)
+                            .foregroundStyle(Color.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        HStack {
                             Text("整份约 \(Int(fullPortionCalories.rounded())) 千卡")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("\(Int(previewConsumedCalories.rounded())) 千卡")
-                                .font(.title2.bold().monospacedDigit())
-                                .foregroundStyle(AppColor.primary)
-                            Text("吃了 \(Int((consumedRatio * 100).rounded()))%")
-                                .font(.caption2)
+                            Spacer()
+                            Text("实际摄入：")
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
+                            Text("\(Int(previewConsumedCalories.rounded())) 千卡")
+                                .font(.title3.bold().monospacedDigit())
+                                .foregroundStyle(AppColor.primary)
+                            if consumedRatio < 0.999 {
+                                Text("(\(Int((consumedRatio * 100).rounded()))%)")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(AppColor.primary)
+                            }
                         }
                     }
+                    .padding(.vertical, 2)
                 }
 
                 Section("修改菜品名称与整份热量") {
-                    TextField("菜品名称", text: $foodName)
+                    TextField("菜品名称", text: $foodName, axis: .vertical)
+                        .lineLimit(1...4)
                     HStack {
                         Text("整份热量")
                         Spacer()
@@ -1346,7 +1364,7 @@ struct FoodIntakeRecordAdjustmentSheet: View {
                     }
                 }
             }
-            .navigationTitle("调整饮食热量")
+            .navigationTitle("饮食记录详情")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

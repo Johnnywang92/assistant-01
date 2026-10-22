@@ -23,6 +23,7 @@ enum TodoType: String, Codable, CaseIterable, Hashable {
     case childHealth      // 亲子育儿健康随访
     case pet              // 宠物照护
     case skillLearning    // 技能学习路径的阶段任务与练习打卡
+    case other            // 其它
 
     var icon: String {
         switch self {
@@ -50,6 +51,7 @@ enum TodoType: String, Codable, CaseIterable, Hashable {
         case .childHealth: "cross.case.fill"
         case .pet: "pawprint.fill"
         case .skillLearning: "book.fill"
+        case .other: "ellipsis.circle.fill"
         }
     }
 
@@ -79,6 +81,7 @@ enum TodoType: String, Codable, CaseIterable, Hashable {
         case .event: "日程事项"
         case .data: "流量预警"
         case .skillLearning: "技能学习"
+        case .other: "其它"
         }
         return L10n.tr(raw)
     }

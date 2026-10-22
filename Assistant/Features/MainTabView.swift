@@ -12,7 +12,6 @@ struct MainTabView: View {
     @State private var showScanner = false
     @State private var showOmnibox = false
     @State private var showUnifiedSearch = false
-    @State private var crossModuleSearchText = ""
     @State private var showClipboardReadError = false
     @State private var autoStartListening = false
     @ObservedObject private var clipboard = ClipboardIngestionService.shared
@@ -36,15 +35,6 @@ struct MainTabView: View {
                         .tag(tab)
                         .badge(badgeCount(for: tab))
                 }
-            }
-            // 全局唯一搜索入口：统一唤起跨模块统一搜索，全域覆盖待办、账单、物品、证件与备忘
-            .searchable(text: $crossModuleSearchText, prompt: Text(L10n.tr("搜索待办、账单、物品、证件与备忘…")))
-            .onChange(of: crossModuleSearchText) { _, newQuery in
-                let trimmed = newQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                router.prefilledSearchQuery = trimmed
-                router.activeSheet = .unifiedSearch
-                crossModuleSearchText = ""
             }
 
             // 剪贴板新内容提示条（检测到截图/复制文字后回到 App 时从顶部滑入）

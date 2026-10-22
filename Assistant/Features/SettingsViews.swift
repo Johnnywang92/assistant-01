@@ -534,11 +534,26 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker("作息习惯与身份", selection: $lifestyleProfile) {
-                        ForEach(UserLifestyleProfile.allCases) { profile in
-                            Label(L10n.tr(profile.rawValue), systemImage: profile.icon).tag(profile)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("作息习惯与身份")
+                            .font(.body)
+
+                        Picker("作息习惯与身份", selection: Binding(
+                            get: { lifestyleProfile },
+                            set: { newProfile in
+                                Haptic.selection()
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    lifestyleProfile = newProfile
+                                }
+                            }
+                        )) {
+                            ForEach(UserLifestyleProfile.allCases) { profile in
+                                Text(profile.shortTitle).tag(profile)
+                            }
                         }
+                        .pickerStyle(.segmented)
                     }
+                    .padding(.vertical, 4)
 
                     if lifestyleProfile == .officeWorker {
                         DatePicker("常规下班时间", selection: offWorkTimeBinding, displayedComponents: .hourAndMinute)
@@ -583,13 +598,15 @@ struct SettingsView: View {
                         LLMModelManagementView()
                     } label: {
                         HStack {
-                            Label("AI 端侧大模型 (Qwen3 / Qwen2.5)", systemImage: "brain.head.profile")
+                            Label("端侧大模型", systemImage: "brain.head.profile")
+                                .lineLimit(1)
                             Spacer()
                             Text(LLMModelManager.shared.isModelDownloaded
-                                 ? "\(LLMModelManager.shared.selectedPreset.shortName) · \(L10n.tr("GGUF 已就绪"))"
+                                 ? "\(LLMModelManager.shared.selectedPreset.shortName) · \(L10n.tr("已就绪"))"
                                  : "\(LLMModelManager.shared.selectedPreset.shortName) · \(L10n.tr("可下载"))")
                                 .font(.caption2)
                                 .foregroundStyle(LLMModelManager.shared.isModelDownloaded ? .green : .secondary)
+                                .lineLimit(1)
                         }
                     }
                 }
@@ -663,86 +680,166 @@ struct SettingsView: View {
 }
 
 struct SetupGuideView: View {
-    static let keywords = ["取件", "取走", "取出", "签收", "提货"]
+    static let keywords = ["取件", "取走", "取出", "签收", "提货", "账单", "还款"]
+    @State private var copiedKeyword: String?
 
     var body: some View {
         List {
+            // 引导总览卡片
             Section {
-                Text("iOS 不允许 App 读取短信，需要用「快捷指令」在收到短信时把内容交给助手。每个关键词建一个自动化，约 3 分钟配完。")
-                    .font(.callout)
+                HStack(spacing: 14) {
+                    Image(systemName: "message.badge.filled.fill")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.tint)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("短信自动同步待办")
+                            .font(.headline)
+                        Text("借助系统「快捷指令」自动化，收到快递或还款短信时无感自动解析生成待办。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
             }
-            Section("需要添加的关键词（点击复制）") {
-                ForEach(Self.keywords, id: \.self) { k in
-                    Button {
-                        UIPasteboard.general.string = k
-                    } label: {
-                        HStack {
-                            Text(k).font(.body.monospaced())
-                            Spacer()
-                            Image(systemName: "doc.on.doc").foregroundStyle(.secondary)
+
+            // 触发关键词（横向流式胶囊，点击直接复制）
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("常用触发关键词")
+                            .font(.subheadline.bold())
+                        Spacer()
+                        if let copiedKeyword {
+                            Text("已复制「\(copiedKeyword)」")
+                                .font(.caption.bold())
+                                .foregroundStyle(.green)
+                                .transition(.opacity)
+                        } else {
+                            Text("点击任一即可复制")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 8)], spacing: 8) {
+                        ForEach(Self.keywords, id: \.self) { k in
+                            Button {
+                                UIPasteboard.general.string = k
+                                Haptic.selection()
+                                withAnimation(.spring(response: 0.25)) {
+                                    copiedKeyword = k
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    if copiedKeyword == k { copiedKeyword = nil }
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text(k)
+                                        .font(.subheadline.weight(.medium))
+                                    Image(systemName: copiedKeyword == k ? "checkmark" : "doc.on.doc")
+                                        .font(.caption2)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .frame(maxWidth: .infinity)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(copiedKeyword == k ? Color.green.opacity(0.15) : Color(.tertiarySystemFill))
+                                )
+                                .foregroundStyle(copiedKeyword == k ? Color.green : Color.primary)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
-            }
-            Section("每个关键词的配置步骤") {
-                step(1, "打开「快捷指令」→ 底部「自动化」→ 右上角 + →「信息」")
-                step(2, "「信息包含」填入关键词，选择「立即运行」，关闭「运行时通知」")
-                step(3, "下一步 →「新建空白快捷指令」")
-                step(4, "搜索并添加「导入短信」（助手），把「短信内容」设为变量「快捷指令输入」")
-                step(5, "完成。可在信息 App 给自己发一条含「取件码 1-2-3456」的短信测试")
-            }
-            Section {
-                step(6, "在「导入短信」之前加一个「附加到文本文件」操作：内容为 ===MSG=== 换行 + 快捷指令输入，文件选「我的 iPhone › 助手 › inbox.txt」")
+                .padding(.vertical, 4)
             } header: {
-                Text("可选：防丢（签名过期期间）")
-            } footer: {
-                Text("App 过期时「导入短信」会失败，但短信已写入 inbox.txt，下次打开 App 自动补录，重复的不会重复添加。")
+                Text("匹配关键词")
             }
-            Section("一条短信触发多个自动化？") {
-                Text("没关系，助手会按原文自动去重。")
-                    .font(.callout)
+
+            // 4 步极简配置流程
+            Section("配置步骤（约 1 分钟）") {
+                guideStepRow(
+                    step: 1,
+                    title: "新建信息自动化",
+                    desc: "打开「快捷指令」App → 底部「自动化」→ 点右上角「+」→ 选择「信息」。"
+                )
+                guideStepRow(
+                    step: 2,
+                    title: "设置触发条件",
+                    desc: "「信息包含」填入上方关键词（如取件），勾选「立即运行」，并关闭「运行时通知」。"
+                )
+                guideStepRow(
+                    step: 3,
+                    title: "添加导入动作",
+                    desc: "下一步选「新建空白快捷指令」，搜索并添加「导入短信」（小助），内容设为「快捷指令输入」。"
+                )
+                guideStepRow(
+                    step: 4,
+                    title: "完成并发送测试",
+                    desc: "可在信息中给自己发一条含取件码（如 3-2-104）的短信，小助将自动识别并生成待办。"
+                )
             }
-            Section("信用卡账单与还款提醒（短信自动化）") {
-                step(1, "在快捷指令自动化中选择「信息」→「信息包含」填入「账单」或「还款」")
-                step(2, "动作同样添加「导入短信」（助手），设置短信内容为「快捷指令输入」")
-                step(3, "银行发送还款提醒短信时，助手自动解析出银行名、应还金额与还款日，生成高优还款待办")
-            }
-            Section("微信一键提取（方案一：轻点背面复制导入）") {
-                step(1, "在「快捷指令」App 新建一个快捷指令，命名为「助手剪贴板导入」")
-                step(2, "添加操作：从助理中选择「从剪贴板导入」")
-                step(3, "打开系统「设置」→「辅助功能」→「触控」→「轻点背面」")
-                step(4, "选择「轻点两下」或「轻点三下」，勾选刚才创建的「助手剪贴板导入」")
-                step(5, "在微信中长按聊天文字点击「复制」，然后轻敲手机背面两下，即可离线提取并弹出通知")
-            }
-            Section("微信一键提取（方案二：截屏离线识别）") {
-                step(1, "在「快捷指令」App 新建一个快捷指令，命名为「助手截屏提取」")
-                step(2, "添加操作 1：「拍摄屏幕快照」")
-                step(3, "添加操作 2：选择「截屏识别并导入」（助手），把文件参数设为步骤 1 的屏幕快照")
-                step(4, "同样可绑定到「轻点背面」或 iPhone 15 Pro Max 的「操作按钮」（Action Button）")
-                step(5, "聊天界面直接触发，全自动截图 → 离线 OCR → 解析待办")
-            }
-            Section("环境联动智能提醒（Wi-Fi / 定位 / 时间点 / 天气）") {
-                step(1, "出门/断开Wi-Fi：在快捷指令自动化中选择「离开Wi-Fi(家庭网络)」，动作添加「触发情境智能提醒」，情景选择「离开家/断开家庭Wi-Fi」")
-                step(2, "到家/连接Wi-Fi：选择「加入Wi-Fi(家庭网络)」，动作添加「触发情境智能提醒」，情景选择「到家/连接家庭Wi-Fi」，到家时若有未取件将弹窗预警")
-                step(3, "定时简报（时间点+天气）：选择「特定时间(如早上 8:00)」，情景选择「早晨出门简报」，自动联动天气带伞提醒与全天待办")
-            }
-            Section("设备电量与充电提醒（手表/耳机/手机）") {
-                step(1, "Apple Watch 低电量：在快捷指令中新建自动化 →「电池电量低于 20%」→ 执行「汇报设备电量」（设备选 Apple Watch 手表）")
-                step(2, "iPhone 本机低电量：App 每次在前台运行时会自动检测 iPhone 电量，低于 20% 自动入库充电待办，充电后自动闭环打勾")
+
+            // 实用技巧与保障
+            Section("实用提示") {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .foregroundStyle(.green)
+                        .font(.body)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("全自动智能去重")
+                            .font(.subheadline.bold())
+                        Text("同一条短信即使匹配多个关键词，助手也会自动基于原文校验去重，不会产生重复事项。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 2)
+
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "creditcard.fill")
+                        .foregroundStyle(.blue)
+                        .font(.body)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("支持信用卡账单与还款")
+                            .font(.subheadline.bold())
+                        Text("关键词填入「账单」或「还款」，收到银行短信时将自动解析还款日、应还金额并创建提醒。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 2)
             }
         }
-        .navigationTitle("自动化向导")
+        .navigationTitle("短信同步向导")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear { InboxService.ensureFile() }
     }
 
-    private func step(_ n: Int, _ text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Text("\(n)")
-                .font(.caption.bold())
-                .frame(width: 22, height: 22)
-                .background(Circle().fill(.tint.opacity(0.15)))
-            Text(L10n.tr(text)).font(.callout)
+    private func guideStepRow(step: Int, title: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor.opacity(0.12))
+                    .frame(width: 24, height: 24)
+                Text("\(step)")
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.accentColor)
+            }
+            .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(L10n.tr(title))
+                    .font(.subheadline.bold())
+                Text(L10n.tr(desc))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(2)
+            }
         }
+        .padding(.vertical, 3)
     }
 }
 
@@ -779,71 +876,51 @@ struct ShortcutsGuideView: View {
 
     var body: some View {
         List {
+            // 桌面触感触控快捷菜单
             Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         Image(systemName: "hand.tap.fill")
-                            .font(.title2)
                             .foregroundStyle(.tint)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("主屏幕长按快捷菜单")
-                                .font(.headline)
-                            Text("无需打开 App，在 iPhone 桌面上长按应用图标即可弹出快捷菜单：")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text("长按 App 图标快速直达")
+                            .font(.subheadline.bold())
                     }
-                    .padding(.vertical, 2)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        shortcutItemRow(icon: "waveform.circle.fill", color: .purple, title: "语音对话", desc: "立刻开始与助手离线对话")
-                        shortcutItemRow(icon: "plus.circle.fill", color: .blue, title: "新建待办", desc: "快速记录日常琐事与日程")
-                        shortcutItemRow(icon: "yensign.circle.fill", color: .green, title: "一句话记账", desc: "语音或文字自动记账")
-                        shortcutItemRow(icon: "shippingbox.fill", color: .orange, title: "待取快递", desc: "一键直达所有取件码")
-                        shortcutItemRow(icon: "person.text.rectangle.fill", color: .red, title: "证件保险箱", desc: "人脸解锁调取重要证件")
+                    VStack(spacing: 6) {
+                        shortcutItemRow(icon: "waveform.circle.fill", color: .purple, title: "语音对话", desc: "立刻开始离线对话")
+                        shortcutItemRow(icon: "plus.circle.fill", color: .blue, title: "新建待办", desc: "快速记录日程琐事")
+                        shortcutItemRow(icon: "yensign.circle.fill", color: .green, title: "一句话记账", desc: "语音或文字记账")
+                        shortcutItemRow(icon: "shippingbox.fill", color: .orange, title: "待取快递", desc: "直达所有取件码")
+                        shortcutItemRow(icon: "person.text.rectangle.fill", color: .red, title: "证件保险箱", desc: "安全调取重要证件")
                     }
                 }
-            } header: {
-                Text("桌面触感触控 (Haptic Touch)")
-            }
-
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("设置 iPhone 15 Pro 操作按钮 (Action Button)", systemImage: "button.programmable")
-                        .font(.headline)
-                    Text("1. 打开 iPhone 系统 **设置** → **操作按钮**。\n2. 滑动选择 **快捷指令**。\n3. 选择 **打开 URL** 操作，填入下方对应的快捷链接（如 `assistant://voice`）。\n4. 随时长按机身左侧操作按钮，即可秒速呼起助手！")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("设置轻点背面 (Back Tap)", systemImage: "iphone.gen3")
-                        .font(.headline)
-                    Text("打开 iPhone 系统 **设置** → **辅助功能** → **触控** → **轻点背面**，设置「轻点两下」或「轻点三下」运行快捷指令打开链接。")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
                 .padding(.vertical, 4)
             } header: {
-                Text("硬件按键与手势联动")
+                Text("桌面快捷方式")
             }
 
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("系统分享导入 (Share Extension)", systemImage: "square.and.arrow.up")
-                        .font(.headline)
-                    Text("在微信、相册、Safari 等任意 App 里，长按消息或图片选择「分享」，再点「发送到小助」，即可把截图/文本/链接一键丢给助手：\n• 微信支付、转账、账单截图 → 自动记账\n• 含时间、地点、二维码的截图 → 自动建待办\n• 普通文本 → 自动提取待办与快递\n\n内容先进入 App Group 中转区，回到小助（或点「已收到分享」通知）即自动识别入库。")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 4)
-            } header: {
-                Text("系统分享导入")
-            } footer: {
-                Text("若分享面板里没看到「发送到小助」，点分享面板右上角「⋯」在「编辑操作」中启用它。")
+            // 硬件按键与快捷手势
+            Section("按键与手势联动") {
+                gestureCard(
+                    icon: "button.programmable",
+                    title: "iPhone 操作按钮 (Action Button)",
+                    desc: "系统设置 → 操作按钮 → 快捷指令 → 打开 URL（填 assistant://voice），随时秒速呼起语音对话。"
+                )
+
+                gestureCard(
+                    icon: "iphone.gen3",
+                    title: "轻点背面 (Back Tap)",
+                    desc: "系统设置 → 辅助功能 → 触控 → 轻点背面，绑定快捷指令打开链接或投喂口。"
+                )
+
+                gestureCard(
+                    icon: "square.and.arrow.up.fill",
+                    title: "系统分享一键投喂 (Share Sheet)",
+                    desc: "在微信、相册、Safari 长按内容点「分享」→「发送到小助」，自动识别账单、待办或二维码。"
+                )
             }
 
+            // URL Schemes 一键复制
             Section {
                 urlRow(title: "呼起语音助手", url: "assistant://voice", icon: "waveform")
                 urlRow(title: "新建待办事项", url: "assistant://add-todo", icon: "plus.circle")
@@ -851,32 +928,55 @@ struct ShortcutsGuideView: View {
                 urlRow(title: "查看待取快递", url: "assistant://parcels", icon: "shippingbox")
                 urlRow(title: "打开证件保险箱", url: "assistant://vault", icon: "person.text.rectangle")
             } header: {
-                Text("快速打开 URL Scheme (支持快捷指令 App)")
+                Text("快速打开 URL Scheme")
             } footer: {
-                Text("点击即可复制 URL 链接，可在苹果官方「快捷指令」App 中添加「打开 URL」动作创建自定义自动化。")
+                Text("点击即可复制 URL，可在「快捷指令」App 中添加「打开 URL」动作创建自动化。")
             }
         }
-        .navigationTitle("快捷方式与效率指南")
+        .navigationTitle("快捷方式指南")
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private func shortcutItemRow(icon: String, color: Color, title: String, desc: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
+                .font(.body)
                 .foregroundStyle(color)
-                .frame(width: 24)
+                .frame(width: 22)
             Text(L10n.tr(title))
                 .font(.subheadline.bold())
-            Text("— \(L10n.tr(desc))")
+            Spacer()
+            Text(L10n.tr(desc))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 2)
+    }
+
+    private func gestureCard(icon: String, title: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 26)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(L10n.tr(title))
+                    .font(.subheadline.bold())
+                Text(L10n.tr(desc))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(2)
+            }
+        }
+        .padding(.vertical, 3)
     }
 
     private func urlRow(title: String, url: String, icon: String) -> some View {
         Button {
             UIPasteboard.general.string = url
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Haptic.selection()
             copiedURL = url
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 if copiedURL == url { copiedURL = nil }
@@ -884,6 +984,7 @@ struct ShortcutsGuideView: View {
         } label: {
             HStack {
                 Label(L10n.tr(title), systemImage: icon)
+                    .font(.subheadline)
                     .foregroundStyle(Color.primary)
                 Spacer()
                 Text(copiedURL == url ? L10n.tr("已复制！") : url)

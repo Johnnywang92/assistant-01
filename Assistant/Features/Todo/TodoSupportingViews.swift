@@ -223,6 +223,7 @@ struct TodoCategoryCustomizationView: View {
         case .alert: return "exclamationmark.triangle.fill"
         case .parenting: return "figure.and.child.holdinghands"
         case .pet: return "pawprint.fill"
+        case .other: return "ellipsis.circle.fill"
         }
     }
 
@@ -237,6 +238,7 @@ struct TodoCategoryCustomizationView: View {
         case .alert: return .red
         case .parenting: return .pink
         case .pet: return .orange
+        case .other: return .secondary
         }
     }
 }

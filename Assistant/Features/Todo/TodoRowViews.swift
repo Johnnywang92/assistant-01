@@ -43,6 +43,7 @@ struct TodoRow: View {
         case .exercise: return .green
         case .childVaccine, .childGrowth, .childMilestone, .childHealth: return .pink
         case .pet: return .orange
+        case .other: return .secondary
         default: return .secondary
         }
     }

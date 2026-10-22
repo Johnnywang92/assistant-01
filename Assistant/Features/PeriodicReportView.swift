@@ -6,10 +6,12 @@ import SwiftUI
 struct PeriodicReportView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var reportManager = PeriodicReportManager.shared
     @AppStorage(AppBackgroundStyle.defaultsKey) private var bgStyleRaw = AppBackgroundStyle.system.rawValue
 
     @Query(sort: \ExpenseRecord.date, order: .reverse) private var recentExpenses: [ExpenseRecord]
+    @Query(sort: \TodoItem.createdAt, order: .reverse) private var recentTodos: [TodoItem]
 
     @State private var selectedPeriod: ReportPeriodType = .daily
     @State private var currentDate: Date = .now
@@ -33,39 +35,45 @@ struct PeriodicReportView: View {
 
     /// 报告引用缓存：body 内 50+ 处 reportData 访问在同一次渲染中只生成一次。
     /// generateReport 包含多次全表 fetch，无缓存时每处访问都会重新拉取全部数据。
-    /// 页面在切换周期/日期或账本发生变更时重新生成。
+    /// 当账本、待办状态发生变动，或切换周期/日期时，自动通过复合指纹感知失效并实时重新计算。
     private final class ReportCache {
         var period: ReportPeriodType?
         var date: Date?
-        var expensesHash: Int?
+        var dataHash: Int?
         var data: PeriodicReportData?
     }
 
     @State private var reportCache = ReportCache()
 
-    private var expensesFingerprint: Int {
+    /// 包含收支与待办的实时复合指纹，实现变动即刷新的无感响应
+    private var dataFingerprint: Int {
         var hasher = Hasher()
         hasher.combine(recentExpenses.count)
-        for record in recentExpenses.prefix(50) {
+        for record in recentExpenses.prefix(30) {
             hasher.combine(record.id)
             hasher.combine(record.amount)
-            hasher.combine(record.rawText)
+        }
+        hasher.combine(recentTodos.count)
+        for item in recentTodos.prefix(30) {
+            hasher.combine(item.id)
+            hasher.combine(item.status == .done)
+            hasher.combine(item.completedAt)
         }
         return hasher.finalize()
     }
 
     private var reportData: PeriodicReportData {
-        let currentHash = expensesFingerprint
+        let currentHash = dataFingerprint
         if reportCache.period == selectedPeriod,
            reportCache.date == currentDate,
-           reportCache.expensesHash == currentHash,
+           reportCache.dataHash == currentHash,
            let cached = reportCache.data {
             return cached
         }
         let result = reportManager.generateReport(period: selectedPeriod, for: currentDate, context: context)
         reportCache.period = selectedPeriod
         reportCache.date = currentDate
-        reportCache.expensesHash = currentHash
+        reportCache.dataHash = currentHash
         reportCache.data = result
         return result
     }
@@ -138,6 +146,11 @@ struct PeriodicReportView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
             }
+            .refreshable {
+                reportCache.data = nil
+                await HealthKitService.shared.refreshToday()
+                Haptic.light()
+            }
             .themedScrollContentBackground()
             .background(isCustomThemedBackground ? Color.clear : Color(.systemGroupedBackground))
             .themedAppBackground()
@@ -155,7 +168,7 @@ struct PeriodicReportView: View {
                                 showingImageShareSheet = true
                                 Haptic.light()
                             } label: {
-                                Label("生成社交图片卡片 (小红书/朋友圈)", systemImage: "photo.badge.plus")
+                                Label("生成图片分享卡片", systemImage: "photo.badge.plus")
                             }
 
                             Divider()
@@ -226,6 +239,13 @@ struct PeriodicReportView: View {
                 }
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                // 回到前台清空缓存，并刷新 HealthKit 与最新数据
+                reportCache.data = nil
+                Task { await HealthKitService.shared.refreshToday() }
+            }
+        }
     }
 
     // MARK: - 1. 周期分段切换器
@@ -260,14 +280,18 @@ struct PeriodicReportView: View {
 
             Spacer()
 
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 Text(reportData.title)
                     .font(.headline)
                     .foregroundStyle(.primary)
 
-                Text(reportData.subtitle)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    Text(reportData.subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    periodStatusBadge
+                }
             }
 
             Spacer()
@@ -303,6 +327,55 @@ struct PeriodicReportView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var periodStatusBadge: some View {
+        let cal = Calendar.current
+        let isToday = cal.isDateInToday(currentDate)
+
+        if selectedPeriod == .daily {
+            if isToday {
+                let hour = cal.component(.hour, from: .now)
+                if hour >= 21 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "moon.stars.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.indigo)
+                        Text("晚盘复盘中")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundStyle(.indigo)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.indigo.opacity(0.12), in: Capsule())
+                } else {
+                    HStack(spacing: 3) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 5, height: 5)
+                        Text("今日实时动态")
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundStyle(Color.green)
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.green.opacity(0.12), in: Capsule())
+                }
+            } else {
+                HStack(spacing: 3) {
+                    Image(systemName: "archivebox.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
+                    Text("历史归档快照")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color(.tertiarySystemFill), in: Capsule())
+            }
+        }
     }
 
     private func stepDate(by value: Int) {
@@ -1312,7 +1385,7 @@ struct PeriodicReportView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "photo.badge.plus")
-                    Text("生成图片卡片 (分享至小红书/朋友圈)")
+                    Text("生成图片分享卡片")
                 }
                 .font(.subheadline.bold())
                 .foregroundStyle(.white)

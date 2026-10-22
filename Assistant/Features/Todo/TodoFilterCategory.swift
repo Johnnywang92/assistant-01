@@ -10,6 +10,7 @@ enum TodoFilterCategory: String, CaseIterable, Identifiable, Hashable {
     case alert = "预警"
     case parenting = "育儿"
     case pet = "宠物"
+    case other = "其它"
 
     var id: String { rawValue }
 }
@@ -17,6 +18,7 @@ enum TodoFilterCategory: String, CaseIterable, Identifiable, Hashable {
 enum TodoCategoryPreferences {
     private static let key = "todo_home_category_order_v1"
     private static let workCategoryMigratedKey = "todo_home_category_work_migrated_v1"
+    private static let otherCategoryMigratedKey = "todo_home_category_other_migrated_v1"
 
     static func load() -> [TodoFilterCategory] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -31,6 +33,13 @@ enum TodoCategoryPreferences {
                 categories.insert(.work, at: idx + 1)
             }
             UserDefaults.standard.set(true, forKey: workCategoryMigratedKey)
+        }
+        // 一次性迁移：旧存档顺序自动补入新增的“其它”类目
+        if !UserDefaults.standard.bool(forKey: otherCategoryMigratedKey) {
+            if !categories.contains(.other) {
+                categories.append(.other)
+            }
+            UserDefaults.standard.set(true, forKey: otherCategoryMigratedKey)
         }
         return categories
     }

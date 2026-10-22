@@ -82,6 +82,7 @@ fileprivate struct TodoClassification {
             case .vehicleCare: vehicleTodos.append(item)
             case .childVaccine, .childGrowth, .childMilestone, .childHealth: parentingTodos.append(item)
             case .pet: petTodos.append(item)
+            case .other: others.append(item)
             default: others.append(item)
             }
         }
@@ -141,7 +142,7 @@ struct TodoListView: View {
     @State private var confirmingTicketInfo: UpcomingTravelTicketInfo? = nil
     @State private var prepToastMessage: String? = nil
     @State private var isReordering: Bool = false
-    private let searchText: String = ""
+    @State private var crossModuleSearchText: String = ""
     @State private var showOverdueTriage = false
     @AppStorage("overdue_triage_last_date") private var lastTriageDateKey = ""
 
@@ -179,7 +180,7 @@ struct TodoListView: View {
 
     private var classified: TodoClassification {
         let now = CFAbsoluteTimeGetCurrent()
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if let cached = classificationCache.value,
            classificationCache.query == query,
            (now - classificationCache.lastComputedTime) < 0.05 {
@@ -263,6 +264,7 @@ struct TodoListView: View {
         case .subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare: return .alert
         case .childVaccine, .childGrowth, .childMilestone, .childHealth: return .parenting
         case .pet: return .pet
+        case .other: return .other
         case .general, .event, .travelBooking: return .general
         case .skillLearning: return .general
         case .data: return .all
@@ -429,6 +431,22 @@ struct TodoListView: View {
                     }
                 }
             }
+            // 首页专属搜索入口：统一唤起跨模块统一搜索，全域覆盖待办、账单、物品、证件与备忘
+            .searchable(text: $crossModuleSearchText, prompt: Text(L10n.tr("搜索待办、账单、物品、证件与备忘…")))
+            .onChange(of: crossModuleSearchText) { _, newQuery in
+                let trimmed = newQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                router.prefilledSearchQuery = trimmed
+                router.activeSheet = .unifiedSearch
+                crossModuleSearchText = ""
+            }
+            .onSubmit(of: .search) {
+                let trimmed = crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                router.prefilledSearchQuery = trimmed
+                router.activeSheet = .unifiedSearch
+                crossModuleSearchText = ""
+            }
             .sheet(isPresented: $showAddTodo) {
                 AddTodoSheet(initialCategory: selectedFilter)
             }
@@ -480,14 +498,16 @@ struct TodoListView: View {
                 switch newSheet {
                 case .addTodo:
                     showAddTodo = true
+                    router.activeSheet = nil
                 case .voice:
                     showVoice = true
+                    router.activeSheet = nil
                 case .periodicReport:
                     showPeriodicReport = true
+                    router.activeSheet = nil
                 default:
                     break
                 }
-                router.activeSheet = nil
             }
             .onChange(of: router.requestedFilter) { _, filterName in
                 guard let filterName else { return }
@@ -507,8 +527,8 @@ struct TodoListView: View {
             }
             .overlay {
                 if activeTodos.isEmpty && review.isEmpty && done.isEmpty {
-                    if !searchText.isEmpty {
-                        ContentUnavailableView.search(text: searchText)
+                    if !crossModuleSearchText.isEmpty {
+                        ContentUnavailableView.search(text: crossModuleSearchText)
                     } else {
                         ContentUnavailableView {
                         Label("暂无待办事项", systemImage: "list.bullet.clipboard")
@@ -1401,6 +1421,21 @@ struct TodoListView: View {
         }
     }
 
+    @ViewBuilder
+    private func renderOtherSection() -> some View {
+        Section(otherActive.isEmpty ? "其它事项" : "其它事项（\(otherActive.count)）") {
+            if otherActive.isEmpty {
+                Text("暂无其它事项，点击右上角 ➕ 即可快速添加。")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(otherActive) { item in
+                    todoRow(item, within: otherActive)
+                }
+                .onMove { from, to in reorder(items: otherActive, fromOffsets: from, toOffset: to) }
+            }
+        }
+    }
+
     // MARK: - 页面与顶部 Tab 栏组件
 
     @ViewBuilder
@@ -1514,6 +1549,8 @@ struct TodoListView: View {
                 renderParentingSection()
             case .pet:
                 renderPetSection()
+            case .other:
+                renderOtherSection()
             }
 
             // 已完成事项（显式可折叠卡片 + 归档入口）
@@ -1612,6 +1649,7 @@ struct TodoListView: View {
         case .alert: return subscriptions.count + expiries.count + anniversaries.count + passwordTodos.count + vehicleTodos.count
         case .parenting: return parentingTodos.count
         case .pet: return petTodos.count
+        case .other: return otherActive.count
         }
     }
 
@@ -1626,6 +1664,7 @@ struct TodoListView: View {
         case .alert: return .red
         case .parenting: return .pink
         case .pet: return .orange
+        case .other: return .secondary
         }
     }
 
@@ -1649,6 +1688,8 @@ struct TodoListView: View {
             return done.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }
         case .pet:
             return done.filter { $0.type == .pet }
+        case .other:
+            return done.filter { $0.type == .other }
         }
     }
 }

@@ -27,7 +27,8 @@ struct CompletedTodoHistoryView: View {
             .life: 0,
             .alert: 0,
             .parenting: 0,
-            .pet: 0
+            .pet: 0,
+            .other: 0
         ]
         for item in doneTodos {
             if item.isRecurring {
@@ -48,6 +49,8 @@ struct CompletedTodoHistoryView: View {
                 counts[.parenting, default: 0] += 1
             case .pet:
                 counts[.pet, default: 0] += 1
+            case .other:
+                counts[.other, default: 0] += 1
             default:
                 break
             }
@@ -70,6 +73,7 @@ struct CompletedTodoHistoryView: View {
         case .alert: result = result.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare].contains($0.type) }
         case .parenting: result = result.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }
         case .pet: result = result.filter { $0.type == .pet }
+        case .other: result = result.filter { $0.type == .other }
         }
 
         // 搜索过滤
@@ -220,6 +224,7 @@ struct CompletedTodoHistoryView: View {
         case .alert: return doneTodos.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare].contains($0.type) }.count
         case .parenting: return doneTodos.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }.count
         case .pet: return doneTodos.filter { $0.type == .pet }.count
+        case .other: return doneTodos.filter { $0.type == .other }.count
         }
     }
 
