@@ -12,7 +12,7 @@ struct CompletedTodoHistoryView: View {
         order: .reverse
     ) private var doneTodos: [TodoItem]
 
-    @State private var searchText: String = ""
+    private let searchText: String = ""
     @State private var selectedCategory: TodoFilterCategory = .all
     @State private var showingClearAlert = false
 
@@ -193,7 +193,6 @@ struct CompletedTodoHistoryView: View {
             .themedRow()
             .navigationTitle("已完成事项归档")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchText, prompt: "搜索已完成标题、取件码或快递...")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { dismiss() }

@@ -522,7 +522,7 @@ struct ExpenseTrackerView: View {
                 AddOrEditExpenseSheet(recordToEdit: record)
             }
             .sheet(item: $recordToShare) { record in
-                ExpenseShareView(record: record)
+                ExpenseCardShareSheet(record: record)
             }
             .expenseCalorieConfirmation()
             .task {

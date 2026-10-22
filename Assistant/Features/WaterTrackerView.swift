@@ -12,6 +12,7 @@ public struct WaterTrackerView: View {
     @State private var selectedBeverage: HydrationBeverageType = .plainWater
     @State private var isShowingCustomSheet = false
     @State private var isShowingGoalSheet = false
+    @State private var isShowingShareSheet = false
     @State private var isFAQExpanded = false
     @State private var toastMessage: String?
 
@@ -55,13 +56,28 @@ public struct WaterTrackerView: View {
         .navigationTitle("喝水记录")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    isShowingShareSheet = true
+                    Haptic.light()
+                } label: {
+                    Label("分享打卡卡片", systemImage: "square.and.arrow.up")
+                }
+
                 Button {
                     isShowingCustomSheet = true
                 } label: {
                     Label("详细记录", systemImage: "plus")
                 }
             }
+        }
+        .sheet(isPresented: $isShowingShareSheet) {
+            HydrationShareSheet(
+                records: todayRecords,
+                targetML: dailyGoalML,
+                effectiveML: summary.effectiveHydrationML,
+                caffeineMG: summary.totalCaffeineMG
+            )
         }
         .sheet(isPresented: $isShowingCustomSheet) {
             AddCustomWaterSheet(defaultBeverage: selectedBeverage)

@@ -6,7 +6,7 @@ struct VoiceMemoListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \VoiceMemo.createdAt, order: .reverse) private var memos: [VoiceMemo]
 
-    @State private var searchText = ""
+    private let searchText = ""
     @State private var selectedTag: VoiceMemoTag?
     @State private var showRecorder = false
     @State private var memoToDelete: VoiceMemo?
@@ -68,7 +68,6 @@ struct VoiceMemoListView: View {
                 ContentUnavailableView.search(text: searchText)
             }
         }
-        .searchable(text: $searchText, prompt: "搜索标题或转写内容")
         .navigationTitle("语音备忘")
         .safeAreaInset(edge: .bottom) { recordButton }
         .sheet(isPresented: $showRecorder) {

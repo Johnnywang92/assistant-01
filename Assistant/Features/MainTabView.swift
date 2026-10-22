@@ -37,9 +37,8 @@ struct MainTabView: View {
                         .badge(badgeCount(for: tab))
                 }
             }
-            // 根级跨模块搜索入口：页内已有 .searchable 的标签以页内搜索优先，
-            // 根搜索词只负责唤起统一搜索弹层，避免两个搜索条争用同一导航栏
-            .searchable(text: $crossModuleSearchText, prompt: Text(L10n.tr("跨模块搜索")))
+            // 全局唯一搜索入口：统一唤起跨模块统一搜索，全域覆盖待办、账单、物品、证件与备忘
+            .searchable(text: $crossModuleSearchText, prompt: Text(L10n.tr("搜索待办、账单、物品、证件与备忘…")))
             .onChange(of: crossModuleSearchText) { _, newQuery in
                 let trimmed = newQuery.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }

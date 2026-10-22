@@ -15,7 +15,7 @@ struct IDDocumentVaultView: View {
 
     @State private var showingAddSheet = false
     @State private var selectedDocumentForDetail: IDDocumentItem?
-    @State private var searchText = ""
+    private let searchText = ""
     @State private var copiedFeedback = false
 
     private var filteredDocuments: [IDDocumentItem] {
@@ -129,7 +129,6 @@ struct IDDocumentVaultView: View {
         .listStyle(.insetGrouped)
         .themedScrollContentBackground()
         .themedRow()
-        .searchable(text: $searchText, prompt: "搜索证件名称、持有人或号码")
     }
 
     // MARK: - 锁定状态

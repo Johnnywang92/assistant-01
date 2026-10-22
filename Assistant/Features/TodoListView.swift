@@ -141,7 +141,7 @@ struct TodoListView: View {
     @State private var confirmingTicketInfo: UpcomingTravelTicketInfo? = nil
     @State private var prepToastMessage: String? = nil
     @State private var isReordering: Bool = false
-    @State private var searchText: String = ""
+    private let searchText: String = ""
     @State private var showOverdueTriage = false
     @AppStorage("overdue_triage_last_date") private var lastTriageDateKey = ""
 
@@ -404,7 +404,6 @@ struct TodoListView: View {
             .background(isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
             .themedAppBackground()
             .navigationTitle(assistantName.isEmpty ? "小助" : assistantName)
-            .searchable(text: $searchText, prompt: "搜索待办、详情、取件码或驿站")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if isReordering {
@@ -505,9 +504,6 @@ struct TodoListView: View {
             // 统一搜索/深链命中待办：在滚动定位之外直达详情弹层
             .onChange(of: router.requestedTodoDetailID) { _, id in
                 presentTodoDetail(for: id)
-            }
-            .onChange(of: searchText) { _, query in
-                if !query.isEmpty { selectedFilter = .all }
             }
             .overlay {
                 if activeTodos.isEmpty && review.isEmpty && done.isEmpty {

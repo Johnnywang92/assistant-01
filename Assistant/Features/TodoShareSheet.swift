@@ -8,6 +8,7 @@ import UIKit
 enum ShareCardTheme: String, CaseIterable, Identifiable {
     case cleanWhite = "极简白"
     case midnight = "暗夜星空"
+    case obsidian = "黑曜石成就"
     case paper = "羊皮书卷"
 
     var id: String { rawValue }
@@ -18,6 +19,8 @@ enum ShareCardTheme: String, CaseIterable, Identifiable {
             return Color.white
         case .midnight:
             return Color(red: 0.08, green: 0.09, blue: 0.12)
+        case .obsidian:
+            return Color(red: 0.05, green: 0.06, blue: 0.08)
         case .paper:
             return Color(red: 0.96, green: 0.94, blue: 0.90)
         }
@@ -27,7 +30,7 @@ enum ShareCardTheme: String, CaseIterable, Identifiable {
         switch self {
         case .cleanWhite, .paper:
             return Color(red: 0.12, green: 0.13, blue: 0.15)
-        case .midnight:
+        case .midnight, .obsidian:
             return Color.white
         }
     }
@@ -38,6 +41,8 @@ enum ShareCardTheme: String, CaseIterable, Identifiable {
             return Color.secondary
         case .midnight:
             return Color(white: 0.65)
+        case .obsidian:
+            return Color(red: 0.55, green: 0.60, blue: 0.66)
         }
     }
 
@@ -47,8 +52,19 @@ enum ShareCardTheme: String, CaseIterable, Identifiable {
             return Color(.systemGray5)
         case .midnight:
             return Color.white.opacity(0.12)
+        case .obsidian:
+            return Color(red: 0.18, green: 0.85, blue: 0.48).opacity(0.25)
         case .paper:
             return Color(red: 0.85, green: 0.82, blue: 0.77)
+        }
+    }
+
+    var accentColor: Color {
+        switch self {
+        case .obsidian:
+            return Color(red: 0.18, green: 0.85, blue: 0.48)
+        default:
+            return Color.accentColor
         }
     }
 }
@@ -86,14 +102,14 @@ struct TodoShareCardView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(doneCount)/\(items.count)")
                         .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.accentColor)
+                        .foregroundStyle(theme.accentColor)
                     Text("完成进度")
                         .font(.system(size: 10))
                         .foregroundStyle(theme.secondaryTextColor)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(Color.accentColor.opacity(0.12))
+                .background(theme.accentColor.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
@@ -120,7 +136,7 @@ struct TodoShareCardView: View {
                         HStack(spacing: 12) {
                             Image(systemName: item.status == .done ? "checkmark.circle.fill" : "circle")
                                 .font(.system(size: 17, weight: .medium))
-                                .foregroundStyle(item.status == .done ? Color.green : Color.secondary.opacity(0.6))
+                                .foregroundStyle(item.status == .done ? (theme == .obsidian ? theme.accentColor : Color.green) : Color.secondary.opacity(0.6))
 
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(L10n.tr(item.title))
@@ -185,7 +201,7 @@ struct TodoShareCardView: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(Self.sloganZh)
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(theme.accentColor)
 
                             Text(Self.sloganEn)
                                 .font(.system(size: 9.5, weight: .regular))
@@ -195,24 +211,24 @@ struct TodoShareCardView: View {
 
                     Spacer()
 
-                    if let miniQRCode {
-                        VStack(spacing: 2) {
+                    VStack(alignment: .trailing, spacing: 3) {
+                        if let miniQRCode {
                             Image(uiImage: miniQRCode)
                                 .interpolation(.none)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: 44, height: 44)
+                                .frame(width: 38, height: 38)
                                 .background(Color.white)
                                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                                         .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
                                 )
-
-                            Text("扫码导入")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(theme.secondaryTextColor)
                         }
+
+                        Text("JohnnyBoyStudio")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(theme == .obsidian ? Color(red: 0.18, green: 0.85, blue: 0.48) : theme.secondaryTextColor)
                     }
                 }
             }
