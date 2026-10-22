@@ -160,7 +160,7 @@ public struct ExpenseShareCardView: View {
                     .fill(Color(red: 0.85, green: 0.82, blue: 0.78))
                     .frame(height: 0.8)
 
-                HStack(spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
                     Image("AssistantAppIcon")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -172,28 +172,34 @@ public struct ExpenseShareCardView: View {
                         Text("小助 Assistant")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Color(red: 0.18, green: 0.16, blue: 0.14))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
 
                         Text("记所想，助所行")
                             .font(.system(size: 9))
                             .foregroundStyle(Color(red: 0.5, green: 0.46, blue: 0.42))
+                            .lineLimit(1)
                     }
 
-                    Spacer()
+                    Spacer(minLength: 8)
 
                     VStack(alignment: .trailing, spacing: 1) {
                         Text("JohnnyBoyStudio")
                             .font(.system(size: 10.5, weight: .black, design: .rounded))
                             .foregroundStyle(Color(red: 0.25, green: 0.22, blue: 0.20))
+                            .lineLimit(1)
 
                         Text("Crafted with Purpose")
                             .font(.system(size: 8))
                             .foregroundStyle(Color(red: 0.6, green: 0.55, blue: 0.5))
+                            .lineLimit(1)
                     }
+                    .fixedSize(horizontal: true, vertical: true)
                 }
             }
         }
-        .padding(20)
-        .frame(width: 340)
+        .padding(18)
+        .frame(width: 350)
         .background(Color(red: 0.97, green: 0.96, blue: 0.94))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(

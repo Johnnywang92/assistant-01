@@ -230,7 +230,7 @@ public struct HydrationShareCardView: View {
                     .fill(Color.white.opacity(0.1))
                     .frame(height: 0.8)
 
-                HStack(spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
                     Image("AssistantAppIcon")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -238,17 +238,20 @@ public struct HydrationShareCardView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .shadow(color: Color.black.opacity(0.2), radius: 3, y: 1)
 
-                    VStack(alignment: .leading, spacing: 1.5) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("小助 · 个人智能生活助理")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
 
                         Text("记所想，助所行")
                             .font(.system(size: 9))
                             .foregroundStyle(Color.white.opacity(0.6))
+                            .lineLimit(1)
                     }
 
-                    Spacer()
+                    Spacer(minLength: 8)
 
                     // 专属网站标识胶囊
                     HStack(spacing: 4) {
@@ -256,20 +259,22 @@ public struct HydrationShareCardView: View {
                             .font(.system(size: 9))
                         Text("JohnnyBoyStudio")
                             .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .lineLimit(1)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4.5)
                     .background(Color.cyan.opacity(0.18))
                     .foregroundStyle(Color.cyan)
                     .clipShape(Capsule())
                     .overlay(
                         Capsule().strokeBorder(Color.cyan.opacity(0.3), lineWidth: 0.6)
                     )
+                    .fixedSize(horizontal: true, vertical: true)
                 }
             }
         }
-        .padding(20)
-        .frame(width: 340)
+        .padding(18)
+        .frame(width: 350)
         .background(
             LinearGradient(
                 colors: [
