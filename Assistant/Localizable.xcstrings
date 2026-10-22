@@ -1280,6 +1280,9 @@
     "/ 100" : {
 
     },
+    "/100" : {
+
+    },
     "/周" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7683,6 +7686,9 @@
     "Crafted with Purpose" : {
 
     },
+    "DAILY HEALTH · 健康体征日报" : {
+
+    },
     "DAILY HYDRATION · 科学补水" : {
 
     },
@@ -7722,6 +7728,9 @@
           }
         }
       }
+    },
+    "HEALTH GOALS · 目标协同" : {
+
     },
     "Hugging Face (官方海外源)" : {
       "extractionState" : "manual",
@@ -11645,6 +11654,9 @@
         }
       }
     },
+    "今日身体活力签" : {
+
+    },
     "今日额度 ¥%@ · 今日已花 ¥%@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12725,6 +12737,9 @@
         }
       }
     },
+    "保存健康卡片至相册 (社交分享)" : {
+
+    },
     "保存卡片至相册 (社交分享)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13374,6 +13389,9 @@
           }
         }
       }
+    },
+    "健康目标与打卡协同" : {
+
     },
     "健康随访" : {
       "extractionState" : "manual",
@@ -16275,6 +16293,12 @@
           }
         }
       }
+    },
+    "分享健康日签" : {
+
+    },
+    "分享健康活力签" : {
+
     },
     "分享内容" : {
       "extractionState" : "manual",
@@ -28335,6 +28359,16 @@
         }
       }
     },
+    "已达标 %lld/%lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已达标 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
     "已达驱虫周期（30天）" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -29688,6 +29722,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "归档明细 (%lld)"
+          }
+        }
+      }
+    },
+    "当前 %@ / 目标 %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "当前 %1$@ / 目标 %2$@"
           }
         }
       }
@@ -35718,6 +35762,9 @@
     "收起时间轴" : {
 
     },
+    "收起调养建议" : {
+
+    },
     "放回充电盒充满" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -39369,6 +39416,9 @@
     "未完成" : {
 
     },
+    "未开始" : {
+
+    },
     "未录入" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -40683,6 +40733,9 @@
           }
         }
       }
+    },
+    "查看生活调养建议" : {
+
     },
     "查看识别到的小票原文" : {
 
@@ -45477,6 +45530,9 @@
         }
       }
     },
+    "满分 100" : {
+
+    },
     "满月" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -48022,6 +48078,9 @@
       }
     },
     "目标" : {
+
+    },
+    "目标 %@ · 今日暂未记录" : {
 
     },
     "目标 %lldml · 差 %lldml" : {
@@ -51611,9 +51670,6 @@
           }
         }
       }
-    },
-    "综合活力值" : {
-
     },
     "综合活力指数" : {
 
@@ -58404,6 +58460,9 @@
       }
     },
     "还可以安心花" : {
+
+    },
+    "还差 %@" : {
 
     },
     "还有 %@ 件核心物品未确认！" : {

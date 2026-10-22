@@ -19,6 +19,8 @@ struct HealthDataView: View {
     @Query(sort: \FoodIntakeRecord.date, order: .reverse) private var foodRecords: [FoodIntakeRecord]
     @Query(sort: \WaterIntakeRecord.date, order: .reverse) private var waterRecords: [WaterIntakeRecord]
     @Environment(\.scenePhase) private var scenePhase
+    @State private var isVitalitySuggestionExpanded = false
+    @State private var showShareSheet = false
 
     /// 本地打卡目标：与健康侧指标一一对应
     private let goals = HealthGoal.defaults
@@ -28,6 +30,13 @@ struct HealthDataView: View {
         let today = foodRecords.filter { cal.isDateInToday($0.date) }
         guard !today.isEmpty else { return nil }
         return today.reduce(0.0) { $0 + $1.consumedCalories }
+    }
+
+    private var todayEffectiveWaterML: Double? {
+        let cal = Calendar.current
+        let today = waterRecords.filter { cal.isDateInToday($0.date) }
+        guard !today.isEmpty else { return nil }
+        return today.reduce(0.0) { $0 + $1.effectiveHydrationML }
     }
 
     private var vitalityEvaluation: VitalityEvaluation? {
@@ -60,6 +69,25 @@ struct HealthDataView: View {
         .themedAppBackground()
         .navigationTitle("健康数据")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showShareSheet = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("分享健康日签")
+            }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            HealthShareSheet(
+                snapshot: health.snapshot,
+                vitality: vitalityEvaluation,
+                todayFoodCalories: todayFoodCalories,
+                todayWaterML: todayEffectiveWaterML,
+                goals: goals
+            )
+        }
         .task {
             await loadIfNeeded()
         }
@@ -350,14 +378,14 @@ struct HealthDataView: View {
 
     private func vitalityScoreCard(_ vitality: VitalityEvaluation) -> some View {
         let levelColor: Color = switch vitality.level {
-        case .peak: .orange
-        case .good: .green
-        case .balanced: .blue
+        case .peak: AppColor.warning
+        case .good: AppColor.success
+        case .balanced: AppColor.info
         case .low: .yellow
-        case .exhausted: .red
+        case .exhausted: AppColor.danger
         }
 
-        return VStack(alignment: .leading, spacing: AppSpacing.sm) {
+        return VStack(alignment: .leading, spacing: AppSpacing.md) {
             HStack {
                 Label("身体活力指数", systemImage: "bolt.heart.fill")
                     .font(.headline)
@@ -368,66 +396,103 @@ struct HealthDataView: View {
                     .foregroundStyle(levelColor)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(levelColor.opacity(0.12), in: Capsule())
+                    .background(AppColor.softFill(levelColor), in: Capsule())
             }
 
+            // 核心数值与极简摘要
             HStack(spacing: AppSpacing.md) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text("\(vitality.score)")
-                            .font(.system(size: 36, weight: .bold, design: .rounded))
-                            .foregroundStyle(levelColor)
-                        Text("/ 100")
-                            .font(.caption)
-                            .foregroundStyle(AppColor.secondaryText)
-                    }
-                    Text("综合活力值")
-                        .font(.caption2)
+                VStack(spacing: 2) {
+                    Text("\(vitality.score)")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(levelColor)
+                    Text("满分 100")
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(AppColor.secondaryText)
                 }
+                .frame(width: 68, height: 56)
+                .background(AppColor.softFill(levelColor, opacity: 0.08), in: RoundedRectangle(cornerRadius: AppRadius.card))
 
-                Divider().frame(height: 38)
+                Text(vitality.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(AppColor.text)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(vitality.summary)
-                        .font(.caption)
-                        .foregroundStyle(AppColor.text)
-                        .lineSpacing(2)
-                    if !vitality.suggestion.isEmpty {
-                        Text(vitality.suggestion)
-                            .font(.caption2)
-                            .foregroundStyle(AppColor.secondaryText)
-                            .padding(.top, 2)
+                Spacer(minLength: 0)
+            }
+
+            // 关键指标摘要（2列紧凑胶囊卡）
+            if !vitality.highlights.isEmpty {
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: AppSpacing.sm), GridItem(.flexible(), spacing: AppSpacing.sm)],
+                    spacing: AppSpacing.sm
+                ) {
+                    ForEach(vitality.highlights) { h in
+                        vitalityHighlightTile(h)
                     }
                 }
             }
 
-            if !vitality.highlights.isEmpty {
-                Divider()
-                VStack(spacing: 6) {
-                    ForEach(vitality.highlights) { h in
-                        HStack(spacing: 6) {
-                            Image(systemName: h.icon)
-                                .font(.caption2)
-                                .foregroundStyle(h.isPositive ? AppColor.success : AppColor.warning)
-                                .frame(width: 14)
-                            Text(h.title)
-                                .font(.caption.bold())
-                                .foregroundStyle(AppColor.text)
-                            Text(h.valueText)
-                                .font(.caption)
-                                .foregroundStyle(AppColor.secondaryText)
-                            Spacer()
-                            Text(h.statusText)
-                                .font(.caption2)
-                                .foregroundStyle(h.isPositive ? AppColor.secondaryText : AppColor.warning)
+            // 调养建议：轻量收折，按需展开
+            if !vitality.suggestion.isEmpty {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isVitalitySuggestionExpanded.toggle()
                         }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "lightbulb.fill")
+                                .font(.caption2)
+                                .foregroundStyle(AppColor.warning)
+                            Text(isVitalitySuggestionExpanded ? "收起调养建议" : "查看生活调养建议")
+                                .font(.caption2.bold())
+                                .foregroundStyle(AppColor.secondaryText)
+                            Image(systemName: isVitalitySuggestionExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(AppColor.secondaryText)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    if isVitalitySuggestionExpanded {
+                        Text(vitality.suggestion)
+                            .font(.caption)
+                            .foregroundStyle(AppColor.secondaryText)
+                            .lineSpacing(3)
+                            .padding(AppSpacing.sm)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.chip))
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
             }
         }
         .padding(AppSpacing.md)
         .appCard()
+    }
+
+    private func vitalityHighlightTile(_ h: VitalityHighlight) -> some View {
+        HStack(spacing: AppSpacing.xs) {
+            Image(systemName: h.icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(h.isPositive ? AppColor.success : AppColor.warning)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(h.title)
+                    .font(.caption2)
+                    .foregroundStyle(AppColor.secondaryText)
+                Text(h.valueText)
+                    .font(.caption.bold())
+                    .foregroundStyle(AppColor.text)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.chip))
     }
 
     // MARK: - 能量与身体耗能
@@ -530,32 +595,141 @@ struct HealthDataView: View {
     /// 把健康侧数值与本地三类打卡待办放在一起看：
     /// 让人知道「今天已经走了 8000 步」时，手动打卡就有了真实依据。
     private var todoCorrelationSection: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            Text("与本地打卡的关系")
-                .font(.subheadline.bold())
-                .foregroundStyle(AppColor.text)
+        let items: [(HealthRelatedTodoType, HealthGoalProgress)] = HealthRelatedTodoType.allCases.compactMap { type in
+            guard let snapshot = health.snapshot,
+                  let progress = HealthMetrics.progress(for: type, snapshot: snapshot, goals: goals) else {
+                return nil
+            }
+            return (type, progress)
+        }
+        let achievedCount = items.filter { $0.1.status == .achieved }.count
 
-            ForEach(HealthRelatedTodoType.allCases, id: \.self) { todoType in
-                if let progress = HealthMetrics.progress(for: todoType, snapshot: health.snapshot!, goals: goals) {
-                    HStack(spacing: AppSpacing.sm) {
-                        Image(systemName: icon(for: todoType))
-                            .foregroundStyle(AppColor.info)
-                            .frame(width: 20)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(todoType.displayName)
-                                .font(.subheadline)
-                            Text(HealthMetrics.summary(for: progress))
-                                .font(.caption)
-                                .foregroundStyle(AppColor.secondaryText)
-                        }
-                        Spacer()
-                    }
-                    .padding(.vertical, AppSpacing.xs)
+        return VStack(alignment: .leading, spacing: AppSpacing.md) {
+            HStack {
+                Label("健康目标与打卡协同", systemImage: "checklist.checked")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(AppColor.text)
+                Spacer()
+                Text("已达标 \(achievedCount)/\(items.count)")
+                    .font(.caption2.bold())
+                    .foregroundStyle(achievedCount == items.count && !items.isEmpty ? AppColor.success : AppColor.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        AppColor.softFill(achievedCount == items.count && !items.isEmpty ? AppColor.success : AppColor.primary),
+                        in: Capsule()
+                    )
+            }
+
+            VStack(spacing: AppSpacing.sm) {
+                ForEach(items, id: \.0) { todoType, progress in
+                    todoCorrelationTile(todoType: todoType, progress: progress)
                 }
             }
         }
         .padding(AppSpacing.md)
         .appCard()
+    }
+
+    private func todoCorrelationTile(todoType: HealthRelatedTodoType, progress: HealthGoalProgress) -> some View {
+        let tint = correlationTint(for: todoType)
+
+        return VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.sm) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: AppRadius.chip)
+                        .fill(AppColor.softFill(tint))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: icon(for: todoType))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(tint)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(todoType.displayName)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(AppColor.text)
+
+                    Group {
+                        if let actual = progress.actual {
+                            Text("当前 \(HealthMetrics.format(actual, for: progress.goal.kind)) / 目标 \(HealthMetrics.format(progress.goal.target, for: progress.goal.kind))")
+                        } else {
+                            Text("目标 \(HealthMetrics.format(progress.goal.target, for: progress.goal.kind)) · 今日暂未记录")
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(AppColor.secondaryText)
+                }
+
+                Spacer()
+
+                correlationStatusBadge(for: progress, tint: tint)
+            }
+
+            // 进度条
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color(.systemFill))
+                        .frame(height: 6)
+                    Capsule()
+                        .fill(progress.status == .achieved ? AppColor.success : tint)
+                        .frame(width: max(proxy.size.width * CGFloat(progress.ratio), progress.ratio > 0 ? 6 : 0), height: 6)
+                }
+            }
+            .frame(height: 6)
+        }
+        .padding(AppSpacing.sm)
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.card))
+    }
+
+    @ViewBuilder
+    private func correlationStatusBadge(for progress: HealthGoalProgress, tint: Color) -> some View {
+        switch progress.status {
+        case .achieved:
+            HStack(spacing: 3) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+                Text("已达标")
+                    .font(.caption2.bold())
+            }
+            .foregroundStyle(AppColor.success)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(AppColor.softFill(AppColor.success), in: Capsule())
+        case .notAchieved:
+            if let actual = progress.actual {
+                let remaining = max(progress.goal.target - actual, 0)
+                Text("还差 \(HealthMetrics.format(remaining, for: progress.goal.kind))")
+                    .font(.caption2.bold())
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(AppColor.softFill(tint), in: Capsule())
+            } else {
+                Text("未开始")
+                    .font(.caption2)
+                    .foregroundStyle(AppColor.secondaryText)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Color(.systemFill), in: Capsule())
+            }
+        case .noData:
+            Text("暂无数据")
+                .font(.caption2)
+                .foregroundStyle(AppColor.secondaryText)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color(.systemFill), in: Capsule())
+        }
+    }
+
+    private func correlationTint(for todoType: HealthRelatedTodoType) -> Color {
+        switch todoType {
+        case .exercise: return AppColor.success
+        case .hydration: return AppColor.info
+        case .medication: return AppColor.feature
+        }
     }
 
     private func icon(for todoType: HealthRelatedTodoType) -> String {
