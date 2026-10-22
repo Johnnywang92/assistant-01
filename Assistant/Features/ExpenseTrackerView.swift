@@ -525,7 +525,10 @@ struct ExpenseTrackerView: View {
                 ExpenseShareView(record: record)
             }
             .expenseCalorieConfirmation()
-            .task { ExpenseCalorieService.reconcileOrphans(context: context) }
+            .task {
+                ExpenseCalorieService.reconcileOrphans(context: context)
+                ExpenseWaterService.reconcileOrphans(context: context)
+            }
             .sheet(isPresented: $showingReceiptScanner) {
                 ReceiptScannerView { result, rawText, receiptData in
                     let record = ExpenseRecord(
@@ -543,6 +546,7 @@ struct ExpenseTrackerView: View {
                     context.insert(record)
                     try? context.save()
                     ExpenseCalorieService.handleSaved(record, propose: true, context: context)
+                    ExpenseWaterService.handleSaved(record, context: context)
                     if let badge = record.formattedForeignBadge {
                         showFeedback("已从小票记入 ¥\(String(format: "%.2f", result.amount))（\(badge)）")
                     } else {
@@ -618,6 +622,7 @@ struct ExpenseTrackerView: View {
             context.insert(record)
             try? context.save()
             ExpenseCalorieService.handleSaved(record, propose: true, context: context)
+            ExpenseWaterService.handleSaved(record, context: context)
             Haptic.success()
             quickInputText = ""
 
@@ -801,6 +806,7 @@ struct ExpenseTrackerView: View {
 
     private func deleteRecord(_ item: ExpenseRecord) {
         ExpenseCalorieService.handleDeleted(expenseID: item.id, context: context)
+        ExpenseWaterService.handleDeleted(expenseID: item.id, context: context)
         context.delete(item)
         try? context.save()
         Haptic.medium()
@@ -811,6 +817,7 @@ struct ExpenseTrackerView: View {
         for index in offsets {
             let item = items[index]
             ExpenseCalorieService.handleDeleted(expenseID: item.id, context: context)
+            ExpenseWaterService.handleDeleted(expenseID: item.id, context: context)
             context.delete(item)
         }
         try? context.save()
@@ -1865,6 +1872,7 @@ struct AddOrEditExpenseSheet: View {
                 propose: record.title != oldTitle || !wasFoodExpense,
                 context: context
             )
+            ExpenseWaterService.handleSaved(record, context: context)
             Haptic.success()
         } else {
             let record = ExpenseRecord(
@@ -1884,6 +1892,7 @@ struct AddOrEditExpenseSheet: View {
             record.splitParticipants = splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
             try? context.save()
             ExpenseCalorieService.handleSaved(record, propose: true, context: context)
+            ExpenseWaterService.handleSaved(record, context: context)
             Haptic.success()
         }
         dismiss()
@@ -1911,6 +1920,7 @@ struct AddOrEditExpenseSheet: View {
     private func deleteCurrentRecord() {
         guard let record = recordToEdit else { return }
         ExpenseCalorieService.handleDeleted(expenseID: record.id, context: context)
+        ExpenseWaterService.handleDeleted(expenseID: record.id, context: context)
         context.delete(record)
         try? context.save()
         Haptic.warning()

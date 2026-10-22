@@ -404,6 +404,15 @@ public struct WaterTrackerView: View {
                             .background(Capsule().fill(AppColor.softFill(AppColor.warning)))
                             .foregroundStyle(AppColor.warning)
                     }
+
+                    if record.linkedExpenseID != nil {
+                        Text("记账联动")
+                            .font(.caption2)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(AppColor.softFill(AppColor.info)))
+                            .foregroundStyle(AppColor.info)
+                    }
                 }
 
                 HStack(spacing: 6) {

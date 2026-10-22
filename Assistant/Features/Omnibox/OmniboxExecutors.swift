@@ -131,9 +131,10 @@ enum OmniboxExecutor {
         context.insert(record)
         try context.save()
 
-        // 联动餐饮食物热量估算
+        // 联动餐饮食物热量估算与饮水记录
         if record.category == .food {
             ExpenseCalorieService.handleSaved(record, propose: true, context: context)
+            ExpenseWaterService.handleSaved(record, context: context)
         }
 
         return ActionExecutionOutcome(
@@ -176,6 +177,9 @@ enum OmniboxExecutor {
             record.category = cat
         }
         try context.save()
+        if record.category == .food {
+            ExpenseWaterService.handleSaved(record, context: context)
+        }
 
         return ActionExecutionOutcome(
             id: action.id,
@@ -961,6 +965,8 @@ enum OmniboxExecutor {
                     }
                 } else {
                     // 创建式回滚
+                    ExpenseCalorieService.handleDeleted(expenseID: record.id, context: context)
+                    ExpenseWaterService.handleDeleted(expenseID: record.id, context: context)
                     context.delete(record)
                 }
             }

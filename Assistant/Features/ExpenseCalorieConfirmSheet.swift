@@ -39,6 +39,38 @@ struct ExpenseCalorieConfirmSheet: View {
                     LabeledContent("识别为", value: "\(pending.suggestion.name)（\(pending.suggestion.portion.displayName)）")
                     LabeledContent("归入", value: slot.displayName)
                 }
+                if let water = ExpenseWaterService.linkedRecord(for: pending.expenseID, context: context) {
+                    Section {
+                        HStack {
+                            Label("已自动联动饮水打卡", systemImage: "drop.fill")
+                                .foregroundStyle(.blue)
+                            Spacer()
+                            Text("\(water.customName ?? water.beverageType.displayName) \(Int(water.volumeML))ml")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Text("生理有效补水")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("+\(Int(water.effectiveHydrationML)) ml (折算 \(Int(water.hydrationFactor * 100))%)")
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(.primary)
+                        }
+                        if water.caffeineMG > 0 {
+                            HStack {
+                                Text("估算咖啡因")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(Int(water.caffeineMG)) mg")
+                                    .font(.footnote.weight(.medium))
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                }
                 Section {
                     HStack {
                         Text("热量")

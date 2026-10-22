@@ -1635,6 +1635,16 @@
         }
       }
     },
+    "%@ %lldml" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$lldml"
+          }
+        }
+      }
+    },
     "%@ → %@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2382,6 +2392,9 @@
           }
         }
       }
+    },
+    "%lld mg" : {
+
     },
     "%lld ml" : {
 
@@ -4833,6 +4846,16 @@
     },
     "+%lld ml" : {
 
+    },
+    "+%lld ml (折算 %lld%%)" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "+%1$lld ml (折算 %2$lld%%)"
+          }
+        }
+      }
     },
     "+¥%@" : {
 
@@ -12065,6 +12088,9 @@
       }
     },
     "传统模式：将本月可用弹性额度均摊到每一天。" : {
+
+    },
+    "估算咖啡因" : {
 
     },
     "伴手礼" : {
@@ -28073,6 +28099,9 @@
           }
         }
       }
+    },
+    "已自动联动饮水打卡" : {
+
     },
     "已获取当前位置 (可点击刷新)" : {
       "extractionState" : "manual",
@@ -47326,6 +47355,9 @@
         }
       }
     },
+    "生理有效补水" : {
+
+    },
     "生鲜食品" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -54815,6 +54847,9 @@
           }
         }
       }
+    },
+    "记账联动" : {
+
     },
     "设为「核心必带」（漏带严重点）" : {
       "extractionState" : "manual",

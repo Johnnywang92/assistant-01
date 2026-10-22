@@ -30,6 +30,9 @@ public final class WaterIntakeRecord {
     public var syncedToHealthKit: Bool
     /// 创建时间
     public var createdAt: Date
+    /// 关联的记账条目（`ExpenseRecord.id`）。由记账联动生成的饮水记录带此值，
+    /// 用于账单编辑/删除时同步饮水记录；其它来源为 nil。
+    public var linkedExpenseID: UUID?
 
     public var beverageType: HydrationBeverageType {
         get {
@@ -47,7 +50,8 @@ public final class WaterIntakeRecord {
         hydrationFactor: Double? = nil,
         customName: String? = nil,
         note: String? = nil,
-        syncedToHealthKit: Bool = false
+        syncedToHealthKit: Bool = false,
+        linkedExpenseID: UUID? = nil
     ) {
         self.id = UUID()
         self.date = date
@@ -62,6 +66,7 @@ public final class WaterIntakeRecord {
         self.customName = customName
         self.note = note
         self.syncedToHealthKit = syncedToHealthKit
+        self.linkedExpenseID = linkedExpenseID
         self.createdAt = .now
     }
 
