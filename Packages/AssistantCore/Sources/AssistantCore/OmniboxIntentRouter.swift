@@ -21,6 +21,13 @@ public enum OmniboxIntentLabel: String, CaseIterable, Sendable {
     case reminderSnooze = "6"
     case queryLookup = "7"
     case memoInbox = "8"
+    case foodRecord = "9"
+    case waterRecord = "A"
+    case storageRecord = "B"
+    case habitLog = "C"
+    case anniversaryCreate = "D"
+    case departureAdd = "E"
+    case lifeRecord = "F"
 
     /// 该标签对应的动作能力。收集箱是判别层的兜底类别，不是解析失败。
     public var capability: ActionCapability {
@@ -34,6 +41,13 @@ public enum OmniboxIntentLabel: String, CaseIterable, Sendable {
         case .reminderSnooze: return .reminderSnooze
         case .queryLookup: return .queryLookup
         case .memoInbox: return .memoInbox
+        case .foodRecord: return .foodRecord
+        case .waterRecord: return .waterRecord
+        case .storageRecord: return .storageRecord
+        case .habitLog: return .habitLog
+        case .anniversaryCreate: return .anniversaryCreate
+        case .departureAdd: return .departureAdd
+        case .lifeRecord: return .lifeRecord
         }
     }
 
@@ -49,6 +63,13 @@ public enum OmniboxIntentLabel: String, CaseIterable, Sendable {
         case .reminderSnooze: return "推迟提醒"
         case .queryLookup: return "查询事项"
         case .memoInbox: return "收入收集箱"
+        case .foodRecord: return "记录饮食"
+        case .waterRecord: return "记录饮水"
+        case .storageRecord: return "物品收纳"
+        case .habitLog: return "习惯与服药打卡"
+        case .anniversaryCreate: return "纪念日与到期"
+        case .departureAdd: return "出门清单"
+        case .lifeRecord: return "生活档案"
         }
     }
 

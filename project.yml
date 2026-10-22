@@ -116,9 +116,10 @@ targets:
         NSCalendarsUsageDescription: "需要日历权限以在今日安排中显示你的日程"
         NSCalendarsFullAccessUsageDescription: "需要完整日历权限以在今日安排中显示你的日程"
         NSMotionUsageDescription: "需要运动与健身权限以识别你正在乘车或骑行，到站前提醒清点随身物品"
-        # Apple 健康：只读步数、活动能量、饮水与睡眠，用于给运动/喝水/服药打卡页提供真实数值。
-        # 本 App 不向「健康」写入任何数据，因此不需要 NSHealthUpdateUsageDescription。
-        NSHealthShareUsageDescription: "需要读取你在「健康」中的步数、运动能量、饮水与睡眠记录，用于在运动、喝水与服药打卡页展示真实数值，帮助你判断当天的完成情况。数据只在本机读取与展示，不会上传。"
+        # Apple 健康：只读步数、睡眠、体温、活动/静息能量、心率、血氧、步行速度、体征与健身记录，
+        # 用于在健康数据页与日报中提供身体活力评估与生活调养建议。本 App 不向「健康」写入任何数据。
+        NSHealthShareUsageDescription: "需要读取你在「健康」中的睡眠、体温、活动能量、静息能量、心率、血氧、步行速度、体征与健身记录，用于在日报与健康中心评估身体活力值并生成精简生活复盘。数据仅在设备本机离线分析展示，绝不上传。"
+        NSHealthUpdateUsageDescription: "需要写入权限以将你在助手里记录的饮水量同步至 Apple 健康。"
 
   AssistantWidgetExtension:
     type: app-extension

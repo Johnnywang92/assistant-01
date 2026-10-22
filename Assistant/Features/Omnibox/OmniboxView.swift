@@ -207,12 +207,13 @@ struct OmniboxView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.tr("万物皆可丢进来"))
                     .font(.headline)
-                Text(L10n.tr("文字、短信、小票、订单截图——自动拆解成记账、待办和备忘"))
+                Text(L10n.tr("文字、短信、小票、订单截图——自动拆解成记账、待办、饮食和备忘"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 HStack(spacing: 6) {
                     capabilityChip(icon: "yensign.circle.fill", label: L10n.tr("记账"), color: .green)
                     capabilityChip(icon: "checklist", label: L10n.tr("待办"), color: .blue)
+                    capabilityChip(icon: "fork.knife", label: L10n.tr("饮食"), color: .pink)
                     capabilityChip(icon: "tray.full.fill", label: L10n.tr("收集箱"), color: .orange)
                     Spacer()
                 }
@@ -722,6 +723,241 @@ struct OmniboxView: View {
                     .lineLimit(2...4)
                     .padding(6)
                     .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+            case .foodRecord:
+                HStack(spacing: 8) {
+                    TextField(L10n.tr("食物名称"), text: textBinding(action, key: "foodName"))
+                        .font(.subheadline)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    TextField(L10n.tr("千卡"), text: numericBinding(action, key: "calories"))
+                        .keyboardType(.numberPad)
+                        .frame(width: 70)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    Menu {
+                        ForEach(["早餐", "午餐", "晚餐", "加餐"], id: \.self) { slot in
+                            Button(slot) {
+                                action.wrappedValue.params["mealSlot"] = slot
+                                action.wrappedValue.summary = OmniboxPlanner.summary(
+                                    for: .foodRecord, params: action.wrappedValue.params
+                                )
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(action.wrappedValue.params["mealSlot"] ?? "餐次")
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    }
+                }
+                DatePicker("", selection: dateBinding(action, key: "dateISO"), displayedComponents: [.date, .hourAndMinute])
+                    .labelsHidden()
+                    .font(.caption)
+            case .waterRecord:
+                HStack(spacing: 8) {
+                    TextField(L10n.tr("饮品名称"), text: textBinding(action, key: "customName"))
+                        .font(.subheadline)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    TextField(L10n.tr("毫升"), text: numericBinding(action, key: "volumeML"))
+                        .keyboardType(.numberPad)
+                        .frame(width: 70)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    Menu {
+                        ForEach(["白开水", "黑咖啡", "拿铁", "纯茶", "牛奶", "奶茶", "含糖饮料", "苏打水"], id: \.self) { bev in
+                            Button(bev) {
+                                action.wrappedValue.params["beverageType"] = bev
+                                action.wrappedValue.summary = OmniboxPlanner.summary(
+                                    for: .waterRecord, params: action.wrappedValue.params
+                                )
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(action.wrappedValue.params["beverageType"] ?? "种类")
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    }
+                }
+            case .storageRecord:
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        TextField(L10n.tr("物品名称"), text: textBinding(action, key: "name"))
+                            .font(.subheadline)
+                            .padding(6)
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        Menu {
+                            ForEach(["主卧", "次卧", "客厅", "书房", "玄关", "厨房", "阳台", "储物间"], id: \.self) { room in
+                                Button(room) {
+                                    action.wrappedValue.params["roomArea"] = room
+                                    action.wrappedValue.summary = OmniboxPlanner.summary(
+                                        for: .storageRecord, params: action.wrappedValue.params
+                                    )
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "door.left.hand.closed")
+                                Text(action.wrappedValue.params["roomArea"] ?? "房间")
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption2)
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        }
+                    }
+                    TextField(L10n.tr("详细存放位置（如抽屉、顶层收纳盒）"), text: textBinding(action, key: "location"))
+                        .font(.subheadline)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                }
+            case .habitLog:
+                HStack(spacing: 8) {
+                    TextField(L10n.tr("打卡目标（如晨跑、降压药）"), text: textBinding(action, key: "target"))
+                        .font(.subheadline)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    Menu {
+                        Button("习惯打卡") {
+                            action.wrappedValue.params["kind"] = "habit"
+                            action.wrappedValue.summary = OmniboxPlanner.summary(
+                                for: .habitLog, params: action.wrappedValue.params
+                            )
+                        }
+                        Button("服药打卡") {
+                            action.wrappedValue.params["kind"] = "medication"
+                            action.wrappedValue.summary = OmniboxPlanner.summary(
+                                for: .habitLog, params: action.wrappedValue.params
+                            )
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(action.wrappedValue.params["kind"] == "medication" ? "服药" : "习惯")
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    }
+                }
+            case .anniversaryCreate:
+                HStack(spacing: 8) {
+                    TextField(L10n.tr("名称（如结婚纪念日、妈妈生日）"), text: textBinding(action, key: "title"))
+                        .font(.subheadline)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    Menu {
+                        ForEach(["纪念日", "生日", "倒数日", "订阅续费", "保质期"], id: \.self) { cat in
+                            Button(cat) {
+                                action.wrappedValue.params["category"] = cat
+                                action.wrappedValue.summary = OmniboxPlanner.summary(
+                                    for: .anniversaryCreate, params: action.wrappedValue.params
+                                )
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(action.wrappedValue.params["category"] ?? "类型")
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    }
+                }
+            case .departureAdd:
+                HStack(spacing: 8) {
+                    TextField(L10n.tr("随身物品（如雨伞、工卡）"), text: textBinding(action, key: "title"))
+                        .font(.subheadline)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    Menu {
+                        ForEach(["工作通勤", "运动健身", "出差旅行", "带娃出行", "遛狗随行", "雨雪出行"], id: \.self) { sc in
+                            Button(sc) {
+                                action.wrappedValue.params["scene"] = sc
+                                action.wrappedValue.summary = OmniboxPlanner.summary(
+                                    for: .departureAdd, params: action.wrappedValue.params
+                                )
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(action.wrappedValue.params["scene"] ?? "场景")
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    }
+                }
+            case .lifeRecord:
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        TextField(L10n.tr("事项名称"), text: textBinding(action, key: "title"))
+                            .font(.subheadline)
+                            .padding(6)
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        Menu {
+                            ForEach([
+                                ("pet", "宠物"), ("vehicle", "爱车"), ("child", "育儿"),
+                                ("skill", "技能"), ("document", "证件"), ("event", "大事")
+                            ], id: \.0) { item in
+                                Button(item.1) {
+                                    action.wrappedValue.params["domain"] = item.0
+                                    action.wrappedValue.summary = OmniboxPlanner.summary(
+                                        for: .lifeRecord, params: action.wrappedValue.params
+                                    )
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                let dom = action.wrappedValue.params["domain"] ?? "pet"
+                                let label: String = switch dom {
+                                case "pet": "宠物"
+                                case "vehicle": "爱车"
+                                case "child": "育儿"
+                                case "skill": "技能"
+                                case "document": "证件"
+                                case "event": "大事"
+                                default: "档案"
+                                }
+                                Text(label)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption2)
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        }
+                    }
+                    TextField(L10n.tr("详情或数值（如完成驱虫、当前里程、练习45分钟）"), text: textBinding(action, key: "detail"))
+                        .font(.subheadline)
+                        .padding(6)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                }
             }
         }
         .padding(12)
@@ -772,6 +1008,73 @@ struct OmniboxView: View {
             if (currentParams["target"] ?? "").isEmpty {
                 let source = currentParams["memo"] ?? currentParams["title"] ?? ""
                 currentParams["target"] = source
+            }
+        case .foodRecord:
+            if (currentParams["foodName"] ?? "").isEmpty {
+                let name = currentParams["title"] ?? currentParams["memo"] ?? currentParams["target"] ?? ""
+                currentParams["foodName"] = name.isEmpty ? "食物" : name
+            }
+            if currentParams["mealSlot"] == nil {
+                currentParams["mealSlot"] = "加餐"
+            }
+            if (currentParams["calories"] ?? "").isEmpty {
+                if let estimate = FoodCalorieEstimator.estimateMeal(fromHint: currentParams["foodName"] ?? "") {
+                    currentParams["calories"] = "\(Int(estimate.fullPortionCalories))"
+                }
+            }
+        case .waterRecord:
+            if (currentParams["customName"] ?? "").isEmpty {
+                let name = currentParams["title"] ?? currentParams["memo"] ?? currentParams["foodName"] ?? "白开水"
+                currentParams["customName"] = name
+            }
+            if currentParams["volumeML"] == nil {
+                currentParams["volumeML"] = "300"
+            }
+            if currentParams["beverageType"] == nil {
+                currentParams["beverageType"] = "白开水"
+            }
+        case .storageRecord:
+            if (currentParams["name"] ?? "").isEmpty {
+                let name = currentParams["title"] ?? currentParams["memo"] ?? currentParams["target"] ?? "物品"
+                currentParams["name"] = name
+            }
+            if (currentParams["location"] ?? "").isEmpty {
+                currentParams["location"] = "主卧抽屉"
+            }
+            if currentParams["roomArea"] == nil {
+                currentParams["roomArea"] = "主卧"
+            }
+        case .habitLog:
+            if (currentParams["target"] ?? "").isEmpty {
+                let name = currentParams["title"] ?? currentParams["memo"] ?? currentParams["target"] ?? "打卡项"
+                currentParams["target"] = name
+            }
+            if currentParams["kind"] == nil {
+                currentParams["kind"] = "habit"
+            }
+        case .anniversaryCreate:
+            if (currentParams["title"] ?? "").isEmpty {
+                let name = currentParams["title"] ?? currentParams["memo"] ?? currentParams["target"] ?? "重要日子"
+                currentParams["title"] = name
+            }
+            if currentParams["category"] == nil {
+                currentParams["category"] = "纪念日"
+            }
+        case .departureAdd:
+            if (currentParams["title"] ?? "").isEmpty {
+                let name = currentParams["title"] ?? currentParams["memo"] ?? currentParams["target"] ?? "随身物品"
+                currentParams["title"] = name
+            }
+            if currentParams["scene"] == nil {
+                currentParams["scene"] = "工作通勤"
+            }
+        case .lifeRecord:
+            if (currentParams["title"] ?? "").isEmpty {
+                let name = currentParams["title"] ?? currentParams["memo"] ?? currentParams["target"] ?? "生活记录"
+                currentParams["title"] = name
+            }
+            if currentParams["domain"] == nil {
+                currentParams["domain"] = "pet"
             }
         }
         action.wrappedValue.capability = newCap

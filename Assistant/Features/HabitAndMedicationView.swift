@@ -7,6 +7,7 @@ struct HabitAndMedicationView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \PeriodicHabit.nextDueAt) private var habits: [PeriodicHabit]
     @Query private var medPlans: [MedicationPlan]
+    @Query(sort: \FoodIntakeRecord.date, order: .reverse) private var foodRecords: [FoodIntakeRecord]
 
     @State private var showingAddHabitSheet = false
     @State private var showingAddMedSheet = false
@@ -15,6 +16,72 @@ struct HabitAndMedicationView: View {
     @State private var editingMed: MedicationPlan?
     /// 订阅健康服务：打卡页要显示「健康」侧的步数、饮水与睡眠数值
     @ObservedObject private var health = HealthKitService.shared
+
+    // 今日用餐快照（用于用药时效自适应计算）
+    private var todayMeals: [RecentMealSnapshot] {
+        let calendar = Calendar.current
+        return foodRecords
+            .filter { calendar.isDateInToday($0.date) }
+            .map { record in
+                let name = record.foodName.lowercased()
+                let hasCaffeine = name.contains("咖啡") || name.contains("拿铁") || name.contains("美式") ||
+                                  name.contains("摩卡") || name.contains("卡布") || name.contains("奶茶") ||
+                                  name.contains("红茶") || name.contains("绿茶") || name.contains("乌龙") ||
+                                  name.contains("红牛") || name.contains("可乐")
+                let hasGrapefruit = name.contains("西柚") || name.contains("葡萄柚")
+                let hasDairy = name.contains("牛奶") || name.contains("拿铁") || name.contains("酸奶") ||
+                               name.contains("奶酪") || name.contains("芝士") || name.contains("乳")
+                let hasAlcohol = name.contains("酒") || name.contains("啤酒") || name.contains("白酒") ||
+                                 name.contains("红酒") || name.contains("鸡尾酒")
+                return RecentMealSnapshot(
+                    id: record.id.uuidString,
+                    date: record.date,
+                    foodName: record.foodName,
+                    calories: record.consumedCalories,
+                    hasCaffeine: hasCaffeine,
+                    hasGrapefruit: hasGrapefruit,
+                    hasDairy: hasDairy,
+                    hasAlcohol: hasAlcohol
+                )
+            }
+    }
+
+    /// 当前最紧急或具有行动价值的自适应时效评估
+    private var topTimingEvaluation: MedicationTimingEvaluation? {
+        let evals = medPlans.filter { $0.isEnabled }.map {
+            MedicationFoodTimingAdvisor.evaluate(
+                plan: $0.toSnapshot(),
+                todayMeals: todayMeals,
+                now: .now
+            )
+        }
+        // 冲突警示 > 漏服提醒 > 餐后黄金窗口 > 等餐顺延
+        if let conflict = evals.first(where: {
+            if case .conflictAlert = $0.status { return true }
+            return false
+        }) {
+            return conflict
+        }
+        if let missed = evals.first(where: {
+            if case .missedDoseWarning = $0.status { return true }
+            return false
+        }) {
+            return missed
+        }
+        if let prime = evals.first(where: {
+            if case .primeTimePostMeal = $0.status { return true }
+            return false
+        }) {
+            return prime
+        }
+        if let waiting = evals.first(where: {
+            if case .waitingForMeal = $0.status { return true }
+            return false
+        }) {
+            return waiting
+        }
+        return nil
+    }
 
     var body: some View {
         List {
@@ -25,7 +92,7 @@ struct HabitAndMedicationView: View {
                 } header: {
                     Text("今日健康参考")
                 } footer: {
-                    Text("来自「健康」App 的真实数据，只读不写。读不到数据时可能尚未授权，或今天没有记录。")
+                    Text("展示健康指标与饮水。轻触「饮水」可快速打卡并查看咖啡/奶茶水分折算。")
                 }
             }
 
@@ -50,14 +117,38 @@ struct HabitAndMedicationView: View {
             }
 
             // MARK: - 药物与保健品
-            Section("药物与保健品") {
+            Section {
+                // 饮食时效自适应智能看板横幅
+                if let alertEval = topTimingEvaluation {
+                    medicationTimingCard(alertEval)
+                }
+
                 if medPlans.isEmpty {
                     Text("暂无药物或保健品提醒计划").foregroundStyle(.secondary)
                 } else {
                     ForEach(medPlans) { med in
-                        MedicationRow(med: med) { editingMed = med }
+                        let eval = MedicationFoodTimingAdvisor.evaluate(
+                            plan: med.toSnapshot(),
+                            todayMeals: todayMeals,
+                            now: .now
+                        )
+                        MedicationRow(med: med, evaluation: eval) {
+                            editingMed = med
+                        } onMarkTaken: {
+                            med.markTaken()
+                            try? context.save()
+                            Haptic.success()
+                        }
                     }
                     .onDelete(perform: deleteMeds)
+                }
+            } header: {
+                HStack {
+                    Text("药物与保健品")
+                    Spacer()
+                    Text("饮食时效自适应联动")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -97,6 +188,64 @@ struct HabitAndMedicationView: View {
         try? context.save()
     }
 
+    // MARK: - 饮食时效自适应智能看板
+
+    @ViewBuilder
+    private func medicationTimingCard(_ eval: MedicationTimingEvaluation) -> some View {
+        let color: Color = {
+            switch eval.status {
+            case .conflictAlert: return .red
+            case .primeTimePostMeal, .primeTimeBeforeMeal: return .green
+            case .waitingForMeal, .missedDoseWarning: return .orange
+            case .takenToday, .pendingScheduled: return .blue
+            }
+        }()
+
+        let icon: String = {
+            switch eval.status {
+            case .conflictAlert: return "exclamationmark.triangle.fill"
+            case .primeTimePostMeal: return "sparkles"
+            case .primeTimeBeforeMeal: return "fork.knife.circle.fill"
+            case .waitingForMeal: return "clock.arrow.circlepath"
+            case .missedDoseWarning: return "exclamationmark.circle.fill"
+            case .takenToday: return "checkmark.seal.fill"
+            case .pendingScheduled: return "clock.fill"
+            }
+        }()
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+                    .font(.subheadline.bold())
+                Text(eval.headline)
+                    .font(.caption.bold())
+                    .foregroundStyle(color)
+                Spacer()
+                Text(eval.medName)
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(color.opacity(0.15)))
+                    .foregroundStyle(color)
+            }
+
+            Text(eval.actionTip)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(color.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(color.opacity(0.25), lineWidth: 1)
+                )
+        )
+        .padding(.vertical, 2)
+    }
+
     // MARK: - 健康参考数值
 
     /// 打卡页的健康侧数值区块。
@@ -108,19 +257,39 @@ struct HabitAndMedicationView: View {
         switch health.snapshot?.readState {
         case .hasData:
             ForEach(referenceMetrics, id: \.kind) { metric in
-                HStack(spacing: 8) {
-                    Image(systemName: metric.kind.iconName)
-                        .foregroundStyle(AppColor.info)
-                        .frame(width: 22)
-                    Text(metric.kind.displayName)
-                        .font(.subheadline)
-                    Spacer()
-                    Text(HealthMetrics.format(metric.value, for: metric.kind))
-                        .font(.subheadline.bold())
-                        .foregroundStyle(AppColor.text)
+                if metric.kind == .dietaryWater {
+                    NavigationLink {
+                        WaterTrackerView()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: metric.kind.iconName)
+                                .foregroundStyle(AppColor.info)
+                                .frame(width: 22)
+                            Text(metric.kind.displayName)
+                                .font(.subheadline)
+                            Spacer()
+                            Text(HealthMetrics.format(metric.value, for: metric.kind))
+                                .font(.subheadline.bold())
+                                .foregroundStyle(AppColor.text)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(metric.kind.displayName) \(HealthMetrics.format(metric.value, for: metric.kind))")
+                } else {
+                    HStack(spacing: 8) {
+                        Image(systemName: metric.kind.iconName)
+                            .foregroundStyle(AppColor.info)
+                            .frame(width: 22)
+                        Text(metric.kind.displayName)
+                            .font(.subheadline)
+                        Spacer()
+                        Text(HealthMetrics.format(metric.value, for: metric.kind))
+                            .font(.subheadline.bold())
+                            .foregroundStyle(AppColor.text)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(metric.kind.displayName) \(HealthMetrics.format(metric.value, for: metric.kind))")
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(metric.kind.displayName) \(HealthMetrics.format(metric.value, for: metric.kind))")
             }
 
         case .requestedNoData:
@@ -215,32 +384,87 @@ struct HabitRow: View {
 
 struct MedicationRow: View {
     @Bindable var med: MedicationPlan
+    var evaluation: MedicationTimingEvaluation?
     @ObservedObject private var seniorManager = SeniorModeManager.shared
     var onEdit: () -> Void
+    var onMarkTaken: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: 8) {
-            // 左侧内容区可点击编辑（与播报按钮分开，避免点击冲突）
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+        HStack(spacing: 10) {
+            // 左侧内容区可点击编辑
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
                     Label(med.medName, systemImage: "pills.fill")
                         .font(seniorManager.isSeniorModeEnabled ? .title3.bold() : .headline)
                         .foregroundStyle(seniorManager.isSeniorModeEnabled ? .green : .primary)
+
+                    // 饮食时效标签
+                    HStack(spacing: 3) {
+                        Image(systemName: med.mealRelation.iconName)
+                        Text(med.mealRelation.shortTitle)
+                    }
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.blue.opacity(0.12)))
+                    .foregroundStyle(.blue)
+
                     Spacer()
+
                     Text(med.dosage)
                         .font(seniorManager.isSeniorModeEnabled ? .body.bold() : .subheadline)
                         .foregroundStyle(seniorManager.isHighContrastEnabled ? .primary : .secondary)
                 }
-                Text("每日时点: \(med.dailyTimePoints.joined(separator: ", "))")
-                    .font(seniorManager.isSeniorModeEnabled ? .subheadline : .caption)
-                    .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.8) : .secondary)
+
+                // 计划时点与自适应时效状态提示
+                HStack(spacing: 6) {
+                    Text("每日: \(med.dailyTimePoints.joined(separator: ", "))")
+                        .font(seniorManager.isSeniorModeEnabled ? .subheadline : .caption)
+                        .foregroundStyle(.secondary)
+
+                    if let eval = evaluation {
+                        Text("· \(eval.headline)")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(statusColor(eval.status))
+                            .lineLimit(1)
+                    }
+                }
+
+                if let eval = evaluation, eval.isUrgent {
+                    Text(eval.actionTip)
+                        .font(.system(size: 11))
+                        .foregroundStyle(statusColor(eval.status))
+                        .lineLimit(2)
+                }
             }
             .contentShape(Rectangle())
             .onTapGesture { onEdit() }
 
+            // 打卡完成按钮（防漏服防重复）
+            let isTaken = isTakenRecently
+            Button {
+                if !isTaken {
+                    onMarkTaken()
+                }
+            } label: {
+                VStack(spacing: 2) {
+                    Image(systemName: isTaken ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundStyle(isTaken ? .green : .secondary)
+                    Text(isTaken ? "已服" : "打卡")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(isTaken ? .green : .secondary)
+                }
+                .frame(width: 40)
+            }
+            .buttonStyle(.plain)
+
             if seniorManager.isVoiceBroadcastEnabled {
                 Button {
-                    let speech = "服药提醒：\(med.medName)，\(med.dosage)。服药时间：\(med.dailyTimePoints.joined(separator: "、"))。"
+                    var speech = "服药提醒：\(med.medName)，\(med.dosage)。要求：\(med.mealRelation.displayName)。"
+                    if let eval = evaluation {
+                        speech += "当前建议：\(eval.actionTip)。"
+                    }
                     if seniorManager.isSpeaking && seniorManager.currentSpeakingId == med.id.uuidString {
                         seniorManager.stopSpeaking()
                     } else {
@@ -262,6 +486,20 @@ struct MedicationRow: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var isTakenRecently: Bool {
+        guard let last = med.lastTakenAt else { return false }
+        return Calendar.current.isDateInToday(last) && Date().timeIntervalSince(last) < 4 * 3600
+    }
+
+    private func statusColor(_ status: MedicationTimingStatus) -> Color {
+        switch status {
+        case .primeTimePostMeal, .primeTimeBeforeMeal: return .green
+        case .waitingForMeal, .missedDoseWarning: return .orange
+        case .conflictAlert: return .red
+        case .takenToday, .pendingScheduled: return .secondary
+        }
     }
 }
 
@@ -386,6 +624,7 @@ struct MedicationEditorSheet: View {
     @State private var dosageUnit = "片"
     @State private var frequency = 2
     @State private var timePoints: [Date] = []
+    @State private var mealRelation: MedicationMealRelation = .afterMeal(minutes: 30)
 
     private let amountOptions: [Double] = [0.5, 1, 1.5, 2, 3, 4, 6]
     private let unitOptions = ["片", "粒", "颗", "袋", "支", "毫升", "滴", "勺"]
@@ -402,6 +641,7 @@ struct MedicationEditorSheet: View {
             let (amount, unit) = Self.parseDosage(m.dosage)
             _dosageAmount = State(initialValue: amount)
             _dosageUnit = State(initialValue: unit)
+            _mealRelation = State(initialValue: m.mealRelation)
             let points = m.dailyTimePoints.compactMap { Self.date(fromTime: $0) }
             _frequency = State(initialValue: max(1, min(6, points.count)))
             _timePoints = State(initialValue: points.isEmpty ? Self.defaultTimePoints(count: 2) : points)
@@ -419,6 +659,24 @@ struct MedicationEditorSheet: View {
                         TextField("备注", text: .constant(notes))
                             .disabled(true)
                             .foregroundStyle(.secondary)
+                    }
+                }
+
+                // 用餐时效关系（自适应联动）
+                Section("饮食时效要求（防伤胃与吸收自适应）") {
+                    Picker("时效要求", selection: $mealRelation) {
+                        Label("饭后 30 分钟（护胃防刺激）", systemImage: "cup.and.saucer.fill")
+                            .tag(MedicationMealRelation.afterMeal(minutes: 30))
+                        Label("饭后 15 分钟（快速饭后）", systemImage: "cup.and.saucer.fill")
+                            .tag(MedicationMealRelation.afterMeal(minutes: 15))
+                        Label("饭前 30 分钟（空腹吸收充分）", systemImage: "fork.knife.circle")
+                            .tag(MedicationMealRelation.beforeMeal(minutes: 30))
+                        Label("随餐同服（促进脂溶性吸收）", systemImage: "fork.knife")
+                            .tag(MedicationMealRelation.withMeal)
+                        Label("睡前服用（夜间平稳起效）", systemImage: "moon.stars.fill")
+                            .tag(MedicationMealRelation.bedtime)
+                        Label("不限时间（任何时段均可）", systemImage: "clock")
+                            .tag(MedicationMealRelation.unrestricted)
                     }
                 }
 
@@ -451,7 +709,7 @@ struct MedicationEditorSheet: View {
 
                 Section {
                     let timesText = timePoints.map { Self.string(from: $0) }.joined(separator: "、")
-                    Text("预览：\(medName.isEmpty ? "药品" : medName)，每次 \(Self.formatAmount(dosageAmount)) \(dosageUnit)，每天 \(frequency) 次（\(timesText)）")
+                    Text("预览：\(medName.isEmpty ? "药品" : medName)，每次 \(Self.formatAmount(dosageAmount)) \(dosageUnit)，每天 \(frequency) 次（\(timesText) · \(mealRelation.displayName)）")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -504,11 +762,13 @@ struct MedicationEditorSheet: View {
             med.medName = medName
             med.dosage = dosageStr
             med.dailyTimePoints = points
+            med.mealRelation = mealRelation
         } else {
             let plan = MedicationPlan(
                 medName: medName,
                 dosage: dosageStr,
-                dailyTimePoints: points
+                dailyTimePoints: points,
+                mealRelation: mealRelation
             )
             context.insert(plan)
         }

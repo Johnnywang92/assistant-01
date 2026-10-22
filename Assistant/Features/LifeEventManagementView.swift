@@ -146,8 +146,30 @@ struct LifeEventProjectDetailView: View {
     @State private var taskToEdit: LifeEventTask?
     let project: LifeEventProject
 
-    private var projectStages: [LifeEventStage] { stages.filter { $0.projectID == project.id }.sorted { $0.sortOrder < $1.sortOrder } }
-    private var projectTasks: [LifeEventTask] { tasks.filter { $0.projectID == project.id } }
+    init(project: LifeEventProject) {
+        self.project = project
+        let pid = project.id
+        _stages = Query(
+            filter: #Predicate<LifeEventStage> { $0.projectID == pid },
+            sort: [SortDescriptor(\.sortOrder, order: .forward)]
+        )
+        _tasks = Query(filter: #Predicate<LifeEventTask> { $0.projectID == pid })
+        _people = Query(
+            filter: #Predicate<LifeEventPerson> { $0.projectID == pid },
+            sort: [SortDescriptor(\.name, order: .forward)]
+        )
+        _expenses = Query(
+            filter: #Predicate<LifeEventExpense> { $0.projectID == pid },
+            sort: [SortDescriptor(\.title, order: .forward)]
+        )
+        _guests = Query(
+            filter: #Predicate<LifeEventGuest> { $0.projectID == pid },
+            sort: [SortDescriptor(\.name, order: .forward)]
+        )
+    }
+
+    private var projectStages: [LifeEventStage] { stages }
+    private var projectTasks: [LifeEventTask] { tasks }
     private var completedCount: Int { projectTasks.filter(\.isDone).count }
 
     var body: some View {
@@ -340,21 +362,15 @@ struct LifeEventProjectDetailView: View {
         }
     }
 
-    private var projectPeople: [LifeEventPerson] {
-        people.filter { $0.projectID == project.id }.sorted { $0.name < $1.name }
-    }
+    private var projectPeople: [LifeEventPerson] { people }
 
-    private var projectExpenses: [LifeEventExpense] {
-        expenses.filter { $0.projectID == project.id }.sorted { $0.title < $1.title }
-    }
+    private var projectExpenses: [LifeEventExpense] { expenses }
 
     private var expensesTotal: Double {
         projectExpenses.reduce(0) { $0 + $1.paidAmount }
     }
 
-    private var projectGuests: [LifeEventGuest] {
-        guests.filter { $0.projectID == project.id }.sorted { $0.name < $1.name }
-    }
+    private var projectGuests: [LifeEventGuest] { guests }
 
     private var confirmedGuestCount: Int { projectGuests.filter { $0.attendanceRaw == "yes" }.count }
 

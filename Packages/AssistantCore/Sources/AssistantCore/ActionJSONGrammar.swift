@@ -18,7 +18,7 @@ public enum ActionJSONGrammar {
 
     ws ::= [ \t\n\r]*
 
-    action ::= expense-create | expense-update | todo-create | todo-update | todo-complete | todo-cancel | reminder-snooze | query-lookup | memo-inbox
+    action ::= expense-create | expense-update | todo-create | todo-update | todo-complete | todo-cancel | reminder-snooze | query-lookup | memo-inbox | food-record | water-record | storage-record | habit-log | anniversary-create | departure-add | life-record
 
     expense-create ::= "{" ws "\"capability\":\"expense.create\"" "," ws "\"amount\":\"" number "\"" "," ws "\"isIncome\":\"" is-income "\"" "," ws "\"category\":\"" category "\"" "," ws "\"title\":\"" text "\"" ("," ws "\"dateISO\":\"" datetime "\"")? "}"
 
@@ -38,6 +38,20 @@ public enum ActionJSONGrammar {
 
     memo-inbox ::= "{" ws "\"capability\":\"memo.inbox\"" "," ws "\"memo\":\"" text "\"" "}"
 
+    food-record ::= "{" ws "\"capability\":\"food.record\"" "," ws "\"foodName\":\"" text "\"" ("," ws "\"mealSlot\":\"" meal-slot "\"")? ("," ws "\"calories\":\"" number "\"")? "}"
+
+    water-record ::= "{" ws "\"capability\":\"water.record\"" "," ws "\"beverageType\":\"" beverage-type "\"" "," ws "\"volumeML\":\"" number "\"" ("," ws "\"customName\":\"" text "\"")? "}"
+
+    storage-record ::= "{" ws "\"capability\":\"storage.record\"" "," ws "\"name\":\"" text "\"" "," ws "\"location\":\"" text "\"" ("," ws "\"roomArea\":\"" text "\"")? ("," ws "\"isMedicine\":\"" is-income "\"")? "}"
+
+    habit-log ::= "{" ws "\"capability\":\"habit.log\"" "," ws "\"target\":\"" text "\"" "," ws "\"kind\":\"" habit-kind "\"" ("," ws "\"dosage\":\"" text "\"")? "}"
+
+    anniversary-create ::= "{" ws "\"capability\":\"anniversary.create\"" "," ws "\"title\":\"" text "\"" "," ws "\"category\":\"" anniversary-cat "\"" ("," ws "\"targetDate\":\"" date "\"")? ("," ws "\"price\":\"" text "\"")? "}"
+
+    departure-add ::= "{" ws "\"capability\":\"departure.add\"" "," ws "\"title\":\"" text "\"" ("," ws "\"scene\":\"" text "\"")? ("," ws "\"location\":\"" text "\"")? "}"
+
+    life-record ::= "{" ws "\"capability\":\"life.record\"" "," ws "\"domain\":\"" life-domain "\"" "," ws "\"title\":\"" text "\"" ("," ws "\"detail\":\"" text "\"")? ("," ws "\"value\":\"" number "\"")? "}"
+
     number ::= "-"? [0-9]+ ("." [0-9]+)?
 
     days ::= "-"? [0-9]+
@@ -51,6 +65,16 @@ public enum ActionJSONGrammar {
     is-income ::= "true" | "false"
 
     duration ::= "10分钟" | "1小时" | "明早"
+
+    meal-slot ::= "早餐" | "午餐" | "晚餐" | "加餐"
+
+    beverage-type ::= "白开水" | "纯茶" | "黑咖啡" | "拿铁" | "牛奶" | "奶茶" | "含糖饮料" | "苏打水"
+
+    habit-kind ::= "habit" | "medication"
+
+    anniversary-cat ::= "纪念日" | "生日" | "倒数日" | "订阅续费" | "保质期"
+
+    life-domain ::= "pet" | "vehicle" | "child" | "skill" | "document" | "event"
 
     category ::= "餐饮美食" | "交通出行" | "居家日用" | "购物消费" | "休闲娱乐" | "医疗健康" | "宠物萌宠" | "数码家电" | "人情社交" | "职业收入" | "其它收入" | "其它支出"
 

@@ -1,43 +1,9 @@
+import AssistantCore
 import Foundation
 import SwiftData
 
-/// 出门与随身出行场景
-public enum DepartureScene: String, Codable, CaseIterable, Identifiable {
-    case commute = "工作通勤"
-    case workout = "运动健身"
-    case travel = "出差旅行"
-    case parenting = "带娃出行"
-    case petWalk = "遛狗随行"
-    case rainy = "雨雪恶劣"
-    case casual = "日常轻装"
-
-    public var id: String { rawValue }
-
+extension DepartureScene {
     public var displayName: String { L10n.tr(rawValue) }
-
-    public var icon: String {
-        switch self {
-        case .commute: return "briefcase.fill"
-        case .workout: return "figure.run"
-        case .travel: return "airplane"
-        case .parenting: return "figure.and.child.holdinghands"
-        case .petWalk: return "pawprint.fill"
-        case .rainy: return "cloud.rain.fill"
-        case .casual: return "bag.fill"
-        }
-    }
-
-    public var colorName: String {
-        switch self {
-        case .commute: return "blue"
-        case .workout: return "orange"
-        case .travel: return "purple"
-        case .parenting: return "pink"
-        case .petWalk: return "teal"
-        case .rainy: return "teal"
-        case .casual: return "green"
-        }
-    }
 }
 
 /// 随身防丢与出门检查清单项模型

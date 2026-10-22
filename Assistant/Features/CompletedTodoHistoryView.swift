@@ -16,6 +16,45 @@ struct CompletedTodoHistoryView: View {
     @State private var selectedCategory: TodoFilterCategory = .all
     @State private var showingClearAlert = false
 
+    // 单次遍历缓存分类计数，避免 9 个分类胶囊在每次渲染时各遍历一次全表
+    private var categoryCounts: [TodoFilterCategory: Int] {
+        var counts: [TodoFilterCategory: Int] = [
+            .all: doneTodos.count,
+            .general: 0,
+            .work: 0,
+            .recurring: 0,
+            .parcel: 0,
+            .life: 0,
+            .alert: 0,
+            .parenting: 0,
+            .pet: 0
+        ]
+        for item in doneTodos {
+            if item.isRecurring {
+                counts[.recurring, default: 0] += 1
+            }
+            switch item.type {
+            case .general, .event:
+                counts[.general, default: 0] += 1
+            case .work:
+                counts[.work, default: 0] += 1
+            case .parcel, .returnParcel:
+                counts[.parcel, default: 0] += 1
+            case .medication, .housework, .exercise, .charging:
+                counts[.life, default: 0] += 1
+            case .subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare:
+                counts[.alert, default: 0] += 1
+            case .childVaccine, .childGrowth, .childMilestone, .childHealth:
+                counts[.parenting, default: 0] += 1
+            case .pet:
+                counts[.pet, default: 0] += 1
+            default:
+                break
+            }
+        }
+        return counts
+    }
+
     // 搜索与分类过滤
     private var filteredItems: [TodoItem] {
         var result = doneTodos
@@ -48,7 +87,10 @@ struct CompletedTodoHistoryView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        let currentFiltered = filteredItems
+        let counts = categoryCounts
+
+        return NavigationStack {
             List {
                 // MARK: - 1. 成就统计看板
                 Section {
@@ -85,7 +127,7 @@ struct CompletedTodoHistoryView: View {
                         HStack(spacing: 8) {
                             ForEach(TodoFilterCategory.allCases) { cat in
                                 let isSelected = selectedCategory == cat
-                                let count = countForCategory(cat)
+                                let count = counts[cat] ?? 0
                                 Button {
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                         selectedCategory = cat
@@ -117,7 +159,7 @@ struct CompletedTodoHistoryView: View {
 
                 // MARK: - 3. 已完成事项列表
                 Section {
-                    if filteredItems.isEmpty {
+                    if currentFiltered.isEmpty {
                         ContentUnavailableView(
                             searchText.isEmpty ? "暂无该分类已完成事项" : "无匹配搜索结果",
                             systemImage: "checklist.checked",
@@ -125,14 +167,16 @@ struct CompletedTodoHistoryView: View {
                         )
                         .padding(.vertical, 12)
                     } else {
-                        ForEach(filteredItems) { item in
+                        ForEach(currentFiltered) { item in
                             CompletedHistoryRow(item: item)
                         }
-                        .onDelete(perform: deleteItems)
+                        .onDelete { offsets in
+                            deleteItems(at: offsets, from: currentFiltered)
+                        }
                     }
                 } header: {
                     HStack {
-                        Text("归档明细 (\(filteredItems.count))")
+                        Text("归档明细 (\(currentFiltered.count))")
                         Spacer()
                         if !doneTodos.isEmpty {
                             Button("清空已完成", role: .destructive) {
@@ -180,9 +224,9 @@ struct CompletedTodoHistoryView: View {
         }
     }
 
-    private func deleteItems(at offsets: IndexSet) {
+    private func deleteItems(at offsets: IndexSet, from items: [TodoItem]) {
         for index in offsets {
-            context.delete(filteredItems[index])
+            context.delete(items[index])
         }
         try? context.save()
         Haptic.light()

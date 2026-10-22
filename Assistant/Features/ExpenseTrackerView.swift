@@ -1,3 +1,4 @@
+import AssistantCore
 import Combine
 import SwiftData
 import SwiftUI
@@ -28,9 +29,16 @@ fileprivate struct ExpenseSummary {
         var todayFlex: Double = 0
         var categoryMap: [ExpenseCategory: Double] = [:]
 
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfYesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday)
+
         for record in records {
-            let isToday = calendar.isDateInToday(record.date)
-            let isYesterday = !isToday && calendar.isDateInYesterday(record.date)
+            let isToday = calendar.isDate(record.date, inSameDayAs: now)
+            let isYesterday = if let startOfYesterday {
+                calendar.isDate(record.date, inSameDayAs: startOfYesterday)
+            } else {
+                false
+            }
             let recYear = calendar.component(.year, from: record.date)
             let recMonth = calendar.component(.month, from: record.date)
             let isThisMonth = (recYear == currentYear && recMonth == currentMonth)
@@ -106,7 +114,6 @@ struct ExpenseTrackerView: View {
     // MARK: - 统计数据单次 O(N) 极速归集（引用缓存：同一渲染内多处访问只算一次）
     private final class ExpenseAnalysisCache {
         var key: Int = -1
-        var lastComputedTime: CFAbsoluteTime = 0
         var summary: ExpenseSummary?
         var grouped: [(key: String, items: [ExpenseRecord])]?
     }
@@ -117,13 +124,16 @@ struct ExpenseTrackerView: View {
     private var analysisKey: Int {
         var hasher = Hasher()
         hasher.combine(Calendar.current.startOfDay(for: .now).timeIntervalSinceReferenceDate)
+        hasher.combine(records.count)
         for record in records {
+            hasher.combine(record.id)
             hasher.combine(record.date.timeIntervalSinceReferenceDate)
             hasher.combine(record.amount)
             hasher.combine(record.isIncome)
             hasher.combine(record.categoryRaw)
             hasher.combine(record.currencyCode)
             hasher.combine(record.foreignAmount)
+            hasher.combine(record.rawText)
         }
         return hasher.finalize()
     }
@@ -138,13 +148,8 @@ struct ExpenseTrackerView: View {
     }
 
     private var summary: ExpenseSummary {
-        let now = CFAbsoluteTimeGetCurrent()
-        if let cached = analysisCache.summary, (now - analysisCache.lastComputedTime) < 0.05 {
-            return cached
-        }
         let key = analysisKey
         ensureCacheCurrent(for: key)
-        analysisCache.lastComputedTime = now
         if let cached = analysisCache.summary {
             return cached
         }
@@ -177,13 +182,8 @@ struct ExpenseTrackerView: View {
 
     // 按日期分组记录（与 summary 共用内容指纹缓存，避免每次 body 重算全量分组）
     private var groupedRecords: [(key: String, items: [ExpenseRecord])] {
-        let now = CFAbsoluteTimeGetCurrent()
-        if let cached = analysisCache.grouped, (now - analysisCache.lastComputedTime) < 0.05 {
-            return cached
-        }
         let key = analysisKey
         ensureCacheCurrent(for: key)
-        analysisCache.lastComputedTime = now
         if let cached = analysisCache.grouped {
             return cached
         }
@@ -820,14 +820,20 @@ struct ExpenseTrackerView: View {
 // MARK: - 今日安心花动态额度卡片
 
 /// 「今日安心花（Safe-to-Spend）」：月预算扣除固定周期支出后，
-/// 按距月底剩余天数均摊出今日可用额度；昨天花剩的钱自动滚入今天。
+/// 按距月底剩余天数均摊出今日可用额度；随今日记账实时扣减，昨天花剩的钱自动滚入今天。
 struct SafeToSpendCard: View {
     var flexibleSpentThisMonth: Double
     var fixedSpentThisMonth: Double
     var yesterdayFlexibleSpend: Double
     var todayFlexibleSpend: Double
+    @AppStorage("expense_monthly_budget") private var monthlyBudget: Double = 0
+    @AppStorage("safe_to_spend_rhythm_mode") private var rhythmModeRaw: String = SpendingRhythmMode.weekendLeisure.rawValue
     @ObservedObject private var recurringManager = RecurringExpenseManager.shared
     @State private var showingBudgetSheet = false
+
+    private var rhythmMode: SpendingRhythmMode {
+        SpendingRhythmMode(rawValue: rhythmModeRaw) ?? .weekendLeisure
+    }
 
     init(
         flexibleSpentThisMonth: Double,
@@ -841,10 +847,11 @@ struct SafeToSpendCard: View {
         self.todayFlexibleSpend = todayFlexibleSpend
     }
 
-    init(records: [ExpenseRecord]) {
+    init(records: [ExpenseRecord], rhythmMode: SpendingRhythmMode = .weekendLeisure) {
         let input = SafeToSpendCalculator.inputFromRecords(
             records: records,
-            fixedMonthlyTotal: RecurringExpenseManager.shared.monthlyEstimatedTotal
+            fixedMonthlyTotal: RecurringExpenseManager.shared.monthlyEstimatedTotal,
+            rhythmMode: rhythmMode
         )
         self.flexibleSpentThisMonth = input.flexibleSpentThisMonth
         self.fixedSpentThisMonth = input.fixedSpentThisMonth
@@ -853,13 +860,15 @@ struct SafeToSpendCard: View {
     }
 
     private var result: SafeToSpendResult? {
+        let budget = monthlyBudget > 0 ? monthlyBudget : BudgetSettings.monthlyBudget
         let input = SafeToSpendInput(
-            monthlyBudget: BudgetSettings.monthlyBudget,
+            monthlyBudget: budget,
             fixedMonthlyTotal: recurringManager.monthlyEstimatedTotal,
             flexibleSpentThisMonth: flexibleSpentThisMonth,
             fixedSpentThisMonth: fixedSpentThisMonth,
             yesterdayFlexibleSpend: yesterdayFlexibleSpend,
-            todayFlexibleSpend: todayFlexibleSpend
+            todayFlexibleSpend: todayFlexibleSpend,
+            rhythmMode: rhythmMode
         )
         let computed = SafeToSpendCalculator.compute(input: input)
         return computed.isEnabled ? computed : nil
@@ -916,11 +925,21 @@ struct SafeToSpendCard: View {
 
     @ViewBuilder
     private func configuredCard(_ result: SafeToSpendResult) -> some View {
+        let budget = monthlyBudget > 0 ? monthlyBudget : BudgetSettings.monthlyBudget
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Label("今日安心花", systemImage: "shield.lefthalf.filled")
                     .font(.subheadline.bold())
                     .foregroundStyle(.secondary)
+                if result.rhythmMode == .weekendLeisure {
+                    Text(result.isWeekend ? "🎉 周末充裕池" : "💼 工作日蓄水")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(result.isWeekend ? Color.purple.opacity(0.12) : AppColor.primary.opacity(0.12))
+                        .foregroundStyle(result.isWeekend ? .purple : AppColor.primary)
+                        .clipShape(Capsule())
+                }
                 Spacer()
                 Text("距月底 \(result.daysLeft) 天")
                     .font(.caption2)
@@ -935,35 +954,76 @@ struct SafeToSpendCard: View {
                         .font(.subheadline)
                         .foregroundStyle(AppColor.danger)
                 }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("还可以安心花")
-                        .font(.subheadline)
+            } else if result.isTodayOverspent {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("今日已超额")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(String(format: "¥%.0f", result.todayOverspentAmount))
+                            .font(.system(.largeTitle, design: .rounded).bold())
+                            .foregroundStyle(AppColor.warning)
+                            .contentTransition(.numericText())
+                    }
+                    Text("今日起始额度 ¥\(String(format: "%.0f", result.todayAllowance)) · 今日已花 ¥\(String(format: "%.0f", result.todayFlexibleSpend))")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Text(String(format: "¥%.0f", result.safeToSpendToday))
-                        .font(.system(.largeTitle, design: .rounded).bold())
-                        .foregroundStyle(result.safeToSpendToday > 0 ? AppColor.success : AppColor.warning)
-                        .contentTransition(.numericText())
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("还可以安心花")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(String(format: "¥%.0f", result.safeToSpendToday))
+                            .font(.system(.largeTitle, design: .rounded).bold())
+                            .foregroundStyle(result.safeToSpendToday > 0 ? AppColor.success : AppColor.warning)
+                            .contentTransition(.numericText())
+                    }
+                    if result.todayFlexibleSpend > 0 {
+                        Text("今日基准额度 ¥\(String(format: "%.0f", result.todayAllowance)) · 今日已花 ¥\(String(format: "%.0f", result.todayFlexibleSpend))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
-            // 弹性预算消耗进度条
+            // 今日额度消耗进度条（随今日记账实时反映今日起始额度的消耗进度）
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(AppColor.fillTertiary)
                     Capsule()
-                        .fill(result.isOverBudget ? AppColor.danger : AppColor.success)
-                        .frame(width: min(1, result.spentRatio) * geo.size.width)
+                        .fill(result.isOverBudget ? AppColor.danger : (result.isTodayOverspent ? AppColor.warning : AppColor.success))
+                        .frame(width: min(1, max(0, result.todaySpentRatio)) * geo.size.width)
                 }
             }
             .frame(height: 6)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("今日额度消耗进度")
+            .accessibilityValue(String(format: "已用 %.0f%%", min(1, max(0, result.todaySpentRatio)) * 100))
+
+            if let advice = result.rhythmAdviceText {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.caption2)
+                        .foregroundStyle(AppColor.primary)
+                        .padding(.top, 1)
+                    Text(advice)
+                        .font(.caption2)
+                        .foregroundStyle(AppColor.secondaryText)
+                        .lineLimit(2)
+                }
+            }
 
             HStack(spacing: 12) {
-                Text("月预算 ¥\(String(format: "%.0f", BudgetSettings.monthlyBudget))")
+                Text("月预算 ¥\(String(format: "%.0f", budget))")
                 Text("固定支出 ¥\(String(format: "%.0f", recurringManager.monthlyEstimatedTotal))")
                 if result.savedYesterday >= 0.5 {
                     Text("昨日省下 ¥\(String(format: "%.0f", result.savedYesterday)) 已滚入 💰")
                         .foregroundStyle(.green)
+                } else if result.weekendReservoirTotal >= 10 && !result.isWeekend {
+                    Text("本周已蓄水 ¥\(String(format: "%.0f", result.weekendReservoirTotal)) 🌊")
+                        .foregroundStyle(AppColor.primary)
                 }
                 Spacer()
                 Image(systemName: "slider.horizontal.3")
@@ -985,6 +1045,7 @@ struct BudgetEditSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @ObservedObject private var recurringManager = RecurringExpenseManager.shared
+    @AppStorage("safe_to_spend_rhythm_mode") private var rhythmModeRaw: String = SpendingRhythmMode.weekendLeisure.rawValue
     @State private var budgetText: String = ""
     /// 正在编辑的固定支出；nil 表示当前处于「新增」流程。
     @State private var editingItem: RecurringExpenseItem?
@@ -1020,6 +1081,33 @@ struct BudgetEditSheet: View {
                     } else if Double(budgetText) ?? 0 > 0 {
                         Text("预算低于固定支出月额，请调高预算或精简固定支出")
                     }
+                }
+
+                Section {
+                    Picker("消费节奏分配", selection: $rhythmModeRaw) {
+                        ForEach(SpendingRhythmMode.allCases, id: \.rawValue) { mode in
+                            Text(mode.rawValue).tag(mode.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if rhythmModeRaw == SpendingRhythmMode.weekendLeisure.rawValue {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "sparkles")
+                                .font(.caption)
+                                .foregroundStyle(AppColor.primary)
+                                .padding(.top, 1)
+                            Text("推荐模式：周一至周五工作日轻量消费，省下的额度自动蓄水至周六日（额度提升约 1.8 倍），周末聚餐娱乐更从容；周一平稳复原。")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("传统模式：将本月可用弹性额度均摊到每一天。")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("消费节奏分配模式")
                 }
 
                 Section {
@@ -1756,6 +1844,9 @@ struct AddOrEditExpenseSheet: View {
         }
 
         if let record = recordToEdit {
+            // 同步热量记录需要知道账单改动前的状态
+            let oldTitle = record.title
+            let wasFoodExpense = record.category == .food && !record.isIncome
             record.amount = cnyAmount
             record.isIncome = isIncome
             record.category = selectedCategory
@@ -1769,6 +1860,11 @@ struct AddOrEditExpenseSheet: View {
             record.splitCount = max(Int(splitCountString) ?? 1, 1)
             record.splitParticipants = splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
             try? context.save()
+            ExpenseCalorieService.handleSaved(
+                record,
+                propose: record.title != oldTitle || !wasFoodExpense,
+                context: context
+            )
             Haptic.success()
         } else {
             let record = ExpenseRecord(
@@ -1784,12 +1880,10 @@ struct AddOrEditExpenseSheet: View {
             context.insert(record)
             record.receiptImageData = receiptImageData
             record.linkedItemID = linkedItemID
-            // 同步热量记录需要知道账单改动前的状态
-            let oldTitle = record.title
-            let wasFoodExpense = record.category == .food && !record.isIncome
             record.splitCount = max(Int(splitCountString) ?? 1, 1)
             record.splitParticipants = splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
             try? context.save()
+            ExpenseCalorieService.handleSaved(record, propose: true, context: context)
             Haptic.success()
         }
         dismiss()
@@ -1800,11 +1894,6 @@ struct AddOrEditExpenseSheet: View {
         rateStatusMessage = nil
         Task {
             let ok = await ExpenseCurrency.refreshOnlineRates()
-            ExpenseCalorieService.handleSaved(
-                record,
-                propose: record.title != oldTitle || !wasFoodExpense,
-                context: context
-            )
             await MainActor.run {
                 isSyncingOnlineRates = false
                 if ok {
@@ -1821,9 +1910,9 @@ struct AddOrEditExpenseSheet: View {
 
     private func deleteCurrentRecord() {
         guard let record = recordToEdit else { return }
+        ExpenseCalorieService.handleDeleted(expenseID: record.id, context: context)
         context.delete(record)
         try? context.save()
-            ExpenseCalorieService.handleSaved(record, propose: true, context: context)
         Haptic.warning()
         dismiss()
     }
@@ -1850,7 +1939,6 @@ private struct ExpenseShareView: View {
             let participants = record.splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
             if !participants.isEmpty {
                 lines.append("参与人：\(participants)")
-        ExpenseCalorieService.handleDeleted(expenseID: record.id, context: context)
             }
         }
         return lines.joined(separator: "\n")

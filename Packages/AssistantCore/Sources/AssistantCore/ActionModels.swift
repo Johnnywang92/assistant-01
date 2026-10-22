@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - 动作能力类型（扩充至 9 类动作空间）
+// MARK: - 动作能力类型（扩充至 16 类全域生活动作空间）
 
 /// 助理可理解与派发的动作能力类型（纯数据模型，下沉 AssistantCore）
 public enum ActionCapability: String, Codable, CaseIterable, Sendable {
@@ -27,6 +27,22 @@ public enum ActionCapability: String, Codable, CaseIterable, Sendable {
     // 新增只读类
     /// 实体详情只读查询与高亮回显
     case queryLookup = "query.lookup"
+
+    // 全域生活记录新增类
+    /// 记录一顿用餐或食物热量
+    case foodRecord = "food.record"
+    /// 记录饮水或饮品摄入（含黑咖啡/茶/奶茶科学折算）
+    case waterRecord = "water.record"
+    /// 记录物品收纳存放位置或家庭常备药
+    case storageRecord = "storage.record"
+    /// 记录习惯完成打卡或服药打卡
+    case habitLog = "habit.log"
+    /// 新建纪念日/生日/倒数日/订阅续费/保质期预警
+    case anniversaryCreate = "anniversary.create"
+    /// 添加随身防丢与出门检查清单项
+    case departureAdd = "departure.add"
+    /// 记录垂类生活档案（宠物养护/爱车补能保养/育儿成长/技能练习/重要证件/人生大事）
+    case lifeRecord = "life.record"
 
     /// 是否为破坏性动作（无论置信度多高，必须过确认卡，不能由模型直接自动执行）
     public var isDestructive: Bool {
@@ -103,6 +119,22 @@ public struct ActionUndoToken: Codable, Equatable, Sendable {
         case todo
         case expense
         case memoLine
+        case foodRecord
+        case waterRecord
+        case storageRecord
+        case medicineRecord
+        case habitLog
+        case medicationLog
+        case anniversary
+        case subscription
+        case itemExpiry
+        case departureItem
+        case petRecord
+        case vehicleRecord
+        case childRecord
+        case skillRecord
+        case idDocument
+        case lifeEvent
     }
 
     public var kind: Kind
@@ -209,6 +241,58 @@ public enum ActionParser: Sendable {
         case .queryLookup:
             let target = params["target"] ?? params["query"] ?? "查询事项"
             return "查找并高亮：\(target)"
+
+        case .foodRecord:
+            let foodName = params["foodName"] ?? "餐食"
+            let slot = params["mealSlot"] ?? "餐饮"
+            let cal = params["calories"] != nil ? " · 约 \(params["calories"]!)千卡" : ""
+            return "记录饮食：\(foodName)（\(slot)\(cal)）"
+
+        case .waterRecord:
+            let bevLabel = params["customName"] ?? params["beverageType"] ?? "白开水"
+            let vol = Double(params["volumeML"] ?? "") ?? 250
+            let bevType = HydrationBeverageType.fromLabel(params["beverageType"] ?? bevLabel)
+            let eff = Int((vol * bevType.defaultHydrationFactor).rounded())
+            return "记录饮水：\(bevLabel) \(Int(vol))ml（折算补水 \(eff)ml）"
+
+        case .storageRecord:
+            let name = params["name"] ?? "物品"
+            let loc = params["location"] ?? "默认位置"
+            let room = params["roomArea"].map { "\($0) · " } ?? ""
+            let isMed = params["isMedicine"] == "true"
+            return "\(isMed ? "常备药入库" : "物品收纳")：\(name) → \(room)\(loc)"
+
+        case .habitLog:
+            let target = params["target"] ?? "打卡项"
+            let isMed = params["kind"] == "medication"
+            let dosage = params["dosage"].flatMap { $0.isEmpty ? nil : "（\($0)）" } ?? ""
+            return "\(isMed ? "服药打卡" : "习惯打卡")：\(target)\(dosage)"
+
+        case .anniversaryCreate:
+            let title = params["title"] ?? "重要日子"
+            let cat = params["category"] ?? "纪念日"
+            let dateStr = params["targetDate"].map { " · \($0)" } ?? ""
+            return "新建\(cat)：\(title)\(dateStr)"
+
+        case .departureAdd:
+            let title = params["title"] ?? "随身物品"
+            let scene = params["scene"] ?? "工作通勤"
+            return "出门清单：\(title)（\(scene)）"
+
+        case .lifeRecord:
+            let domain = params["domain"] ?? "pet"
+            let title = params["title"] ?? "生活记录"
+            let detail = params["detail"].flatMap { $0.isEmpty ? nil : " · \($0)" } ?? ""
+            let domainLabel: String = switch domain {
+            case "pet": "宠物养护"
+            case "vehicle": "爱车管家"
+            case "child": "育儿成长"
+            case "skill": "技能练习"
+            case "document": "重要证件"
+            case "event": "人生大事"
+            default: "生活档案"
+            }
+            return "\(domainLabel)：\(title)\(detail)"
         }
     }
 }

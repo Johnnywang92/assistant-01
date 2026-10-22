@@ -33,6 +33,16 @@ struct FoodPhotoCalorieView: View {
     @State private var didAdjust = false
     /// 选中要二次调整吃剩百分比的历史记录
     @State private var editingRecord: FoodIntakeRecord?
+    /// 修改整餐自定义名称弹窗
+    @State private var showingEditMealNameAlert = false
+    @State private var customMealNameInput = ""
+    /// 选中要修改名称/热量或换菜的菜品
+    @State private var editingDish: FoodDishEstimate?
+    /// 换菜触发的选择器
+    @State private var dishToReplace: FoodDishEstimate?
+    /// 饮食偏好服务与详情弹窗
+    @StateObject private var preferenceService = DietaryPreferenceService.shared
+    @State private var showingPreferenceDetail = false
 
     private var todayRecords: [FoodIntakeRecord] {
         let cal = Calendar.current
@@ -51,6 +61,7 @@ struct FoodPhotoCalorieView: View {
         ScrollView {
             VStack(spacing: AppSpacing.md) {
                 todaySummaryCard
+                dietaryRecommendationCard
                 photoSection
                 if estimation.isEstimating {
                     estimatingIndicator
@@ -105,6 +116,46 @@ struct FoodPhotoCalorieView: View {
         .sheet(item: $editingRecord) { record in
             FoodIntakeRecordAdjustmentSheet(record: record)
         }
+        .sheet(item: $editingDish) { dish in
+            FoodDishDetailEditSheet(dish: dish) { newName, newCal in
+                estimation.updateDishDetails(dishID: dish.id, name: newName, calories: newCal)
+                didAdjust = true
+            } onReplaceRequest: {
+                dishToReplace = dish
+            }
+        }
+        .sheet(item: $dishToReplace) { dish in
+            FoodSelectionSheet { newFood in
+                estimation.replaceDish(dishID: dish.id, with: newFood)
+                didAdjust = true
+            }
+        }
+        .sheet(isPresented: $showingPreferenceDetail) {
+            DietaryPreferenceDetailView(
+                profile: preferenceService.profile,
+                recommendations: preferenceService.currentRecommendations
+            )
+        }
+        .alert("修改整餐名称", isPresented: $showingEditMealNameAlert) {
+            TextField("输入整餐名称", text: $customMealNameInput)
+            Button("保存") {
+                estimation.updateMealDisplayName(customMealNameInput)
+                didAdjust = true
+            }
+            Button("恢复默认", role: .destructive) {
+                estimation.updateMealDisplayName("")
+                didAdjust = true
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("可以为本餐自定义名称（如「工作日便当」「老妈炖排骨套餐」），保存时将作为饮食记录名称。")
+        }
+        .onAppear {
+            preferenceService.refresh(with: context)
+        }
+        .onChange(of: records) { _, _ in
+            preferenceService.refresh(with: context)
+        }
         .onChange(of: pickedItems) { _, items in
             guard !items.isEmpty else { return }
             Task { await loadPickedImage(items) }
@@ -151,6 +202,130 @@ struct FoodPhotoCalorieView: View {
         }
         .padding(AppSpacing.md)
         .appCard()
+    }
+
+    // MARK: - 饮食偏好懂你推荐卡
+
+    private var dietaryRecommendationCard: some View {
+        let profile = preferenceService.profile
+        let recommendations = preferenceService.currentRecommendations
+
+        return VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            HStack {
+                Label("懂你饮食推荐", systemImage: "sparkles")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(AppColor.primary)
+                Spacer()
+                Button {
+                    showingPreferenceDetail = true
+                } label: {
+                    HStack(spacing: 2) {
+                        Text(profile.sampleCount < 2 ? "饮食画像" : (profile.tags.first ?? "饮食画像"))
+                            .font(.caption.weight(.medium))
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                    }
+                    .foregroundStyle(AppColor.secondaryText)
+                }
+            }
+
+            if let firstRec = recommendations.first {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Text(firstRec.slot.rawValue)
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(AppColor.primary.opacity(0.12))
+                            .foregroundStyle(AppColor.primary)
+                            .clipShape(Capsule())
+
+                        Text(firstRec.title)
+                            .font(.subheadline.weight(.semibold))
+                    }
+
+                    Text(firstRec.suggestionText)
+                        .font(.footnote)
+                        .foregroundStyle(AppColor.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let tip = firstRec.healthTip {
+                        HStack(alignment: .top, spacing: 4) {
+                            Image(systemName: firstRec.isHealthierAlternative ? "leaf.fill" : "info.circle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(firstRec.isHealthierAlternative ? .green : AppColor.primary)
+                            Text(tip)
+                                .font(.caption2)
+                                .foregroundStyle(firstRec.isHealthierAlternative ? .green : AppColor.secondaryText)
+                        }
+                    }
+
+                    if !firstRec.suggestedFoods.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(firstRec.suggestedFoods, id: \.self) { foodName in
+                                    Button {
+                                        selectSuggestedFood(foodName)
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "plus.circle.fill")
+                                                .font(.caption2)
+                                            Text(foodName)
+                                                .font(.caption.weight(.medium))
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(AppColor.surface)
+                                        .clipShape(Capsule())
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(AppColor.primary.opacity(0.2), lineWidth: 1)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+            } else {
+                Text("记录 2 餐以上，App 即可自动洞察你的咖啡/奶茶习惯、主食偏好与加餐规律，在合适时机给出懂你的饮食建议。")
+                    .font(.footnote)
+                    .foregroundStyle(AppColor.secondaryText)
+            }
+
+            if !profile.tags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(profile.tags, id: \.self) { tag in
+                            Text(tag)
+                                .font(.caption2)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.secondary.opacity(0.1))
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+        }
+        .padding(AppSpacing.md)
+        .appCard()
+    }
+
+    private func selectSuggestedFood(_ foodName: String) {
+        let cleanName = foodName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let matched = FoodCatalog.items.first(where: {
+            $0.name == cleanName || cleanName.contains($0.name) || $0.name.contains(cleanName)
+        }) {
+            estimation.selectManually(food: matched, portion: .regular, consumedRatio: 1.0)
+            didAdjust = true
+            Haptic.light()
+        } else {
+            hintText = cleanName
+            showingFoodPicker = true
+        }
     }
 
     // MARK: - 照片区
@@ -230,11 +405,24 @@ struct FoodPhotoCalorieView: View {
 
     private func resultSection(_ estimate: FoodCalorieEstimate) -> some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            // 整餐标题与总热量
+            // 整餐标题与总热量（支持轻触标题改名）
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(estimate.displayName)
-                        .font(.headline)
+                    Button {
+                        customMealNameInput = estimate.displayName
+                        showingEditMealNameAlert = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(estimate.displayName)
+                                .font(.headline)
+                                .foregroundStyle(AppColor.text)
+                            Image(systemName: "pencil.line")
+                                .font(.caption)
+                                .foregroundStyle(AppColor.primary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
                     HStack(spacing: AppSpacing.xs) {
                         if estimate.dishes.count > 1 {
                             Text("共 \(estimate.dishes.count) 道菜品")
@@ -272,7 +460,7 @@ struct FoodPhotoCalorieView: View {
 
             Divider()
 
-            // 本餐识别菜品明细（可按单道菜调整份量、吃剩百分比，或增删配菜）
+            // 本餐识别菜品明细（可点击单道菜修改菜名/换菜/直接改热量数值，或调整份量、吃剩百分比，增删配菜）
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
                 HStack {
                     Text("本餐菜品明细")
@@ -289,13 +477,25 @@ struct FoodPhotoCalorieView: View {
 
                 ForEach(estimate.dishes) { dish in
                     HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(dish.food.name)
-                                .font(.subheadline.weight(.medium))
-                            Text("整份 \(Int(dish.fullPortionCalories.rounded())) 千卡 · 实入 \(Int(dish.consumedCalories.rounded())) 千卡")
-                                .font(.caption2)
-                                .foregroundStyle(AppColor.secondaryText)
+                        Button {
+                            editingDish = dish
+                            Haptic.light()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Text(dish.food.name)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(AppColor.text)
+                                    Image(systemName: "pencil")
+                                        .font(.caption2)
+                                        .foregroundStyle(AppColor.primary)
+                                }
+                                Text("整份 \(Int(dish.fullPortionCalories.rounded())) 千卡 · 实入 \(Int(dish.consumedCalories.rounded())) 千卡")
+                                    .font(.caption2)
+                                    .foregroundStyle(AppColor.secondaryText)
+                            }
                         }
+                        .buttonStyle(.plain)
 
                         Spacer()
 
@@ -735,72 +935,296 @@ private struct FoodCameraPicker: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - 食物选择器
+// MARK: - 菜品修改弹窗（修改名称、手动输入热量千卡、更换菜品）
 
-/// 手动选择食物的列表页。
-struct FoodSelectionSheet: View {
-    let onSelect: (FoodItem) -> Void
+struct FoodDishDetailEditSheet: View {
+    let dish: FoodDishEstimate
+    let onSave: (String, Double) -> Void
+    let onReplaceRequest: () -> Void
+
     @Environment(\.dismiss) private var dismiss
-    @State private var searchText = ""
+    @State private var nameText: String
+    @State private var caloriesText: String
 
-    private var filtered: [FoodItem] {
-        let key = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return FoodCatalog.items }
-        return FoodCatalog.items.filter { food in
-            food.name.contains(key) || food.nameEn.lowercased().contains(key.lowercased())
-                || food.aliases.contains { $0.contains(key) }
-        }
+    init(dish: FoodDishEstimate, onSave: @escaping (String, Double) -> Void, onReplaceRequest: @escaping () -> Void) {
+        self.dish = dish
+        self.onSave = onSave
+        self.onReplaceRequest = onReplaceRequest
+        _nameText = State(initialValue: dish.food.name)
+        _caloriesText = State(initialValue: "\(Int(dish.fullPortionCalories.rounded()))")
     }
 
     var body: some View {
         NavigationStack {
-            List(filtered) { food in
-                Button {
-                    onSelect(food)
-                    dismiss()
-                } label: {
+            Form {
+                Section("菜品名称") {
+                    TextField("输入菜名", text: $nameText)
+                }
+
+                Section {
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(food.name)
-                                .font(.body)
-                            Text("标准份约 \(Int(food.standardServingCalories.rounded())) 千卡")
-                                .font(.caption)
-                                .foregroundStyle(AppColor.secondaryText)
-                        }
-                        Spacer()
+                        TextField("整份热量", text: $caloriesText)
+                            .keyboardType(.numberPad)
+                        Text("千卡")
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("整份热量数值")
+                } footer: {
+                    Text("输入该道菜整份的标准热量数值，保存后将自动按当前吃掉比例换算实际摄入热量。")
+                }
+
+                Section("更换食物") {
+                    Button {
+                        dismiss()
+                        onReplaceRequest()
+                    } label: {
+                        Label("从食物库选择其他菜品替换", systemImage: "arrow.triangle.2.circlepath")
                     }
                 }
-                .buttonStyle(.plain)
             }
-            .listStyle(.insetGrouped)
-            .searchable(text: $searchText, prompt: "搜索食物")
-            .navigationTitle("选择食物")
+            .navigationTitle("修改菜品与热量")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") {
+                        let parsedCal = Double(caloriesText) ?? dish.fullPortionCalories
+                        onSave(nameText.trimmingCharacters(in: .whitespacesAndNewlines), parsedCal)
+                        Haptic.success()
+                        dismiss()
+                    }
                 }
             }
         }
     }
 }
 
-// MARK: - 已保存记录的吃剩百分比二次调整 Sheet
+// MARK: - 食物选择器
+
+/// 手动选择食物的列表页（支持按分类浏览、搜索、以及自定义手动添加食物）。
+struct FoodSelectionSheet: View {
+    let onSelect: (FoodItem) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var selectedCategory: FoodCategory? = nil
+    @State private var showingAddCustom = false
+
+    private var filtered: [FoodItem] {
+        let key = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return FoodCatalog.items.filter { food in
+            if let cat = selectedCategory, food.category != cat {
+                return false
+            }
+            guard !key.isEmpty else { return true }
+            return food.name.contains(key)
+                || food.nameEn.lowercased().contains(key.lowercased())
+                || food.aliases.contains { $0.contains(key) }
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                // 分类切换胶囊栏
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        Button {
+                            selectedCategory = nil
+                            Haptic.light()
+                        } label: {
+                            Text("全部 (\(FoodCatalog.items.count))")
+                                .font(.footnote.bold())
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(selectedCategory == nil ? AppColor.primary : Color.secondary.opacity(0.12))
+                                .foregroundStyle(selectedCategory == nil ? .white : AppColor.text)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+
+                        ForEach(FoodCategory.allCases) { cat in
+                            let count = FoodCatalog.items.filter { $0.category == cat }.count
+                            Button {
+                                selectedCategory = cat
+                                Haptic.light()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: cat.icon)
+                                    Text("\(cat.rawValue) (\(count))")
+                                }
+                                .font(.footnote.bold())
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(selectedCategory == cat ? AppColor.primary : Color.secondary.opacity(0.12))
+                                .foregroundStyle(selectedCategory == cat ? .white : AppColor.text)
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, AppSpacing.md)
+                    .padding(.vertical, 8)
+                }
+                .background(AppColor.surface)
+
+                Divider()
+
+                List {
+                    // 自定义添加入口
+                    Section {
+                        Button {
+                            showingAddCustom = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundStyle(AppColor.primary)
+                                    .font(.title3)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("添加自定义食物与热量")
+                                        .font(.subheadline.bold())
+                                        .foregroundStyle(AppColor.primary)
+                                    Text("输入任意自制菜品、外卖小吃或包装食品卡路里")
+                                        .font(.caption2)
+                                        .foregroundStyle(AppColor.secondaryText)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(AppColor.secondaryText)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+
+                    Section(selectedCategory?.rawValue ?? "所有食物") {
+                        ForEach(filtered) { food in
+                            Button {
+                                onSelect(food)
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack(spacing: 6) {
+                                            Text(food.name)
+                                                .font(.body)
+                                            Text(food.category.rawValue)
+                                                .font(.caption2)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 1)
+                                                .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                                                .foregroundStyle(AppColor.secondaryText)
+                                        }
+                                        Text("标准份约 \(Int(food.standardServingCalories.rounded())) 千卡 · 每100g \(Int(food.caloriesPer100g.rounded())) kcal")
+                                            .font(.caption)
+                                            .foregroundStyle(AppColor.secondaryText)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "plus.circle")
+                                        .foregroundStyle(AppColor.primary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+            }
+            .searchable(text: $searchText, prompt: "搜索食物、别名（如螺蛳粉、糖醋里脊、东方树叶）")
+            .navigationTitle("选择食物")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("自定义") { showingAddCustom = true }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("取消") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $showingAddCustom) {
+                AddCustomFoodSheet { customFood in
+                    onSelect(customFood)
+                    dismiss()
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 添加自定义食物 Sheet
+
+struct AddCustomFoodSheet: View {
+    let onAdd: (FoodItem) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name: String = ""
+    @State private var caloriesText: String = ""
+    @State private var category: FoodCategory = .staple
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("食物信息") {
+                    TextField("食物名称（例如：自制牛肉面、外卖便当）", text: $name)
+                    Picker("所属类别", selection: $category) {
+                        ForEach(FoodCategory.allCases) { cat in
+                            Text(cat.rawValue).tag(cat)
+                        }
+                    }
+                }
+
+                Section("热量数值") {
+                    HStack {
+                        TextField("整份热量（例如 450）", text: $caloriesText)
+                            .keyboardType(.numberPad)
+                        Text("千卡")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("添加自定义食物")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("添加并使用") {
+                        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let cal = Double(caloriesText) ?? 200.0
+                        let customItem = FoodItem.custom(name: trimmed.isEmpty ? "自定义食物" : trimmed, calories: cal, category: category)
+                        onAdd(customItem)
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 已保存记录的吃剩百分比与菜名热量调整 Sheet
 
 struct FoodIntakeRecordAdjustmentSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Bindable var record: FoodIntakeRecord
 
+    @State private var foodName: String
     @State private var portion: FoodPortion
     @State private var consumedRatio: Double
     @State private var fullPortionCalories: Double
+    @State private var fullCaloriesText: String
 
     init(record: FoodIntakeRecord) {
         self.record = record
+        _foodName = State(initialValue: record.foodName)
         _portion = State(initialValue: record.portion)
         _consumedRatio = State(initialValue: record.consumedRatio)
         _fullPortionCalories = State(initialValue: record.fullPortionCalories)
+        _fullCaloriesText = State(initialValue: "\(Int(record.fullPortionCalories.rounded()))")
     }
 
     private var previewConsumedCalories: Double {
@@ -813,7 +1237,7 @@ struct FoodIntakeRecordAdjustmentSheet: View {
                 Section("菜品与实际摄入热量") {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(record.foodName)
+                            Text(foodName.isEmpty ? record.foodName : foodName)
                                 .font(.headline)
                             Text("整份约 \(Int(fullPortionCalories.rounded())) 千卡")
                                 .font(.caption)
@@ -828,6 +1252,25 @@ struct FoodIntakeRecordAdjustmentSheet: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+                    }
+                }
+
+                Section("修改菜品名称与整份热量") {
+                    TextField("菜品名称", text: $foodName)
+                    HStack {
+                        Text("整份热量")
+                        Spacer()
+                        TextField("千卡", text: $fullCaloriesText)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
+                            .onChange(of: fullCaloriesText) { _, newText in
+                                if let val = Double(newText), val > 0 {
+                                    fullPortionCalories = val
+                                }
+                            }
+                        Text("千卡")
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -884,8 +1327,10 @@ struct FoodIntakeRecordAdjustmentSheet: View {
                     .onChange(of: portion) { oldPortion, newPortion in
                         if let foodID = record.foodID, let food = FoodCatalog.item(id: foodID) {
                             fullPortionCalories = food.standardServingCalories * newPortion.multiplier
+                            fullCaloriesText = "\(Int(fullPortionCalories.rounded()))"
                         } else if oldPortion.multiplier > 0 {
                             fullPortionCalories = (fullPortionCalories / oldPortion.multiplier) * newPortion.multiplier
+                            fullCaloriesText = "\(Int(fullPortionCalories.rounded()))"
                         }
                     }
                 }
@@ -909,6 +1354,10 @@ struct FoodIntakeRecordAdjustmentSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
+                        let trimmedName = foodName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !trimmedName.isEmpty {
+                            record.foodName = trimmedName
+                        }
                         record.portion = portion
                         record.fullPortionCalories = fullPortionCalories
                         record.consumedRatio = FoodCalorieEstimator.clampRatio(consumedRatio)
@@ -921,6 +1370,277 @@ struct FoodIntakeRecordAdjustmentSheet: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - 饮食偏好与习惯画像详情弹窗
+
+struct DietaryPreferenceDetailView: View {
+    let profile: DietaryPreferenceProfile
+    let recommendations: [DietaryRecommendation]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "sparkles")
+                                .font(.title2)
+                                .foregroundStyle(AppColor.primary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("智能饮食习惯画像")
+                                    .font(.headline)
+                                Text(profile.sampleCount < 2 ? "饮食记录较少，正在持续学习您的饮食偏好" : "基于近期 \(profile.sampleCount) 次饮食记录端侧提炼")
+                                    .font(.caption)
+                                    .foregroundStyle(AppColor.secondaryText)
+                            }
+                        }
+
+                        if !profile.tags.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(profile.tags, id: \.self) { tag in
+                                        Text(tag)
+                                            .font(.caption.bold())
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .background(AppColor.primary.opacity(0.12))
+                                            .foregroundStyle(AppColor.primary)
+                                            .clipShape(Capsule())
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Section("☕️ 饮品偏好（咖啡 vs 奶茶 vs 纯茶）") {
+                    HStack {
+                        Label(profile.beverage.style.rawValue, systemImage: profile.beverage.style.icon)
+                            .font(.subheadline.bold())
+                        Spacer()
+                        Text("饮品共 \(profile.beverage.totalDrinkCount) 次")
+                            .font(.caption)
+                            .foregroundStyle(AppColor.secondaryText)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("特征：\(profile.beverage.typicalTimeDescription)")
+                            .font(.footnote)
+                            .foregroundStyle(AppColor.secondaryText)
+
+                        if !profile.beverage.topBeverages.isEmpty {
+                            Text("常选饮品：\(profile.beverage.topBeverages.joined(separator: "、"))")
+                                .font(.footnote)
+                        }
+
+                        HStack(spacing: 8) {
+                            DrinkStatBadge(title: "咖啡", count: profile.beverage.coffeeCount, icon: "cup.and.saucer.fill", color: .brown)
+                            DrinkStatBadge(title: "奶茶", count: profile.beverage.milkTeaCount, icon: "takeoutbag.and.cup.and.straw.fill", color: .orange)
+                            DrinkStatBadge(title: "纯茶", count: profile.beverage.teaCount, icon: "leaf.fill", color: .green)
+                            DrinkStatBadge(title: "其他", count: profile.beverage.otherDrinkCount, icon: "waterbottle.fill", color: .blue)
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+
+                Section("🍚 主食偏好（米饭党 vs 面食派）") {
+                    HStack {
+                        Label(profile.staple.style.rawValue, systemImage: profile.staple.style.icon)
+                            .font(.subheadline.bold())
+                        Spacer()
+                        Text("主食共 \(profile.staple.totalStapleCount) 次")
+                            .font(.caption)
+                            .foregroundStyle(AppColor.secondaryText)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !profile.staple.topStaples.isEmpty {
+                            Text("常吃主食：\(profile.staple.topStaples.joined(separator: "、"))")
+                                .font(.footnote)
+                        }
+
+                        if profile.staple.totalStapleCount > 0 {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("面食 \(Int((profile.staple.noodleRatio * 100).rounded()))%")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(.orange)
+                                    Spacer()
+                                    Text("米饭 \(Int((profile.staple.riceRatio * 100).rounded()))%")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(.blue)
+                                }
+                                GeometryReader { geo in
+                                    HStack(spacing: 2) {
+                                        Rectangle()
+                                            .fill(Color.orange)
+                                            .frame(width: max(2, geo.size.width * CGFloat(profile.staple.noodleRatio)))
+                                        Rectangle()
+                                            .fill(Color.blue)
+                                            .frame(width: max(2, geo.size.width * CGFloat(profile.staple.riceRatio)))
+                                        Rectangle()
+                                            .fill(Color.secondary.opacity(0.3))
+                                    }
+                                    .clipShape(Capsule())
+                                }
+                                .frame(height: 8)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+
+                Section("🍰 零食与加餐习惯") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(profile.snack.summary)
+                            .font(.footnote)
+                        if !profile.snack.topSnacks.isEmpty {
+                            Text("常选小吃：\(profile.snack.topSnacks.joined(separator: "、"))")
+                                .font(.footnote)
+                                .foregroundStyle(AppColor.secondaryText)
+                        }
+                        HStack(spacing: 8) {
+                            HabitPill(
+                                title: "下午茶",
+                                isActive: profile.snack.hasAfternoonTeaHabit,
+                                activeText: "有习惯 (14:00~17:00)",
+                                inactiveText: "较少"
+                            )
+                            HabitPill(
+                                title: "深夜宵夜",
+                                isActive: profile.snack.hasLateNightHabit,
+                                activeText: "有习惯 (21:00 以后)",
+                                inactiveText: "极少"
+                            )
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+
+                if !profile.topFoods.isEmpty {
+                    Section("🏆 常吃食物 Top 5") {
+                        ForEach(Array(profile.topFoods.enumerated()), id: \.offset) { index, item in
+                            HStack {
+                                Text("\(index + 1)")
+                                    .font(.caption.bold())
+                                    .frame(width: 20, height: 20)
+                                    .background(index == 0 ? AppColor.primary : Color.secondary.opacity(0.15))
+                                    .foregroundStyle(index == 0 ? .white : .primary)
+                                    .clipShape(Circle())
+                                Text(item.name)
+                                    .font(.subheadline)
+                                Spacer()
+                                Text("\(item.count) 次")
+                                    .font(.caption)
+                                    .foregroundStyle(AppColor.secondaryText)
+                            }
+                        }
+                    }
+                }
+
+                if !recommendations.isEmpty {
+                    Section("💡 今日场景化饮食建议") {
+                        ForEach(recommendations) { rec in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text(rec.slot.rawValue)
+                                        .font(.caption2.bold())
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(AppColor.primary.opacity(0.12))
+                                        .foregroundStyle(AppColor.primary)
+                                        .clipShape(Capsule())
+                                    Text(rec.title)
+                                        .font(.subheadline.bold())
+                                }
+                                Text(rec.suggestionText)
+                                    .font(.footnote)
+                                    .foregroundStyle(AppColor.secondaryText)
+
+                                if let tip = rec.healthTip {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: rec.isHealthierAlternative ? "leaf.fill" : "info.circle.fill")
+                                            .font(.caption2)
+                                            .foregroundStyle(rec.isHealthierAlternative ? .green : AppColor.primary)
+                                        Text(tip)
+                                            .font(.caption2)
+                                            .foregroundStyle(rec.isHealthierAlternative ? .green : AppColor.secondaryText)
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+
+                Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "lock.shield.fill")
+                            .foregroundStyle(.green)
+                        Text("饮食偏好与习惯完全在端侧本地提炼学习，不上传云端服务器，严格保护个人健康隐私。")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.secondaryText)
+                    }
+                }
+            }
+            .navigationTitle("饮食偏好画像")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+private struct DrinkStatBadge: View {
+    let title: String
+    let count: Int
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.subheadline)
+                .foregroundStyle(color)
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(AppColor.secondaryText)
+            Text("\(count)次")
+                .font(.caption.bold())
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(AppColor.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct HabitPill: View {
+    let title: String
+    let isActive: Bool
+    let activeText: String
+    let inactiveText: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(isActive ? Color.green : Color.secondary.opacity(0.4))
+                .frame(width: 6, height: 6)
+            Text("\(title): \(isActive ? activeText : inactiveText)")
+                .font(.caption2)
+                .foregroundStyle(isActive ? AppColor.primary : AppColor.secondaryText)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(AppColor.surface)
+        .clipShape(Capsule())
     }
 }
 

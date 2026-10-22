@@ -273,4 +273,76 @@ final class FoodCalorieEstimatorTests: XCTestCase {
         XCTAssertTrue(meal?.displayName.contains("辣椒炒肉") ?? false)
         XCTAssertTrue(meal?.displayName.contains("凉拌海带丝") ?? false)
     }
+
+    // MARK: - 修改识别结果与扩充食物测试
+
+    /// 测试修改整餐自定义展示名称
+    func testCustomMealDisplayName() {
+        let rice = FoodCatalog.item(id: "rice")!
+        let meal = FoodCalorieEstimate(food: rice, portion: .regular, confidence: 0.9)
+        XCTAssertEqual(meal.displayName, "米饭")
+
+        let renamed = meal.withCustomDisplayName("工作日减脂午餐")
+        XCTAssertEqual(renamed.displayName, "工作日减脂午餐")
+
+        let cleared = renamed.withCustomDisplayName("")
+        XCTAssertEqual(cleared.displayName, "米饭")
+    }
+
+    /// 测试替换识别菜品（换菜）
+    func testReplacingDishInMeal() {
+        let rice = FoodCatalog.item(id: "rice")!
+        let beef = FoodCatalog.item(id: "beef")!
+        let pork = FoodCatalog.item(id: "pork")!
+        let meal = FoodCalorieEstimate(dishes: [
+            FoodDishEstimate(food: rice),
+            FoodDishEstimate(food: beef)
+        ])
+
+        let replaced = meal.replacingDish(dishID: "beef", with: pork)
+        XCTAssertEqual(replaced.dishes.count, 2)
+        XCTAssertFalse(replaced.dishes.contains { $0.food.id == "beef" })
+        XCTAssertTrue(replaced.dishes.contains { $0.food.id == "pork" })
+        XCTAssertEqual(replaced.fullPortionCalories, rice.standardServingCalories + pork.standardServingCalories, accuracy: 0.1)
+    }
+
+    /// 测试直接修改菜品名称和自定义整份热量
+    func testUpdatingDishDetails() {
+        let rice = FoodCatalog.item(id: "rice")!
+        let meal = FoodCalorieEstimate(food: rice, portion: .regular, confidence: 0.9)
+
+        let updated = meal.updatingDish(dishID: "rice", name: "五谷杂粮饭", calories: 180.0)
+        XCTAssertEqual(updated.dishes[0].food.name, "五谷杂粮饭")
+        XCTAssertEqual(updated.dishes[0].fullPortionCalories, 180.0, accuracy: 0.1)
+        XCTAssertEqual(updated.consumedCalories, 180.0, accuracy: 0.1)
+    }
+
+    /// 测试自定义食物与分类
+    func testCustomFoodItemCreation() {
+        let customFood = FoodItem.custom(name: "妈妈自制牛肉酱", calories: 250.0, category: .meat)
+        XCTAssertEqual(customFood.name, "妈妈自制牛肉酱")
+        XCTAssertEqual(customFood.category, .meat)
+        XCTAssertEqual(customFood.standardServingCalories, 250.0, accuracy: 0.1)
+    }
+
+    /// 测试所有分类均收录条目
+    func testAllCategoriesHaveItems() {
+        for category in FoodCategory.allCases {
+            let count = FoodCatalog.items.filter { $0.category == category }.count
+            XCTAssertGreaterThan(count, 0, "分类 \(category.rawValue) 必须收录食物条目")
+        }
+        XCTAssertGreaterThanOrEqual(FoodCatalog.items.count, 70, "食物库条目扩充后应至少包含 70 种食物")
+    }
+
+    /// 测试自然口语用餐「早饭吃了一根玉米和一杯牛奶」能被准确拆解出两道菜且正确估算热量
+    func testEstimateMealFromBreakfastCornAndMilk() {
+        let meal = FoodCalorieEstimator.estimateMeal(fromHint: "早饭吃了一根玉米和一杯牛奶")
+        XCTAssertNotNil(meal)
+        guard let m = meal else { return }
+        XCTAssertEqual(m.dishes.count, 2)
+        let dishIDs = m.dishes.map(\.food.id)
+        XCTAssertTrue(dishIDs.contains("corn_sweetpotato"), "应识别出玉米")
+        XCTAssertTrue(dishIDs.contains("pure_milk"), "应识别出纯牛奶")
+        XCTAssertGreaterThan(m.fullPortionCalories, 200)
+    }
 }

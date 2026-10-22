@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 
@@ -5,8 +6,11 @@ import SwiftUI
 struct DepartureChecklistView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \DepartureCheckItem.createdAt) private var items: [DepartureCheckItem]
+    @Query private var storedItems: [StoredItem]
+    @Query private var allTodos: [TodoItem]
     @AppStorage("departure_checklist_seeded") private var hasSeededDefaults = false
     @ObservedObject private var contextEngine = SituationalContextEngine.shared
+    @ObservedObject private var weatherAlertService = WeatherAlertService.shared
     @AppStorage(AppBackgroundStyle.defaultsKey) private var bgStyleRaw = AppBackgroundStyle.system.rawValue
     @Environment(\.colorScheme) private var colorScheme
 
@@ -22,6 +26,7 @@ struct DepartureChecklistView: View {
     @State private var showingResetAlert = false
     @State private var hasInitializedScene = false
     @State private var isAfterWorkSuggestionDismissed = false
+    @State private var isAdaptiveBannerDismissed = false
 
     // 出门指差四字状态（身·手·钥·耳）
     @State private var checkedShen = false
@@ -29,12 +34,83 @@ struct DepartureChecklistView: View {
     @State private var checkedYao = false
     @State private var checkedEr = false
 
+    // 收纳档案纯逻辑快照
+    private var storedSnapshots: [DepartureStoredItemSnapshot] {
+        storedItems.map {
+            DepartureStoredItemSnapshot(
+                id: $0.id.uuidString,
+                name: $0.name,
+                location: $0.location,
+                roomArea: $0.roomArea,
+                notes: $0.notes
+            )
+        }
+    }
+
+    // 天气与日程自适应综合建议
+    private var adaptiveAdvice: DepartureAdaptiveAdvice {
+        let weatherSnapshot = weatherAlertService.cachedWeatherSnapshot
+        let banner = weatherAlertService.currentBanner
+        let isRainy = (weatherSnapshot?.isRainyOrSnowy == true) || (banner?.type == .severeWeather)
+        let weatherContext = DepartureWeatherContext(
+            isRainyOrSnowy: isRainy,
+            temperatureCelsius: weatherSnapshot?.temperatureCelsius,
+            tempDropDegrees: banner?.type == .tempDrop ? 6.0 : nil,
+            isSevereAlert: banner?.type == .severeWeather,
+            weatherDescription: weatherSnapshot?.conditionDescription ?? ""
+        )
+
+        let calendar = Calendar.current
+        let todayTodos = allTodos.filter { todo in
+            guard todo.status == .active else { return false }
+            if let due = todo.dueAt {
+                return calendar.isDateInToday(due) || due < .now
+            }
+            return true
+        }
+
+        let events = todayTodos.map {
+            DepartureScheduleEvent(
+                id: $0.id.uuidString,
+                title: $0.title,
+                notes: $0.detail,
+                isCompleted: $0.status == .done,
+                dueDate: $0.dueAt
+            )
+        }
+
+        return DepartureAdaptiveAdvisor.evaluate(
+            weather: weatherContext,
+            todayEvents: events,
+            currentScene: selectedScene
+        )
+    }
+
     // 当前场景过滤后的条目
     private var filteredItems: [DepartureCheckItem] {
         if let scene = selectedScene {
             return items.filter { $0.scene == scene }
         }
         return items
+    }
+
+    // 智能排序后的条目：自适应高亮项置顶，已确认携带项沉底
+    private var sortedFilteredItems: [DepartureCheckItem] {
+        let keywords = adaptiveAdvice.priorityItemKeywords
+        return filteredItems.sorted { a, b in
+            if a.isChecked != b.isChecked {
+                return !a.isChecked && b.isChecked
+            }
+            let aPriority = !a.isChecked && keywords.contains(where: { a.title.contains($0) })
+            let bPriority = !b.isChecked && keywords.contains(where: { b.title.contains($0) })
+            if aPriority != bPriority {
+                return aPriority && !bPriority
+            }
+            if a.isEssential != b.isEssential {
+                return a.isEssential && !b.isEssential
+            }
+            return a.createdAt < b.createdAt
+        }
     }
 
     // 核心必带未完成数量
@@ -70,7 +146,12 @@ struct DepartureChecklistView: View {
                         ritualButton(title: "身", sub: "证件/工卡", isChecked: $checkedShen)
                         ritualButton(title: "手", sub: "随身手机", isChecked: $checkedShou)
                         ritualButton(title: "钥", sub: "家门钥匙", isChecked: $checkedYao)
-                        ritualButton(title: "耳/伞", sub: "耳机/雨具", isChecked: $checkedEr)
+                        ritualButton(
+                            title: adaptiveAdvice.ritualFourthWord,
+                            sub: adaptiveAdvice.ritualFourthSubtitle,
+                            isChecked: $checkedEr,
+                            isRainWarning: adaptiveAdvice.isRainWarningActive
+                        )
                     }
                 }
                 .padding(.vertical, 4)
@@ -80,6 +161,9 @@ struct DepartureChecklistView: View {
 
             // MARK: - 2. 场景选择与进度看板
             Section {
+                // 天气与今日日程自适应建议横幅
+                adaptiveAdviceBanner
+
                 // 智能情境感知徽标
                 if let badge = contextEngine.departureContextBadge() {
                     HStack(spacing: 6) {
@@ -184,23 +268,32 @@ struct DepartureChecklistView: View {
                     )
                     .padding(.vertical, 12)
                 } else {
-                    ForEach(filteredItems) { item in
-                        CheckItemRow(item: item)
-                            .contextMenu {
-                                Button {
-                                    editingItem = item
-                                } label: {
-                                    Label("编辑", systemImage: "pencil")
-                                }
-                                Button(role: .destructive) {
-                                    delete(items: [item])
-                                } label: {
-                                    Label("删除", systemImage: "trash")
-                                }
+                    ForEach(sortedFilteredItems) { item in
+                        let matched = (item.storageLocationNote?.isEmpty ?? true)
+                            ? DepartureStorageMatcher.findMatch(itemTitle: item.title, storedItems: storedSnapshots)
+                            : nil
+                        let isPriority = adaptiveAdvice.priorityItemKeywords.contains { item.title.contains($0) }
+
+                        CheckItemRow(
+                            item: item,
+                            matchedStorage: matched,
+                            isAdaptivePriority: isPriority
+                        )
+                        .contextMenu {
+                            Button {
+                                editingItem = item
+                            } label: {
+                                Label("编辑", systemImage: "pencil")
                             }
+                            Button(role: .destructive) {
+                                delete(items: [item])
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
                     }
                     .onDelete { offsets in
-                        delete(items: offsets.map { filteredItems[$0] })
+                        delete(items: offsets.map { sortedFilteredItems[$0] })
                     }
                 }
             } header: {
@@ -302,6 +395,136 @@ struct DepartureChecklistView: View {
 
     // MARK: - 辅助组件
 
+    // 天气与今日日程自适应建议横幅
+    @ViewBuilder
+    private var adaptiveAdviceBanner: some View {
+        if let title = adaptiveAdvice.bannerTitle, let detail = adaptiveAdvice.bannerDetail, !isAdaptiveBannerDismissed {
+            let color = themeColor(for: adaptiveAdvice.bannerColorName)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: adaptiveAdvice.bannerIcon ?? "sparkles")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(color)
+                    Text(title)
+                        .font(.caption.bold())
+                        .foregroundStyle(color)
+                    Spacer()
+                    Button {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                            isAdaptiveBannerDismissed = true
+                        }
+                        Haptic.light()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+
+                // 快捷场景切换按钮（若推荐场景与当前场景不同）
+                if let target = adaptiveAdvice.recommendedScene, selectedScene != target {
+                    HStack(spacing: 8) {
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                selectedScene = target
+                                contextEngine.saveUserSelectedScene(target)
+                            }
+                            Haptic.light()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: target.icon)
+                                Text("切至「\(target.displayName)」")
+                            }
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(color.opacity(0.18)))
+                            .foregroundStyle(color)
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                    }
+                }
+
+                // 推荐增补物品（如果当前清单尚未包含该物品）
+                let missingSuggestions = adaptiveAdvice.suggestedItemsToAdd.filter { sug in
+                    !items.contains { $0.title.contains(sug.title) || sug.title.contains($0.title) }
+                }
+                if !missingSuggestions.isEmpty {
+                    Divider().padding(.vertical, 1)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("推荐携带装备（清单暂无）：")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(missingSuggestions) { sug in
+                                    Button {
+                                        addSuggestedItem(sug)
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "plus.circle.fill")
+                                            Text(sug.title)
+                                        }
+                                        .font(.caption2.weight(.medium))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Capsule().fill(Color(.tertiarySystemFill)))
+                                        .foregroundStyle(.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(color.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(color.opacity(0.2), lineWidth: 1)
+                    )
+            )
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func themeColor(for name: String?) -> Color {
+        switch name {
+        case "teal": return .teal
+        case "orange": return .orange
+        case "purple": return .purple
+        case "red": return .red
+        case "indigo": return .indigo
+        case "pink": return .pink
+        case "green": return .green
+        default: return .blue
+        }
+    }
+
+    private func addSuggestedItem(_ suggestion: DepartureSuggestedItem) {
+        let matched = DepartureStorageMatcher.findMatch(itemTitle: suggestion.title, storedItems: storedSnapshots)
+        let location = matched?.formattedStorageDescription ?? suggestion.defaultLocation
+        let item = DepartureCheckItem(
+            title: suggestion.title,
+            scene: selectedScene ?? suggestion.scene,
+            isEssential: suggestion.isEssential,
+            storageLocationNote: location,
+            isChecked: false
+        )
+        context.insert(item)
+        try? context.save()
+        pendingDepartureRefresh = true
+        Haptic.success()
+    }
+
     // 下班时段智能建议横幅（仅建议与重排，绝不强行覆盖用户选择）
     @ViewBuilder
     private var afterWorkSuggestionBanner: some View {
@@ -385,7 +608,12 @@ struct DepartureChecklistView: View {
     }
 
     @ViewBuilder
-    private func ritualButton(title: String, sub: String, isChecked: Binding<Bool>) -> some View {
+    private func ritualButton(
+        title: String,
+        sub: String,
+        isChecked: Binding<Bool>,
+        isRainWarning: Bool = false
+    ) -> some View {
         Button {
             isChecked.wrappedValue.toggle()
             if isChecked.wrappedValue {
@@ -395,19 +623,31 @@ struct DepartureChecklistView: View {
             }
         } label: {
             VStack(spacing: 4) {
-                Text(L10n.tr(title))
-                    .font(.title3.bold())
+                HStack(spacing: 2) {
+                    Text(L10n.tr(title))
+                        .font(.title3.bold())
+                    if isRainWarning && !isChecked.wrappedValue {
+                        Circle()
+                            .fill(Color.teal)
+                            .frame(width: 6, height: 6)
+                    }
+                }
                 Text(L10n.tr(sub))
                     .font(.caption2)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
             .background(
                 isChecked.wrappedValue
-                    ? Color.indigo
+                    ? (isRainWarning ? Color.teal : Color.indigo)
                     : (isCustomBackgroundActive ? Color(.secondarySystemBackground).opacity(0.68) : Color(.secondarySystemBackground))
             )
-            .foregroundStyle(isChecked.wrappedValue ? .white : .primary)
+            .foregroundStyle(isChecked.wrappedValue ? .white : (isRainWarning ? .teal : .primary))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isRainWarning && !isChecked.wrappedValue ? Color.teal.opacity(0.8) : Color.clear, lineWidth: 1.5)
+            )
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -481,6 +721,8 @@ struct DepartureChecklistView: View {
 /// 清单单项展示行
 struct CheckItemRow: View {
     @Bindable var item: DepartureCheckItem
+    var matchedStorage: DepartureStoredItemSnapshot? = nil
+    var isAdaptivePriority: Bool = false
 
     var body: some View {
         Button {
@@ -505,6 +747,18 @@ struct CheckItemRow: View {
                             .strikethrough(item.isChecked, color: .secondary)
                             .foregroundStyle(item.isChecked ? .secondary : .primary)
 
+                        if isAdaptivePriority && !item.isChecked {
+                            HStack(spacing: 2) {
+                                Image(systemName: "sparkles")
+                                Text("今日日程/天气推荐")
+                            }
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.orange.opacity(0.16)))
+                            .foregroundStyle(.orange)
+                        }
+
                         if item.isEssential {
                             Text("核心必带")
                                 .font(.caption2.bold())
@@ -523,6 +777,18 @@ struct CheckItemRow: View {
                                 .font(.caption2)
                         }
                         .foregroundStyle(.secondary)
+                    } else if let matched = matchedStorage {
+                        HStack(spacing: 3) {
+                            Image(systemName: "archivebox.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.purple)
+                            Text("存放: \(matched.formattedStorageDescription)")
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.purple)
+                            Text("(来自收纳档案)")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
@@ -545,6 +811,7 @@ struct CheckItemRow: View {
 struct AddDepartureCheckItemSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Query private var storedItems: [StoredItem]
 
     var defaultScene: DepartureScene
     var editing: DepartureCheckItem?
@@ -561,6 +828,19 @@ struct AddDepartureCheckItemSheet: View {
     ]
 
     private var isEditing: Bool { editing != nil }
+
+    private var matchedStorage: DepartureStoredItemSnapshot? {
+        let snapshots = storedItems.map {
+            DepartureStoredItemSnapshot(
+                id: $0.id.uuidString,
+                name: $0.name,
+                location: $0.location,
+                roomArea: $0.roomArea,
+                notes: $0.notes
+            )
+        }
+        return DepartureStorageMatcher.findMatch(itemTitle: title, storedItems: snapshots)
+    }
 
     var body: some View {
         NavigationStack {
@@ -579,6 +859,23 @@ struct AddDepartureCheckItemSheet: View {
 
                 Section("存放与防丢备忘") {
                     TextField("平时习惯放在哪（如：玄关托盘、双肩包侧袋）", text: $storageLocationNote)
+
+                    if storageLocationNote.isEmpty, let matched = matchedStorage {
+                        Button {
+                            storageLocationNote = matched.formattedStorageDescription
+                            Haptic.light()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "archivebox.fill")
+                                    .foregroundStyle(.purple)
+                                Text("收纳档案建议: 填入「\(matched.formattedStorageDescription)」")
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(.purple)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
 
                 Section("快捷常用预设") {

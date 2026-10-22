@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import SwiftData
 
@@ -108,12 +109,18 @@ public final class MedicationPlan {
     public var dailyTimePoints: [String]
     public var isEnabled: Bool
     public var notes: String?
+    /// 用餐时效关联关系原始值（如 "afterMeal_30", "beforeMeal_30", "withMeal", "bedtime", "unrestricted"）
+    public var mealRelationRaw: String = "afterMeal_30"
+    /// 今日最近一次服药打卡时间
+    public var lastTakenAt: Date?
 
     public init(
         medName: String,
         dosage: String,
         dailyTimePoints: [String],
-        notes: String? = nil
+        notes: String? = nil,
+        mealRelation: MedicationMealRelation = .afterMeal(minutes: 30),
+        lastTakenAt: Date? = nil
     ) {
         self.id = UUID()
         self.medName = medName
@@ -121,5 +128,31 @@ public final class MedicationPlan {
         self.dailyTimePoints = dailyTimePoints
         self.isEnabled = true
         self.notes = notes
+        self.mealRelationRaw = mealRelation.rawValue
+        self.lastTakenAt = lastTakenAt
+    }
+
+    public var mealRelation: MedicationMealRelation {
+        get { MedicationMealRelation(rawValue: mealRelationRaw) }
+        set { mealRelationRaw = newValue.rawValue }
+    }
+
+    /// 转换为纯逻辑分析快照
+    public func toSnapshot() -> MedicationPlanSnapshot {
+        MedicationPlanSnapshot(
+            id: id.uuidString,
+            medName: medName,
+            dosage: dosage,
+            mealRelation: mealRelation,
+            dailyTimePoints: dailyTimePoints,
+            notes: notes,
+            isEnabled: isEnabled,
+            lastTakenAt: lastTakenAt
+        )
+    }
+
+    /// 标记一次服药完成
+    public func markTaken(at date: Date = .now) {
+        self.lastTakenAt = date
     }
 }

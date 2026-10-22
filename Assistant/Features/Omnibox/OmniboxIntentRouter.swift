@@ -39,7 +39,7 @@ struct OmniboxIntentRouter {
     /// 对归一文本做意图判别。
     /// - Throws: 模型不可用 / logits 不可读 / 标签无法单token 化。
     func route(_ text: String) async throws -> Result {
-        let modelManager = LLMModelManager.shared
+        let modelManager = await LLMModelManager.shared
         guard await modelManager.validateModelStatusAndWait() else {
             throw RouterError.engineUnavailable("模型尚未就绪")
         }

@@ -73,7 +73,7 @@ public final class TodoNotificationManager {
     }
 
     /// 为单个待办事项排期提醒通知
-    func scheduleNotification(for item: TodoItem) {
+    func scheduleNotification(for item: TodoItem, syncGeofences: Bool = true) {
         // 仅对活跃且设定了未来截止时间的事项进行提醒排期
         guard item.status == .active, let dueAt = item.dueAt else {
             cancelNotification(for: item.id)
@@ -137,6 +137,13 @@ public final class TodoNotificationManager {
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
                 print("Failed to schedule todo notification: \(error)")
+            }
+        }
+
+        // 如果是快递包裹待办，自动同步驿站地理围栏（批量排期时统一同步，避免循环内多次派发）
+        if syncGeofences && (item.type == .parcel || item.type == .returnParcel) {
+            Task { @MainActor in
+                LocationReminderService.shared.syncParcelStationGeofences()
             }
         }
 
@@ -258,8 +265,13 @@ public final class TodoNotificationManager {
         }
         for snapshot in scheduledSnapshots {
             if let item = itemByID[snapshot.id] {
-                scheduleNotification(for: item)
+                scheduleNotification(for: item, syncGeofences: false)
             }
+        }
+
+        // 同步驿站地理围栏
+        Task { @MainActor in
+            LocationReminderService.shared.syncParcelStationGeofences(context: context)
         }
     }
 }

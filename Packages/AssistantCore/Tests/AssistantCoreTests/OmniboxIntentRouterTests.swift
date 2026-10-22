@@ -12,10 +12,10 @@ final class OmniboxIntentRouterTests: XCTestCase {
 
     func testLabelSetCoversAllNineCapabilities() {
         let labels = OmniboxIntentLabel.allCases
-        XCTAssertEqual(labels.count, 9)
-        XCTAssertEqual(Set(labels.map(\.capability)).count, 9, "标签与能力必须一一对应")
+        XCTAssertEqual(labels.count, 16)
+        XCTAssertEqual(Set(labels.map(\.capability)).count, 16, "标签与能力必须一一对应")
         let labelSet = Set(labels.map(\.rawValue))
-        let expected: Set<String> = ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
+        let expected: Set<String> = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F"]
         XCTAssertEqual(labelSet, expected, "标签应是可单 token 化的短字符")
     }
 
@@ -43,7 +43,7 @@ final class OmniboxIntentRouterTests: XCTestCase {
             return [counter]
         }
         let map = IntentTokenMap(tokenizing: OmniboxIntentLabel.allCases, with: tokenizer)
-        XCTAssertEqual(map?.tokens.count, 9)
+        XCTAssertEqual(map?.tokens.count, 16)
     }
 
     // MARK: - softmax
@@ -166,7 +166,7 @@ final class OmniboxIntentRouterTests: XCTestCase {
         let dist = IntentClassifierMath.makeDistribution(logits: [.expenseCreate: 1.0])
         // 未出现在 logits 中的标签会被补 0，而不是被漏掉——
         // 分布必须始终覆盖全部标签，UI 与阈值才有稳定语义。
-        XCTAssertEqual(dist.ranked.count, 9)
+        XCTAssertEqual(dist.ranked.count, 16)
         XCTAssertEqual(dist.probability(of: .queryLookup), 0)
     }
 

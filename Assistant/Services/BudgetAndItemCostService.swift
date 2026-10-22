@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 
 // MARK: - 月预算设置（UserDefaults 持久化）
@@ -11,68 +12,15 @@ public enum BudgetSettings {
     }
 }
 
-// MARK: - 今日安心花（Safe-to-Spend）计算
+// MARK: - 今日安心花（Safe-to-Spend）数据归集扩展（依赖 ExpenseRecord 模型）
 
-/// 计算所需的输入快照（从账本一次性归集，保持纯函数可测试）
-public struct SafeToSpendInput {
-    public var monthlyBudget: Double             // 用户设定的月度弹性预算
-    public var fixedMonthlyTotal: Double         // 固定周期支出折算月额（房租、订阅、车贷等）
-    public var flexibleSpentThisMonth: Double    // 本月已发生的弹性支出（剔除固定支出自动入账）
-    public var fixedSpentThisMonth: Double       // 本月已自动入账的固定支出（避免重复扣减）
-    public var yesterdayFlexibleSpend: Double    // 昨日弹性支出（用于计算滚入结余）
-    public var todayFlexibleSpend: Double        // 今日已花弹性支出
-
-    public init(
-        monthlyBudget: Double,
-        fixedMonthlyTotal: Double,
-        flexibleSpentThisMonth: Double,
-        fixedSpentThisMonth: Double = 0,
-        yesterdayFlexibleSpend: Double = 0,
-        todayFlexibleSpend: Double = 0
-    ) {
-        self.monthlyBudget = monthlyBudget
-        self.fixedMonthlyTotal = fixedMonthlyTotal
-        self.flexibleSpentThisMonth = flexibleSpentThisMonth
-        self.fixedSpentThisMonth = fixedSpentThisMonth
-        self.yesterdayFlexibleSpend = yesterdayFlexibleSpend
-        self.todayFlexibleSpend = todayFlexibleSpend
-    }
-}
-
-/// 「今日安心花」结果
-public struct SafeToSpendResult: Equatable {
-    public var isEnabled: Bool             // 预算是否已设置（> 0）
-    public var disposableBudget: Double    // 弹性预算 = 月预算 - 固定支出折算月额
-    public var remainingThisMonth: Double  // 本月弹性剩余（可为负 = 超支）
-    public var daysLeft: Int               // 距月底天数（含今天）
-    public var daysInMonth: Int
-    public var safeToSpendToday: Double    // 今天还能安心花的金额（≥ 0）
-    public var savedYesterday: Double      // 昨日省下并滚入今天的金额（≥ 0）
-    public var isOverBudget: Bool          // 弹性预算已超支
-    public var spentRatio: Double          // 已花弹性占弹性预算比例（0~1+）
-
-    public static func == (lhs: SafeToSpendResult, rhs: SafeToSpendResult) -> Bool {
-        lhs.isEnabled == rhs.isEnabled
-            && abs(lhs.safeToSpendToday - rhs.safeToSpendToday) < 0.005
-            && abs(lhs.savedYesterday - rhs.savedYesterday) < 0.005
-            && lhs.daysLeft == rhs.daysLeft
-    }
-}
-
-public enum SafeToSpendCalculator {
-    /// 固定支出自动入账时写入 rawText 的前缀，用于从账本中区分固定/弹性支出
-    public static let fixedExpenseRawTextPrefixes = ["周期自动记账:", "周期固定支出:"]
-
-    /// 一笔账目是否属于固定周期支出的自动入账
-    public static func isFixedExpenseRecord(_ rawText: String) -> Bool {
-        fixedExpenseRawTextPrefixes.contains { rawText.hasPrefix($0) }
-    }
-
+extension SafeToSpendCalculator {
     /// 从账本记录一次性 O(N) 归集安心花输入快照（视图卡片与周期报告共用）
     public static func inputFromRecords(
         records: [ExpenseRecord],
         fixedMonthlyTotal: Double,
         monthlyBudget: Double = BudgetSettings.monthlyBudget,
+        rhythmMode: SpendingRhythmMode = .weekendLeisure,
         calendar: Calendar = .current,
         now: Date = .now
     ) -> SafeToSpendInput {
@@ -81,18 +29,53 @@ public enum SafeToSpendCalculator {
         var flexibleYesterday = 0.0
         var flexibleToday = 0.0
 
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfYesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday)
+
+        // 计算本周一起始点
+        let weekday = calendar.component(.weekday, from: now)
+        let daysFromMonday = (weekday == 1) ? 6 : (weekday - 2)
+        let startOfWeekMonday = calendar.date(byAdding: .day, value: -daysFromMonday, to: startOfToday) ?? startOfToday
+
+        // 统计本周前几个工作日的支出，用于计算蓄水池
+        var workdaySpendsByDay: [Date: Double] = [:]
+
         for record in records where !record.isIncome {
             let isFixed = isFixedExpenseRecord(record.rawText)
             if calendar.isDate(record.date, equalTo: now, toGranularity: .month) {
                 if isFixed { fixedMonth += record.amount } else { flexibleMonth += record.amount }
             }
-            if calendar.isDateInToday(record.date) {
+            if calendar.isDate(record.date, inSameDayAs: now) {
                 if !isFixed { flexibleToday += record.amount }
-            } else if calendar.isDateInYesterday(record.date), !isFixed {
-                flexibleYesterday += record.amount
+            } else if let startOfYesterday, calendar.isDate(record.date, inSameDayAs: startOfYesterday) {
+                if !isFixed { flexibleYesterday += record.amount }
+            }
+
+            // 本周一至昨天的过去工作日支出
+            if !isFixed && record.date >= startOfWeekMonday && record.date < startOfToday {
+                let recWeekday = calendar.component(.weekday, from: record.date)
+                if recWeekday >= 2 && recWeekday <= 6 { // 周一至周五工作日
+                    let recDay = calendar.startOfDay(for: record.date)
+                    workdaySpendsByDay[recDay, default: 0] += record.amount
+                }
             }
         }
         _ = fixedMonth // 本月固定入账仅作展示参考，预算池由 fixedMonthlyTotal 统一扣除
+
+        // 估算本周工作日蓄水池节余：以粗略日均额度为基准评估每个过去工作日省下的钱
+        let daysInMonth = calendar.range(of: .day, in: .month, for: now)?.count ?? 30
+        let dayOfMonth = calendar.component(.day, from: now)
+        let daysLeft = max(1, daysInMonth - dayOfMonth + 1)
+        let disposable = max(0, monthlyBudget - fixedMonthlyTotal)
+        let currentPool = max(0, disposable - flexibleMonth + flexibleToday)
+        let approxDailyAllowance = daysLeft > 0 ? (currentPool / Double(daysLeft)) : 0
+
+        var weekdaySavingsTotal = 0.0
+        for (_, daySpend) in workdaySpendsByDay {
+            if approxDailyAllowance > daySpend {
+                weekdaySavingsTotal += (approxDailyAllowance - daySpend)
+            }
+        }
 
         return SafeToSpendInput(
             monthlyBudget: monthlyBudget,
@@ -100,43 +83,9 @@ public enum SafeToSpendCalculator {
             flexibleSpentThisMonth: flexibleMonth,
             fixedSpentThisMonth: fixedMonth,
             yesterdayFlexibleSpend: flexibleYesterday,
-            todayFlexibleSpend: flexibleToday
-        )
-    }
-
-    /// 计算今日安心花额度
-    ///
-    /// 核心公式：今日额度 = (弹性预算 - 固定月额 - 本月已花弹性) / 距月底剩余天数（含今天）。
-    /// 该公式天然带滚入效应：今天花得少，剩余池子不变而剩余天数减一，明天每天额度自动升高；
-    /// 昨日结余单独算出用于正向反馈展示。
-    public static func compute(input: SafeToSpendInput, now: Date = .now, calendar: Calendar = .current) -> SafeToSpendResult {
-        let isEnabled = input.monthlyBudget > 0
-        let disposable = max(0, input.monthlyBudget - input.fixedMonthlyTotal)
-
-        let components = calendar.dateComponents([.year, .month, .day], from: now)
-        let daysInMonth = calendar.range(of: .day, in: .month, for: now)?.count ?? 30
-        let dayOfMonth = components.day ?? 1
-        let daysLeft = max(1, daysInMonth - dayOfMonth + 1)
-
-        let remaining = disposable - input.flexibleSpentThisMonth
-        let safeToday = max(0, remaining) / Double(daysLeft)
-
-        // 昨日早晨视角：剩余池子更大（加回今日与昨日已花）、剩余天数多一天。
-        // 昨日应得额度 - 昨日实际已花 = 昨日省下滚入今天的金额。月初第一天没有"昨日"。
-        let remainingBeforeYesterday = remaining + input.todayFlexibleSpend + input.yesterdayFlexibleSpend
-        let yesterdayAllowance = max(0, remainingBeforeYesterday) / Double(daysLeft + 1)
-        let savedYesterday = dayOfMonth >= 2 ? max(0, yesterdayAllowance - input.yesterdayFlexibleSpend) : 0
-
-        return SafeToSpendResult(
-            isEnabled: isEnabled,
-            disposableBudget: disposable,
-            remainingThisMonth: remaining,
-            daysLeft: daysLeft,
-            daysInMonth: daysInMonth,
-            safeToSpendToday: safeToday,
-            savedYesterday: savedYesterday,
-            isOverBudget: remaining < 0,
-            spentRatio: disposable > 0 ? input.flexibleSpentThisMonth / disposable : 1
+            todayFlexibleSpend: flexibleToday,
+            rhythmMode: rhythmMode,
+            weekdaySavedSoFarThisWeek: weekdaySavingsTotal
         )
     }
 }

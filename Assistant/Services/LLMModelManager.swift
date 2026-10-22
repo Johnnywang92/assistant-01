@@ -116,9 +116,9 @@ public enum LLMModelPreset: String, CaseIterable, Identifiable, Sendable {
     public func downloadURL(for source: LLMDownloadSource) -> URL {
         switch (self, source) {
         case (.qwen3_1_7b, .modelScope):
-            return URL(string: "https://www.modelscope.cn/models/Qwen/Qwen3-1.7B-GGUF/resolve/master/Qwen3-1.7B-Q4_K_M.gguf")!
+            return URL(string: "https://www.modelscope.cn/models/unsloth/Qwen3-1.7B-GGUF/resolve/master/Qwen3-1.7B-Q4_K_M.gguf")!
         case (.qwen3_1_7b, .huggingFace):
-            return URL(string: "https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf")!
+            return URL(string: "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf")!
         case (.qwen3_4b, .modelScope):
             return URL(string: "https://www.modelscope.cn/models/Qwen/Qwen3-4B-GGUF/resolve/master/Qwen3-4B-Q4_K_M.gguf")!
         case (.qwen3_4b, .huggingFace):
@@ -310,6 +310,17 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         }
 
         if let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value {
+            // 若文件小于 10MB（如之前 404 错误响应保存的数百字节碎片），自动清除并重置为未下载态，避免用户持续卡在校验失败
+            if size < 10_000_000 {
+                try? FileManager.default.removeItem(at: url)
+                clearResumeData()
+                validationStatus = .noModelFile
+                UserDefaults.standard.removeObject(forKey: validatedDigestKey)
+                self.downloadedBytes = 0
+                self.totalBytes = selectedPreset.expectedSizeApproxBytes
+                hasResumeData = false
+                return
+            }
             self.downloadedBytes = size
             self.totalBytes = size
         }
@@ -604,6 +615,18 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
+        // 严格检查 HTTP 状态码：若非 2xx（如 404/500/403），代表下载到的是错误页面而非模型二进制，避免将其当作 GGUF 校验报「校验失败」
+        if let httpResponse = downloadTask.response as? HTTPURLResponse,
+           !(200...299).contains(httpResponse.statusCode) {
+            Task { @MainActor in
+                self.errorMessage = "下载失败：HTTP \(httpResponse.statusCode)（服务器资源未找到或暂时不可用，建议切换下载节点重试）"
+                self.isDownloading = false
+                self.clearResumeData()
+                Haptic.error()
+            }
+            return
+        }
+
         // 重要：根据苹果 URLSession 规范，此委托方法返回后系统会立即清除临时文件（CFNetworkDownload_xxx.tmp）！
         // 必须在此方法同步返回前，将文件从临时位置移动到持久化沙盒目录中。
         let targetDir = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
@@ -669,6 +692,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
             Haptic.success()
         } catch {
             errorMessage = "模型校验失败：\(error.localizedDescription)"
+            markValidationFailed(L10n.choose("模型文件无效：\(error.localizedDescription)", "Invalid model file: \(error.localizedDescription)"))
             Haptic.error()
         }
     }

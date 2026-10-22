@@ -876,6 +876,9 @@ public final class LLMInferenceService: ObservableObject {
                 }.joined(separator: "、")
                 habitMedParts.append("今日饮食摄入：共 \(totalCalories) 千卡（\(itemsDesc)）")
             }
+            if let dietSummary = DietaryPreferenceService.shared.promptSummary(with: context) {
+                habitMedParts.append("饮食偏好画像：\(dietSummary)")
+            }
             let habitMedText = habitMedParts.isEmpty ? "无" : habitMedParts.joined(separator: "；")
             blocks.append(PromptBlock(id: .habit, text: "• 用药、习惯与今日饮食：\(habitMedText)"))
 
@@ -1108,7 +1111,10 @@ public final class LLMInferenceService: ObservableObject {
         let hasActionAffordance = trimmed.contains("记") || trimmed.contains("花") || trimmed.contains("支出") ||
             trimmed.contains("买") || trimmed.contains("付") || trimmed.contains("提醒") || trimmed.contains("待办") ||
             trimmed.contains("完成") || trimmed.contains("取消") || trimmed.contains("推迟") || trimmed.contains("顺延") ||
-            trimmed.contains("改")
+            trimmed.contains("改") || trimmed.contains("吃") || trimmed.contains("喝") || trimmed.contains("放在") ||
+            trimmed.contains("收在") || trimmed.contains("打卡") || trimmed.contains("服") || trimmed.contains("出门") ||
+            trimmed.contains("加油") || trimmed.contains("充电") || trimmed.contains("驱虫") || trimmed.contains("疫苗") ||
+            trimmed.contains("纪念日") || trimmed.contains("生日")
 
         guard hasActionAffordance && !isQuestionTone else {
             return nil

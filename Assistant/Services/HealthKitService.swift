@@ -52,13 +52,22 @@ final class HealthKitService: ObservableObject {
         HKHealthStore.isHealthDataAvailable()
     }
 
-    /// 只读数据集：步数、活动能量、饮水。
-    /// 睡眠是分类样本，单独在 `sleepHours` 里查。
+    /// 只读数据集：步数、能量、心率、血氧、体温、步速、呼吸与健身。
+    /// 睡眠是分类样本，健身是 Workout 样本，分别单独查询。
     private var readTypes: Set<HKObjectType> {
         var types = Set<HKObjectType>()
         if let step = HKObjectType.quantityType(forIdentifier: .stepCount) { types.insert(step) }
         if let energy = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) { types.insert(energy) }
+        if let basal = HKObjectType.quantityType(forIdentifier: .basalEnergyBurned) { types.insert(basal) }
         if let water = HKObjectType.quantityType(forIdentifier: .dietaryWater) { types.insert(water) }
+        if let hr = HKObjectType.quantityType(forIdentifier: .heartRate) { types.insert(hr) }
+        if let restingHr = HKObjectType.quantityType(forIdentifier: .restingHeartRate) { types.insert(restingHr) }
+        if let o2 = HKObjectType.quantityType(forIdentifier: .oxygenSaturation) { types.insert(o2) }
+        if let bodyTemp = HKObjectType.quantityType(forIdentifier: .bodyTemperature) { types.insert(bodyTemp) }
+        if let wristTemp = HKObjectType.quantityType(forIdentifier: .appleSleepingWristTemperature) { types.insert(wristTemp) }
+        if let speed = HKObjectType.quantityType(forIdentifier: .walkingSpeed) { types.insert(speed) }
+        if let resp = HKObjectType.quantityType(forIdentifier: .respiratoryRate) { types.insert(resp) }
+        types.insert(HKObjectType.workoutType())
         return types
     }
 
@@ -66,9 +75,18 @@ final class HealthKitService: ObservableObject {
         HKObjectType.categoryType(forIdentifier: .sleepAnalysis)
     }
 
+    /// 写入数据集：支持将用户记录的饮水量同步写入 Apple 健康。
+    private var shareTypes: Set<HKSampleType> {
+        var types = Set<HKSampleType>()
+        if let water = HKObjectType.quantityType(forIdentifier: .dietaryWater) {
+            types.insert(water)
+        }
+        return types
+    }
+
     // MARK: - 授权
 
-    /// 请求读权限。
+    /// 请求读写权限。
     ///
     /// - 返回值 `true` 表示**权限面板已处理完毕**，**不代表用户同意了读取**。
     ///   Apple 出于隐私考虑不向 App 暴露读权限的真实结果，
@@ -84,8 +102,7 @@ final class HealthKitService: ObservableObject {
         if let sleep = sleepType { types.insert(sleep) }
 
         do {
-            // toShare 传空集：本 App 只读，不写任何健康数据。
-            try await store.requestAuthorization(toShare: [], read: types)
+            try await store.requestAuthorization(toShare: shareTypes, read: types)
             hasRequestedAuthorization = true
             lastError = nil
             return true
@@ -103,10 +120,28 @@ final class HealthKitService: ObservableObject {
         var types = readTypes
         if let sleep = sleepType { types.insert(sleep) }
         do {
-            let status = try await store.statusForAuthorizationRequest(toShare: [], read: types)
+            let status = try await store.statusForAuthorizationRequest(toShare: shareTypes, read: types)
             return status == .shouldRequest
         } catch {
             lastError = describe(error)
+            return false
+        }
+    }
+
+    /// 将记录的饮水量写入 Apple 健康（毫升）
+    @discardableResult
+    func recordWaterIntake(amountML: Double, date: Date = .now) async -> Bool {
+        guard Self.isAvailable, amountML > 0 else { return false }
+        guard let waterType = HKQuantityType.quantityType(forIdentifier: .dietaryWater) else { return false }
+
+        let quantity = HKQuantity(unit: .literUnit(with: .milli), doubleValue: amountML)
+        let sample = HKQuantitySample(type: waterType, quantity: quantity, start: date, end: date)
+
+        do {
+            try await store.save(sample)
+            await refreshToday()
+            return true
+        } catch {
             return false
         }
     }
@@ -129,21 +164,43 @@ final class HealthKitService: ObservableObject {
 
         let startOfDay = calendar.startOfDay(for: .now)
 
-        // 步数 / 活动能量 / 饮水：当日累计求和
-        // 三个子查询各自吞掉异常并把描述记进 errors，避免单个指标失败拖垮整次刷新
+        // 步数 / 活动能量 / 静息能量 / 饮水：当日累计求和
         async let steps = cumulativeSum(for: .stepCount, unit: .count(), start: startOfDay)
         async let energy = cumulativeSum(for: .activeEnergy, unit: .kilocalorie(), start: startOfDay)
+        async let basalEnergy = cumulativeSum(for: .restingEnergy, unit: .kilocalorie(), start: startOfDay)
         async let water = cumulativeSum(for: .dietaryWater, unit: .literUnit(with: .milli), start: startOfDay)
+
         // 睡眠：昨晚到今天醒来的时长
         async let sleep = sleepHours(start: startOfDay)
+
+        // 体温与生命体征
+        async let temperature = bodyTemperatureSample(start: startOfDay)
+        async let heartRate = heartRateSample(start: startOfDay)
+        async let bloodOxygen = averageQuantity(for: .bloodOxygen, identifier: .oxygenSaturation, unit: .percent(), start: startOfDay)
+        async let walkingSpeed = averageQuantity(for: .walkingSpeed, identifier: .walkingSpeed, unit: HKUnit.meter().unitDivided(by: .second()), multiplier: 3.6, start: startOfDay)
+        async let respiratory = averageQuantity(for: .respiratoryRate, identifier: .respiratoryRate, unit: HKUnit.count().unitDivided(by: .minute()), start: startOfDay)
+
+        // 健身记录
+        async let workouts = workoutRecords(start: startOfDay)
 
         var values: [HealthMetricValue] = []
         if let stepValue = await steps { values.append(stepValue) }
         if let energyValue = await energy { values.append(energyValue) }
+        if let basalValue = await basalEnergy { values.append(basalValue) }
         if let waterValue = await water { values.append(waterValue) }
         if let sleepValue = await sleep { values.append(sleepValue) }
+        if let tempValue = await temperature { values.append(tempValue) }
+        if let hrValue = await heartRate { values.append(hrValue) }
+        if let oxValue = await bloodOxygen { values.append(oxValue) }
+        if let speedValue = await walkingSpeed { values.append(speedValue) }
+        if let respValue = await respiratory { values.append(respValue) }
 
-        let newSnapshot = HealthMetrics.aggregate(values, day: startOfDay)
+        let workoutResult = await workouts
+        if let duration = workoutResult?.duration, duration > 0 {
+            values.append(HealthMetricValue(kind: .workoutDuration, value: duration, day: startOfDay))
+        }
+
+        let newSnapshot = HealthMetrics.aggregate(values, day: startOfDay, workoutSummary: workoutResult?.summary)
         // 读到空结果时保留旧快照，避免抖动把已有数据抹掉
         if newSnapshot.readState == .hasData || snapshot == nil {
             snapshot = newSnapshot
@@ -180,6 +237,143 @@ final class HealthKitService: ObservableObject {
         }
     }
 
+    /// 均值型指标（心率、血氧、步速、呼吸频率等）。
+    private func averageQuantity(
+        for kind: HealthMetricKind,
+        identifier: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        multiplier: Double = 1.0,
+        start: Date
+    ) async -> HealthMetricValue? {
+        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: .now, options: .strictStartDate)
+        let descriptor = HKStatisticsQueryDescriptor(
+            predicate: .quantitySample(type: type, predicate: predicate),
+            options: .discreteAverage
+        )
+        do {
+            guard let statistics = try await descriptor.result(for: store),
+                  let avg = statistics.averageQuantity() else { return nil }
+            var value = avg.doubleValue(for: unit) * multiplier
+            if kind == .bloodOxygen && value <= 1.0 {
+                value *= 100.0 // 归一化为 0~100 整数百分比
+            }
+            guard value > 0 else { return nil }
+            return HealthMetricValue(kind: kind, value: value, day: start)
+        } catch {
+            errors.append(describe(error))
+            return nil
+        }
+    }
+
+    /// 心率采样（优先读静息心率，无记录时取日内平均心率）。
+    private func heartRateSample(start: Date) async -> HealthMetricValue? {
+        // 先查静息心率
+        if let resting = await averageQuantity(for: .heartRate, identifier: .restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start) {
+            return resting
+        }
+        // 降级查常规心率均值
+        return await averageQuantity(for: .heartRate, identifier: .heartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start)
+    }
+
+    /// 体温采样（优先 Apple Watch 手腕温度，若无则查询常规体温/基础体温）。
+    private func bodyTemperatureSample(start: Date) async -> HealthMetricValue? {
+        let typesToTry: [HKQuantityTypeIdentifier] = [
+            .appleSleepingWristTemperature,
+            .bodyTemperature,
+            .basalBodyTemperature
+        ]
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: .now, options: .strictStartDate)
+        for identifier in typesToTry {
+            guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { continue }
+            let descriptor = HKStatisticsQueryDescriptor(
+                predicate: .quantitySample(type: type, predicate: predicate),
+                options: [.discreteAverage, .mostRecent]
+            )
+            if let stats = try? await descriptor.result(for: store),
+               let qty = stats.averageQuantity() ?? stats.mostRecentQuantity() {
+                let celsius = qty.doubleValue(for: .degreeCelsius())
+                if celsius > 30.0 && celsius < 45.0 {
+                    return HealthMetricValue(kind: .bodyTemperature, value: celsius, day: start)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// 健身记录聚合（Workout 样本）。
+    private func workoutRecords(start: Date) async -> (duration: Double, summary: WorkoutRecordSummary)? {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: .now, options: .strictStartDate)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.sample(type: HKObjectType.workoutType(), predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.startDate, order: .reverse)]
+        )
+        do {
+            let samples = try await descriptor.result(for: store)
+            let workouts = samples.compactMap { $0 as? HKWorkout }
+            guard !workouts.isEmpty else { return nil }
+
+            var totalSeconds: TimeInterval = 0
+            var totalCalories: Double = 0
+            var names: [String] = []
+
+            for w in workouts {
+                totalSeconds += w.duration
+                let energyCalories: Double? = {
+                    if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
+                       let sum = w.statistics(for: energyType)?.sumQuantity() {
+                        return sum.doubleValue(for: .kilocalorie())
+                    }
+                    if #available(iOS 18.0, *) {
+                        return nil
+                    } else {
+                        return w.totalEnergyBurned?.doubleValue(for: .kilocalorie())
+                    }
+                }()
+                if let energyCalories {
+                    totalCalories += energyCalories
+                }
+                let name = localizedWorkoutName(w.workoutActivityType)
+                if !names.contains(name) {
+                    names.append(name)
+                }
+            }
+            let totalMin = totalSeconds / 60.0
+            let summary = WorkoutRecordSummary(
+                count: workouts.count,
+                totalDurationMinutes: totalMin,
+                totalEnergyBurned: totalCalories > 0 ? totalCalories : nil,
+                activityNames: names
+            )
+            return (duration: totalMin, summary: summary)
+        } catch {
+            errors.append(describe(error))
+            return nil
+        }
+    }
+
+    /// 运动类型本地化。
+    private func localizedWorkoutName(_ type: HKWorkoutActivityType) -> String {
+        switch type {
+        case .running: return "跑步"
+        case .cycling: return "骑行"
+        case .walking: return "徒步健走"
+        case .traditionalStrengthTraining, .functionalStrengthTraining: return "力量训练"
+        case .swimming: return "游泳"
+        case .yoga: return "瑜伽"
+        case .highIntensityIntervalTraining: return "HIIT"
+        case .elliptical: return "椭圆机"
+        case .rowing: return "划船机"
+        case .pilates: return "普拉提"
+        case .badminton: return "羽毛球"
+        case .tableTennis: return "乒乓球"
+        case .tennis: return "网球"
+        case .basketball: return "篮球"
+        case .soccer: return "足球"
+        default: return "健身运动"
+        }
+    }
+
     /// 昨夜睡眠时长（小时）。
     ///
     /// 口径：从昨天中午到现在，累加处于「已入睡」状态的样本时长（跨来源重叠区间只算一次）。
@@ -204,6 +398,13 @@ final class HealthKitService: ObservableObject {
                 HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
                 HKCategoryValueSleepAnalysis.asleepREM.rawValue
             ]
+            // iPhone / Apple Watch / 第三方 App 可能同时写入重叠的睡眠样本：
+            // 按时间排序后合并重叠区间再求和，避免重复计时；并裁剪到统计窗口内。
+            let intervals = samples
+                .filter { asleepValues.contains($0.value) }
+                .map { (max($0.startDate, windowStart), $0.endDate) }
+                .filter { $0.1 > $0.0 }
+                .sorted { $0.0 < $1.0 }
             var totalSeconds: TimeInterval = 0
             var current: (Date, Date)?
             for interval in intervals {
@@ -214,6 +415,7 @@ final class HealthKitService: ObservableObject {
                     current = interval
                 }
             }
+            if let c = current { totalSeconds += c.1.timeIntervalSince(c.0) }
             guard totalSeconds > 0 else { return nil }
             let hours = totalSeconds / 3600.0
             return HealthMetricValue(kind: .sleep, value: hours, day: start)
@@ -227,8 +429,14 @@ final class HealthKitService: ObservableObject {
         switch kind {
         case .stepCount: return .stepCount
         case .activeEnergy: return .activeEnergyBurned
+        case .restingEnergy: return .basalEnergyBurned
         case .dietaryWater: return .dietaryWater
-        case .sleep: return .stepCount // 睡眠不走数量型分支
+        case .bodyTemperature: return .bodyTemperature
+        case .heartRate: return .heartRate
+        case .bloodOxygen: return .oxygenSaturation
+        case .walkingSpeed: return .walkingSpeed
+        case .respiratoryRate: return .respiratoryRate
+        case .sleep, .workoutDuration: return .stepCount
         }
     }
 
@@ -251,11 +459,3 @@ final class HealthKitService: ObservableObject {
         }
     }
 }
-            // iPhone / Apple Watch / 第三方 App 可能同时写入重叠的睡眠样本：
-            // 按时间排序后合并重叠区间再求和，避免重复计时；并裁剪到统计窗口内。
-            let intervals = samples
-                .filter { asleepValues.contains($0.value) }
-                .map { (max($0.startDate, windowStart), $0.endDate) }
-                .filter { $0.1 > $0.0 }
-                .sorted { $0.0 < $1.0 }
-            if let c = current { totalSeconds += c.1.timeIntervalSince(c.0) }

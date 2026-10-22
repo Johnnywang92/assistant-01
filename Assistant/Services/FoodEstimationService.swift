@@ -156,7 +156,6 @@ final class FoodEstimationService: ObservableObject {
 
         // 份量：LLM 给了就用，否则按基准份
         let portion = parsed.portion ?? .regular
-        let multiplier = portion.multiplier
         let scaled = FoodCalorieEstimate(
             food: food,
             portion: portion,
@@ -224,6 +223,30 @@ final class FoodEstimationService: ObservableObject {
         let updated = current.removingDish(dishID: dishID)
         estimate = updated
         statusMessage = "已更新本餐菜品（共 \(updated.dishes.count) 道，合计 \(Int(updated.consumedCalories.rounded())) 千卡）。"
+    }
+
+    /// 用户修改整餐的自定义展示名称（如「工作日减脂午餐」或覆盖自动识别出的菜名拼装）。
+    func updateMealDisplayName(_ name: String) {
+        guard let current = estimate else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        estimate = current.withCustomDisplayName(trimmed.isEmpty ? nil : trimmed)
+        statusMessage = trimmed.isEmpty ? "已恢复默认菜品名称。" : "已更新本餐名称为「\(trimmed)」。"
+    }
+
+    /// 替换某一道识别出的菜品（换菜，从食物库选其他菜或自定义食物）。
+    func replaceDish(dishID: String, with food: FoodItem) {
+        guard let current = estimate else { return }
+        let updated = current.replacingDish(dishID: dishID, with: food)
+        estimate = updated
+        statusMessage = "已将该道菜替换为「\(food.name)」（整餐合计 \(Int(updated.consumedCalories.rounded())) 千卡）。"
+    }
+
+    /// 修改某一道菜的具体信息（直接修改菜名、手动输入热量千卡数值）。
+    func updateDishDetails(dishID: String, name: String? = nil, calories: Double? = nil) {
+        guard let current = estimate else { return }
+        let updated = current.updatingDish(dishID: dishID, name: name, calories: calories)
+        estimate = updated
+        statusMessage = "已修改菜品明细与热量数值（整餐合计 \(Int(updated.consumedCalories.rounded())) 千卡）。"
     }
 
     /// 单独调整本餐中某一道菜吃掉的百分比（例如米饭吃了一半 50%，菜吃完了 100%）。

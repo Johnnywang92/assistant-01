@@ -126,11 +126,87 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
         }
     }
 
+    /// 自动根据当前的未取快递与「常用驿站」地点档案，动态维护 CoreLocation 硬件地理围栏
+    @MainActor
+    public func syncParcelStationGeofences(context: ModelContext? = nil) {
+        let ctx = context ?? Persistence.shared.mainContext
+
+        // 1. 检查是否有尚未取件的活跃包裹待办
+        let activeRaw = TodoStatus.active.rawValue
+        let parcelRaw = TodoType.parcel.rawValue
+        let returnParcelRaw = TodoType.returnParcel.rawValue
+
+        let todoDescriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.statusRaw == activeRaw && ($0.typeRaw == parcelRaw || $0.typeRaw == returnParcelRaw) }
+        )
+        let activeParcels = ((try? ctx.fetch(todoDescriptor)) ?? []).filter { !($0.pickupCode ?? "").isEmpty }
+
+        // 2. 如果没有待取包裹，清理所有驿站相关的围栏，节省功耗与系统围栏配额
+        if activeParcels.isEmpty {
+            for region in locationManager.monitoredRegions {
+                if region.identifier.hasPrefix("parcel-station-") {
+                    locationManager.stopMonitoring(for: region)
+                }
+            }
+            return
+        }
+
+        // 3. 有待取包裹：查找已配置的「常用驿站」或含有驿站/快递柜名称的常驻地点
+        let stationRaw = PlaceCategory.parcelStation.rawValue
+        let placeDescriptor = FetchDescriptor<LearnedPlace>()
+        let allPlaces = (try? ctx.fetch(placeDescriptor)) ?? []
+        let stations = allPlaces.filter { place in
+            (place.categoryRaw == stationRaw ||
+             place.name.contains("驿站") ||
+             place.name.contains("菜鸟") ||
+             place.name.contains("快递柜") ||
+             place.name.contains("丰巢") ||
+             place.name.contains("自提")) &&
+            place.latitude != 0 && place.longitude != 0
+        }
+
+        guard !stations.isEmpty else {
+            return
+        }
+
+        guard CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) else { return }
+
+        let activeStationIDs = Set(stations.map { "parcel-station-\($0.id)" })
+
+        // 清理已失效或被删除的驿站围栏
+        for region in locationManager.monitoredRegions {
+            if region.identifier.hasPrefix("parcel-station-") && !activeStationIDs.contains(region.identifier) {
+                locationManager.stopMonitoring(for: region)
+            }
+        }
+
+        // 注册现存有效的驿站围栏
+        for station in stations {
+            let regionId = "parcel-station-\(station.id)"
+            let alreadyMonitored = locationManager.monitoredRegions.contains { $0.identifier == regionId }
+            if !alreadyMonitored {
+                let coord = CLLocationCoordinate2D(latitude: station.latitude, longitude: station.longitude)
+                let radius = max(station.radiusMeters, 120.0) // 确保至少 120 米，保证基站与 GPS 准确命中
+                startMonitoringRegion(
+                    center: coord,
+                    radius: radius,
+                    identifier: regionId,
+                    notifyOnEntry: true,
+                    notifyOnExit: false
+                )
+            }
+        }
+    }
+
     // MARK: - CLLocationManagerDelegate
 
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        DispatchQueue.main.async {
-            self.authorizationStatus = manager.authorizationStatus
+        let status = manager.authorizationStatus
+        Task { @MainActor in
+            self.authorizationStatus = status
+            if status == .authorizedAlways || status == .authorizedWhenInUse {
+                self.syncParcelStationGeofences()
+            }
         }
     }
 
@@ -165,22 +241,57 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
     }
 
     public func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
-        // 用户到达驿站或指定地点附近
+        // 用户到达驿站或指定地点附近：自动触发灵动岛、Apple Watch 智能叠放与抬腕销号
         Task { @MainActor in
             let context = Persistence.shared.mainContext
-            let active = TodoStatus.active.rawValue
-            let parcel = TodoType.parcel.rawValue
+            let activeRaw = TodoStatus.active.rawValue
+            let parcelRaw = TodoType.parcel.rawValue
+            let returnParcelRaw = TodoType.returnParcel.rawValue
 
             let descriptor = FetchDescriptor<TodoItem>(
-                predicate: #Predicate { $0.typeRaw == parcel && $0.statusRaw == active }
+                predicate: #Predicate { $0.statusRaw == activeRaw && ($0.typeRaw == parcelRaw || $0.typeRaw == returnParcelRaw) }
             )
-            guard let items = try? context.fetch(descriptor), !items.isEmpty else { return }
+            let items = ((try? context.fetch(descriptor)) ?? []).filter({ !($0.pickupCode ?? "").isEmpty })
+            guard !items.isEmpty else { return }
+
+            // 1. 尝试将取件码推上灵动岛与 Apple Watch 智能叠放（iOS 16.1+ / watchOS 11+ 实时活动）
+            _ = LiveActivityService.startPickupActivity(for: items)
+
+            // 2. 匹配具体驿站名称
+            let stationName: String
+            if let placeIdStr = region.identifier.components(separatedBy: "parcel-station-").last,
+               let placeUUID = UUID(uuidString: placeIdStr),
+               let place = (try? context.fetch(FetchDescriptor<LearnedPlace>(predicate: #Predicate { $0.id == placeUUID })))?.first {
+                stationName = place.name
+            } else {
+                stationName = items.first(where: { !($0.station ?? "").isEmpty })?.station ?? "驿站"
+            }
 
             let codes = items.compactMap(\.pickupCode).joined(separator: "、")
-            let title = "📦 你已到达驿站附近"
-            let body = "你有 \(items.count) 个待取快递：取件码 \(codes)"
+            let title = "📦 已到达\(stationName)"
+            let body = items.count > 1
+                ? "待取快递 \(items.count) 件：\(codes)。抬腕查看取件码，取完轻点「已取件」即可销号。"
+                : "取件码：\(codes)。抬腕查看取件码，取完轻点「已取件」即可销号。"
 
-            NotificationService.post(title: title, body: body, id: "geofence-\(region.identifier)")
+            // 3. 启动并更新手腕上的可交互伴随通知（手腕上原生支持点击「已取件 ✓」）
+            PickupCheckoutService.begin(
+                parcels: items.map { (id: $0.id, code: $0.pickupCode ?? "") },
+                station: stationName
+            )
+
+            // 4. 发送高时效性到达声音/触感提醒，确保设备在口袋或暗屏时震动点亮屏幕
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            content.interruptionLevel = .timeSensitive
+            content.userInfo = ["type": "geofence_pickup", "regionId": region.identifier]
+            let req = UNNotificationRequest(
+                identifier: "geofence-arrival-\(region.identifier)",
+                content: content,
+                trigger: nil
+            )
+            try? await UNUserNotificationCenter.current().add(req)
         }
     }
 }

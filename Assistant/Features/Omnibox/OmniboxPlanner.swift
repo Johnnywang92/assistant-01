@@ -91,7 +91,8 @@ struct OmniboxPlanner {
             let outcome = await Self.llmPlan(normalizedText, intentHint: distribution)
             if let actions = outcome.actions, !actions.isEmpty {
                 let enriched = Self.enrichForeignCurrencyIfNeeded(actions: actions, sourceText: normalizedText)
-                let calibrated = Self.applyIntentConfidence(enriched, distribution: distribution)
+                let sanitized = Self.sanitizeAndEnrichLLMActions(actions: enriched, sourceText: normalizedText)
+                let calibrated = Self.applyIntentConfidence(sanitized, distribution: distribution)
                 return PlanResult(
                     actions: calibrated,
                     engine: "llm",
@@ -168,7 +169,7 @@ struct OmniboxPlanner {
         let dateText = Self.yyyyMMdd.string(from: now)
         let weekdayText = Self.weekdayFormatter.string(from: now)
         var baseUserContent = "今天是\(dateText) \(weekdayText)。\n输入：\n\(text)"
-        if let hint = intentHint, let top = hint.top {
+        if let hint = intentHint, hint.top != nil {
             baseUserContent += "\n（意图判别结果：\(hint.reasonText)，请据此抽取参数）"
         }
 
@@ -235,7 +236,7 @@ struct OmniboxPlanner {
         return Self.basePrompt(schema: schema, narrowed: [top.capability] + candidates.map(\.capability), hint: hint)
     }
 
-    /// 9 类能力的字段模板。判别收窄时按capability 过滤，
+    /// 16 类全域能力的字段模板。判别收窄时按 capability 过滤，
     /// 保证收窄后模型看到的模板与允许的动作严格一致（不一致会诱发幻觉字段）。
     private static var capabilitySchema: [(capability: ActionCapability, line: String)] {
         [
@@ -247,7 +248,14 @@ struct OmniboxPlanner {
             (.todoCancel, #"取消待办：{"capability":"todo.cancel","target":"待取消事项匹配词"}"#),
             (.reminderSnooze, #"推迟提醒：{"capability":"reminder.snooze","target":"提醒事项匹配词","duration":"10分钟|1小时|明早"}"#),
             (.queryLookup, #"查询事项：{"capability":"query.lookup","target":"查询关键词"}"#),
-            (.memoInbox, #"收集箱：{"capability":"memo.inbox","memo":"原文摘录"}"#)
+            (.memoInbox, #"收集箱：{"capability":"memo.inbox","memo":"原文摘录"}"#),
+            (.foodRecord, #"饮食记录：{"capability":"food.record","foodName":"食物名","mealSlot":"早餐|午餐|晚餐|加餐","calories":"预估千卡可省"}"#),
+            (.waterRecord, #"饮水记录：{"capability":"water.record","beverageType":"白开水|纯茶|黑咖啡|拿铁|牛奶|奶茶|含糖饮料|苏打水","volumeML":"毫升数字","customName":"饮品名可省"}"#),
+            (.storageRecord, #"物品收纳与常备药：{"capability":"storage.record","name":"物品或药品名","location":"详细存放位置","roomArea":"主卧|次卧|客厅|书房|玄关|厨房|阳台|储物间","isMedicine":"true|false"}"#),
+            (.habitLog, #"习惯与服药打卡：{"capability":"habit.log","target":"习惯名或药品名","kind":"habit|medication","dosage":"剂量可省"}"#),
+            (.anniversaryCreate, #"纪念日与到期预警：{"capability":"anniversary.create","title":"名称","category":"纪念日|生日|倒数日|订阅续费|保质期","targetDate":"yyyy-MM-dd可省","price":"金额可省"}"#),
+            (.departureAdd, #"出门检查清单：{"capability":"departure.add","title":"随身物品名","scene":"工作通勤|运动健身|出差旅行|带娃出行|遛狗随行|雨雪出行|日常轻装","location":"放置位置可省"}"#),
+            (.lifeRecord, #"家庭生活档案：{"capability":"life.record","domain":"pet|vehicle|child|skill|document|event","title":"事项或对象名","detail":"详情说明可省","value":"数值可省"}"#)
         ]
     }
 
@@ -281,9 +289,14 @@ struct OmniboxPlanner {
         - 提到“取消”、“删掉”、“不要提醒”某个事项时，输出 todo.cancel 动作。
         - 提到“推迟”、“稍后提醒”、“延后”时，输出 reminder.snooze 动作。
         - 识别到消费/支出金额且非修改时，输出 expense.create 动作。
+        - 【纯饮食与饮水边界】：若用户仅描述吃了什么食物（如“早饭吃了一根玉米和一杯牛奶”）且未提及花费金额，绝不虚构金额输出 expense.create，必须输出 food.record！若仅描述喝水或喝咖啡/茶/奶茶/饮料（如“喝了500ml水”、“喝了一杯冰美式”），输出 water.record。
+        - 【物品收纳与常备药】：提到“把X放在Y”、“X收在Y”、“药箱备了X”时，输出 storage.record 动作。
+        - 【习惯与服药打卡】：提到“吃了XX药”、“服用了维生素”、“完成晨跑打卡”、“早起打卡”时，输出 habit.log 动作。
+        - 【纪念日、订阅与保质期】：提到生日、结婚纪念日、倒数日、会员自动续费或食品证件保质期时，输出 anniversary.create 动作。
+        - 【出门清单】：提到“出门清单加上X”、“出门必带X”时，输出 departure.add 动作。
+        - 【生活档案】：提到宠物驱虫/疫苗/洗澡/体重（domain=pet）、车辆加油/充电/保养/里程（domain=vehicle）、宝宝身高体重/里程碑（domain=child）、技能练习打卡（domain=skill）、重要证件登记（domain=document）、人生大事筹备（domain=event）时，输出 life.record 动作。
         - 识别到针对已有记录改金额、改标题时，输出对应的 expense.update 或 todo.update。
-        - 输入是扣款短信或订单截图时，提取商户名作为 title 并记账。
-        - 提到收货、保修、还款、到期、预约等未来事项时输出 todo.create 动作。
+        - 提到“X放哪了”、“查找X”等检索请求时，输出 query.lookup 动作。
         - 完全无法归类时输出一个收集箱 memo.inbox 动作。
         """
         return prompt
@@ -294,7 +307,7 @@ struct OmniboxPlanner {
     static func rulePlan(_ text: String) -> [PlannedAction] {
         var actions: [PlannedAction] = []
 
-        // 0. 操作类指令优先：完成/取消/推迟等动作明确，避免被误判成新建或普通备忘
+        // 0. 操作类指令优先：完成/取消/推迟/查询等动作明确，避免被误判成新建或普通备忘
         if let complete = Self.extractTodoComplete(from: text) {
             actions.append(complete)
             return actions
@@ -305,6 +318,47 @@ struct OmniboxPlanner {
         }
         if let snooze = Self.extractReminderSnooze(from: text) {
             actions.append(snooze)
+            return actions
+        }
+        if let lookup = Self.extractQueryLookup(from: text) {
+            actions.append(lookup)
+            return actions
+        }
+
+        // 0.2 全域生活记录精确提取（收纳 / 出门清单 / 习惯与服药 / 纪念日与订阅保质期 / 宠物爱车育儿技能证件大事）
+        if let storage = Self.extractStorageRecord(from: text) {
+            actions.append(storage)
+            return actions
+        }
+        if let departure = Self.extractDepartureItem(from: text) {
+            actions.append(departure)
+            return actions
+        }
+        if let habitOrMed = Self.extractHabitOrMedicationLog(from: text) {
+            actions.append(habitOrMed)
+            return actions
+        }
+        if let anniversary = Self.extractAnniversaryOrExpiry(from: text) {
+            actions.append(anniversary)
+            return actions
+        }
+
+        // 0.4 纯饮水/饮品摄入检测（如“喝了500ml水”、“喝了一杯冰美式”）
+        if let waterAction = Self.extractWaterRecord(from: text) {
+            actions.append(waterAction)
+            return actions
+        }
+
+        // 0.5 纯饮食摄入陈述检测：若用户陈述早饭/午饭/晚饭吃了/喝了什么，且不含花费/金额词时，直接生成 food.record 饮食记录
+        if Self.isPureMealStatement(text) {
+            actions.append(Self.makeFoodRecordAction(from: text))
+            return actions
+        }
+
+        // 0.6 垂类生活档案检测（宠物/爱车/育儿/技能/证件/大事；若同时含加油/买猫粮等金额，可与下方记账并存）
+        let lifeAction = Self.extractLifeRecord(from: text)
+        if let lifeAction, !Self.hasExplicitMoneyExpression(in: text) {
+            actions.append(lifeAction)
             return actions
         }
 
@@ -388,6 +442,12 @@ struct OmniboxPlanner {
             ))
         }
 
+        // 2.5 若存在车务/宠物等生活档案动作且同时命中了记账（如“车子加了300块95号汽油”），自动追加联动动作
+        if var lifeAction {
+            lifeAction.dependsOn = actions.filter { $0.capability == .expenseCreate }.map(\.id)
+            actions.append(lifeAction)
+        }
+
         // 3. 收集箱兜底：无法归类时永不报错，全部落收集箱（Flomo 原则）
         if actions.isEmpty {
             let memo = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -435,6 +495,54 @@ struct OmniboxPlanner {
         case .memoInbox:
             guard let memo = params["memo"]?.trimmingCharacters(in: .whitespacesAndNewlines), !memo.isEmpty else { return "" }
             return L10n.tr("收入收集箱：") + String(memo.prefix(40))
+        case .foodRecord:
+            let name = params["foodName"] ?? "餐食"
+            let slot = params["mealSlot"] ?? "餐饮"
+            let cal = params["calories"] != nil ? " · 约 \(params["calories"]!)千卡" : ""
+            return "🍽️ 记录饮食：\(name)（\(slot)\(cal)）"
+        case .waterRecord:
+            let bevLabel = params["customName"] ?? params["beverageType"] ?? "白开水"
+            let vol = Double(params["volumeML"] ?? "") ?? 250
+            let bevType = HydrationBeverageType.fromLabel(params["beverageType"] ?? bevLabel)
+            let eff = Int((vol * bevType.defaultHydrationFactor).rounded())
+            return "💧 记录饮水：\(bevLabel) \(Int(vol))ml（折算补水 \(eff)ml）"
+        case .storageRecord:
+            let name = params["name"] ?? "物品"
+            let loc = params["location"] ?? "默认位置"
+            let room = params["roomArea"].flatMap { $0.isEmpty ? nil : "\($0) · " } ?? ""
+            let isMed = params["isMedicine"] == "true"
+            return "📦 \(isMed ? "常备药入库" : "物品收纳")：\(name) → \(room)\(loc)"
+        case .habitLog:
+            let target = params["target"] ?? "打卡项"
+            let isMed = params["kind"] == "medication"
+            let dosage = params["dosage"].flatMap { $0.isEmpty ? nil : "（\($0)）" } ?? ""
+            return "\(isMed ? "💊 服药打卡" : "✅ 习惯打卡")：\(target)\(dosage)"
+        case .anniversaryCreate:
+            let title = params["title"] ?? "重要日子"
+            let cat = params["category"] ?? "纪念日"
+            let dateStr = params["targetDate"].flatMap { $0.isEmpty ? nil : " · \($0)" } ?? ""
+            let priceStr = params["price"].flatMap { $0.isEmpty ? nil : " · ¥\($0)" } ?? ""
+            return "🎂 新建\(cat)：\(title)\(dateStr)\(priceStr)"
+        case .departureAdd:
+            let title = params["title"] ?? "随身物品"
+            let scene = params["scene"] ?? "工作通勤"
+            let loc = params["location"].flatMap { $0.isEmpty ? nil : " · \($0)" } ?? ""
+            return "🚪 出门清单：\(title)（\(scene)\(loc)）"
+        case .lifeRecord:
+            let domain = params["domain"] ?? "pet"
+            let title = params["title"] ?? "生活记录"
+            let detail = params["detail"].flatMap { $0.isEmpty ? nil : " · \($0)" } ?? ""
+            let valStr = params["value"].flatMap { $0.isEmpty ? nil : " (\($0))" } ?? ""
+            let prefix: String = switch domain {
+            case "pet": "🐾 宠物养护"
+            case "vehicle": "🚗 爱车管家"
+            case "child": "👶 育儿成长"
+            case "skill": "🎯 技能练习"
+            case "document": "🪪 重要证件"
+            case "event": "🌟 人生大事"
+            default: "📋 生活档案"
+            }
+            return "\(prefix)：\(title)\(detail)\(valStr)"
         default:
             return ActionParser.generateSummary(for: capability, params: params)
         }
@@ -729,6 +837,19 @@ struct OmniboxPlanner {
         return nil
     }
 
+    /// 判断是否为纯饮食/用餐摄入陈述（没有提到花费金额）
+    static func isPureMealStatement(_ text: String) -> Bool {
+        let mealKeywords = [
+            "早饭吃了", "早餐吃了", "午饭吃了", "午餐吃了", "晚饭吃了", "晚餐吃了", "夜宵吃了",
+            "早饭喝了", "早餐喝了", "午饭喝了", "午餐喝了", "晚饭喝了", "晚餐喝了",
+            "早饭吃", "早餐吃", "午饭吃", "午餐吃", "晚饭吃", "晚餐吃", "夜宵吃",
+            "吃了点", "喝了点", "吃了个", "吃了", "喝了", "早饭", "早餐", "午饭", "午餐", "晚饭", "晚餐", "夜宵"
+        ]
+        guard containsAny(text, mealKeywords) else { return false }
+        let expenseKeywords = ["花了", "花掉", "付了", "用去", "支出", "消费了", "消费", "共计", "元", "块钱", "块", "¥", "￥", "$", "买", "点外卖", "账单", "报销"]
+        return !containsAny(text, expenseKeywords)
+    }
+
     private static func guessCategory(from text: String) -> ExpenseCategory {
         // 先按常见商户/平台名匹配（短信与订单截图的商家名是最强分类信号）
         let merchantMapping: [(ExpenseCategory, [String])] = [
@@ -852,4 +973,380 @@ struct OmniboxPlanner {
         f.dateFormat = "EEEE"
         return f
     }()
+
+    // MARK: - 全域数据模型规则抽取与 LLM 防幻觉增强
+
+    static func makeFoodRecordAction(from text: String) -> PlannedAction {
+        let slot: String
+        if containsAny(text, ["早饭", "早餐"]) { slot = "早餐" }
+        else if containsAny(text, ["午饭", "午餐"]) { slot = "午餐" }
+        else if containsAny(text, ["晚饭", "晚餐"]) { slot = "晚餐" }
+        else { slot = "加餐" }
+
+        var params: [String: String] = [
+            "mealSlot": slot,
+            "rawText": text
+        ]
+        if let estimate = FoodCalorieEstimator.estimateMeal(fromHint: text) {
+            params["foodName"] = estimate.displayName
+            params["calories"] = "\(Int(estimate.fullPortionCalories))"
+            params["foodID"] = estimate.food.id
+        } else {
+            params["foodName"] = text
+        }
+        return PlannedAction(
+            capability: .foodRecord,
+            params: params,
+            confidence: 0.9,
+            summary: Self.summary(for: .foodRecord, params: params)
+        )
+    }
+
+    static func hasExplicitMoneyExpression(in text: String) -> Bool {
+        if extractLooseAmount(from: text) != nil { return true }
+        let moneyUnits = ["元", "块钱", "块", "¥", "￥", "$", "USD", "EUR", "JPY", "HKD", "英镑", "日元", "美元"]
+        return containsAny(text, moneyUnits)
+    }
+
+    static func sanitizeAndEnrichLLMActions(actions: [PlannedAction], sourceText: String) -> [PlannedAction] {
+        var result: [PlannedAction] = []
+        let hasMoney = hasExplicitMoneyExpression(in: sourceText)
+
+        for action in actions {
+            // 防幻觉卫兵：当原文完全未出现任何金额/货币符号，而模型幻觉输出了 expense.create 时，强制由规则纠偏
+            if action.capability == .expenseCreate && !hasMoney {
+                let corrected = rulePlan(sourceText)
+                if !corrected.isEmpty {
+                    result.append(contentsOf: corrected)
+                    continue
+                }
+            }
+            // 降级拦截卫兵：若模型落入 memo.inbox，但规则引擎能从原文中精准提取特定生活记录时，优先使用结构化动作
+            if action.capability == .memoInbox {
+                if let water = extractWaterRecord(from: sourceText) {
+                    result.append(water)
+                    continue
+                }
+                if isPureMealStatement(sourceText) {
+                    result.append(makeFoodRecordAction(from: sourceText))
+                    continue
+                }
+                if let storage = extractStorageRecord(from: sourceText) {
+                    result.append(storage)
+                    continue
+                }
+                if let habit = extractHabitOrMedicationLog(from: sourceText) {
+                    result.append(habit)
+                    continue
+                }
+                if let anniv = extractAnniversaryOrExpiry(from: sourceText) {
+                    result.append(anniv)
+                    continue
+                }
+                if let dep = extractDepartureItem(from: sourceText) {
+                    result.append(dep)
+                    continue
+                }
+                if let life = extractLifeRecord(from: sourceText) {
+                    result.append(life)
+                    continue
+                }
+            }
+            result.append(action)
+        }
+
+        // 车务/宠物等跨域联动：若有记账动作且原文提及加油/洗车/保养等车务，联动产出 life.record
+        if result.contains(where: { $0.capability == .expenseCreate }) && !result.contains(where: { $0.capability == .lifeRecord }) {
+            if let life = extractLifeRecord(from: sourceText) {
+                var linked = life
+                linked.dependsOn = result.filter { $0.capability == .expenseCreate }.map(\.id)
+                result.append(linked)
+            }
+        }
+
+        return result
+    }
+
+    static func extractWaterRecord(from text: String) -> PlannedAction? {
+        guard let parsed = HydrationNaturalLanguageParser.parse(text) else { return nil }
+        let params: [String: String] = [
+            "beverageType": parsed.beverageType.displayName,
+            "volumeML": "\(Int(parsed.volumeML))",
+            "customName": parsed.customName
+        ]
+        return PlannedAction(
+            capability: .waterRecord,
+            params: params,
+            confidence: 0.92,
+            summary: Self.summary(for: .waterRecord, params: params)
+        )
+    }
+
+    static func extractQueryLookup(from text: String) -> PlannedAction? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let queryPatterns = [
+            "(?:查|找|问|搜)?\\s*(.+?)\\s*(?:放哪了|在哪里|在什么地方|放在哪|放在哪里)[？?]?$",
+            "^(?:查找|查询|检索|搜索)\\s*(.+)"
+        ]
+        for pattern in queryPatterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let ns = trimmed as NSString
+            let matches = regex.matches(in: trimmed, range: NSRange(location: 0, length: ns.length))
+            if let first = matches.first, first.numberOfRanges > 1 {
+                let target = ns.substring(with: first.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !target.isEmpty && target.count < 40 {
+                    let params = ["target": target]
+                    return PlannedAction(
+                        capability: .queryLookup,
+                        params: params,
+                        confidence: 0.9,
+                        summary: "🔍 查询事项与收纳位置：\(target)"
+                    )
+                }
+            }
+        }
+        return nil
+    }
+
+    static func extractStorageRecord(from text: String) -> PlannedAction? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let patterns = [
+            "(?:把|将)?\\s*(.+?)\\s*(?:放在了?|收在了?|存放在了?|放在|收在|存放于|收纳到)\\s*(.+)",
+            "(.+?)\\s*(?:放进|收进|放到了?)\\s*(.+)"
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let ns = trimmed as NSString
+            let matches = regex.matches(in: trimmed, range: NSRange(location: 0, length: ns.length))
+            if let first = matches.first, first.numberOfRanges > 2 {
+                let name = ns.substring(with: first.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                let location = ns.substring(with: first.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty, !location.isEmpty, name.count < 30, location.count < 60 else { continue }
+
+                if containsAny(name, ["会议", "待办", "日程", "提醒", "事情", "任务"]) { continue }
+
+                let rooms = ["主卧", "次卧", "客厅", "书房", "玄关", "厨房", "阳台", "储物间", "洗手间", "卫生间"]
+                let room = rooms.first { location.contains($0) || name.contains($0) } ?? "主卧"
+
+                let medWords = ["药", "布洛芬", "阿莫西林", "感冒", "退烧", "消炎", "维生素", "创可贴", "眼药水", "止痛"]
+                let isMedicine = medWords.contains { name.contains($0) || location.contains($0) }
+
+                let params: [String: String] = [
+                    "name": name,
+                    "location": location,
+                    "roomArea": room,
+                    "isMedicine": isMedicine ? "true" : "false"
+                ]
+                return PlannedAction(
+                    capability: .storageRecord,
+                    params: params,
+                    confidence: 0.88,
+                    summary: Self.summary(for: .storageRecord, params: params)
+                )
+            }
+        }
+        return nil
+    }
+
+    static func extractDepartureItem(from text: String) -> PlannedAction? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("出门") || trimmed.contains("带上") || trimmed.contains("随身") else { return nil }
+        guard containsAny(trimmed, ["清单", "记得带", "必带", "别忘带", "带上", "带好"]) else { return nil }
+
+        let itemPatterns = [
+            "出门(?:清单)?(?:加上|添加|记得带|带上|别忘带)\\s*(.+)",
+            "(?:记得带|带上|随身携带)\\s*(.+?)(?:出门)?$"
+        ]
+        for pattern in itemPatterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let ns = trimmed as NSString
+            let matches = regex.matches(in: trimmed, range: NSRange(location: 0, length: ns.length))
+            if let first = matches.first, first.numberOfRanges > 1 {
+                let title = ns.substring(with: first.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty, title.count < 30 else { continue }
+                var scene = "工作通勤"
+                if containsAny(trimmed, ["运动", "健身", "跑步"]) { scene = "运动健身" }
+                else if containsAny(trimmed, ["旅行", "出差", "机场", "高铁"]) { scene = "出差旅行" }
+                else if containsAny(trimmed, ["带娃", "宝宝", "小孩"]) { scene = "带娃出行" }
+                else if containsAny(trimmed, ["遛狗", "宠物", "狗"]) { scene = "遛狗随行" }
+                else if containsAny(trimmed, ["雨", "伞", "雪"]) { scene = "雨雪出行" }
+
+                let params: [String: String] = [
+                    "title": title,
+                    "scene": scene
+                ]
+                return PlannedAction(
+                    capability: .departureAdd,
+                    params: params,
+                    confidence: 0.88,
+                    summary: Self.summary(for: .departureAdd, params: params)
+                )
+            }
+        }
+        return nil
+    }
+
+    static func extractHabitOrMedicationLog(from text: String) -> PlannedAction? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let medPatterns = [
+            "(?:吃了|服用了|服下|服了|喝了)\\s*([^，。,\\s]{1,15}?(?:药|胶囊|冲剂|片|滴眼液|喷雾|维生素|钙片|鱼油|胰岛素))",
+            "(?:吃完|服完|喝完)\\s*([^，。,\\s]{1,15}?(?:药|胶囊|冲剂|片|中药|西药))"
+        ]
+        for pattern in medPatterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let ns = trimmed as NSString
+            let matches = regex.matches(in: trimmed, range: NSRange(location: 0, length: ns.length))
+            if let first = matches.first, first.numberOfRanges > 1 {
+                let target = ns.substring(with: first.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !target.isEmpty {
+                    let params = ["target": target, "kind": "medication"]
+                    return PlannedAction(
+                        capability: .habitLog,
+                        params: params,
+                        confidence: 0.9,
+                        summary: Self.summary(for: .habitLog, params: params)
+                    )
+                }
+            }
+        }
+
+        if trimmed.contains("打卡") || trimmed.contains("习惯") || (trimmed.contains("完成") && containsAny(trimmed, ["晨跑", "早起", "阅读", "健身", "喝水", "运动", "散步"])) {
+            var clean = trimmed
+                .replacingOccurrences(of: "打卡", with: "")
+                .replacingOccurrences(of: "完成", with: "")
+                .replacingOccurrences(of: "搞定", with: "")
+                .replacingOccurrences(of: "今日", with: "")
+                .replacingOccurrences(of: "今天", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if clean.isEmpty { clean = "日常习惯" }
+            let params = ["target": clean, "kind": "habit"]
+            return PlannedAction(
+                capability: .habitLog,
+                params: params,
+                confidence: 0.88,
+                summary: Self.summary(for: .habitLog, params: params)
+            )
+        }
+        return nil
+    }
+
+    static func extractAnniversaryOrExpiry(from text: String) -> PlannedAction? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if containsAny(trimmed, ["自动续费", "续费", "订阅"]) {
+            let title = guessExpenseTitle(from: trimmed)
+            let params = ["title": title, "category": "订阅续费"]
+            return PlannedAction(
+                capability: .anniversaryCreate,
+                params: params,
+                confidence: 0.85,
+                summary: Self.summary(for: .anniversaryCreate, params: params)
+            )
+        }
+
+        if containsAny(trimmed, ["过期", "到期", "保质期"]) && containsAny(trimmed, ["药", "水", "奶", "食物", "证件", "护照", "开封"]) {
+            let title = guessExpenseTitle(from: trimmed)
+            let params = ["title": title, "category": "保质期"]
+            return PlannedAction(
+                capability: .anniversaryCreate,
+                params: params,
+                confidence: 0.85,
+                summary: Self.summary(for: .anniversaryCreate, params: params)
+            )
+        }
+
+        if containsAny(trimmed, ["纪念日", "周年", "在一起", "生日", "倒数", "考研", "高考"]) {
+            let title = guessExpenseTitle(from: trimmed)
+            let cat = trimmed.contains("生日") ? "生日" : (trimmed.contains("倒数") ? "倒数日" : "纪念日")
+            let params = ["title": title, "category": cat]
+            return PlannedAction(
+                capability: .anniversaryCreate,
+                params: params,
+                confidence: 0.88,
+                summary: Self.summary(for: .anniversaryCreate, params: params)
+            )
+        }
+        return nil
+    }
+
+    static func extractLifeRecord(from text: String) -> PlannedAction? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if containsAny(trimmed, ["猫", "狗", "宠物", "布丁", "大黄", "毛孩子"]) {
+            if containsAny(trimmed, ["体外驱虫", "体内驱虫", "驱虫", "疫苗", "洗澡", "体重", "猫砂", "猫粮"]) {
+                let detail: String
+                if trimmed.contains("体外驱虫") { detail = "完成体外驱虫" }
+                else if trimmed.contains("体内驱虫") { detail = "完成体内驱虫" }
+                else if trimmed.contains("疫苗") { detail = "完成疫苗接种" }
+                else if trimmed.contains("洗澡") { detail = "完成洗澡清洁" }
+                else { detail = trimmed }
+                let params = ["domain": "pet", "title": "宠物健康护理", "detail": detail]
+                return PlannedAction(
+                    capability: .lifeRecord,
+                    params: params,
+                    confidence: 0.88,
+                    summary: Self.summary(for: .lifeRecord, params: params)
+                )
+            }
+        }
+
+        if containsAny(trimmed, ["车", "加油", "充电", "保养", "洗车", "年检", "里程", "油耗"]) {
+            if containsAny(trimmed, ["加油", "充电", "做保养", "去保养", "做过保养", "洗了车", "年检", "里程"]) {
+                let detail: String
+                if trimmed.contains("加油") { detail = "完成燃油补能" }
+                else if trimmed.contains("充电") { detail = "完成电动补能" }
+                else if trimmed.contains("保养") { detail = "完成常规保养" }
+                else if trimmed.contains("洗车") { detail = "完成车辆清洗" }
+                else { detail = trimmed }
+                let params = ["domain": "vehicle", "title": "爱车养护补能", "detail": detail]
+                return PlannedAction(
+                    capability: .lifeRecord,
+                    params: params,
+                    confidence: 0.88,
+                    summary: Self.summary(for: .lifeRecord, params: params)
+                )
+            }
+        }
+
+        if containsAny(trimmed, ["宝宝", "孩子", "儿子", "女儿", "婴儿", "幼童"]) {
+            if containsAny(trimmed, ["身高", "体重", "头围", "长高", "会翻身", "会独坐", "会走路", "长牙", "叫爸爸", "叫妈妈"]) {
+                let params = ["domain": "child", "title": "亲子成长记录", "detail": trimmed]
+                return PlannedAction(
+                    capability: .lifeRecord,
+                    params: params,
+                    confidence: 0.88,
+                    summary: Self.summary(for: .lifeRecord, params: params)
+                )
+            }
+        }
+
+        if containsAny(trimmed, ["练琴", "练吉他", "练习", "练字", "背单词", "口语练习", "技能学习"]) {
+            let params = ["domain": "skill", "title": "技能练习打卡", "detail": trimmed]
+            return PlannedAction(
+                capability: .lifeRecord,
+                params: params,
+                confidence: 0.85,
+                summary: Self.summary(for: .lifeRecord, params: params)
+            )
+        }
+
+        if containsAny(trimmed, ["登记身份证", "登记护照", "驾驶证号", "行驶证号"]) {
+            let params = ["domain": "document", "title": "重要证件登记", "detail": trimmed]
+            return PlannedAction(
+                capability: .lifeRecord,
+                params: params,
+                confidence: 0.85,
+                summary: Self.summary(for: .lifeRecord, params: params)
+            )
+        }
+        if containsAny(trimmed, ["筹备婚礼", "装修新房", "新房装修", "搬家乔迁"]) {
+            let params = ["domain": "event", "title": "人生大事筹备", "detail": trimmed]
+            return PlannedAction(
+                capability: .lifeRecord,
+                params: params,
+                confidence: 0.85,
+                summary: Self.summary(for: .lifeRecord, params: params)
+            )
+        }
+
+        return nil
+    }
 }

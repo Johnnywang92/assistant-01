@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import SwiftData
 import SwiftUI
@@ -124,6 +125,10 @@ struct PeriodicReportData: Identifiable {
     // 周期回顾：与上一等长周期的环比对比（仅月/季/年报）
     let comparison: PeriodComparison?
 
+    // 身体活力与健康评估（Apple 健康与饮食热量推测）
+    let vitality: VitalityEvaluation?
+    let healthSnapshot: HealthDaySnapshot?
+
     // 成就等级评估
     var achievementLevel: String {
         if completionRate >= 0.8 && completedTodos.count >= 3 {
@@ -192,6 +197,20 @@ struct PeriodicReportData: Identifiable {
         lines.append("")
         lines.append(smartSummary)
         lines.append("")
+        // 身体活力与健康简报（抓重点、精简呈现）
+        if let v = vitality {
+            lines.append("## ⚡️ 身体活力与健康简报")
+            lines.append("")
+            lines.append("> 🔋 **活力指数**：\(v.score) 分 · \(v.level.badge)  ")
+            lines.append("> 💡 **核心状态**：\(v.summary)  ")
+            lines.append("> 🌿 **调养建议**：\(v.suggestion)")
+            lines.append("")
+            lines.append("### 关键指标精简速览：")
+            for h in v.highlights {
+                lines.append("- \(h.icon) **\(h.title)**：\(h.valueText) （\(h.statusText)）")
+            }
+            lines.append("")
+        }
         // 行动建议（基于真实数据提炼，urgent > action > positive）
         if !suggestions.isEmpty {
             lines.append("## 🎯 行动建议")
@@ -520,6 +539,18 @@ final class PeriodicReportManager: ObservableObject {
             return due > endDate && due <= futureLimit
         }.sorted(by: { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) })
 
+        // 4.5 饮食摄入热量与 Apple 健康指标聚合（活力值评估）
+        let allFoodRecords = (try? context.fetch(FetchDescriptor<FoodIntakeRecord>())) ?? []
+        let foodRecordsInPeriod = allFoodRecords.filter { $0.date >= startDate && $0.date <= endDate }
+        let totalFoodCalories = foodRecordsInPeriod.reduce(0.0) { $0 + $1.consumedCalories }
+        let foodIntakeCalories: Double? = foodRecordsInPeriod.isEmpty ? nil : totalFoodCalories
+
+        // 日报优先读取健康快照（如果是今天，优先使用 HealthKitService.shared.snapshot）
+        let healthSnapshot: HealthDaySnapshot? = period == .daily ? HealthKitService.shared.snapshot : nil
+        let vitality: VitalityEvaluation? = (healthSnapshot != nil || foodIntakeCalories != nil)
+            ? VitalityEvaluator.evaluate(snapshot: healthSnapshot, foodIntakeCalories: foodIntakeCalories)
+            : nil
+
         // 5. 生成智能复盘总结
         let smartSummary = generateSmartSummary(
             period: period,
@@ -530,7 +561,8 @@ final class PeriodicReportManager: ObservableObject {
             totalExpense: totalExpense,
             categoryStats: categoryStats,
             parcelCount: parcelCount,
-            upcomingCount: upcomingTodos.count
+            upcomingCount: upcomingTodos.count,
+            vitality: vitality
         )
 
         // 6. 财务深度联动：今日安心花（仅「今天」的日报）
@@ -646,7 +678,8 @@ final class PeriodicReportManager: ObservableObject {
             totalExpense: totalExpense,
             totalIncome: totalIncome,
             expenseCount: expenseOnly.count,
-            periodDays: periodDays
+            periodDays: periodDays,
+            vitality: vitality
         )
 
         return PeriodicReportData(
@@ -676,7 +709,9 @@ final class PeriodicReportManager: ObservableObject {
             budgetOverview: budgetOverview,
             itemCostEntries: itemCostEntries,
             suggestions: suggestions,
-            comparison: comparison
+            comparison: comparison,
+            vitality: vitality,
+            healthSnapshot: healthSnapshot
         )
     }
 
@@ -771,7 +806,8 @@ final class PeriodicReportManager: ObservableObject {
         totalExpense: Double,
         totalIncome: Double,
         expenseCount: Int,
-        periodDays: Int
+        periodDays: Int,
+        vitality: VitalityEvaluation? = nil
     ) -> [ReportSuggestion] {
         var suggestions: [ReportSuggestion] = []
         let isDaily = period == .daily
@@ -937,6 +973,23 @@ final class PeriodicReportManager: ObservableObject {
             }
         }
 
+        // 9.5 身体活力与机能建议
+        if let v = vitality {
+            if v.level == .exhausted || v.level == .low {
+                suggestions.append(ReportSuggestion(
+                    tone: .urgent, icon: "bed.double.fill",
+                    title: "活力预警与修复",
+                    detail: v.suggestion
+                ))
+            } else if v.level == .peak {
+                suggestions.append(ReportSuggestion(
+                    tone: .positive, icon: "bolt.fill",
+                    title: "活力充沛",
+                    detail: v.suggestion
+                ))
+            }
+        }
+
         // 10. 兜底正反馈：没有任何异常信号时给出稳定确认
         if suggestions.isEmpty {
             suggestions.append(ReportSuggestion(
@@ -960,7 +1013,8 @@ final class PeriodicReportManager: ObservableObject {
         totalExpense: Double,
         categoryStats: [CategoryExpenseStat],
         parcelCount: Int,
-        upcomingCount: Int
+        upcomingCount: Int,
+        vitality: VitalityEvaluation? = nil
     ) -> String {
         var segments: [String] = []
 
@@ -996,6 +1050,13 @@ final class PeriodicReportManager: ObservableObject {
                 ))
             } else {
                 segments.append(L10n.tr("今天保持了极简消费，未产生额外记账支出。"))
+            }
+
+            if let v = vitality {
+                segments.append(L10n.choose(
+                    "身体活力指数 \(v.score) 分（\(v.level.badge)）。\(v.summary)",
+                    "Vitality index is \(v.score) (\(v.level.rawValue)). \(v.summary)"
+                ))
             }
 
             if upcomingCount > 0 {

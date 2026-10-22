@@ -173,6 +173,8 @@ enum PickupCheckoutService {
         PickupActivityHelper.markCompleted(todoID: id)
         // 清掉这条待办原本排期的到期提醒，避免取完还响
         TodoNotificationManager.shared.cancelNotification(for: id)
+        // 动态同步驿站地理围栏（包裹取完后自动清理硬件围栏）
+        LocationReminderService.shared.syncParcelStationGeofences(context: context)
     }
 
     // MARK: - 对账

@@ -74,8 +74,8 @@ struct HabitAndMedicationScheduler {
                 let minute = parts[1]
 
                 let content = UNMutableNotificationContent()
-                content.title = "💊 服药提醒"
-                content.body = "该吃药了：\(plan.medName)（\(plan.dosage)）"
+                content.title = "💊 服药提醒 · \(plan.mealRelation.shortTitle)"
+                content.body = "该吃药了：\(plan.medName)（\(plan.dosage) · \(plan.mealRelation.displayName)）"
                 content.sound = .default
 
                 var dateComponents = DateComponents()

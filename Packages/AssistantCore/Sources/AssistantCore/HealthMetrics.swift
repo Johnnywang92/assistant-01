@@ -13,24 +13,45 @@ import Foundation
 
 // MARK: - 指标种类
 
-/// 接入的只读指标种类。范围刻意收窄：只取能喂给现有待办类型的四项。
+/// 接入的只读指标种类。包含基础活动、睡眠与核心生命体征。
 public enum HealthMetricKind: String, CaseIterable, Sendable {
     /// 步数（步）
     case stepCount
     /// 活动能量（千卡）
     case activeEnergy
+    /// 静息能量（千卡）
+    case restingEnergy
     /// 饮水（毫升）
     case dietaryWater
     /// 睡眠时长（小时）
     case sleep
+    /// 体温 / 手腕温度（摄氏度 ℃）
+    case bodyTemperature
+    /// 心率（次/分 bpm）
+    case heartRate
+    /// 血氧饱和度（%）
+    case bloodOxygen
+    /// 步行速度（km/h）
+    case walkingSpeed
+    /// 呼吸频率（次/分）
+    case respiratoryRate
+    /// 健身时长（分钟）
+    case workoutDuration
 
     /// 中文显示名。
     public var displayName: String {
         switch self {
         case .stepCount: return "步数"
         case .activeEnergy: return "活动能量"
+        case .restingEnergy: return "静息能量"
         case .dietaryWater: return "饮水"
         case .sleep: return "睡眠"
+        case .bodyTemperature: return "体温"
+        case .heartRate: return "心率"
+        case .bloodOxygen: return "血氧"
+        case .walkingSpeed: return "步行速度"
+        case .respiratoryRate: return "呼吸频率"
+        case .workoutDuration: return "健身时长"
         }
     }
 
@@ -39,17 +60,25 @@ public enum HealthMetricKind: String, CaseIterable, Sendable {
         switch self {
         case .stepCount: return "figure.walk"
         case .activeEnergy: return "flame.fill"
+        case .restingEnergy: return "bolt.heart.fill"
         case .dietaryWater: return "drop.fill"
         case .sleep: return "bed.double.fill"
+        case .bodyTemperature: return "thermometer.medium"
+        case .heartRate: return "heart.fill"
+        case .bloodOxygen: return "lungs.fill"
+        case .walkingSpeed: return "figure.walk.motion"
+        case .respiratoryRate: return "wind"
+        case .workoutDuration: return "figure.run"
         }
     }
 
-    /// 该指标服务于哪一类待办。用于把健康侧数值与本地打卡待办关联起来。
-    public var relatedTodoType: HealthRelatedTodoType {
+    /// 该指标服务于哪一类待办。若为纯生理观测指标则返回 nil。
+    public var relatedTodoType: HealthRelatedTodoType? {
         switch self {
-        case .stepCount, .activeEnergy: return .exercise
+        case .stepCount, .activeEnergy, .workoutDuration: return .exercise
         case .dietaryWater: return .hydration
         case .sleep: return .medication
+        default: return nil
         }
     }
 }
@@ -181,6 +210,43 @@ public enum HealthReadState: String, Sendable {
     public var hasData: Bool { self == .hasData }
 }
 
+// MARK: - 健身记录摘要
+
+/// 健身记录聚合摘要。
+public struct WorkoutRecordSummary: Equatable, Sendable {
+    /// 健身总次数
+    public let count: Int
+    /// 健身总时长（分钟）
+    public let totalDurationMinutes: Double
+    /// 健身消耗总能量（千卡）
+    public let totalEnergyBurned: Double?
+    /// 包含的运动项目名称（如 ["跑步", "传统力量训练"]）
+    public let activityNames: [String]
+
+    public init(
+        count: Int,
+        totalDurationMinutes: Double,
+        totalEnergyBurned: Double? = nil,
+        activityNames: [String] = []
+    ) {
+        self.count = count
+        self.totalDurationMinutes = totalDurationMinutes
+        self.totalEnergyBurned = totalEnergyBurned
+        self.activityNames = activityNames
+    }
+
+    /// 一句话速览
+    public var summaryText: String {
+        guard count > 0 else { return "今日暂无健身记录" }
+        let names = activityNames.isEmpty ? "健身" : activityNames.joined(separator: "、")
+        let minutes = Int(totalDurationMinutes.rounded())
+        if let cal = totalEnergyBurned, cal > 0 {
+            return "\(names) \(count) 次 · \(minutes) 分钟 · 消耗 \(Int(cal.rounded())) 千卡"
+        }
+        return "\(names) \(count) 次 · 共 \(minutes) 分钟"
+    }
+}
+
 // MARK: - 快照聚合
 
 /// 一天的健康指标快照。同一 `day` 下的多项指标聚合在一起。
@@ -189,10 +255,17 @@ public struct HealthDaySnapshot: Equatable, Sendable {
     public let day: Date
     /// 各项指标值。缺失的指标不在字典里。
     public let values: [HealthMetricKind: HealthMetricValue]
+    /// 健身记录聚合摘要
+    public let workoutSummary: WorkoutRecordSummary?
 
-    public init(day: Date, values: [HealthMetricKind: HealthMetricValue]) {
+    public init(
+        day: Date,
+        values: [HealthMetricKind: HealthMetricValue],
+        workoutSummary: WorkoutRecordSummary? = nil
+    ) {
         self.day = day
         self.values = values
+        self.workoutSummary = workoutSummary
     }
 
     /// 取某项指标值。
@@ -200,14 +273,56 @@ public struct HealthDaySnapshot: Equatable, Sendable {
         values[kind]
     }
 
-    /// 读状态：任一指标有值即视为读到了数据。
+    /// 读状态：任一指标或健身记录有值即视为读到了数据。
     public var readState: HealthReadState {
-        values.isEmpty ? .requestedNoData : .hasData
+        (values.isEmpty && (workoutSummary == nil || workoutSummary?.count == 0)) ? .requestedNoData : .hasData
     }
 
     /// 空快照（请求过但什么都没读到）。
     public static func empty(day: Date) -> HealthDaySnapshot {
-        HealthDaySnapshot(day: day, values: [:])
+        HealthDaySnapshot(day: day, values: [:], workoutSummary: nil)
+    }
+
+    // MARK: - 快捷计算属性
+
+    /// 身体总耗能（千卡）= 静息能量 + 活动能量
+    public var totalEnergyBurned: Double? {
+        let active = value(for: .activeEnergy)?.value
+        let resting = value(for: .restingEnergy)?.value
+        if active == nil && resting == nil { return nil }
+        return (active ?? 0) + (resting ?? 0)
+    }
+
+    /// 静息能量（千卡）
+    public var restingEnergy: Double? { value(for: .restingEnergy)?.value }
+
+    /// 活动能量（千卡）
+    public var activeEnergy: Double? { value(for: .activeEnergy)?.value }
+
+    /// 步数
+    public var stepCount: Double? { value(for: .stepCount)?.value }
+
+    /// 睡眠时长（小时）
+    public var sleepHours: Double? { value(for: .sleep)?.value }
+
+    /// 心率（次/分）
+    public var heartRate: Double? { value(for: .heartRate)?.value }
+
+    /// 血氧（%）
+    public var bloodOxygen: Double? { value(for: .bloodOxygen)?.value }
+
+    /// 体温（℃）
+    public var bodyTemperature: Double? { value(for: .bodyTemperature)?.value }
+
+    /// 步行速度（km/h）
+    public var walkingSpeed: Double? { value(for: .walkingSpeed)?.value }
+
+    /// 呼吸频率（次/分）
+    public var respiratoryRate: Double? { value(for: .respiratoryRate)?.value }
+
+    /// 健身时长（分钟）
+    public var workoutMinutes: Double? {
+        workoutSummary?.totalDurationMinutes ?? value(for: .workoutDuration)?.value
     }
 }
 
@@ -218,21 +333,35 @@ public enum HealthMetrics {
 
     /// 把散落的单项观测合并成一天一份的快照。
     ///
-    /// 同一指标同一天出现多次时取**求和**（步数、能量、饮水都是累计型）。
-    /// 睡眠时长若多次上报也取最大值而非求和——见 `mergeSnapshot` 的处理。
-    public static func aggregate(_ values: [HealthMetricValue], day: Date) -> HealthDaySnapshot {
-        var buckets: [HealthMetricKind: Double] = [:]
+    /// 累计型指标（步数、能量、饮水、健身时长）取求和；
+    /// 睡眠取最大值；体温、心率、血氧、步行速度、呼吸频率等取均值。
+    public static func aggregate(
+        _ values: [HealthMetricValue],
+        day: Date,
+        workoutSummary: WorkoutRecordSummary? = nil
+    ) -> HealthDaySnapshot {
+        var buckets: [HealthMetricKind: [Double]] = [:]
         for value in values {
-            buckets[value.kind, default: 0] += value.value
+            buckets[value.kind, default: []].append(value.value)
         }
-        let merged = buckets.reduce(into: [HealthMetricKind: HealthMetricValue]()) { result, pair in
-            result[pair.key] = HealthMetricValue(kind: pair.key, value: pair.value, day: day)
+        var merged: [HealthMetricKind: HealthMetricValue] = [:]
+        for (kind, nums) in buckets {
+            let combinedValue: Double
+            switch kind {
+            case .stepCount, .activeEnergy, .restingEnergy, .dietaryWater, .workoutDuration:
+                combinedValue = nums.reduce(0, +)
+            case .sleep:
+                combinedValue = nums.max() ?? 0
+            case .bodyTemperature, .heartRate, .bloodOxygen, .walkingSpeed, .respiratoryRate:
+                combinedValue = nums.reduce(0, +) / Double(nums.count)
+            }
+            merged[kind] = HealthMetricValue(kind: kind, value: combinedValue, day: day)
         }
-        return HealthDaySnapshot(day: day, values: merged)
+        return HealthDaySnapshot(day: day, values: merged, workoutSummary: workoutSummary)
     }
 
     /// 合并同一天的两份快照（例：后台与前台各拉一次）。
-    /// 累计型指标求和，睡眠取较大值（避免把同一晚睡眠算成两倍）。
+    /// 累计型指标求和，睡眠取较大值，均值型指标加权平均或保留非零。
     public static func mergeSnapshot(_ lhs: HealthDaySnapshot, _ rhs: HealthDaySnapshot) -> HealthDaySnapshot {
         var values = lhs.values
         for (kind, rhsValue) in rhs.values {
@@ -241,14 +370,18 @@ public enum HealthMetrics {
                 continue
             }
             let mergedValue: Double
-            if kind == .sleep {
-                mergedValue = max(lhsValue.value, rhsValue.value)
-            } else {
+            switch kind {
+            case .stepCount, .activeEnergy, .restingEnergy, .dietaryWater, .workoutDuration:
                 mergedValue = lhsValue.value + rhsValue.value
+            case .sleep:
+                mergedValue = max(lhsValue.value, rhsValue.value)
+            case .bodyTemperature, .heartRate, .bloodOxygen, .walkingSpeed, .respiratoryRate:
+                mergedValue = (lhsValue.value + rhsValue.value) / 2.0
             }
             values[kind] = HealthMetricValue(kind: kind, value: mergedValue, day: lhs.day)
         }
-        return HealthDaySnapshot(day: lhs.day, values: values)
+        let mergedWorkout = rhs.workoutSummary ?? lhs.workoutSummary
+        return HealthDaySnapshot(day: lhs.day, values: values, workoutSummary: mergedWorkout)
     }
 
     /// 计算所有目标的达成情况。缺失指标的 `actual` 为 nil，状态为 `.noData`。
@@ -269,17 +402,31 @@ public enum HealthMetrics {
     }
 
     /// 把数值格式化为带单位的可读文本。
-    /// 睡眠保留一位小数（7.5 小时有意义），其余取整。
     public static func format(_ value: Double, for kind: HealthMetricKind) -> String {
         switch kind {
         case .stepCount:
             return "\(Int(value.rounded())) 步"
         case .activeEnergy:
             return "\(Int(value.rounded())) 千卡"
+        case .restingEnergy:
+            return "\(Int(value.rounded())) 千卡"
         case .dietaryWater:
             return "\(Int(value.rounded())) 毫升"
         case .sleep:
             return String(format: "%.1f 小时", value)
+        case .bodyTemperature:
+            return String(format: "%.1f ℃", value)
+        case .heartRate:
+            return "\(Int(value.rounded())) 次/分"
+        case .bloodOxygen:
+            let pct = value > 1.0 ? value : value * 100.0
+            return String(format: "%.0f%%", pct)
+        case .walkingSpeed:
+            return String(format: "%.1f km/h", value)
+        case .respiratoryRate:
+            return "\(Int(value.rounded())) 次/分"
+        case .workoutDuration:
+            return "\(Int(value.rounded())) 分钟"
         }
     }
 

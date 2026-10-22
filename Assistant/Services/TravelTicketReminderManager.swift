@@ -51,28 +51,38 @@ public struct UpcomingTravelTicketInfo: Identifiable, Equatable {
         self.stage = stage
     }
 
+    /// 复用的短日期格式化器（按中英文各缓存一份，避免每次渲染横幅都新建 DateFormatter）
+    private static let zhShortDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M月d日"
+        return f
+    }()
+
+    private static let enShortDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US")
+        f.dateFormat = "MMM d"
+        return f
+    }()
+
+    private static func shortDateString(_ date: Date) -> String {
+        (L10n.isEnglish ? enShortDateFormatter : zhShortDateFormatter).string(from: date)
+    }
+
     /// 格式化出行日期
     public var departureFormatted: String {
-        let f = DateFormatter()
-        f.locale = L10n.locale
-        f.dateFormat = L10n.choose("M月d日", "MMM d")
-        return f.string(from: departureDate)
+        Self.shortDateString(departureDate)
     }
 
     /// 格式化火车票开售日期
     public var trainSaleFormatted: String {
-        let f = DateFormatter()
-        f.locale = L10n.locale
-        f.dateFormat = L10n.choose("M月d日", "MMM d")
-        return f.string(from: trainSaleDate)
+        Self.shortDateString(trainSaleDate)
     }
 
     /// 格式化热门场馆与景区开约日期
     public var scenicBookingFormatted: String {
-        let f = DateFormatter()
-        f.locale = L10n.locale
-        f.dateFormat = L10n.choose("M月d日", "MMM d")
-        return f.string(from: scenicBookingDate)
+        Self.shortDateString(scenicBookingDate)
     }
 
     /// 阶段标签文本
@@ -295,9 +305,12 @@ public final class TravelTicketReminderManager: ObservableObject {
 
     /// 获取用户当前所在城市（优先读取实时定位坐标或常驻地点采样，默认兜底上海）
     static func currentUserCity(context: ModelContext? = nil) -> String {
-        if let loc = CLLocationManager().location,
+        // 性能：复用定位服务已采样的坐标，避免每次扫描都在主线程新建 CLLocationManager 触发与 locationd 的同步 IPC。
+        if let loc = LocationReminderService.shared.lastKnownLocation,
            let city = cityFromCoordinate(loc.coordinate) {
-            UserDefaults.standard.set(city, forKey: "cached_user_current_city")
+            if UserDefaults.standard.string(forKey: "cached_user_current_city") != city {
+                UserDefaults.standard.set(city, forKey: "cached_user_current_city")
+            }
             return city
         }
 
@@ -517,21 +530,36 @@ public final class TravelTicketReminderManager: ObservableObject {
                 entries.append(HolidayEntry(name: "国庆长假", date: d))
             }
 
-            // 5. 农历节日：春节、端午、中秋
-            let lunarCal = Calendar(identifier: .chinese)
-            // 扫描该年份内的农历匹配
-            if let springFestival = findDateInYear(year: year, targetLunarMonth: 1, targetLunarDay: 1, lunarCal: lunarCal, cal: cal) {
-                entries.append(HolidayEntry(name: "春节长假", date: springFestival))
-            }
-            if let dragonBoat = findDateInYear(year: year, targetLunarMonth: 5, targetLunarDay: 5, lunarCal: lunarCal, cal: cal) {
-                entries.append(HolidayEntry(name: "端午假期", date: dragonBoat))
-            }
-            if let midAutumn = findDateInYear(year: year, targetLunarMonth: 8, targetLunarDay: 15, lunarCal: lunarCal, cal: cal) {
-                entries.append(HolidayEntry(name: "中秋假期", date: midAutumn))
-            }
+            // 5. 农历节日：春节、端午、中秋（按年份缓存，避免每次刷新都在主线程逐日做农历换算）
+            entries.append(contentsOf: lunarHolidays(forYear: year, cal: cal))
         }
 
         return entries.sorted { $0.date < $1.date }
+    }
+
+    /// 农历节日推算缓存：key 为「年份 + 时区」，农历节日日期在同一年内恒定，计算一次即可复用。
+    private var lunarHolidayCache: [String: [HolidayEntry]] = [:]
+
+    private func lunarHolidays(forYear year: Int, cal: Calendar) -> [HolidayEntry] {
+        let cacheKey = "\(year)_\(cal.timeZone.identifier)"
+        if let cached = lunarHolidayCache[cacheKey] {
+            return cached
+        }
+
+        let lunarCal = Calendar(identifier: .chinese)
+        var result: [HolidayEntry] = []
+        // 扫描该年份内的农历匹配
+        if let springFestival = findDateInYear(year: year, targetLunarMonth: 1, targetLunarDay: 1, lunarCal: lunarCal, cal: cal) {
+            result.append(HolidayEntry(name: "春节长假", date: springFestival))
+        }
+        if let dragonBoat = findDateInYear(year: year, targetLunarMonth: 5, targetLunarDay: 5, lunarCal: lunarCal, cal: cal) {
+            result.append(HolidayEntry(name: "端午假期", date: dragonBoat))
+        }
+        if let midAutumn = findDateInYear(year: year, targetLunarMonth: 8, targetLunarDay: 15, lunarCal: lunarCal, cal: cal) {
+            result.append(HolidayEntry(name: "中秋假期", date: midAutumn))
+        }
+        lunarHolidayCache[cacheKey] = result
+        return result
     }
 
     private func findDateInYear(year: Int, targetLunarMonth: Int, targetLunarDay: Int, lunarCal: Calendar, cal: Calendar) -> Date? {
@@ -539,9 +567,9 @@ public final class TravelTicketReminderManager: ObservableObject {
         guard let start = cal.date(from: DateComponents(year: year, month: 1, day: 1)) else { return nil }
         for offset in 0...390 {
             if let checkDate = cal.date(byAdding: .day, value: offset, to: start) {
-                let m = lunarCal.component(.month, from: checkDate)
-                let d = lunarCal.component(.day, from: checkDate)
-                if m == targetLunarMonth && d == targetLunarDay {
+                // 单次 dateComponents 同时取月/日，减少一半 ICU 农历换算
+                let comps = lunarCal.dateComponents([.month, .day], from: checkDate)
+                if comps.month == targetLunarMonth && comps.day == targetLunarDay {
                     return checkDate
                 }
             }

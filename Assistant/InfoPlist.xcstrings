@@ -105,7 +105,19 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "需要读取你在「健康」中的步数、运动能量、饮水与睡眠记录，用于在运动、喝水与服药打卡页展示真实数值，帮助你判断当天的完成情况。数据只在本机读取与展示，不会上传。"
+            "value" : "需要读取你在「健康」中的睡眠、体温、活动能量、静息能量、心率、血氧、步行速度、体征与健身记录，用于在日报与健康中心评估身体活力值并生成精简生活复盘。数据仅在设备本机离线分析展示，绝不上传。"
+          }
+        }
+      }
+    },
+    "NSHealthUpdateUsageDescription" : {
+      "comment" : "Privacy - Health Update Usage Description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "需要写入权限以将你在助手里记录的饮水量同步至 Apple 健康。"
           }
         }
       }

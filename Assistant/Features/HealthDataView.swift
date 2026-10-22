@@ -17,14 +17,31 @@ import SwiftUI
 struct HealthDataView: View {
     @StateObject private var health = HealthKitService.shared
     @Query(sort: \FoodIntakeRecord.date, order: .reverse) private var foodRecords: [FoodIntakeRecord]
+    @Query(sort: \WaterIntakeRecord.date, order: .reverse) private var waterRecords: [WaterIntakeRecord]
     @Environment(\.scenePhase) private var scenePhase
 
     /// 本地打卡目标：与健康侧指标一一对应
     private let goals = HealthGoal.defaults
 
+    private var todayFoodCalories: Double? {
+        let cal = Calendar.current
+        let today = foodRecords.filter { cal.isDateInToday($0.date) }
+        guard !today.isEmpty else { return nil }
+        return today.reduce(0.0) { $0 + $1.consumedCalories }
+    }
+
+    private var vitalityEvaluation: VitalityEvaluation? {
+        guard health.snapshot?.readState == .hasData || todayFoodCalories != nil else { return nil }
+        return VitalityEvaluator.evaluate(snapshot: health.snapshot, foodIntakeCalories: todayFoodCalories)
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.md) {
+                if let vitality = vitalityEvaluation {
+                    vitalityScoreCard(vitality)
+                }
+                waterTrackerEntryCard
                 foodCalorieEntryCard
                 if !HealthKitService.isAvailable {
                     unavailableCard
@@ -32,6 +49,8 @@ struct HealthDataView: View {
                     statusCard
                     if health.snapshot?.readState == .hasData {
                         metricCards
+                        energyAndWorkoutSection
+                        vitalSignsSection
                         todoCorrelationSection
                     }
                 }
@@ -62,6 +81,42 @@ struct HealthDataView: View {
             await health.requestAuthorization()
         }
         await health.refreshToday()
+    }
+
+    // MARK: - 喝水记录与折算入口卡
+
+    private var waterTrackerEntryCard: some View {
+        let cal = Calendar.current
+        let today = waterRecords.filter { cal.isDateInToday($0.date) }
+        let effectiveWater = Int(today.reduce(0.0) { $0 + $1.effectiveHydrationML }.rounded())
+        let goal = Int(AppSettings.dailyWaterGoalML)
+
+        return NavigationLink {
+            WaterTrackerView()
+        } label: {
+            HStack(spacing: AppSpacing.sm) {
+                Image(systemName: "drop.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(AppColor.primary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("喝水记录与饮品折算")
+                        .font(.headline)
+                        .foregroundStyle(AppColor.text)
+                    Text(today.isEmpty
+                         ? "一键记录白开水/咖啡/奶茶 · 智能折算有效补水与咖啡因"
+                         : "今日已记 \(today.count) 次 · 补水 \(effectiveWater)/\(goal) ml (\(Int(Double(effectiveWater) / Double(max(goal, 1)) * 100))%)")
+                        .font(.caption)
+                        .foregroundStyle(AppColor.secondaryText)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(AppColor.secondaryText)
+            }
+            .padding(AppSpacing.md)
+            .appCard()
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 饮食热量估算入口卡
@@ -204,7 +259,22 @@ struct HealthDataView: View {
         }
     }
 
+    @ViewBuilder
     private func metricCard(_ progress: HealthGoalProgress) -> some View {
+        let content = metricCardContent(progress)
+        if progress.goal.kind == .dietaryWater {
+            NavigationLink {
+                WaterTrackerView()
+            } label: {
+                content
+            }
+            .buttonStyle(.plain)
+        } else {
+            content
+        }
+    }
+
+    private func metricCardContent(_ progress: HealthGoalProgress) -> some View {
         let kind = progress.goal.kind
         let tint: Color = switch progress.status {
         case .achieved: AppColor.success
@@ -274,6 +344,185 @@ struct HealthDataView: View {
         case .noData:
             return "暂无数据"
         }
+    }
+
+    // MARK: - 综合活力卡
+
+    private func vitalityScoreCard(_ vitality: VitalityEvaluation) -> some View {
+        let levelColor: Color = switch vitality.level {
+        case .peak: .orange
+        case .good: .green
+        case .balanced: .blue
+        case .low: .yellow
+        case .exhausted: .red
+        }
+
+        return VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            HStack {
+                Label("身体活力指数", systemImage: "bolt.heart.fill")
+                    .font(.headline)
+                    .foregroundStyle(AppColor.text)
+                Spacer()
+                Text(vitality.level.badge)
+                    .font(.caption.bold())
+                    .foregroundStyle(levelColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(levelColor.opacity(0.12), in: Capsule())
+            }
+
+            HStack(spacing: AppSpacing.md) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text("\(vitality.score)")
+                            .font(.system(size: 36, weight: .bold, design: .rounded))
+                            .foregroundStyle(levelColor)
+                        Text("/ 100")
+                            .font(.caption)
+                            .foregroundStyle(AppColor.secondaryText)
+                    }
+                    Text("综合活力值")
+                        .font(.caption2)
+                        .foregroundStyle(AppColor.secondaryText)
+                }
+
+                Divider().frame(height: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(vitality.summary)
+                        .font(.caption)
+                        .foregroundStyle(AppColor.text)
+                        .lineSpacing(2)
+                    if !vitality.suggestion.isEmpty {
+                        Text(vitality.suggestion)
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.secondaryText)
+                            .padding(.top, 2)
+                    }
+                }
+            }
+
+            if !vitality.highlights.isEmpty {
+                Divider()
+                VStack(spacing: 6) {
+                    ForEach(vitality.highlights) { h in
+                        HStack(spacing: 6) {
+                            Image(systemName: h.icon)
+                                .font(.caption2)
+                                .foregroundStyle(h.isPositive ? AppColor.success : AppColor.warning)
+                                .frame(width: 14)
+                            Text(h.title)
+                                .font(.caption.bold())
+                                .foregroundStyle(AppColor.text)
+                            Text(h.valueText)
+                                .font(.caption)
+                                .foregroundStyle(AppColor.secondaryText)
+                            Spacer()
+                            Text(h.statusText)
+                                .font(.caption2)
+                                .foregroundStyle(h.isPositive ? AppColor.secondaryText : AppColor.warning)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(AppSpacing.md)
+        .appCard()
+    }
+
+    // MARK: - 能量与身体耗能
+
+    private var energyAndWorkoutSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text("能量消耗与健身")
+                .font(.subheadline.bold())
+                .foregroundStyle(AppColor.text)
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: AppSpacing.md),
+                                GridItem(.flexible(), spacing: AppSpacing.md)],
+                      spacing: AppSpacing.md) {
+                if let resting = health.snapshot?.restingEnergy {
+                    statBox(title: "静息能量", value: HealthMetrics.format(resting, for: .restingEnergy), icon: "bolt.heart.fill", tint: .indigo)
+                }
+                if let total = health.snapshot?.totalEnergyBurned {
+                    statBox(title: "身体总耗能", value: "\(Int(total.rounded())) 千卡", icon: "flame.fill", tint: .orange)
+                }
+            }
+
+            if let workout = health.snapshot?.workoutSummary, workout.count > 0 {
+                HStack(spacing: AppSpacing.sm) {
+                    Image(systemName: "figure.run.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("健身记录")
+                            .font(.caption.bold())
+                            .foregroundStyle(AppColor.text)
+                        Text(workout.summaryText)
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.secondaryText)
+                    }
+                    Spacer()
+                }
+                .padding(AppSpacing.sm)
+                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+        .padding(AppSpacing.md)
+        .appCard()
+    }
+
+    // MARK: - 生命体征
+
+    private var vitalSignsSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text("生命体征与生理指标")
+                .font(.subheadline.bold())
+                .foregroundStyle(AppColor.text)
+
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: AppSpacing.md),
+                                GridItem(.flexible(), spacing: AppSpacing.md)],
+                      spacing: AppSpacing.md) {
+                if let hr = health.snapshot?.heartRate {
+                    statBox(title: "心率", value: HealthMetrics.format(hr, for: .heartRate), icon: "heart.fill", tint: .red)
+                }
+                if let ox = health.snapshot?.bloodOxygen {
+                    statBox(title: "血氧饱和度", value: HealthMetrics.format(ox, for: .bloodOxygen), icon: "lungs.fill", tint: .cyan)
+                }
+                if let temp = health.snapshot?.bodyTemperature {
+                    statBox(title: "体温", value: HealthMetrics.format(temp, for: .bodyTemperature), icon: "thermometer.medium", tint: .orange)
+                }
+                if let speed = health.snapshot?.walkingSpeed {
+                    statBox(title: "步行速度", value: HealthMetrics.format(speed, for: .walkingSpeed), icon: "figure.walk.motion", tint: .green)
+                }
+                if let resp = health.snapshot?.respiratoryRate {
+                    statBox(title: "呼吸频率", value: HealthMetrics.format(resp, for: .respiratoryRate), icon: "wind", tint: .teal)
+                }
+            }
+        }
+        .padding(AppSpacing.md)
+        .appCard()
+    }
+
+    private func statBox(title: String, value: String, icon: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .foregroundStyle(tint)
+                    .font(.caption)
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(AppColor.secondaryText)
+            }
+            Text(value)
+                .font(.headline.bold())
+                .foregroundStyle(AppColor.text)
+                .minimumScaleFactor(0.8)
+                .lineLimit(1)
+        }
+        .padding(AppSpacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
     }
 
     // MARK: - 与本地打卡待办的关联

@@ -12,7 +12,7 @@ final class ActionGrammarTests: XCTestCase {
                 "文法必须覆盖 capability：\(capability.rawValue)"
             )
         }
-        XCTAssertEqual(ActionCapability.allCases.count, 9)
+        XCTAssertEqual(ActionCapability.allCases.count, 16)
     }
 
     func testGrammarRootRuleAndReferenceNameMatch() {
@@ -43,7 +43,9 @@ final class ActionGrammarTests: XCTestCase {
             .compactMap { $0.split(separator: ":").first.map { $0.trimmingCharacters(in: .whitespaces) } }
         let expectedRules = [
             "root", "ws", "action", "expense-create", "expense-update", "todo-create", "todo-update",
-            "todo-complete", "todo-cancel", "reminder-snooze", "query-lookup", "memo-inbox",
+            "todo-complete", "todo-cancel", "reminder-snooze", "query-lookup", "memo-inbox", "food-record",
+            "water-record", "storage-record", "habit-log", "anniversary-create", "departure-add", "life-record",
+            "meal-slot", "beverage-type", "habit-kind", "anniversary-cat", "life-domain",
             "number", "days", "time", "date", "datetime", "is-income", "duration", "category",
             "text", "char", "hex"
         ]

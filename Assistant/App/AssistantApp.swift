@@ -159,24 +159,25 @@ struct AssistantApp: App {
 
                     // 6. 前台低功耗单次位置采样，自动喂入常驻地点自主学习引擎
                     _ = await LocationReminderService.shared.requestSingleLocationSample(context: context)
+                    // 6.1 动态同步驿站地理围栏（有待取包裹时自动注册常用驿站围栏，取完自动释放）
+                    LocationReminderService.shared.syncParcelStationGeofences(context: context)
 
                     // 7. 同步定期复盘报告定时推送日程
                     PeriodicReportManager.shared.scheduleNotifications()
 
-                    // 8. 巡检查验并同步待办事项通知排期
+                    // 8. 巡检查验并同步待办事项通知排期（注：TripArrivalService 已在 performIdempotentAudits 中完成对账与评估）
                     TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
-
-                    // 8.1 到站/落地清点提醒：撤掉已失效排期，并在提前窗口内用运动证据判断是否该提醒
-                    TripArrivalService.shared.syncAllReminders(context: context)
-                    await TripArrivalService.shared.evaluate(context: context)
 
                     // 10. 对账扩展侧（小组件/手表卡片）产生的指令并刷新共享快照
                     WidgetSnapshotSyncController.shared.processPendingCommands(context: context)
                 }
             } else if phase == .background {
                 lockManager.appDidEnterBackground()
+                let bgContext = Persistence.shared.mainContext
+                // 回后台前确保驿站围栏与最新待办同步
+                LocationReminderService.shared.syncParcelStationGeofences(context: bgContext)
                 // 回后台前把最新数据写入共享快照，供桌面/锁屏组件读取
-                WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext)
+                WidgetSnapshotSyncController.shared.refreshSnapshot(context: bgContext)
                 // 预约下一次后台巡检（系统在 4 小时后允许唤醒评估）
                 BackgroundRefreshCoordinator.shared.scheduleNextRefresh()
             }

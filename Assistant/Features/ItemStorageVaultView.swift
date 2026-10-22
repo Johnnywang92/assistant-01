@@ -25,15 +25,42 @@ struct ItemStorageVaultView: View {
 
     private let roomAreas = ["全部", "玄关", "主卧", "次卧", "客厅", "书房", "阳台", "储物间", "厨房"]
 
-    /// 派生结果引用缓存：linkedTotals / costTrackedSummaries / filteredItems 在同一渲染内各只算一次
+    /// 派生结果引用缓存：linkedTotals / costTrackedSummaries / filteredItems / areaCounts 在同一渲染内各只算一次
     private final class ItemVaultCache {
         var key: Int = -1
         var linkedTotals: [UUID: Double]?
         var costTrackedSummaries: [(item: StoredItem, summary: ItemCostSummary)]?
         var filteredItems: [StoredItem]?
+        var areaCounts: [String: Int]?
     }
 
     @State private var vaultCache = ItemVaultCache()
+
+    /// 键变化时同时丢弃全部缓存槽；键未变时保留已算好的其他槽
+    private func ensureVaultCacheCurrent(for key: Int) {
+        if vaultCache.key != key {
+            vaultCache.key = key
+            vaultCache.linkedTotals = nil
+            vaultCache.costTrackedSummaries = nil
+            vaultCache.filteredItems = nil
+            vaultCache.areaCounts = nil
+        }
+    }
+
+    /// 各区域物品数量缓存：单次循环统计，避免 ForEach(roomAreas) 内重复执行 8 次全量 filter
+    private var areaCounts: [String: Int] {
+        let key = vaultKey
+        ensureVaultCacheCurrent(for: key)
+        if let cached = vaultCache.areaCounts {
+            return cached
+        }
+        var counts: [String: Int] = ["全部": allItems.count]
+        for item in allItems {
+            counts[item.roomArea, default: 0] += 1
+        }
+        vaultCache.areaCounts = counts
+        return counts
+    }
 
     /// 内容指纹：覆盖成本计算与筛选依赖的物品字段、关联记账字段、搜索/筛选词与归属日（跨午夜自动失效）
     private var vaultKey: Int {
@@ -58,16 +85,6 @@ struct ItemStorageVaultView: View {
             hasher.combine(record.amount)
         }
         return hasher.finalize()
-    }
-
-    /// 键变化时同时丢弃全部缓存槽；键未变时保留已算好的其他槽
-    private func ensureVaultCacheCurrent(for key: Int) {
-        if vaultCache.key != key {
-            vaultCache.key = key
-            vaultCache.linkedTotals = nil
-            vaultCache.costTrackedSummaries = nil
-            vaultCache.filteredItems = nil
-        }
     }
 
     /// 关联记账金额归集：itemID -> 该物品累计投入（购入价之外的后继投入）
@@ -269,10 +286,11 @@ struct ItemStorageVaultView: View {
                     }
 
                     ScrollView(.horizontal, showsIndicators: false) {
+                        let counts = areaCounts
                         HStack(spacing: 6) {
                             ForEach(roomAreas, id: \.self) { area in
                                 let isSelected = selectedArea == area
-                                let count = area == "全部" ? allItems.count : allItems.filter { $0.roomArea == area }.count
+                                let count = counts[area] ?? 0
                                 Button {
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                         selectedArea = area

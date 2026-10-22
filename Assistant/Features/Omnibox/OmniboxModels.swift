@@ -18,6 +18,13 @@ extension ActionCapability {
         case .reminderSnooze: return L10n.tr("推迟提醒")
         case .memoInbox: return L10n.tr("收集箱")
         case .queryLookup: return L10n.tr("查询事项")
+        case .foodRecord: return L10n.tr("记录饮食")
+        case .waterRecord: return L10n.tr("记录饮水")
+        case .storageRecord: return L10n.tr("物品收纳")
+        case .habitLog: return L10n.tr("习惯与服药")
+        case .anniversaryCreate: return L10n.tr("纪念日与到期")
+        case .departureAdd: return L10n.tr("出门清单")
+        case .lifeRecord: return L10n.tr("生活档案")
         }
     }
 
@@ -32,6 +39,13 @@ extension ActionCapability {
         case .reminderSnooze: return "clock.arrow.circlepath"
         case .memoInbox: return "tray.full.fill"
         case .queryLookup: return "magnifyingglass"
+        case .foodRecord: return "fork.knife"
+        case .waterRecord: return "drop.fill"
+        case .storageRecord: return "shippingbox.fill"
+        case .habitLog: return "pills.fill"
+        case .anniversaryCreate: return "heart.text.square.fill"
+        case .departureAdd: return "door.left.hand.open"
+        case .lifeRecord: return "sparkles.rectangle.stack.fill"
         }
     }
 }

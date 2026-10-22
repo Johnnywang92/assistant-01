@@ -73,6 +73,20 @@ enum OmniboxExecutor {
                 return try executeMemo(action, context: context)
             case .queryLookup:
                 return executeLookup(action, context: context)
+            case .foodRecord:
+                return try executeFoodRecord(action, context: context)
+            case .waterRecord:
+                return try executeWaterRecord(action, context: context)
+            case .storageRecord:
+                return try executeStorageRecord(action, context: context)
+            case .habitLog:
+                return try executeHabitLog(action, context: context)
+            case .anniversaryCreate:
+                return try executeAnniversaryCreate(action, context: context)
+            case .departureAdd:
+                return try executeDepartureAdd(action, context: context)
+            case .lifeRecord:
+                return try executeLifeRecord(action, context: context)
             }
         } catch {
             return ActionExecutionOutcome(
@@ -116,6 +130,11 @@ enum OmniboxExecutor {
         )
         context.insert(record)
         try context.save()
+
+        // 联动餐饮食物热量估算
+        if record.category == .food {
+            ExpenseCalorieService.handleSaved(record, propose: true, context: context)
+        }
 
         return ActionExecutionOutcome(
             id: action.id,
@@ -365,10 +384,57 @@ enum OmniboxExecutor {
 
     private static func executeLookup(_ action: PlannedAction, context: ModelContext) -> ActionExecutionOutcome {
         let mention = action.params["target"] ?? action.params["query"] ?? "查询事项"
+        let keyword = mention.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 1. 优先查物品收纳与位置
+        if let stored = try? context.fetch(FetchDescriptor<StoredItem>()).first(where: {
+            $0.name.localizedStandardContains(keyword) || keyword.localizedStandardContains($0.name)
+        }) {
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: "🔍 找到收纳：\(stored.name) 位于【\(stored.roomArea) · \(stored.location)】",
+                undo: OmniboxUndoToken(kind: .memoLine)
+            )
+        }
+
+        // 2. 查家庭常备药
+        if let med = try? context.fetch(FetchDescriptor<MedicineItem>()).first(where: {
+            $0.name.localizedStandardContains(keyword) || keyword.localizedStandardContains($0.name)
+        }) {
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: "🔍 找到常备药：\(med.name) 位于【\(med.roomArea) · \(med.storageLocation)】",
+                undo: OmniboxUndoToken(kind: .memoLine)
+            )
+        }
+
+        // 3. 查重要证件
+        if let doc = try? context.fetch(FetchDescriptor<IDDocumentItem>()).first(where: {
+            $0.title.localizedStandardContains(keyword) || keyword.localizedStandardContains($0.title)
+        }) {
+            let num = doc.documentNumber.map { "（号码：\($0)）" } ?? ""
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: "🔍 找到证件：\(doc.title)\(num)",
+                undo: OmniboxUndoToken(kind: .memoLine)
+            )
+        }
+
+        // 4. 查纪念日
+        if let anniv = try? context.fetch(FetchDescriptor<AnniversaryItem>()).first(where: {
+            $0.title.localizedStandardContains(keyword) || keyword.localizedStandardContains($0.title)
+        }) {
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: "🔍 找到纪念日：\(anniv.title)（还有 \(anniv.daysUntilNext) 天）",
+                undo: OmniboxUndoToken(kind: .memoLine)
+            )
+        }
+
         return ActionExecutionOutcome(
             id: action.id,
             action: action,
-            summary: "查询完成：\(mention)",
+            summary: "🔍 查询完成：未找到匹配的收纳或特定记录，已检索「\(keyword)」",
             undo: OmniboxUndoToken(kind: .memoLine)
         )
     }
@@ -414,12 +480,418 @@ enum OmniboxExecutor {
         let updated = existing.isEmpty ? line + "\n" : existing.ensureTrailingNewline() + line + "\n"
         try updated.write(to: url, atomically: true, encoding: .utf8)
 
+        // 若备忘包含饮食/食物摄入（如“早饭吃了一根玉米和一杯牛奶”），联动分析热量并入库
+        var foodRecordID: UUID?
+        var foodRecordSummary = ""
+        if let estimate = FoodCalorieEstimator.estimateMeal(fromHint: memo) {
+            let foodRecord = FoodIntakeRecord(
+                date: .now,
+                foodName: estimate.displayName,
+                foodID: estimate.food.id,
+                portion: estimate.portion,
+                fullPortionCalories: estimate.fullPortionCalories,
+                consumedRatio: 1.0,
+                confidence: 0.85,
+                isManuallyAdjusted: false,
+                source: .manual
+            )
+            context.insert(foodRecord)
+            try? context.save()
+            foodRecordID = foodRecord.id
+            foodRecordSummary = " · 已录入饮食：\(estimate.displayName)（约 \(Int(estimate.fullPortionCalories))千卡）"
+        }
+
+        let baseSummary = OmniboxPlanner.summary(for: .memoInbox, params: action.params)
         return ActionExecutionOutcome(
             id: action.id,
             action: action,
-            summary: OmniboxPlanner.summary(for: .memoInbox, params: action.params),
-            undo: OmniboxUndoToken(kind: .memoLine, memoLine: line)
+            summary: baseSummary + foodRecordSummary,
+            undo: OmniboxUndoToken(kind: .memoLine, recordID: foodRecordID, memoLine: line)
         )
+    }
+
+    // MARK: food.record
+
+    private static func executeFoodRecord(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let foodName = action.params["foodName"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !foodName.isEmpty else {
+            throw OmniboxError.invalidParams("食物名称不能为空")
+        }
+
+        let date = OmniboxPlanner.parseParamDate(action.params["dateISO"]) ?? .now
+        let parsedCalories = Double(action.params["calories"] ?? "")
+
+        // 优先尝试从 foodName 或原句进行 FoodCalorieEstimator 细致估算
+        let estimate = FoodCalorieEstimator.estimateMeal(fromHint: foodName)
+            ?? (action.params["rawText"].flatMap { FoodCalorieEstimator.estimateMeal(fromHint: $0) })
+
+        let finalCalories: Double = {
+            if let parsedCalories = parsedCalories, parsedCalories > 0 {
+                return parsedCalories
+            }
+            if let estimate = estimate {
+                return estimate.fullPortionCalories
+            }
+            if let matched = FoodCatalog.item(matchingNameStrict: foodName) ?? FoodCatalog.items(matchingName: foodName).first {
+                return Double(matched.standardServingCalories)
+            }
+            return 250.0 // 默认保底热量
+        }()
+
+        let foodID: String? = action.params["foodID"] ?? estimate?.food.id ?? (FoodCatalog.item(matchingNameStrict: foodName)?.id)
+
+        let record = FoodIntakeRecord(
+            date: date,
+            foodName: foodName,
+            foodID: foodID,
+            portion: estimate?.portion ?? .regular,
+            fullPortionCalories: finalCalories,
+            consumedRatio: 1.0,
+            confidence: parsedCalories != nil ? 0.9 : (estimate != nil ? 0.85 : 0.5),
+            isManuallyAdjusted: false,
+            source: .manual,
+            imageData: nil,
+            linkedExpenseID: nil
+        )
+
+        context.insert(record)
+        try context.save()
+
+        return ActionExecutionOutcome(
+            id: action.id,
+            action: action,
+            summary: OmniboxPlanner.summary(for: .foodRecord, params: action.params),
+            undo: OmniboxUndoToken(kind: .foodRecord, recordID: record.id)
+        )
+    }
+
+    // MARK: water.record
+
+    private static func executeWaterRecord(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let volumeML = Double(action.params["volumeML"] ?? "") ?? 250.0
+        let bevLabel = action.params["customName"] ?? action.params["beverageType"] ?? "白开水"
+        let bevType = HydrationBeverageType.fromLabel(action.params["beverageType"] ?? bevLabel)
+        let date = OmniboxPlanner.parseParamDate(action.params["dateISO"]) ?? .now
+
+        let record = WaterIntakeRecord(
+            date: date,
+            beverageType: bevType,
+            volumeML: volumeML,
+            customName: bevLabel,
+            note: "万能入口快速录入"
+        )
+        context.insert(record)
+        try context.save()
+
+        // 异步同步到 HealthKit
+        Task {
+            _ = await HealthKitService.shared.recordWaterIntake(
+                amountML: record.effectiveHydrationML,
+                date: record.date
+            )
+        }
+
+        return ActionExecutionOutcome(
+            id: action.id,
+            action: action,
+            summary: OmniboxPlanner.summary(for: .waterRecord, params: action.params),
+            undo: OmniboxUndoToken(kind: .waterRecord, recordID: record.id)
+        )
+    }
+
+    // MARK: storage.record
+
+    private static func executeStorageRecord(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let name = action.params["name"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !name.isEmpty else {
+            throw OmniboxError.invalidParams("物品名称不能为空")
+        }
+        let location = action.params["location"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "默认位置"
+        let roomArea = action.params["roomArea"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "主卧"
+        let isMedicine = action.params["isMedicine"] == "true"
+
+        if isMedicine {
+            let medItem = MedicineItem(
+                name: name,
+                storageLocation: location,
+                roomArea: roomArea
+            )
+            context.insert(medItem)
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .storageRecord, params: action.params),
+                undo: OmniboxUndoToken(kind: .medicineRecord, recordID: medItem.id)
+            )
+        } else {
+            let item = StoredItem(
+                name: name,
+                location: location,
+                roomArea: roomArea
+            )
+            context.insert(item)
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .storageRecord, params: action.params),
+                undo: OmniboxUndoToken(kind: .storageRecord, recordID: item.id)
+            )
+        }
+    }
+
+    // MARK: habit.log
+
+    private static func executeHabitLog(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let target = action.params["target"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !target.isEmpty else {
+            throw OmniboxError.invalidParams("打卡目标不能为空")
+        }
+        let isMedication = action.params["kind"] == "medication"
+
+        if isMedication {
+            let desc = FetchDescriptor<MedicationPlan>()
+            let plans = (try? context.fetch(desc)) ?? []
+            if let matched = plans.first(where: { $0.medName.localizedStandardContains(target) || target.localizedStandardContains($0.medName) }) {
+                let snapshot: [String: String] = [
+                    "lastTakenAt": matched.lastTakenAt?.ISO8601Format() ?? ""
+                ]
+                matched.markTaken()
+                try context.save()
+                return ActionExecutionOutcome(
+                    id: action.id, action: action,
+                    summary: OmniboxPlanner.summary(for: .habitLog, params: action.params),
+                    undo: OmniboxUndoToken(kind: .medicationLog, recordID: matched.id, snapshotJSON: ActionUndoToken.makeSnapshotData(snapshot))
+                )
+            } else {
+                let newPlan = MedicationPlan(
+                    medName: target,
+                    dosage: action.params["dosage"] ?? "1次量",
+                    dailyTimePoints: ["08:00"],
+                    lastTakenAt: .now
+                )
+                context.insert(newPlan)
+                try context.save()
+                return ActionExecutionOutcome(
+                    id: action.id, action: action,
+                    summary: OmniboxPlanner.summary(for: .habitLog, params: action.params),
+                    undo: OmniboxUndoToken(kind: .medicationLog, recordID: newPlan.id)
+                )
+            }
+        } else {
+            let desc = FetchDescriptor<PeriodicHabit>()
+            let habits = (try? context.fetch(desc)) ?? []
+            if let matched = habits.first(where: { $0.title.localizedStandardContains(target) || target.localizedStandardContains($0.title) }) {
+                let snapshot: [String: String] = [
+                    "lastCompletedAt": matched.lastCompletedAt?.ISO8601Format() ?? "",
+                    "nextDueAt": matched.nextDueAt.ISO8601Format()
+                ]
+                matched.completeOnce()
+                try context.save()
+                return ActionExecutionOutcome(
+                    id: action.id, action: action,
+                    summary: OmniboxPlanner.summary(for: .habitLog, params: action.params),
+                    undo: OmniboxUndoToken(kind: .habitLog, recordID: matched.id, snapshotJSON: ActionUndoToken.makeSnapshotData(snapshot))
+                )
+            } else {
+                let newHabit = PeriodicHabit(title: target, recurrence: .daily)
+                newHabit.completeOnce()
+                context.insert(newHabit)
+                try context.save()
+                return ActionExecutionOutcome(
+                    id: action.id, action: action,
+                    summary: OmniboxPlanner.summary(for: .habitLog, params: action.params),
+                    undo: OmniboxUndoToken(kind: .habitLog, recordID: newHabit.id)
+                )
+            }
+        }
+    }
+
+    // MARK: anniversary.create
+
+    private static func executeAnniversaryCreate(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let title = action.params["title"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !title.isEmpty else { throw OmniboxError.invalidParams("名称不能为空") }
+        let category = action.params["category"] ?? "纪念日"
+        let date = OmniboxPlanner.parseParamDate(action.params["targetDate"]) ?? .now
+
+        if category == "订阅续费" {
+            let price = action.params["price"] ?? "待确认"
+            let sub = SubscriptionItem(name: title, priceString: price, nextBillingDate: date)
+            context.insert(sub)
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .anniversaryCreate, params: action.params),
+                undo: OmniboxUndoToken(kind: .subscription, recordID: sub.id)
+            )
+        } else if category == "保质期" {
+            let item = ItemExpiryItem(title: title, expireDate: date)
+            context.insert(item)
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .anniversaryCreate, params: action.params),
+                undo: OmniboxUndoToken(kind: .itemExpiry, recordID: item.id)
+            )
+        } else {
+            let anniv = AnniversaryItem(title: title, category: category, targetDate: date)
+            context.insert(anniv)
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .anniversaryCreate, params: action.params),
+                undo: OmniboxUndoToken(kind: .anniversary, recordID: anniv.id)
+            )
+        }
+    }
+
+    // MARK: departure.add
+
+    private static func executeDepartureAdd(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let title = action.params["title"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !title.isEmpty else { throw OmniboxError.invalidParams("随身物品不能为空") }
+        let sceneName = action.params["scene"] ?? "工作通勤"
+        let scene: DepartureScene = switch sceneName {
+        case "运动健身": .workout
+        case "出差旅行": .travel
+        case "带娃出行": .parenting
+        case "遛狗随行": .petWalk
+        case "雨雪出行": .rainy
+        default: .commute
+        }
+        let loc = action.params["location"]
+        let item = DepartureCheckItem(title: title, scene: scene, isEssential: true, storageLocationNote: loc)
+        context.insert(item)
+        try context.save()
+        return ActionExecutionOutcome(
+            id: action.id, action: action,
+            summary: OmniboxPlanner.summary(for: .departureAdd, params: action.params),
+            undo: OmniboxUndoToken(kind: .departureItem, recordID: item.id)
+        )
+    }
+
+    // MARK: life.record
+
+    private static func executeLifeRecord(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
+        let domain = action.params["domain"] ?? "pet"
+        let title = action.params["title"] ?? "生活档案"
+        let detail = action.params["detail"] ?? ""
+
+        switch domain {
+        case "pet":
+            let desc = FetchDescriptor<PetProfile>()
+            let pets = (try? context.fetch(desc)) ?? []
+            let pet = pets.first ?? {
+                let p = PetProfile(name: "毛孩子", type: .cat)
+                context.insert(p)
+                return p
+            }()
+            let snapshot: [String: String] = [
+                "lastExternalDewormDate": pet.lastExternalDewormDate?.ISO8601Format() ?? "",
+                "lastInternalDewormDate": pet.lastInternalDewormDate?.ISO8601Format() ?? "",
+                "lastVaccineDate": pet.lastVaccineDate?.ISO8601Format() ?? "",
+                "lastBathDate": pet.lastBathDate?.ISO8601Format() ?? ""
+            ]
+            if detail.contains("体外驱虫") { pet.lastExternalDewormDate = .now }
+            else if detail.contains("体内驱虫") { pet.lastInternalDewormDate = .now }
+            else if detail.contains("疫苗") { pet.lastVaccineDate = .now }
+            else if detail.contains("洗澡") { pet.lastBathDate = .now }
+            else if let val = Double(action.params["value"] ?? "") { pet.weightKg = val }
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .lifeRecord, params: action.params),
+                undo: OmniboxUndoToken(kind: .petRecord, recordID: pet.id, snapshotJSON: ActionUndoToken.makeSnapshotData(snapshot))
+            )
+
+        case "vehicle":
+            let desc = FetchDescriptor<VehicleProfile>()
+            let vehicles = (try? context.fetch(desc)) ?? []
+            let vehicle = vehicles.first ?? {
+                let v = VehicleProfile(name: "爱车", plateNumber: "待完善")
+                context.insert(v)
+                return v
+            }()
+            let snapshot: [String: String] = [
+                "lastEnergyRefillDate": vehicle.lastEnergyRefillDate?.ISO8601Format() ?? "",
+                "lastMaintenanceDate": vehicle.lastMaintenanceDate?.ISO8601Format() ?? ""
+            ]
+            if detail.contains("补能") || detail.contains("加油") || detail.contains("充电") {
+                vehicle.completeEnergyRefill()
+            } else if detail.contains("保养") {
+                vehicle.completeMaintenance()
+            } else if let val = Double(action.params["value"] ?? "") {
+                vehicle.currentMileage = val
+            }
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .lifeRecord, params: action.params),
+                undo: OmniboxUndoToken(kind: .vehicleRecord, recordID: vehicle.id, snapshotJSON: ActionUndoToken.makeSnapshotData(snapshot))
+            )
+
+        case "child":
+            let desc = FetchDescriptor<ChildProfile>()
+            let children = (try? context.fetch(desc)) ?? []
+            let child = children.first ?? {
+                let c = ChildProfile(name: "宝宝")
+                context.insert(c)
+                return c
+            }()
+            let record = ChildMilestoneRecord(title: detail.isEmpty ? title : detail, child: child)
+            context.insert(record)
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .lifeRecord, params: action.params),
+                undo: OmniboxUndoToken(kind: .childRecord, recordID: record.id)
+            )
+
+        case "skill":
+            let desc = FetchDescriptor<SkillPath>()
+            let skills = (try? context.fetch(desc)) ?? []
+            let skill = skills.first ?? {
+                let s = SkillPath(title: title, category: .generic, goal: "持续练习与提升", weeklyMinutes: 120, totalWeeks: 12)
+                context.insert(s)
+                return s
+            }()
+            let log = SkillPracticeLog(
+                pathID: skill.id,
+                stageIndex: skill.currentStageIndex,
+                practicedAt: .now,
+                minutes: Int(action.params["value"] ?? "") ?? 30
+            )
+            skill.lastPracticedAt = .now
+            skill.practiceCount += 1
+            context.insert(log)
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .lifeRecord, params: action.params),
+                undo: OmniboxUndoToken(kind: .skillRecord, recordID: log.id)
+            )
+
+        case "document":
+            let doc = IDDocumentItem(title: title, notes: detail)
+            context.insert(doc)
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .lifeRecord, params: action.params),
+                undo: OmniboxUndoToken(kind: .idDocument, recordID: doc.id)
+            )
+
+        default:
+            let defaultTargetDate = Calendar.current.date(byAdding: .day, value: 30, to: .now) ?? .now
+            let project = LifeEventProject(title: title, template: .custom, targetDate: defaultTargetDate)
+            context.insert(project)
+            try context.save()
+            return ActionExecutionOutcome(
+                id: action.id, action: action,
+                summary: OmniboxPlanner.summary(for: .lifeRecord, params: action.params),
+                undo: OmniboxUndoToken(kind: .lifeEvent, recordID: project.id)
+            )
+        }
     }
 
     // MARK: - 撤销（回执即事务：每个执行器必须支持 undo）
@@ -493,14 +965,144 @@ enum OmniboxExecutor {
                 }
             }
         case .memoLine:
-            guard let line = token.memoLine else { return }
-            let url = memoFileURL
-            let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-            let filtered = existing
-                .components(separatedBy: .newlines)
-                .filter { $0 != line }
-                .joined(separator: "\n")
-            try filtered.write(to: url, atomically: true, encoding: .utf8)
+            if let line = token.memoLine {
+                let url = memoFileURL
+                let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                let filtered = existing
+                    .components(separatedBy: .newlines)
+                    .filter { $0 != line }
+                    .joined(separator: "\n")
+                try? filtered.write(to: url, atomically: true, encoding: .utf8)
+            }
+            if let foodID = token.recordID {
+                let descriptor = FetchDescriptor<FoodIntakeRecord>(predicate: #Predicate { $0.id == foodID })
+                if let food = try? context.fetch(descriptor).first {
+                    context.delete(food)
+                }
+            }
+        case .foodRecord:
+            if let foodID = token.recordID {
+                let descriptor = FetchDescriptor<FoodIntakeRecord>(predicate: #Predicate { $0.id == foodID })
+                if let food = try? context.fetch(descriptor).first {
+                    context.delete(food)
+                }
+            }
+        case .waterRecord:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<WaterIntakeRecord>(predicate: #Predicate { $0.id == id })
+                if let record = try? context.fetch(descriptor).first {
+                    context.delete(record)
+                }
+            }
+        case .storageRecord:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<StoredItem>(predicate: #Predicate { $0.id == id })
+                if let record = try? context.fetch(descriptor).first {
+                    context.delete(record)
+                }
+            }
+        case .medicineRecord:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<MedicineItem>(predicate: #Predicate { $0.id == id })
+                if let record = try? context.fetch(descriptor).first {
+                    context.delete(record)
+                }
+            }
+        case .habitLog:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<PeriodicHabit>(predicate: #Predicate { $0.id == id })
+                if let habit = try? context.fetch(descriptor).first {
+                    if let snap = token.decodeSnapshot(), let prevDateISO = snap["lastCompletedAt"], !prevDateISO.isEmpty {
+                        habit.lastCompletedAt = ISO8601DateFormatter().date(from: prevDateISO)
+                        if let nextISO = snap["nextDueAt"], let next = ISO8601DateFormatter().date(from: nextISO) {
+                            habit.nextDueAt = next
+                        }
+                    } else {
+                        context.delete(habit)
+                    }
+                }
+            }
+        case .medicationLog:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<MedicationPlan>(predicate: #Predicate { $0.id == id })
+                if let plan = try? context.fetch(descriptor).first {
+                    if let snap = token.decodeSnapshot(), let prevDateISO = snap["lastTakenAt"], !prevDateISO.isEmpty {
+                        plan.lastTakenAt = ISO8601DateFormatter().date(from: prevDateISO)
+                    } else {
+                        context.delete(plan)
+                    }
+                }
+            }
+        case .anniversary:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<AnniversaryItem>(predicate: #Predicate { $0.id == id })
+                if let record = try? context.fetch(descriptor).first {
+                    context.delete(record)
+                }
+            }
+        case .subscription:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<SubscriptionItem>(predicate: #Predicate { $0.id == id })
+                if let record = try? context.fetch(descriptor).first {
+                    context.delete(record)
+                }
+            }
+        case .itemExpiry:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<ItemExpiryItem>(predicate: #Predicate { $0.id == id })
+                if let record = try? context.fetch(descriptor).first {
+                    context.delete(record)
+                }
+            }
+        case .departureItem:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<DepartureCheckItem>(predicate: #Predicate { $0.id == id })
+                if let record = try? context.fetch(descriptor).first {
+                    context.delete(record)
+                }
+            }
+        case .petRecord:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<PetProfile>(predicate: #Predicate { $0.id == id })
+                if let pet = try? context.fetch(descriptor).first, let snap = token.decodeSnapshot() {
+                    let f = ISO8601DateFormatter()
+                    if let iso = snap["lastExternalDewormDate"] { pet.lastExternalDewormDate = f.date(from: iso) }
+                    if let iso = snap["lastInternalDewormDate"] { pet.lastInternalDewormDate = f.date(from: iso) }
+                    if let iso = snap["lastVaccineDate"] { pet.lastVaccineDate = f.date(from: iso) }
+                    if let iso = snap["lastBathDate"] { pet.lastBathDate = f.date(from: iso) }
+                }
+            }
+        case .vehicleRecord:
+            if let id = token.recordID {
+                let descriptor = FetchDescriptor<VehicleProfile>(predicate: #Predicate { $0.id == id })
+                if let v = try? context.fetch(descriptor).first, let snap = token.decodeSnapshot() {
+                    let f = ISO8601DateFormatter()
+                    if let iso = snap["lastEnergyRefillDate"] { v.lastEnergyRefillDate = f.date(from: iso) }
+                    if let iso = snap["lastMaintenanceDate"] { v.lastMaintenanceDate = f.date(from: iso) }
+                }
+            }
+        case .childRecord:
+            if let id = token.recordID {
+                let descGrowth = FetchDescriptor<ChildGrowthRecord>(predicate: #Predicate { $0.id == id })
+                if let g = try? context.fetch(descGrowth).first { context.delete(g) }
+                let descMilestone = FetchDescriptor<ChildMilestoneRecord>(predicate: #Predicate { $0.id == id })
+                if let m = try? context.fetch(descMilestone).first { context.delete(m) }
+            }
+        case .skillRecord:
+            if let id = token.recordID {
+                let desc = FetchDescriptor<SkillPracticeLog>(predicate: #Predicate { $0.id == id })
+                if let log = try? context.fetch(desc).first { context.delete(log) }
+            }
+        case .idDocument:
+            if let id = token.recordID {
+                let desc = FetchDescriptor<IDDocumentItem>(predicate: #Predicate { $0.id == id })
+                if let doc = try? context.fetch(desc).first { context.delete(doc) }
+            }
+        case .lifeEvent:
+            if let id = token.recordID {
+                let desc = FetchDescriptor<LifeEventProject>(predicate: #Predicate { $0.id == id })
+                if let p = try? context.fetch(desc).first { context.delete(p) }
+            }
         }
         try context.save()
     }

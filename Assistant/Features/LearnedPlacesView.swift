@@ -247,6 +247,7 @@ struct LearnedPlacesView: View {
             context.delete(places[idx])
         }
         try? context.save()
+        locationService.syncParcelStationGeofences(context: context)
     }
 }
 
@@ -424,6 +425,7 @@ struct LearnedPlaceDetailView: View {
         .navigationTitle(place.name)
         .onDisappear {
             try? context.save()
+            LocationReminderService.shared.syncParcelStationGeofences(context: context)
         }
     }
 
@@ -478,6 +480,24 @@ struct AddPlaceSheet: View {
                     }
 
                     TextField("名称（如：公司 / 科技园总部）", text: $name)
+
+                    if category == .parcelStation {
+                        HStack(spacing: 8) {
+                            Text("快捷命名：")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            ForEach(["菜鸟驿站", "丰巢快递柜", "兔喜生活"], id: \.self) { preset in
+                                Button(preset) {
+                                    name = preset
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            }
+                        }
+                        Text("💡 录入驿站地理坐标后，当你有待取包裹并到达此驿站 120 米地理围栏时，手腕与灵动岛将自动亮起取件码，抬腕轻点「已取件」即可免掏手机销号。")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("地理坐标") {
@@ -530,6 +550,7 @@ struct AddPlaceSheet: View {
                         )
                         context.insert(place)
                         try? context.save()
+                        LocationReminderService.shared.syncParcelStationGeofences(context: context)
                         Haptic.success()
                         dismiss()
                     }

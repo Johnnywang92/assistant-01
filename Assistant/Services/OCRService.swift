@@ -695,6 +695,12 @@ public final class OCRService: Sendable {
 
     // MARK: - 标题与详情智能精简（去除冗余副标题、重复词与长串证件号）
 
+    // 性能：行渲染与卡片摘要中高频调用的预编译正则
+    private static let condensedYearTitleRegex = try? NSRegularExpression(pattern: "^([A-Za-z]{2,8})20\\d{2}(.+)$")
+    private static let timeSlotRegex = try? NSRegularExpression(pattern: "(\\d{1,2}:\\d{2})\\s*[-~至–—]\\s*(\\d{1,2}:\\d{2})")
+    private static let attendeeParenRegex = try? NSRegularExpression(pattern: "[（\\(][^）\\)]*[）\\)]")
+    private static let attendeeIDRegex = try? NSRegularExpression(pattern: "\\d{3,}[\\*\\d]+[0-9Xx]?")
+
     /// 在保证语义清晰的前提下，缩减过长的展会/活动标题字数
     static func condenseEventTitle(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -718,7 +724,7 @@ public final class OCRService: Sendable {
 
         // 3. 若同时包含英文缩写+年份前缀（如 WTCC2026）且总长仍超过 15 字，精简年份保留缩写或反之
         if s.count > 15,
-           let regex = try? NSRegularExpression(pattern: "^([A-Za-z]{2,8})20\\d{2}(.+)$"),
+           let regex = condensedYearTitleRegex,
            let match = regex.firstMatch(in: s, options: [], range: NSRange(location: 0, length: s.utf16.count)),
            let r1 = Range(match.range(at: 1), in: s),
            let r2 = Range(match.range(at: 2), in: s) {
@@ -776,8 +782,7 @@ public final class OCRService: Sendable {
     }
 
     private static func extractTimeSlotOnly(from text: String) -> String? {
-        let pattern = "(\\d{1,2}:\\d{2})\\s*[-~至–—]\\s*(\\d{1,2}:\\d{2})"
-        guard let regex = try? NSRegularExpression(pattern: pattern),
+        guard let regex = timeSlotRegex,
               let match = regex.firstMatch(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count)),
               let r1 = Range(match.range(at: 1), in: text),
               let r2 = Range(match.range(at: 2), in: text) else {
@@ -804,14 +809,14 @@ public final class OCRService: Sendable {
     private static func cleanAttendeeName(_ raw: String) -> String {
         var s = raw
         // 移除括号及括号内脱敏身份证号
-        if let regex = try? NSRegularExpression(pattern: "[（\\(][^）\\)]*[）\\)]") {
+        if let regex = attendeeParenRegex {
             s = regex.stringByReplacingMatches(in: s, options: [], range: NSRange(location: 0, length: s.utf16.count), withTemplate: "")
         }
         for noise in ["居民身份证", "身份证", "港澳台居民居住证", "护照"] {
             s = s.replacingOccurrences(of: noise, with: "")
         }
         // 移除连续数字或脱敏号段
-        if let regex = try? NSRegularExpression(pattern: "\\d{3,}[\\*\\d]+[0-9Xx]?") {
+        if let regex = attendeeIDRegex {
             s = regex.stringByReplacingMatches(in: s, options: [], range: NSRange(location: 0, length: s.utf16.count), withTemplate: "")
         }
         return s.trimmingCharacters(in: .whitespacesAndNewlines)

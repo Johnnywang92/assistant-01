@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 
@@ -7,6 +8,8 @@ struct PeriodicReportView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var reportManager = PeriodicReportManager.shared
     @AppStorage(AppBackgroundStyle.defaultsKey) private var bgStyleRaw = AppBackgroundStyle.system.rawValue
+
+    @Query(sort: \ExpenseRecord.date, order: .reverse) private var recentExpenses: [ExpenseRecord]
 
     @State private var selectedPeriod: ReportPeriodType = .daily
     @State private var currentDate: Date = .now
@@ -29,22 +32,39 @@ struct PeriodicReportView: View {
 
     /// 报告引用缓存：body 内 50+ 处 reportData 访问在同一次渲染中只生成一次。
     /// generateReport 包含多次全表 fetch，无缓存时每处访问都会重新拉取全部数据。
-    /// 页面为只读展示，仅在切换周期/日期时重新生成。
+    /// 页面在切换周期/日期或账本发生变更时重新生成。
     private final class ReportCache {
         var period: ReportPeriodType?
         var date: Date?
+        var expensesHash: Int?
         var data: PeriodicReportData?
     }
 
     @State private var reportCache = ReportCache()
 
+    private var expensesFingerprint: Int {
+        var hasher = Hasher()
+        hasher.combine(recentExpenses.count)
+        for record in recentExpenses.prefix(50) {
+            hasher.combine(record.id)
+            hasher.combine(record.amount)
+            hasher.combine(record.rawText)
+        }
+        return hasher.finalize()
+    }
+
     private var reportData: PeriodicReportData {
-        if reportCache.period == selectedPeriod, reportCache.date == currentDate, let cached = reportCache.data {
+        let currentHash = expensesFingerprint
+        if reportCache.period == selectedPeriod,
+           reportCache.date == currentDate,
+           reportCache.expensesHash == currentHash,
+           let cached = reportCache.data {
             return cached
         }
         let result = reportManager.generateReport(period: selectedPeriod, for: currentDate, context: context)
         reportCache.period = selectedPeriod
         reportCache.date = currentDate
+        reportCache.expensesHash = currentHash
         reportCache.data = result
         return result
     }
@@ -70,6 +90,11 @@ struct PeriodicReportView: View {
                     // 日报：今日安心花动态额度（仅查看当天且已设月预算时显示）
                     if selectedPeriod == .daily, let sts = reportData.safeToSpend {
                         safeToSpendReportCard(sts)
+                    }
+
+                    // 日报：身体活力与健康简报（Apple 健康联动与饮食摄入推测）
+                    if selectedPeriod == .daily, let vitality = reportData.vitality {
+                        vitalityReportCard(vitality)
                     }
 
                     // 4. AI 智能复盘解读卡片
@@ -476,7 +501,7 @@ struct PeriodicReportView: View {
                 Spacer()
 
                 if LLMModelManager.shared.isModelDownloaded ||
-                    (LLMInferenceService.shared.remoteContextConsent && !LLMInferenceService.shared.developerEndpoint.isEmpty) {
+                    (LLMInferenceService.shared.remoteContextConsent && LLMInferenceService.shared.validatedEndpointURL != nil) {
                     Button {
                         polishWithLLM()
                     } label: {
@@ -807,23 +832,45 @@ struct PeriodicReportView: View {
                         .font(.subheadline)
                         .foregroundStyle(.red)
                 }
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("今天还可以安心花")
-                        .font(.subheadline)
+            } else if sts.isTodayOverspent {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("今日已超额")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(String(format: "¥%.0f", sts.todayOverspentAmount))
+                            .font(.system(.title, design: .rounded).bold())
+                            .foregroundStyle(.orange)
+                    }
+                    Text("今日起始额度 ¥\(String(format: "%.0f", sts.todayAllowance)) · 今日已花 ¥\(String(format: "%.0f", sts.todayFlexibleSpend))")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Text(String(format: "¥%.0f", sts.safeToSpendToday))
-                        .font(.system(.title, design: .rounded).bold())
-                        .foregroundStyle(.green)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("今天还可以安心花")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(String(format: "¥%.0f", sts.safeToSpendToday))
+                            .font(.system(.title, design: .rounded).bold())
+                            .foregroundStyle(.green)
+                    }
+                    if sts.todayFlexibleSpend > 0 {
+                        Text("今日额度 ¥\(String(format: "%.0f", sts.todayAllowance)) · 今日已花 ¥\(String(format: "%.0f", sts.todayFlexibleSpend))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
+            // 今日额度消耗进度条
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(.tertiarySystemFill))
                     Capsule()
-                        .fill(sts.isOverBudget ? Color.red : Color.green)
-                        .frame(width: geo.size.width * CGFloat(min(max(sts.spentRatio, 0), 1)))
+                        .fill(sts.isOverBudget ? Color.red : (sts.isTodayOverspent ? Color.orange : Color.green))
+                        .frame(width: geo.size.width * CGFloat(min(max(sts.todaySpentRatio, 0), 1)))
                 }
             }
             .frame(height: 6)
@@ -847,6 +894,110 @@ struct PeriodicReportView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.green.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    // MARK: - 身体活力与健康卡片（日报）
+
+    private func vitalityReportCard(_ vitality: VitalityEvaluation) -> some View {
+        let levelColor: Color = switch vitality.level {
+        case .peak: .orange
+        case .good: .green
+        case .balanced: .blue
+        case .low: .yellow
+        case .exhausted: .red
+        }
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("身体活力与健康", systemImage: "bolt.heart.fill")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(.primary)
+                Spacer()
+                Text(vitality.level.badge)
+                    .font(.caption.bold())
+                    .foregroundStyle(levelColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(levelColor.opacity(0.12), in: Capsule())
+            }
+
+            // 核心分数条与精简总结
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                        Text("\(vitality.score)")
+                            .font(.system(size: 34, weight: .bold, design: .rounded))
+                            .foregroundStyle(levelColor)
+                        Text("/ 100")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("综合活力指数")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Divider().frame(height: 38)
+
+                Text(vitality.summary)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // 关键指标精炼速览
+            if !vitality.highlights.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(vitality.highlights) { h in
+                        HStack(spacing: 8) {
+                            Image(systemName: h.icon)
+                                .font(.caption)
+                                .foregroundStyle(h.isPositive ? Color.green : Color.orange)
+                                .frame(width: 16)
+                            Text(h.title)
+                                .font(.caption.bold())
+                                .foregroundStyle(.primary)
+                            Text(h.valueText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                            Spacer()
+                            Text(h.statusText)
+                                .font(.caption2)
+                                .foregroundStyle(h.isPositive ? Color.secondary : Color.orange)
+                                .lineLimit(1)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+                .padding(10)
+                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            // 调养建议
+            if !vitality.suggestion.isEmpty {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "leaf.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                        .padding(.top, 1)
+                    Text(vitality.suggestion)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineSpacing(2)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(levelColor.opacity(0.18), lineWidth: 1)
         )
     }
 

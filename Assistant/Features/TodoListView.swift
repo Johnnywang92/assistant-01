@@ -90,12 +90,30 @@ fileprivate struct TodoClassification {
 
 struct TodoListView: View {
     @Environment(\.modelContext) private var context
+    /// 性能：首页只订阅未完成（活跃/待确认）事项；历史已完成事项单独限量订阅，
+    /// 避免随着归档累积，每次状态变化都对全部历史待办做指纹哈希与分类。
     @Query(
+        filter: #Predicate<TodoItem> { $0.statusRaw != "done" },
         sort: [
             SortDescriptor(\TodoItem.sortOrder, order: .forward),
             SortDescriptor(\TodoItem.createdAt, order: .reverse)
         ]
     ) private var todos: [TodoItem]
+
+    /// 首页「已完成事项」折叠卡片只展示最近完成的一批，完整历史在归档大厅中查看
+    static let recentDoneLimit = 300
+    private static var recentDoneDescriptor: FetchDescriptor<TodoItem> {
+        var descriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate<TodoItem> { $0.statusRaw == "done" },
+            sortBy: [
+                SortDescriptor(\TodoItem.completedAt, order: .reverse),
+                SortDescriptor(\TodoItem.createdAt, order: .reverse)
+            ]
+        )
+        descriptor.fetchLimit = recentDoneLimit
+        return descriptor
+    }
+    @Query(TodoListView.recentDoneDescriptor) private var recentDoneTodos: [TodoItem]
 
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @AppStorage("user_preferred_title") private var userTitle: String = "你"
@@ -144,6 +162,21 @@ struct TodoListView: View {
 
     @State private var classificationCache = TodoClassificationCache()
 
+    /// 纪念日 / 出行购票横幅刷新的防抖任务：合并首帧挂载与连续待办变更触发的多次刷新
+    @State private var reminderRefreshTask: Task<Void, Never>?
+
+    private func scheduleReminderRefresh(delayMilliseconds: UInt64) {
+        reminderRefreshTask?.cancel()
+        reminderRefreshTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: delayMilliseconds * 1_000_000)
+            guard !Task.isCancelled else { return }
+            anniversaryReminder.refreshActiveUpcoming(context: context)
+            StartupMetrics.markOnce("todoList.task anniversariesDone")
+            ticketReminder.refreshUpcomingTickets(context: context)
+            StartupMetrics.markOnce("todoList.task ticketsDone")
+        }
+    }
+
     private var classified: TodoClassification {
         let now = CFAbsoluteTimeGetCurrent()
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -154,17 +187,18 @@ struct TodoListView: View {
         }
 
         let fingerprintBegin = CFAbsoluteTimeGetCurrent()
-        let key = Self.classificationKey(for: todos)
-        StartupMetrics.markOnce("todoList.fingerprint", "n=\(todos.count) cost=\(Int((CFAbsoluteTimeGetCurrent() - fingerprintBegin) * 1000))ms")
+        let key = Self.classificationKey(for: todos, done: recentDoneTodos)
+        StartupMetrics.markOnce("todoList.fingerprint", "n=\(todos.count)+\(recentDoneTodos.count) cost=\(Int((CFAbsoluteTimeGetCurrent() - fingerprintBegin) * 1000))ms")
         if let cached = classificationCache.value, classificationCache.key == key, classificationCache.query == query {
             classificationCache.lastComputedTime = now
             return cached
         }
+        let all = todos + recentDoneTodos
         let source: [TodoItem]
         if query.isEmpty {
-            source = todos
+            source = all
         } else {
-            source = todos.filter { matchesSearch($0, query: query) }
+            source = all.filter { matchesSearch($0, query: query) }
         }
         let classifyBegin = CFAbsoluteTimeGetCurrent()
         let result = TodoClassification(from: source)
@@ -177,7 +211,7 @@ struct TodoListView: View {
     }
 
     /// 轻量内容指纹：覆盖 TodoClassification 分桶与 TodoPriority 排序所依赖的字段。
-    private static func classificationKey(for items: [TodoItem]) -> Int {
+    private static func classificationKey(for items: [TodoItem], done doneItems: [TodoItem]) -> Int {
         var hasher = Hasher()
         for item in items {
             hasher.combine(item.statusRaw)
@@ -188,7 +222,24 @@ struct TodoListView: View {
             hasher.combine(item.title)
             hasher.combine(item.detail ?? "")
         }
+        // 已完成事项只影响「已完成」分桶，按身份 + 状态/类型做轻量指纹即可
+        hasher.combine(doneItems.count)
+        for item in doneItems {
+            hasher.combine(item.id)
+            hasher.combine(item.statusRaw)
+            hasher.combine(item.typeRaw)
+            hasher.combine(item.isRecurring)
+        }
         return hasher.finalize()
+    }
+
+    /// 在已订阅的活跃/最近完成列表中查找待办，未命中时（例如很久以前完成的事项）回退到按 ID 精确查询
+    private func findTodo(id: UUID) -> TodoItem? {
+        if let item = todos.first(where: { $0.id == id }) { return item }
+        if let item = recentDoneTodos.first(where: { $0.id == id }) { return item }
+        var descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate<TodoItem> { $0.id == id })
+        descriptor.fetchLimit = 1
+        return (try? context.fetch(descriptor))?.first
     }
 
     private func matchesSearch(_ item: TodoItem, query: String) -> Bool {
@@ -244,7 +295,7 @@ struct TodoListView: View {
     private func presentTodoDetail(for id: UUID?) {
         guard let id else { return }
         router.requestedTodoDetailID = nil
-        let item = todos.first(where: { $0.id == id })
+        let item = findTodo(id: id)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
             itemToEdit = item
         }
@@ -313,8 +364,16 @@ struct TodoListView: View {
                 ScrollViewReader { proxy in
                     TabView(selection: $selectedFilter) {
                         ForEach(homeCategories) { category in
-                            renderPageContent(for: category)
-                                .tag(category)
+                            // 性能：只构建当前页及左右相邻页的 List，远端分页用轻量占位，
+                            // 避免分页容器一次性实例化最多 9 个完整列表；滑动到相邻页时已就绪，无感知。
+                            Group {
+                                if isPageNearSelection(category) {
+                                    renderPageContent(for: category)
+                                } else {
+                                    Color.clear
+                                }
+                            }
+                            .tag(category)
                         }
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
@@ -439,7 +498,7 @@ struct TodoListView: View {
                 router.requestedFilter = nil
             }
             .onChange(of: router.focusedTodoID) { _, id in
-                guard let id, let item = todos.first(where: { $0.id == id }) else { return }
+                guard let id, let item = findTodo(id: id) else { return }
                 let target = category(for: item)
                 selectedFilter = homeCategories.contains(target) ? target : .all
             }
@@ -472,18 +531,14 @@ struct TodoListView: View {
             }
             .task {
                 StartupMetrics.markOnce("todoList.task begin", "n=\(todos.count)")
+                // 纪念日/出行购票横幅：首帧之后再刷新，不阻塞首屏；同时不必等待天气网络请求
+                scheduleReminderRefresh(delayMilliseconds: 150)
                 await weatherAlerts.checkAlertsIfNeeded()
                 StartupMetrics.markOnce("todoList.task weatherDone")
-                anniversaryReminder.refreshActiveUpcoming(context: context)
-                StartupMetrics.markOnce("todoList.task anniversariesDone")
-                ticketReminder.refreshUpcomingTickets(context: context)
-                StartupMetrics.markOnce("todoList.task ticketsDone")
             }
             .onAppear {
                 StartupMetrics.markOnce("todoList.onAppear")
-                anniversaryReminder.refreshActiveUpcoming(context: context)
-                ticketReminder.refreshUpcomingTickets(context: context)
-                if let id = router.focusedTodoID, let item = todos.first(where: { $0.id == id }) {
+                if let id = router.focusedTodoID, let item = findTodo(id: id) {
                     let target = category(for: item)
                     selectedFilter = homeCategories.contains(target) ? target : .all
                     highlightedTodoID = id
@@ -492,8 +547,8 @@ struct TodoListView: View {
                 presentTodoDetail(for: router.requestedTodoDetailID)
             }
             .onChange(of: todos) { _, _ in
-                anniversaryReminder.refreshActiveUpcoming(context: context)
-                ticketReminder.refreshUpcomingTickets(context: context)
+                // 勾选/编辑/拖拽排序可能连续触发多次，合并为一次轻量刷新
+                scheduleReminderRefresh(delayMilliseconds: 400)
             }
             .overlay(alignment: .bottom) {
                 if let toast = prepToastMessage {
@@ -1484,7 +1539,7 @@ struct TodoListView: View {
                                 .font(.subheadline.bold())
                                 .foregroundStyle(.primary)
 
-                            Text("\(currentDone.count)")
+                            Text(recentDoneTodos.count >= Self.recentDoneLimit ? "\(currentDone.count)+" : "\(currentDone.count)")
                                 .font(.caption2.bold())
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -1540,6 +1595,14 @@ struct TodoListView: View {
         .background(Color.clear)
         .environment(\.editMode, isReordering ? .constant(.active) : .constant(.inactive))
         .themedRow()
+    }
+
+    private func isPageNearSelection(_ category: TodoFilterCategory) -> Bool {
+        guard let selIndex = homeCategories.firstIndex(of: selectedFilter),
+              let catIndex = homeCategories.firstIndex(of: category) else {
+            return category == selectedFilter
+        }
+        return abs(selIndex - catIndex) <= 1
     }
 
     private func badgeCount(for category: TodoFilterCategory) -> Int {
