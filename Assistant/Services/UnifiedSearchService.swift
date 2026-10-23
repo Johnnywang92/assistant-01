@@ -214,13 +214,23 @@ public final class UnifiedSearchService: ObservableObject {
         }
 
         // 4. 证件卡包 (IDDocumentItem) - 脱敏口径统一走 SearchPrivacyGate
-        var docDescriptor = FetchDescriptor<IDDocumentItem>(
-            predicate: #Predicate<IDDocumentItem> {
+        // 锁定态或隐藏敏感详情时，禁止通过搜索词探测持有人姓名与证件号码（消除侧信道枚举泄漏）
+        let docPredicate: Predicate<IDDocumentItem>
+        if SearchPrivacyGate.hidesSensitiveDetails {
+            docPredicate = #Predicate<IDDocumentItem> {
+                $0.title.localizedStandardContains(trimmed) ||
+                $0.typeRaw.localizedStandardContains(trimmed)
+            }
+        } else {
+            docPredicate = #Predicate<IDDocumentItem> {
                 $0.title.localizedStandardContains(trimmed) ||
                 $0.typeRaw.localizedStandardContains(trimmed) ||
                 ($0.holderName != nil && $0.holderName!.localizedStandardContains(trimmed)) ||
                 ($0.documentNumber != nil && $0.documentNumber!.localizedStandardContains(trimmed))
-            },
+            }
+        }
+        var docDescriptor = FetchDescriptor<IDDocumentItem>(
+            predicate: docPredicate,
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
         docDescriptor.fetchLimit = 15

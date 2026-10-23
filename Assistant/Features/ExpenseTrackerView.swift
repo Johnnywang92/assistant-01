@@ -114,14 +114,22 @@ struct ExpenseTrackerView: View {
     // MARK: - 统计数据单次 O(N) 极速归集（引用缓存：同一渲染内多处访问只算一次）
     private final class ExpenseAnalysisCache {
         var key: Int = -1
+        var recordCount: Int = -1
+        var lastCheckedTime: CFAbsoluteTime = 0
         var summary: ExpenseSummary?
         var grouped: [(key: String, items: [ExpenseRecord])]?
     }
 
     @State private var analysisCache = ExpenseAnalysisCache()
 
-    /// 覆盖统计/分组所依赖的字段 + 归属日（跨午夜自动失效）的轻量内容指纹。
+    /// 覆盖统计/分组所依赖的字段 + 归属日（跨午夜自动失效）的轻量内容指纹（带 50ms 渲染脉冲节流）。
     private var analysisKey: Int {
+        let now = CFAbsoluteTimeGetCurrent()
+        if analysisCache.key != -1,
+           analysisCache.recordCount == records.count,
+           (now - analysisCache.lastCheckedTime) < 0.05 {
+            return analysisCache.key
+        }
         var hasher = Hasher()
         hasher.combine(Calendar.current.startOfDay(for: .now).timeIntervalSinceReferenceDate)
         hasher.combine(records.count)
@@ -135,7 +143,10 @@ struct ExpenseTrackerView: View {
             hasher.combine(record.foreignAmount)
             hasher.combine(record.rawText)
         }
-        return hasher.finalize()
+        let computed = hasher.finalize()
+        analysisCache.lastCheckedTime = now
+        analysisCache.recordCount = records.count
+        return computed
     }
 
     /// 键变化时同时丢弃两份缓存；键未变时保留另一份已算结果。

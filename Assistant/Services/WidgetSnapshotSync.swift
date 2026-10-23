@@ -14,6 +14,8 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
     // MARK: - 快照构建
 
     func refreshSnapshot(context: ModelContext) {
+        // 刷新共享快照前先将扩展侧（小组件/手表）积压的指令落库，防止用旧库状态覆盖乐观快照
+        _ = drainAndApplyPendingCommands(context: context)
         let snapshot = buildSnapshot(context: context)
         WidgetSnapshotStore.save(snapshot)
         WidgetCenter.shared.reloadAllTimelines()
@@ -111,7 +113,8 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
 
     // MARK: - 指令对账（扩展 → 主应用）
 
-    func processPendingCommands(context: ModelContext) {
+    @discardableResult
+    private func drainAndApplyPendingCommands(context: ModelContext) -> Bool {
         var didProcess = false
         // 有界兜底循环：对账期间扩展可能继续入队，处理完再重读一轮
         for _ in 0..<3 {
@@ -122,6 +125,12 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         }
         if didProcess {
             try? context.save()
+        }
+        return didProcess
+    }
+
+    func processPendingCommands(context: ModelContext) {
+        if drainAndApplyPendingCommands(context: context) {
             refreshSnapshot(context: context)
         }
     }

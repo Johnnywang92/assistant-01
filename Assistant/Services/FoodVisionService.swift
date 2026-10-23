@@ -54,8 +54,11 @@ final class FoodVisionService: ObservableObject {
         }
 
         do {
-            let fullClassifications = try await classify(cgImage)
-            let regionResults = await classifySpatialRegions(cgImage)
+            let (fullClassifications, regionResults) = try await Task.detached(priority: .userInitiated) {
+                let full = try Self.classifySync(cgImage)
+                let regions = Self.classifySpatialRegionsSync(cgImage)
+                return (full, regions)
+            }.value
 
             // 合并全图与各分区的最高置信度分类，避免配菜在全图中被大碗白米饭掩盖
             var mergedConfidence: [String: Double] = [:]
@@ -92,8 +95,8 @@ final class FoodVisionService: ObservableObject {
         }
     }
 
-    /// 对餐盘/桌面常见的 4 个空间分区（左碗、上盘、右盘、下碟）分别执行图像分类。
-    private func classifySpatialRegions(_ cgImage: CGImage) async -> [(name: String, results: [(identifier: String, confidence: Double)])] {
+    /// 对餐盘/桌面常见的 4 个空间分区（左碗、上盘、右盘、下碟）分别执行图像分类（后台线程同步执行）。
+    nonisolated private static func classifySpatialRegionsSync(_ cgImage: CGImage) -> [(name: String, results: [(identifier: String, confidence: Double)])] {
         let w = Double(cgImage.width)
         let h = Double(cgImage.height)
         guard w >= 120, h >= 120 else { return [] }
@@ -108,7 +111,7 @@ final class FoodVisionService: ObservableObject {
         var output: [(name: String, results: [(identifier: String, confidence: Double)])] = []
         for (name, rect) in zones {
             guard let cropped = cgImage.cropping(to: rect),
-                  let res = try? await classify(cropped) else { continue }
+                  let res = try? classifySync(cropped) else { continue }
             output.append((name: name, results: res))
         }
         return output
@@ -216,20 +219,13 @@ final class FoodVisionService: ObservableObject {
         }
     }
 
-    /// 执行 Vision 通用图像分类。
-    private func classify(_ cgImage: CGImage) async throws -> [(identifier: String, confidence: Double)] {
-        try await withCheckedThrowingContinuation { continuation in
-            let request = VNClassifyImageRequest()
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            do {
-                try handler.perform([request])
-                let results = (request.results ?? []).map {
-                    (identifier: $0.identifier, confidence: Double($0.confidence))
-                }
-                continuation.resume(returning: results)
-            } catch {
-                continuation.resume(throwing: error)
-            }
+    /// 执行 Vision 通用图像分类（后台线程同步调用）。
+    nonisolated private static func classifySync(_ cgImage: CGImage) throws -> [(identifier: String, confidence: Double)] {
+        let request = VNClassifyImageRequest()
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        try handler.perform([request])
+        return (request.results ?? []).map {
+            (identifier: $0.identifier, confidence: Double($0.confidence))
         }
     }
 

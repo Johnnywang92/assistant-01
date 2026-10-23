@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import SwiftData
 import UIKit
@@ -16,13 +17,19 @@ enum ShareInboxService {
         "付款", "转账", "收款", "退款", "交易成功", "实付", "合计", "总计", "应付", "订单金额"
     ]
 
-    /// 排空并处理全部分享载荷。读取即清空中转区，天然幂等，不会重复入库。
+    private static var isProcessing = false
+
+    /// 排空并处理全部分享载荷。逐条落库后再从磁盘删除，防止处理中途挂起丢失后续分享项；并带防重入锁避免深链与回前台重复触发。
     static func processAll() async {
         await processAll(context: Persistence.shared.mainContext)
     }
 
     static func processAll(context: ModelContext) async {
-        let items = ShareImportBridge.drainAll()
+        guard !isProcessing else { return }
+        isProcessing = true
+        defer { isProcessing = false }
+
+        let items = ShareImportBridge.peekAll()
         guard !items.isEmpty else { return }
 
         for (payload, imageData) in items {
@@ -40,6 +47,7 @@ enum ShareInboxService {
                     _ = try? ImportService(context: context).ingest(text, source: "share_url")
                 }
             }
+            ShareImportBridge.remove(payload)
         }
 
         WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
@@ -149,10 +157,8 @@ enum ShareInboxService {
             "([0-9]+(?:\\.[0-9]{1,2})?)\\s*元"
         ]
         for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-            if let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-               match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: text),
-               let value = Double(text[range].replacingOccurrences(of: ",", with: ".")), value > 0 {
+            if let raw = Regex.firstGroup(pattern, in: text),
+               let value = Double(raw.replacingOccurrences(of: ",", with: ".")), value > 0 {
                 return value
             }
         }

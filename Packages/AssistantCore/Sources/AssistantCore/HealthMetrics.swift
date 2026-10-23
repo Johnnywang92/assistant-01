@@ -37,6 +37,14 @@ public enum HealthMetricKind: String, CaseIterable, Sendable {
     case respiratoryRate
     /// 健身时长（分钟）
     case workoutDuration
+    /// 心率变异性（毫秒 ms，Apple Watch 记录的 SDNN）
+    case heartRateVariability
+    /// 静息心率（次/分 bpm）
+    case restingHeartRate
+    /// 快速眼动睡眠（REM，小时）
+    case sleepREM
+    /// 深度睡眠（Deep Sleep，小时）
+    case sleepDeep
 
     /// 中文显示名。
     public var displayName: String {
@@ -52,6 +60,10 @@ public enum HealthMetricKind: String, CaseIterable, Sendable {
         case .walkingSpeed: return "步行速度"
         case .respiratoryRate: return "呼吸频率"
         case .workoutDuration: return "健身时长"
+        case .heartRateVariability: return "心率变异性"
+        case .restingHeartRate: return "静息心率"
+        case .sleepREM: return "快速眼动睡眠"
+        case .sleepDeep: return "深度睡眠"
         }
     }
 
@@ -69,6 +81,10 @@ public enum HealthMetricKind: String, CaseIterable, Sendable {
         case .walkingSpeed: return "figure.walk.motion"
         case .respiratoryRate: return "wind"
         case .workoutDuration: return "figure.run"
+        case .heartRateVariability: return "waveform.path.ecg"
+        case .restingHeartRate: return "heart.circle.fill"
+        case .sleepREM: return "brain.head.profile"
+        case .sleepDeep: return "moon.zzz.fill"
         }
     }
 
@@ -324,6 +340,18 @@ public struct HealthDaySnapshot: Equatable, Sendable {
     public var workoutMinutes: Double? {
         workoutSummary?.totalDurationMinutes ?? value(for: .workoutDuration)?.value
     }
+
+    /// 心率变异性（毫秒 SDNN）
+    public var heartRateVariability: Double? { value(for: .heartRateVariability)?.value }
+
+    /// 静息心率（次/分）
+    public var restingHeartRate: Double? { value(for: .restingHeartRate)?.value }
+
+    /// 快速眼动睡眠（REM，小时）
+    public var sleepREM: Double? { value(for: .sleepREM)?.value }
+
+    /// 深度睡眠（Deep Sleep，小时）
+    public var sleepDeep: Double? { value(for: .sleepDeep)?.value }
 }
 
 // MARK: - 聚合与判定
@@ -350,9 +378,9 @@ public enum HealthMetrics {
             switch kind {
             case .stepCount, .activeEnergy, .restingEnergy, .dietaryWater, .workoutDuration:
                 combinedValue = nums.reduce(0, +)
-            case .sleep:
+            case .sleep, .sleepREM, .sleepDeep:
                 combinedValue = nums.max() ?? 0
-            case .bodyTemperature, .heartRate, .bloodOxygen, .walkingSpeed, .respiratoryRate:
+            case .bodyTemperature, .heartRate, .restingHeartRate, .heartRateVariability, .bloodOxygen, .walkingSpeed, .respiratoryRate:
                 combinedValue = nums.reduce(0, +) / Double(nums.count)
             }
             merged[kind] = HealthMetricValue(kind: kind, value: combinedValue, day: day)
@@ -373,9 +401,9 @@ public enum HealthMetrics {
             switch kind {
             case .stepCount, .activeEnergy, .restingEnergy, .dietaryWater, .workoutDuration:
                 mergedValue = lhsValue.value + rhsValue.value
-            case .sleep:
+            case .sleep, .sleepREM, .sleepDeep:
                 mergedValue = max(lhsValue.value, rhsValue.value)
-            case .bodyTemperature, .heartRate, .bloodOxygen, .walkingSpeed, .respiratoryRate:
+            case .bodyTemperature, .heartRate, .restingHeartRate, .heartRateVariability, .bloodOxygen, .walkingSpeed, .respiratoryRate:
                 mergedValue = (lhsValue.value + rhsValue.value) / 2.0
             }
             values[kind] = HealthMetricValue(kind: kind, value: mergedValue, day: lhs.day)
@@ -427,6 +455,14 @@ public enum HealthMetrics {
             return "\(Int(value.rounded())) 次/分"
         case .workoutDuration:
             return "\(Int(value.rounded())) 分钟"
+        case .heartRateVariability:
+            return "\(Int(value.rounded())) ms"
+        case .restingHeartRate:
+            return "\(Int(value.rounded())) 次/分"
+        case .sleepREM:
+            return String(format: "%.1f 小时", value)
+        case .sleepDeep:
+            return String(format: "%.1f 小时", value)
         }
     }
 

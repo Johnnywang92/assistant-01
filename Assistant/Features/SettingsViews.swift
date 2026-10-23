@@ -238,15 +238,17 @@ struct SettingsView: View {
                             }
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("权限检查")
+                                Text("权限检查与配置")
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(.primary)
-
+                                Text("集中检查与一键开启所有系统功能权限")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                             }
 
                             Spacer()
 
-                            Text("\(PermissionManager.shared.readyCount) / 4 项")
+                            Text("\(PermissionManager.shared.readyCount) / \(PermissionManager.shared.totalCount) 项")
                                 .font(.caption.bold())
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 3)

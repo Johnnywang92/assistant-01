@@ -14,7 +14,7 @@ struct ItemStorageVaultView: View {
     /// 家庭常备药与健康储备（物品收纳页内统一管理，重点跟踪有效期与用药方法）
     @Query private var medicines: [MedicineItem]
 
-    private let searchText: String = ""
+    @State private var searchText: String = ""
     @State private var selectedArea: String = "全部"
     @State private var showingAddSheet: Bool = false
     @State private var itemToEdit: StoredItem? = nil
@@ -458,6 +458,7 @@ struct ItemStorageVaultView: View {
         .themedRow()
         .navigationTitle("物品收纳找物")
         .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $searchText, prompt: Text(L10n.tr("搜索物品名称、存放位置、常备药或适应症…")))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {

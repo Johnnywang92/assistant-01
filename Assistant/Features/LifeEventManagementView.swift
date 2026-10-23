@@ -29,7 +29,9 @@ struct LifeEventManagementView: View {
                                 .buttonStyle(.plain)
                             }
                             .onDelete { offsets in
-                                for index in offsets { context.delete(projects[index]) }
+                                for index in offsets {
+                                    deleteProjectCascade(projects[index])
+                                }
                                 try? context.save()
                             }
                         } header: {
@@ -47,6 +49,26 @@ struct LifeEventManagementView: View {
             .sheet(isPresented: $showCreate) { LifeEventCreateView() }
             .sheet(item: $selectedProject) { project in LifeEventProjectDetailView(project: project) }
         }
+    }
+
+    private func deleteProjectCascade(_ project: LifeEventProject) {
+        let pid = project.id
+        if let stages = try? context.fetch(FetchDescriptor<LifeEventStage>(predicate: #Predicate { $0.projectID == pid })) {
+            stages.forEach { context.delete($0) }
+        }
+        if let tasks = try? context.fetch(FetchDescriptor<LifeEventTask>(predicate: #Predicate { $0.projectID == pid })) {
+            tasks.forEach { context.delete($0) }
+        }
+        if let people = try? context.fetch(FetchDescriptor<LifeEventPerson>(predicate: #Predicate { $0.projectID == pid })) {
+            people.forEach { context.delete($0) }
+        }
+        if let expenses = try? context.fetch(FetchDescriptor<LifeEventExpense>(predicate: #Predicate { $0.projectID == pid })) {
+            expenses.forEach { context.delete($0) }
+        }
+        if let guests = try? context.fetch(FetchDescriptor<LifeEventGuest>(predicate: #Predicate { $0.projectID == pid })) {
+            guests.forEach { context.delete($0) }
+        }
+        context.delete(project)
     }
 }
 

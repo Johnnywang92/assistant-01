@@ -16,6 +16,7 @@ final class VoiceDialogueService: NSObject, ObservableObject {
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
     private let synthesizer = AVSpeechSynthesizer()
+    private var isTapInstalled = false
 
     @Published public var isListening = false
     @Published public var isSpeaking = false
@@ -87,56 +88,69 @@ final class VoiceDialogueService: NSObject, ObservableObject {
         recognitionRequest.shouldReportPartialResults = true
 
         let inputNode = audioEngine.inputNode
+        if isTapInstalled {
+            inputNode.removeTap(onBus: 0)
+            isTapInstalled = false
+        }
         let recordingFormat = inputNode.outputFormat(forBus: 0)
+        let request = recognitionRequest
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            self?.recognitionRequest?.append(buffer)
+            request.append(buffer)
             let rms = Self.computeRMS(buffer)
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, self.isListening else { return }
                 let target = min(1.0, rms * 9.0)
                 self.audioLevel = self.audioLevel * 0.55 + target * 0.45
             }
         }
+        isTapInstalled = true
 
         audioEngine.prepare()
-        try audioEngine.start()
+        do {
+            try audioEngine.start()
+        } catch {
+            if isTapInstalled {
+                inputNode.removeTap(onBus: 0)
+                isTapInstalled = false
+            }
+            self.recognitionRequest = nil
+            throw error
+        }
 
         isListening = true
         audioLevel = 0
 
         recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            guard let self = self else { return }
-
-            if let result = result {
-                self.recognizedText = result.bestTranscription.formattedString
-            }
-
-            if error != nil || (result?.isFinal ?? false) {
-                self.stopListening()
+            let transcript = result?.bestTranscription.formattedString
+            let isFinal = result?.isFinal ?? false
+            let hasError = error != nil
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let transcript {
+                    self.recognizedText = transcript
+                }
+                if hasError || isFinal {
+                    self.stopListening()
+                }
             }
         }
     }
 
     /// 停止录音
     public func stopListening() {
-        guard isListening || audioEngine.isRunning else {
-            recognitionRequest?.endAudio()
-            recognitionRequest = nil
-            recognitionTask?.cancel()
-            recognitionTask = nil
-            isListening = false
-            return
-        }
-
         if audioEngine.isRunning {
             audioEngine.stop()
         }
-        audioEngine.inputNode.removeTap(onBus: 0)
+        if isTapInstalled {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            isTapInstalled = false
+        }
         recognitionRequest?.endAudio()
         recognitionRequest = nil
         recognitionTask?.cancel()
         recognitionTask = nil
         isListening = false
+        audioLevel = 0
     }
 
     /// 离线朗读语音回答 (TTS)

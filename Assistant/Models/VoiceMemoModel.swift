@@ -114,6 +114,23 @@ enum VoiceMemoStorage {
         try? FileManager.default.removeItem(at: url(for: fileName))
     }
 
+    static func deleteAll() {
+        let fm = FileManager.default
+        if let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
+            for file in files {
+                try? fm.removeItem(at: file)
+            }
+        }
+    }
+
+    static func pruneUnreferenced(keeping validFileNames: Set<String>) {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
+        for file in files where !validFileNames.contains(file.lastPathComponent) {
+            try? fm.removeItem(at: file)
+        }
+    }
+
     static func loadData(_ fileName: String) -> Data? {
         try? Data(contentsOf: url(for: fileName))
     }

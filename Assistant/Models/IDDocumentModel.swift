@@ -166,6 +166,32 @@ public enum IDPhotoStorage {
         }
     }
 
+    /// 直接保存照片原始字节到私有沙盒（迁移还原时避免二次 JPEG 有损重编码）
+    public static func saveData(_ data: Data, preferredName: String? = nil) -> String? {
+        guard UIImage(data: data) != nil else { return nil }
+        let fileName: String
+        if let preferredName, !preferredName.isEmpty,
+           !FileManager.default.fileExists(atPath: storageDirectory.appendingPathComponent(preferredName).path) {
+            fileName = preferredName
+        } else {
+            fileName = "\(UUID().uuidString).jpg"
+        }
+        let fileURL = storageDirectory.appendingPathComponent(fileName)
+        do {
+            try data.write(to: fileURL, options: [.atomic, .completeFileProtection])
+            return fileName
+        } catch {
+            return nil
+        }
+    }
+
+    /// 从本地沙盒读取原始照片字节（导出备份时免解码直读）
+    public static func loadData(fileName: String?) -> Data? {
+        guard let fileName, !fileName.isEmpty else { return nil }
+        let fileURL = storageDirectory.appendingPathComponent(fileName)
+        return try? Data(contentsOf: fileURL)
+    }
+
     /// 从本地沙盒读取完整照片
     public static func loadImage(fileName: String?) -> UIImage? {
         guard let fileName, !fileName.isEmpty else { return nil }
@@ -213,6 +239,27 @@ public enum IDPhotoStorage {
         let fileURL = storageDirectory.appendingPathComponent(fileName)
         try? FileManager.default.removeItem(at: fileURL)
     }
+
+    /// 清空全部证件照片与缩略图缓存（全量覆盖还原前清理旧残留）
+    public static func deleteAllImages() {
+        thumbnailCache.removeAllObjects()
+        let fm = FileManager.default
+        if let files = try? fm.contentsOfDirectory(at: storageDirectory, includingPropertiesForKeys: nil) {
+            for file in files {
+                try? fm.removeItem(at: file)
+            }
+        }
+    }
+
+    /// 清理未被引用的孤儿照片文件（在数据库事务成功提交后调用，保证回滚安全）
+    public static func pruneUnreferenced(keeping validFileNames: Set<String>) {
+        thumbnailCache.removeAllObjects()
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: storageDirectory, includingPropertiesForKeys: nil) else { return }
+        for file in files where !validFileNames.contains(file.lastPathComponent) {
+            try? fm.removeItem(at: file)
+        }
+    }
 }
 
 /// Face ID / Touch ID / 锁屏密码安全鉴权管理器
@@ -244,8 +291,18 @@ public final class BiometricAuthManager: ObservableObject {
                 }
             }
         } else {
-            // 设备未设密码或模拟器环境：直接放行
+            #if targetEnvironment(simulator)
             self.isUnlocked = true
+            #else
+            let code = error.map { LAError(_nsError: $0).code }
+            if code == .passcodeNotSet {
+                self.isUnlocked = true
+                self.errorMessage = nil
+            } else {
+                self.isUnlocked = false
+                self.errorMessage = error?.localizedDescription ?? L10n.tr("当前无法验证身份，请稍后重试")
+            }
+            #endif
         }
     }
 

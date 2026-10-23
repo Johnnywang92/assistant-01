@@ -227,43 +227,27 @@ public final class OCRService: Sendable {
 
     public init() {}
 
-    /// 从 UIImage 提取识别到的文本行
+    /// 从 UIImage 提取识别到的文本行（在后台线程执行 Vision 推理，避免阻塞主线程且消除 Continuation 双重 resume 风险）
     public func recognizeText(from image: UIImage) async throws -> String {
         guard let cgImage = Self.normalizedCGImage(from: image) else {
             throw OCRError.invalidImage
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            let request = VNRecognizeTextRequest { request, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                    continuation.resume(returning: "")
-                    return
-                }
-
-                let recognizedStrings = observations.compactMap { observation in
-                    observation.topCandidates(1).first?.string
-                }
-
-                let fullText = recognizedStrings.joined(separator: "\n")
-                continuation.resume(returning: fullText)
-            }
-
+        return try await Task.detached(priority: .userInitiated) {
+            let request = VNRecognizeTextRequest()
             request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
             request.usesLanguageCorrection = true
             request.recognitionLevel = .accurate
 
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            do {
-                try handler.perform([request])
-            } catch {
-                continuation.resume(throwing: error)
+            try handler.perform([request])
+
+            let observations = request.results ?? []
+            let recognizedStrings = observations.compactMap { observation in
+                observation.topCandidates(1).first?.string
             }
-        }
+            return recognizedStrings.joined(separator: "\n")
+        }.value
     }
 
     /// 从截屏或照片中同时识别文字（事件、时间、场馆、地点、票种）并提取预约二维码与原图凭证
@@ -274,7 +258,7 @@ public final class OCRService: Sendable {
 
         let attachmentData = image.jpegData(compressionQuality: 0.78)
 
-        let (textObservations, barcodeObservations) = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<([VNRecognizedTextObservation], [VNBarcodeObservation]), Error>) in
+        let (textObservations, barcodeObservations) = try await Task.detached(priority: .userInitiated) {
             let textReq = VNRecognizeTextRequest()
             textReq.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
             textReq.usesLanguageCorrection = true
@@ -283,15 +267,11 @@ public final class OCRService: Sendable {
             let barcodeReq = VNDetectBarcodesRequest()
 
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-            do {
-                try handler.perform([textReq, barcodeReq])
-                let texts = textReq.results ?? []
-                let barcodes = barcodeReq.results ?? []
-                continuation.resume(returning: (texts, barcodes))
-            } catch {
-                continuation.resume(throwing: error)
-            }
-        }
+            try handler.perform([textReq, barcodeReq])
+            let texts = textReq.results ?? []
+            let barcodes = barcodeReq.results ?? []
+            return (texts, barcodes)
+        }.value
 
         // 1. 提取二维码/条形码载荷，并从原图精准裁剪二维码图像区域
         var qrPayload: String? = nil
@@ -397,9 +377,13 @@ public final class OCRService: Sendable {
         // 过滤顶部系统状态栏、底部导航按钮以及右侧海报缩略图噪点文字
         let ignoreExact: Set<String> = [
             "订单详情", "门票详情", "预约详情", "凭证详情", "详情", "电子票", "入场凭证",
-            "已完成", "已预约", "预约成功", "出票成功", "待使用", "待参加", "待消费", "交易成功",
-            "返回首页", "查看订单", "申请售后", "联系客服", "分享", "去使用",
-            "•••", "◎", "<", ">", "抖音", "微信", "支付宝", "美团", "小红书", "大麦", "猫眼"
+            "电影票详情", "演出票详情", "机票详情", "火车票详情", "行程详情", "我的电影票", "电影票",
+            "取电影票", "扫码入场", "如何取票", "取票凭证", "取票码", "取票号",
+            "本单权益", "电子纪念票", "定制专属取票语", "定制票纸纪念语",
+            "添加到系统日历", "添加到日历", "开场提醒你",
+            "已完成", "已预约", "预约成功", "出票成功", "待使用", "待参加", "待消费", "交易成功", "出票中",
+            "返回首页", "查看订单", "申请售后", "联系客服", "分享", "去使用", "去看看", "映后发放",
+            "•••", "◎", "<", ">", "＞", "＜", "抖音", "微信", "支付宝", "美团", "小红书", "大麦", "猫眼", "淘票票", "猫眼电影"
         ]
 
         let filtered = sorted.filter { line in
@@ -407,8 +391,12 @@ public final class OCRService: Sendable {
             if t.isEmpty || ignoreExact.contains(t) { return false }
             // 顶部状态栏 (y > 0.93)
             if line.box.minY > 0.93 { return false }
-            // 底部返回按钮栏 (y < 0.07)
-            if line.box.maxY < 0.07 && (t.contains("返回") || t.contains("首页") || t.contains("客服")) {
+            // 顶部居中导航栏详情标题（如 y > 0.86 处的 "电影票详情" / "xxx详情"）
+            if line.box.minY > 0.86 && (t.hasSuffix("详情") || t.contains("票夹") || t.contains("凭证") || t == "电影票") {
+                return false
+            }
+            // 底部返回按钮栏及权益/活动浮层 (y < 0.08)
+            if line.box.maxY < 0.08 && (t.contains("返回") || t.contains("首页") || t.contains("客服") || t.contains("去看看") || t.contains("发放") || t.contains("积分") || t.contains("纪念")) {
                 return false
             }
             // 右侧海报缩略图内小字噪点（x > 0.55 且处于上部卡片区域，非价格/张数信息）
@@ -453,10 +441,10 @@ public final class OCRService: Sendable {
         var maskedIDInfo: String? = nil
 
         for t in mergedTexts {
-            if let v = Self.extractValue(from: t, prefixes: ["场馆", "展馆", "门店", "影院", "剧院", "景区", "展厅"]) {
-                if venue == nil { venue = v }
+            if let v = Self.extractValue(from: t, prefixes: ["场馆", "展馆", "门店", "影院", "影城", "剧院", "景区", "展厅"]) {
+                if venue == nil { venue = Self.cleanVenueName(v) }
             } else if let addr = Self.extractValue(from: t, prefixes: ["地点", "地址", "位置", "场馆地址", "详细地址"]) {
-                if address == nil { address = addr }
+                if address == nil { address = Self.cleanVenueName(addr) }
             } else if let act = Self.extractValue(from: t, prefixes: ["活动时间", "入场时间", "演出时间", "参观时间", "预约时间", "使用时间", "检票时间", "场次"]) {
                 if activityTimeLine == nil { activityTimeLine = act }
             } else if let tm = Self.extractValue(from: t, prefixes: ["时间", "日期", "展期", "有效期"]) {
@@ -476,11 +464,25 @@ public final class OCRService: Sendable {
             }
         }
 
+        // 影院特征提取（若存在电影院/影城，支持分店名及导航箭头清理）
+        if venue == nil {
+            for t in mergedTexts where !Self.isDateOrTimeOnly(t) {
+                let cleaned = Self.cleanVenueName(t)
+                if cleaned.contains("取电影票") || cleaned.contains("取票") || cleaned.contains("张电影票") { continue }
+                if cleaned.hasSuffix("厅") || Self.matchesRegex(cleaned, pattern: ".*[0-9]+号.*厅.*") { continue }
+                if (cleaned.contains("影城") || cleaned.contains("影院") || cleaned.contains("电影院") || cleaned.contains("影剧院") || cleaned.contains("百老汇")) && cleaned.count >= 4 && cleaned.count <= 35 {
+                    venue = cleaned
+                    break
+                }
+            }
+        }
+
         // 若无显式“场馆：/地点：”前缀，尝试基于地名与场馆后缀特征兜底提取
         if venue == nil {
             for t in mergedTexts where !Self.isDateOrTimeOnly(t) {
-                if Self.matchesRegex(t, pattern: ".*(?:会展中心|展览馆|博物馆|美术馆|体育馆|大剧院|艺术中心|科技馆|文化中心|音乐厅|博览中心)$") && t.count <= 24 {
-                    venue = t
+                let cleaned = Self.cleanVenueName(t)
+                if Self.matchesRegex(cleaned, pattern: ".*(?:会展中心|展览馆|博物馆|美术馆|体育馆|大剧院|剧场|剧院|影院|影城|电影院|艺术中心|科技馆|文化中心|音乐厅|博览中心|中心广场|体育场|大礼堂)(?:[（\\(].*?[）\\)]|[\\s·\\-].*?店)?$") && cleaned.count <= 35 {
+                    venue = cleaned
                     break
                 }
             }
@@ -488,7 +490,7 @@ public final class OCRService: Sendable {
         if address == nil {
             for t in mergedTexts {
                 if Self.matchesRegex(t, pattern: ".*(?:市|区|县).*(?:路|街|道|巷|弄|大道)[0-9]+号.*") && t.count <= 40 {
-                    address = t
+                    address = Self.cleanVenueName(t)
                     break
                 }
             }
@@ -579,26 +581,61 @@ public final class OCRService: Sendable {
             return address ?? venue
         }()
 
+        var moviePickupCode: String? = nil
         let movieTitle: String? = {
             guard isMovieTicket else { return nil }
-            let candidates = mergedTexts.filter { line in
-                let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                return t.count >= 2 && t.count <= 24
-                    && !Self.isDateOrTimeOnly(t)
-                    && !t.contains("影城") && !t.contains("影院") && !t.contains("影厅") && !t.contains("激光")
-                    && !t.contains("座") && !t.contains("验证") && !t.contains("取电")
+
+            func isMovieTitleCandidate(_ line: String) -> Bool {
+                var s = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                s = s.replacingOccurrences(of: #"^《|》$"#, with: "", options: .regularExpression)
+                guard s.count >= 1 && s.count <= 25 else { return false }
+                if Self.isDateOrTimeOnly(s) { return false }
+                if let v = venue, s == v || s.contains(v) || v.contains(s) { return false }
+                if s.contains("影城") || s.contains("影院") || s.contains("电影院") || s.contains("影剧院") { return false }
+                if s.hasSuffix("详情") || s.contains("电影票") || s.contains("门票") || s.contains("凭证") || s.contains("订单") { return false }
+                if s.contains("开场") || s.contains("放映") || s.contains("小时") || s.contains("分钟") { return false }
+                if s.contains("二维码") || s.contains("短信") || s.contains("取票") || s.contains("入场") || s.contains("扫码") { return false }
+                if s.contains("日历") || s.contains("提醒你") || s.contains("权益") || s.contains("积分") || s.contains("纪念") || s.contains("去看看") || s.contains("发放") { return false }
+                if s.contains("排") && s.contains("座") { return false }
+                if s.contains("厅") || s.contains("沙发") || s.contains("认证") || s.contains("VIP") { return false }
+                if s.contains("2D") || s.contains("3D") || s.contains("IMAX") || s.contains("原版") || s.contains("国语") || s.contains("粤语") || s.contains("张") { return false }
+                if s.contains("，") || s.contains("。") || s.contains("！") || s.contains("？") || s.contains("：") || s.contains(":") || s.contains("~") { return false }
+                if Self.matchesRegex(s, pattern: "^[0-9\\s\\-:]+$") { return false }
+                if s.contains("今天") || s.contains("明天") || s.contains("后天") || Self.matchesRegex(s, pattern: ".*[0-9]+-[0-9]+.*") { return false }
+                return true
             }
-            return candidates.first(where: { !$0.contains("VIP") }) ?? candidates.first
+
+            // 优先查找在影院地点之后紧邻的电影标题
+            if let v = venue, let venueIndex = mergedTexts.firstIndex(where: { $0.contains(v) || v.contains($0) }) {
+                let candidatesAfterVenue = mergedTexts.dropFirst(venueIndex + 1).filter(isMovieTitleCandidate)
+                if let best = candidatesAfterVenue.first {
+                    return best
+                }
+            }
+            return mergedTexts.filter(isMovieTitleCandidate).first
         }()
         let rawTitle = movieTitle ?? eventTitle ?? venue ?? "图片识别待办事项"
         let finalTitle = isMovieTicket ? "观看《\(Self.condenseEventTitle(rawTitle))》" : Self.condenseEventTitle(rawTitle)
         if isMovieTicket {
             summaryTokens.insert("电影票", at: 0)
-            if let seat = mergedTexts.first(where: { Self.matchesRegex($0, pattern: "[0-9]+排[0-9]+座") }) {
+            if let seat = mergedTexts.first(where: { Self.matchesRegex($0, pattern: ".*[0-9]+排[0-9]+座.*") }) {
                 summaryTokens.append(seat)
             }
-            if let hall = mergedTexts.first(where: { $0.contains("厅") && ($0.contains("影") || $0.contains("激光")) }) {
-                summaryTokens.append(hall)
+            if let hall = mergedTexts.first(where: { $0.contains("厅") && !$0.contains("展厅") && !$0.contains("餐厅") && !$0.contains("客厅") }) {
+                if let match = hall.range(of: #".*?([0-9a-zA-Z一二三四五六七八九十]+号)?.*?[0-9a-zA-Z\u4e00-\u9fa5]*厅"#, options: .regularExpression) {
+                    summaryTokens.append(String(hall[match]))
+                } else {
+                    summaryTokens.append(hall)
+                }
+            }
+            for t in mergedTexts {
+                if let match = t.range(of: #"(?:取票号|取票码|验证码|票号)[：:]\s*([0-9\s]{6,})"#, options: .regularExpression) {
+                    let matchedStr = String(t[match])
+                    if let colonIndex = matchedStr.firstIndex(where: { $0 == "：" || $0 == ":" }) {
+                        moviePickupCode = String(matchedStr[matchedStr.index(after: colonIndex)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                        break
+                    }
+                }
             }
         }
         let finalDetail = summaryTokens.isEmpty ? nil : summaryTokens.joined(separator: " · ")
@@ -683,7 +720,7 @@ public final class OCRService: Sendable {
             dueAt: parsedDueAt,
             station: finalStation,
             location: finalLocation,
-            pickupCode: nil,
+            pickupCode: moviePickupCode,
             detail: finalDetail,
             timeSlotText: parsedSlotDesc,
             rawText: rawFullText,
@@ -824,6 +861,14 @@ public final class OCRService: Sendable {
 
     // MARK: - 辅助匹配规则
 
+    private static func cleanVenueName(_ text: String) -> String {
+        var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        s = s.replacingOccurrences(of: #"^[•·◎\s]+"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"[\s>＞»→]+$"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"[📞\ue000-\uf8ff]+$"#, with: "", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func isMetadataLine(_ text: String) -> Bool {
         let prefixes = [
             "时间", "场馆", "地点", "地址", "活动时间", "入场时间", "演出时间", "参观时间",
@@ -856,9 +901,12 @@ public final class OCRService: Sendable {
 
     private static func isCandidateTitle(_ text: String) -> Bool {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard t.count >= 4 else { return false }
+        guard t.count >= 2 else { return false }
         if isMetadataLine(t) { return false }
         if isDateOrTimeOnly(t) { return false }
+        if t.hasSuffix("详情") || t.contains("详情页") || t.contains("电影票") || t.contains("门票") || t.contains("凭证") || t.contains("订单") || t.contains("取票") {
+            return false
+        }
         if t.contains("居民身份证") || t.contains("免费预约") || t.hasPrefix("¥") || t.hasPrefix("￥") {
             return false
         }
@@ -869,9 +917,9 @@ public final class OCRService: Sendable {
     }
 
     private static func looksLikeMovieTicket(rawText: String) -> Bool {
-        let markers = ["电影", "影城", "影院", "影厅", "激光厅", "取电影票", "观影"]
+        let markers = ["电影", "影城", "影院", "电影院", "影厅", "激光厅", "IMAX厅", "取电影票", "观影", "开场", "放映"]
         let markerCount = markers.filter { rawText.contains($0) }.count
-        return markerCount >= 2 || rawText.contains("取电影票")
+        return markerCount >= 2 || rawText.contains("取电影票") || rawText.contains("观影") || (rawText.contains("影城") && rawText.contains("排") && rawText.contains("座"))
     }
 
     private static func parseMovieScreeningDate(from lines: [String], defaultYear: Int) -> Date? {
@@ -886,26 +934,27 @@ public final class OCRService: Sendable {
         }.first ?? (16, 55)
         for line in lines {
             guard line.contains("今天") || line.contains("明天") || line.contains("月") || line.contains("/") || line.contains("-") else { continue }
+            let nsRange = NSRange(location: 0, length: line.utf16.count)
+            if let match = regex.firstMatch(in: line, range: nsRange),
+               let mRange = Range(match.range(at: 2), in: line),
+               let dRange = Range(match.range(at: 3), in: line),
+               let month = Int(line[mRange]), let day = Int(line[dRange]) {
+                let year: Int = {
+                    guard match.range(at: 1).location != NSNotFound,
+                          let yRange = Range(match.range(at: 1), in: line),
+                          let year = Int(line[yRange]) else { return defaultYear }
+                    return year
+                }()
+                var comps = DateComponents()
+                comps.year = year; comps.month = month; comps.day = day; comps.hour = time.0; comps.minute = time.1
+                if let date = calendar.date(from: comps) { return date }
+            }
             if line.contains("今天") {
                 return calendar.startOfDay(for: .now).addingTimeInterval(TimeInterval(time.0 * 3600 + time.1 * 60))
             }
             if line.contains("明天") {
                 return calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: .now))?.addingTimeInterval(TimeInterval(time.0 * 3600 + time.1 * 60))
             }
-            let nsRange = NSRange(location: 0, length: line.utf16.count)
-            guard let match = regex.firstMatch(in: line, range: nsRange),
-                  let mRange = Range(match.range(at: 2), in: line),
-                  let dRange = Range(match.range(at: 3), in: line),
-                  let month = Int(line[mRange]), let day = Int(line[dRange]) else { continue }
-            let year: Int = {
-                guard match.range(at: 1).location != NSNotFound,
-                      let yRange = Range(match.range(at: 1), in: line),
-                      let year = Int(line[yRange]) else { return defaultYear }
-                return year
-            }()
-            var comps = DateComponents()
-            comps.year = year; comps.month = month; comps.day = day; comps.hour = time.0; comps.minute = time.1
-            if let date = calendar.date(from: comps) { return date }
         }
         return nil
     }

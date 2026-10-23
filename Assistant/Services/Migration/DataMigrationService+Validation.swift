@@ -42,7 +42,10 @@ public struct BackupInspectionSummary: Identifiable {
     public var lifeEventPersonCount: Int = 0
     public var lifeEventExpenseCount: Int = 0
     public var lifeEventGuestCount: Int = 0
+    public var medicineCount: Int = 0
     public var omniboxTransactionCount: Int = 0
+    public var foodIntakeCount: Int = 0
+    public var waterIntakeCount: Int = 0
     public var settingsKeyCount: Int = 0
     public var isEncryptedWithPIN: Bool = false
 
@@ -56,7 +59,7 @@ public struct BackupInspectionSummary: Identifiable {
         childHealthVisitCount + childVaccinationCount + reminderActionCount +
         lifeEventProjectCount + lifeEventStageCount + lifeEventTaskCount +
         lifeEventPersonCount + lifeEventExpenseCount + lifeEventGuestCount +
-        omniboxTransactionCount + settingsKeyCount
+        medicineCount + omniboxTransactionCount + foodIntakeCount + waterIntakeCount + settingsKeyCount
     }
 }
 
@@ -101,7 +104,10 @@ extension DataMigrationService {
             lifeEventPersonCount: package.lifeEventPeople?.count ?? 0,
             lifeEventExpenseCount: package.lifeEventExpenses?.count ?? 0,
             lifeEventGuestCount: package.lifeEventGuests?.count ?? 0,
+            medicineCount: package.medicines?.count ?? 0,
             omniboxTransactionCount: package.omniboxTransactions?.count ?? 0,
+            foodIntakeCount: package.foodIntakeRecords?.count ?? 0,
+            waterIntakeCount: package.waterIntakeRecords?.count ?? 0,
             settingsKeyCount: package.settings?.itemCount ?? 0,
             isEncryptedWithPIN: isEncryptedWithPIN
         )
@@ -158,7 +164,10 @@ extension DataMigrationService {
         try requireUniqueIDs(package.lifeEventPeople?.map(\.id) ?? [])
         try requireUniqueIDs(package.lifeEventExpenses?.map(\.id) ?? [])
         try requireUniqueIDs(package.lifeEventGuests?.map(\.id) ?? [])
+        try requireUniqueIDs(package.medicines?.map(\.id) ?? [])
         try requireUniqueIDs(package.omniboxTransactions?.map(\.id) ?? [])
+        try requireUniqueIDs(package.foodIntakeRecords?.map(\.id) ?? [])
+        try requireUniqueIDs(package.waterIntakeRecords?.map(\.id) ?? [])
 
         // 阶段与打卡流水必须挂到已备份的路径上，否则还原后成孤儿数据
         if let stages = package.skillStages {
@@ -221,8 +230,15 @@ extension DataMigrationService {
                 throw MigrationCryptoError.missingAttachment(document.title)
             }
         }
-        for memo in package.voiceMemos ?? [] where memo.audioData == nil {
-            throw MigrationCryptoError.missingAttachment(memo.title)
+        for memo in package.voiceMemos ?? [] {
+            if let audioData = memo.audioData, audioData.isEmpty {
+                throw MigrationCryptoError.missingAttachment(memo.title)
+            }
+        }
+        for food in package.foodIntakeRecords ?? [] {
+            if let imgData = food.imageData, UIImage(data: imgData) == nil {
+                throw MigrationCryptoError.missingAttachment(food.foodName)
+            }
         }
     }
 }

@@ -10,6 +10,7 @@ struct UnifiedSearchView: View {
     @ObservedObject private var router = NavigationRouter.shared
 
     @State private var query: String = ""
+    @State private var searchTask: Task<Void, Never>?
     @FocusState private var isFieldFocused: Bool
 
     var body: some View {
@@ -112,7 +113,13 @@ struct UnifiedSearchView: View {
     }
 
     private func runSearch(_ query: String) {
-        Task {
+        searchTask?.cancel()
+        searchTask = Task { @MainActor in
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+            }
+            guard !Task.isCancelled else { return }
             _ = await searchService.search(query: query, context: context)
         }
     }

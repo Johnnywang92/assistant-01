@@ -368,3 +368,31 @@ P0 五项至此全部完成。本轮把三项「部分完成」推到可自动�
 - **`Localizable.xcstrings` 编辑。** 新增 24 键（均带 en/zh-Hans）。**踩了一个坑：不能重新序列化整个文件**——该文件是 Xcode 自己的 JSON 风格（`"key" : value` 冒号两侧有空格、2 空格缩进、空对象写作 `{\n\n    }`），用 `json.dumps(indent=2)` 重新序列化会产生 3000+ 行无关 diff。已改为**纯文本定点插入**（新增 `scripts/add-xcstrings-keys.py`），diff 为纯新增 408 行、**删除 0 行、已有键 0 改动**。
 - **验证：** `swift test` **254 项全绿**（新增 `HealthMetricsTests` 24 项）；`xcodegen generate` 后 `xcodebuild -scheme Assistant -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO` **BUILD SUCCEEDED**（0 error 0 warning）；产物 `Info.plist` 已含健康用途描述串；主 target `CODE_SIGN_ENTITLEMENTS = Assistant/Assistant.entitlements` 指向正确且该文件含 healthkit entitlement。
 - **仍待真机验收（本工程模拟器不可构建，HealthKit 只能在真机验）：** ① 连接设备后自动签名，确认免费个人团队下含 healthkit 的描述文件能生成（此前 App Groups 就因「未连接设备」无法生成 profile）；② 授权面板是否正常弹出、拒绝后是否稳定停在「未读到数据」而非报错；③ 步数/饮水/睡眠数值是否与「健康」App 一致；④ 睡眠时长是否未因 `inBed` 重复计入而翻倍；⑤ 打卡页「今日健康参考」在无数据时是否确实显示引导而非 0。
+
+## 2026-10-23 实施记录（Apple Watch 心率变异性 HRV + 睡眠分期 + 自律神经压力与身心愉悦指数引擎）
+
+- **算法模型与生理学依据：**
+  - 基于 Russell 情绪环状模型（Circumplex Model of Affect），将可穿戴设备的生理唤醒（Arousal）与情绪储备恢复（Valence/Readiness）解耦建模。
+  - 核心输入：Apple Watch 的 SDNN 心率变异性（`heartRateVariabilitySDNN`）、静息心率（`restingHeartRate`）、睡眠阶段（总时长、REM 快速眼动情绪修复时长、深睡眠身体修复时长）与日间适度活动量。
+  - 个人基线标准化（Z-score）：针对 HRV 存在巨大先天差异的现实，采用 14 天滚动个人均值与方差做标准化对比，杜绝跨人硬编码绝对阈值。
+  - 产出指标：身心愉悦指数（0~100 分，五级：🌟欣快充沛 / 🌿平和舒畅 / ⚡️适度紧绷 / 🔋能量偏低 / 🌧️身心超载）、压力负荷指数（0~100%、四级：平静放松 / 适度良好 / 负荷偏高 / 高度紧绷）、自主神经平衡状态与个性化调养减压建议。
+- **纯逻辑下沉 `AssistantCore`：**
+  - `HealthMetrics.swift` 扩充 `HealthMetricKind`（`.heartRateVariability`, `.restingHeartRate`, `.sleepREM`, `.sleepDeep`）、快照快捷属性、聚合与格式化输出。
+  - 新增 `PleasureIndexEvaluator.swift` 纯逻辑评估引擎，涵盖动态 Z-score 归一化、自律神经与压力推断、睡眠结构（REM/Deep占比）情绪去敏化修正、综合愉悦评分与针对性调养文案生成。
+  - 新增 `PleasureIndexEvaluatorTests.swift` 6 项测试（默认保底、高压低HRV、深度睡眠与副交感占优、缺项退化降级、个人基线定制），`AssistantCore` 单元测试扩增至 366 项全绿。
+- **服务层与权限配置：**
+  - `HealthKitService.swift` 在 `readTypes` 补充 `heartRateVariabilitySDNN`，升级 `sleepStages` 分别抓取 asleepREM 与 asleepDeep，实现 `hrvSample` 与 `fetchBaseline(14d)` 动态自适应基线。
+  - `project.yml` 更新 `NSHealthShareUsageDescription`，明确声明读取心率变异性(HRV)、睡眠分期与静息心率，保持隐私声明与实际行为完全一致。
+- **UI 交互与呈现：**
+  - `HealthDataView.swift` 顶部新增「身心愉悦与压力指数卡」，集成状态色彩、愉悦指数大字盘、压力负荷比率、自主神经平衡、关键生理指标胶囊（带基线高低比对）与可收折的生活调养/腹式呼吸关怀建议。
+  - 「生命体征与生理指标」模块补充 HRV、静息心率、REM 与深睡眠卡片展示。
+  - 本地化：严格执行无损更新纪律，使用 `scripts/add-xcstrings-keys.py` 新增 8 个中英本地化键，已有 4249 个键零改动。
+- **全量系统权限集中检查与统一赋予闭环：**
+  - 将原分散在各处的权限检查与赋予能力全部收敛至 `PermissionManager` 与 `PermissionOnboardingView`（权限检查中心）。
+  - 覆盖全量 8 大系统权限：系统通知、地理定位、麦克风与端侧语音、相册照片、Apple 健康（HRV/睡眠/活力）、相机拍摄与扫码、系统日历协同、运动与健身感知。
+  - 集中赋予支持双模式：每项独立「立即授权」与「一键配置全部待授权项目」流水线依次唤起，遭拒项目直跳「系统设置」。
+  - 设置页「系统权限」动态自适应呈现 `X / 8 项` 真实统计。
+  - 本地化：定点追加 11 个中英文键，已有 4257 键零改动。
+- **验证：**
+  - `swift test --package-path Packages/AssistantCore` **366 项测试全绿**；
+  - `xcodegen generate` + `xcodebuild -scheme Assistant -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO` **BUILD SUCCEEDED**。

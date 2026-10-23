@@ -102,6 +102,8 @@ actor LlamaCppEngine {
     private var vocab: OpaquePointer?
     private var loadedModelPath: String?
     private var isBackendInitialized = false
+    private var activeContextCount = 0
+    private var pendingUnload = false
 
     private init() {
         llama_backend_init()
@@ -151,8 +153,13 @@ actor LlamaCppEngine {
         self.loadedModelPath = path
     }
 
-    /// 释放模型权重与显存占用
+    /// 释放模型权重与显存占用（若当前有正在进行的推理上下文，则延迟至上下文释放后再卸载，防止 Actor 重入悬垂指针崩溃）
     func unloadModel() {
+        guard activeContextCount == 0 else {
+            pendingUnload = true
+            return
+        }
+        pendingUnload = false
         if let model {
             llama_model_free(model)
         }
@@ -208,8 +215,13 @@ actor LlamaCppEngine {
         guard let context = llama_init_from_model(model, ctxParams) else {
             throw LlamaInferenceError.contextInitFailed
         }
+        activeContextCount += 1
         defer {
             llama_free(context)
+            activeContextCount -= 1
+            if activeContextCount == 0, pendingUnload {
+                unloadModel()
+            }
         }
 
         // 1. 将 ChatML Prompt 转换为 Token 序列
@@ -424,8 +436,22 @@ actor LlamaCppEngine {
             throw LlamaInferenceError.tokenMapUnavailable
         }
 
+        // 先对提示词分词，再按实际提示词长度申请最小够用的上下文窗口（下限 512），
+        // 避免 ~200 token 的意图判别每次都分配 4096 token（约 115MB）的 KV 缓存。
+        var promptTokens = await tokenize(prompt)
+        guard !promptTokens.isEmpty else { throw LlamaInferenceError.tokenizationFailed }
+
+        let maxCtx = Self.requestedContextTokens(for: model)
+        let neededCtx = promptTokens.count + Self.contextSafetyMargin
+        guard neededCtx <= maxCtx else {
+            throw LlamaInferenceError.contextOverflow(
+                required: promptTokens.count,
+                available: max(0, maxCtx - Self.contextSafetyMargin)
+            )
+        }
+
         var ctxParams = llama_context_default_params()
-        ctxParams.n_ctx = UInt32(Self.requestedContextTokens(for: model))
+        ctxParams.n_ctx = UInt32(min(maxCtx, max(512, neededCtx)))
         ctxParams.n_batch = 512
         let cpuCount = ProcessInfo.processInfo.activeProcessorCount
         let threadCount = Int32(max(2, min(6, cpuCount - 1)))
@@ -435,12 +461,14 @@ actor LlamaCppEngine {
         guard let context = llama_init_from_model(model, ctxParams) else {
             throw LlamaInferenceError.contextInitFailed
         }
-        defer { llama_free(context) }
-
-        // 已在 ensureModelLoaded 后拿到 vocab，但 tokenize 是 actor隔离的 async 方法，
-        // 同 actor 内调用仍需 await。
-        var promptTokens = await tokenize(prompt)
-        guard !promptTokens.isEmpty else { throw LlamaInferenceError.tokenizationFailed }
+        activeContextCount += 1
+        defer {
+            llama_free(context)
+            activeContextCount -= 1
+            if activeContextCount == 0, pendingUnload {
+                unloadModel()
+            }
+        }
 
         // 分类不需要任何生成，maxNewTokens 记0 —— 预算因此更宽，
         // 长提示词在分类路径上比生成路径更容易装进窗口。

@@ -6,9 +6,6 @@ import SwiftUI
 struct SkillPathListView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \SkillPath.startedAt, order: .reverse) private var paths: [SkillPath]
-    @Query private var allStages: [SkillStage]
-    @Query private var allTodos: [TodoItem]
-    @Query private var allLogs: [SkillPracticeLog]
 
     @State private var showingCreateSheet = false
     @State private var progressMap: [UUID: SkillProgress] = [:]
@@ -162,15 +159,19 @@ struct SkillPathDetailView: View {
     @Environment(\.modelContext) private var context
     let path: SkillPath
 
-    @Query private var allStages: [SkillStage]
-    @Query private var allTodos: [TodoItem]
+    @Query private var stages: [SkillStage]
+    @Query private var todos: [TodoItem]
 
-    private var stages: [SkillStage] {
-        allStages.filter { $0.pathID == path.id }.sorted { $0.index < $1.index }
-    }
-
-    private var todos: [TodoItem] {
-        allTodos.filter { $0.skillPathID == path.id }
+    init(path: SkillPath) {
+        self.path = path
+        let pid = path.id
+        _stages = Query(
+            filter: #Predicate<SkillStage> { $0.pathID == pid },
+            sort: [SortDescriptor(\.index, order: .forward)]
+        )
+        _todos = Query(
+            filter: #Predicate<TodoItem> { $0.skillPathID == pid }
+        )
     }
 
     var body: some View {

@@ -98,9 +98,9 @@ public enum ShareImportBridge {
 
     // MARK: - 读取端（主 App 进程）
 
-    /// 排空中转区：读出全部载荷并删除文件（读取即清空）。图片载荷会顺带加载字节。
-    /// 返回按 createdAt 升序排列，保证处理顺序稳定。
-    public static func drainAll() -> [(payload: Payload, imageData: Data?)] {
+    /// 读取中转区全部待处理载荷（不立即删除文件，供逐条处理成功后再调用 `remove(_:)` 确认移除）。
+    /// 损坏的 JSON 文件会被自动清理。返回按 createdAt 升序排列。
+    public static func peekAll() -> [(payload: Payload, imageData: Data?)] {
         guard let dir = inboxDir,
               FileManager.default.fileExists(atPath: dir.path) else { return [] }
         let fm = FileManager.default
@@ -117,12 +117,30 @@ public enum ShareImportBridge {
             if let imageFile = payload.imageFile {
                 let imageURL = dir.appendingPathComponent(imageFile)
                 imageData = try? Data(contentsOf: imageURL)
-                try? fm.removeItem(at: imageURL)
             }
             results.append((payload, imageData))
-            try? fm.removeItem(at: file)
         }
         return results.sorted { $0.payload.createdAt < $1.payload.createdAt }
+    }
+
+    /// 确认单条分享载荷已处理完毕，删除对应的 JSON 与图片文件。
+    public static func remove(_ payload: Payload) {
+        guard let dir = inboxDir else { return }
+        let fm = FileManager.default
+        if let imageFile = payload.imageFile {
+            try? fm.removeItem(at: dir.appendingPathComponent(imageFile))
+        }
+        try? fm.removeItem(at: dir.appendingPathComponent("\(payload.id).json"))
+    }
+
+    /// 排空中转区：读出全部载荷并删除文件（读取即清空）。图片载荷会顺带加载字节。
+    /// 返回按 createdAt 升序排列，保证处理顺序稳定。
+    public static func drainAll() -> [(payload: Payload, imageData: Data?)] {
+        let items = peekAll()
+        for (payload, _) in items {
+            remove(payload)
+        }
+        return items
     }
 
     /// 测试 / 维护用：整目录清空。

@@ -89,12 +89,30 @@ struct OmniboxIntentRouter {
         return Result(distribution: distribution, prompt: prompt)
     }
 
+    /// 按模型路径缓存已校验的标签 Token 映射，避免每次路由请求重复发起 9 次跨 Actor 分词调用
+    private actor TokenMapCache {
+        static let shared = TokenMapCache()
+        private var cached: [String: IntentTokenMap] = [:]
+
+        func get(for path: String) -> IntentTokenMap? {
+            cached[path]
+        }
+
+        func set(_ map: IntentTokenMap, for path: String) {
+            cached[path] = map
+        }
+    }
+
     /// 把标签映射为单 token。委托 Core 的校验规则，保证「单 token 且互不碰撞」
     /// 这条前提只有一处实现。
     ///
     /// 标签本身是「0」~「8」单字符，在 Qwen 词表下均为单token，
     /// 这里仍做校验以防将来换用分词粒度不同的模型。
     private func buildTokenMap(labels: [OmniboxIntentLabel], modelURL: URL) async -> IntentTokenMap? {
+        let cacheKey = modelURL.path
+        if let cached = await TokenMapCache.shared.get(for: cacheKey) {
+            return cached
+        }
         let engine = LlamaCppEngine.shared
         // 分词是 actor 隔离的异步调用，而Core 的校验器收同步闭包。
         // 先一次性把所有标签的 token 取回，再用同步闭包做校验，
@@ -108,7 +126,11 @@ struct OmniboxIntentRouter {
         let tokenizer: (OmniboxIntentLabel) -> [Int]? = { label in
             tokenIDs[label]
         }
-        return IntentTokenMap(tokenizing: labels, with: tokenizer)
+        guard let map = IntentTokenMap(tokenizing: labels, with: tokenizer) else {
+            return nil
+        }
+        await TokenMapCache.shared.set(map, for: cacheKey)
+        return map
     }
 
     /// 构造判别提示词。

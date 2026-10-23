@@ -29,6 +29,10 @@ final class HealthKitService: ObservableObject {
 
     /// 当前读到的当日快照。`nil` 表示尚未拉取过。
     @Published private(set) var snapshot: HealthDaySnapshot?
+    /// 用户的 14 天动态基线
+    @Published private(set) var userBaseline: HealthBaseline = .standard
+    /// 综合推断的身心愉悦与压力评估报告
+    @Published private(set) var pleasureEvaluation: PleasureIndexEvaluation?
     /// 拉取失败时的可诊断描述（面向开发者，不直接展示给用户）。
     @Published private(set) var lastError: String?
     /// 是否正在拉取。
@@ -62,6 +66,7 @@ final class HealthKitService: ObservableObject {
         if let water = HKObjectType.quantityType(forIdentifier: .dietaryWater) { types.insert(water) }
         if let hr = HKObjectType.quantityType(forIdentifier: .heartRate) { types.insert(hr) }
         if let restingHr = HKObjectType.quantityType(forIdentifier: .restingHeartRate) { types.insert(restingHr) }
+        if let hrv = HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN) { types.insert(hrv) }
         if let o2 = HKObjectType.quantityType(forIdentifier: .oxygenSaturation) { types.insert(o2) }
         if let bodyTemp = HKObjectType.quantityType(forIdentifier: .bodyTemperature) { types.insert(bodyTemp) }
         if let wristTemp = HKObjectType.quantityType(forIdentifier: .appleSleepingWristTemperature) { types.insert(wristTemp) }
@@ -170,8 +175,12 @@ final class HealthKitService: ObservableObject {
         async let basalEnergy = cumulativeSum(for: .restingEnergy, unit: .kilocalorie(), start: startOfDay)
         async let water = cumulativeSum(for: .dietaryWater, unit: .literUnit(with: .milli), start: startOfDay)
 
-        // 睡眠：昨晚到今天醒来的时长
-        async let sleep = sleepHours(start: startOfDay)
+        // 睡眠：昨晚到今天醒来的时长与阶段
+        async let sleep = sleepStages(start: startOfDay)
+
+        // 心率变异性与静息心率
+        async let hrv = hrvSample(start: startOfDay)
+        async let restingHR = restingHeartRateSample(start: startOfDay)
 
         // 体温与生命体征
         async let temperature = bodyTemperatureSample(start: startOfDay)
@@ -188,7 +197,14 @@ final class HealthKitService: ObservableObject {
         if let energyValue = await energy { values.append(energyValue) }
         if let basalValue = await basalEnergy { values.append(basalValue) }
         if let waterValue = await water { values.append(waterValue) }
-        if let sleepValue = await sleep { values.append(sleepValue) }
+
+        let sleepResult = await sleep
+        if let sleepValue = sleepResult.total { values.append(sleepValue) }
+        if let remValue = sleepResult.rem { values.append(remValue) }
+        if let deepValue = sleepResult.deep { values.append(deepValue) }
+
+        if let hrvValue = await hrv { values.append(hrvValue) }
+        if let restingValue = await restingHR { values.append(restingValue) }
         if let tempValue = await temperature { values.append(tempValue) }
         if let hrValue = await heartRate { values.append(hrValue) }
         if let oxValue = await bloodOxygen { values.append(oxValue) }
@@ -207,6 +223,13 @@ final class HealthKitService: ObservableObject {
         } else if let existing = snapshot {
             snapshot = HealthMetrics.mergeSnapshot(existing, newSnapshot)
         }
+
+        // 异步更新 14 天基线并推断身心愉悦与压力指数
+        let baseline = await fetchBaseline()
+        if let current = snapshot {
+            pleasureEvaluation = PleasureIndexEvaluator.evaluate(snapshot: current, baseline: baseline)
+        }
+
         // 保留子查询记录的错误描述：整次刷新成功不代表每个指标都成功
         lastError = errors.isEmpty ? nil : errors.joined(separator: "\n")
         return snapshot
@@ -374,15 +397,12 @@ final class HealthKitService: ObservableObject {
         }
     }
 
-    /// 昨夜睡眠时长（小时）。
+    /// 昨夜睡眠时长与细分阶段（REM、深睡眠，单位：小时）。
     ///
     /// 口径：从昨天中午到现在，累加处于「已入睡」状态的样本时长（跨来源重叠区间只算一次）。
-    /// **只统计 asleep 类样本，不统计 `inBed`（在床上）**——后者与 asleep 区间重叠，
-    /// 一起累加会让睡眠时长翻倍。
-    private func sleepHours(start: Date) async -> HealthMetricValue? {
-        guard let type = sleepType else { return nil }
-        // 昨天中午 12:00 起，覆盖前一晚入睡到今天醒来的完整窗口
-        // （`start` 是今天 0 点，不能直接减一天，否则会把昨天白天小睡和更早的样本一并算进来）
+    /// **只统计 asleep 类样本，不统计 `inBed`（在床上）**——避免翻倍。
+    private func sleepStages(start: Date) async -> (total: HealthMetricValue?, rem: HealthMetricValue?, deep: HealthMetricValue?) {
+        guard let type = sleepType else { return (nil, nil, nil) }
         let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: start) ?? start
         let windowStart = calendar.date(byAdding: .hour, value: 12, to: yesterdayStart) ?? yesterdayStart
         let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: .now, options: [])
@@ -398,31 +418,120 @@ final class HealthKitService: ObservableObject {
                 HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
                 HKCategoryValueSleepAnalysis.asleepREM.rawValue
             ]
-            // iPhone / Apple Watch / 第三方 App 可能同时写入重叠的睡眠样本：
-            // 按时间排序后合并重叠区间再求和，避免重复计时；并裁剪到统计窗口内。
-            let intervals = samples
-                .filter { asleepValues.contains($0.value) }
-                .map { (max($0.startDate, windowStart), $0.endDate) }
-                .filter { $0.1 > $0.0 }
-                .sorted { $0.0 < $1.0 }
-            var totalSeconds: TimeInterval = 0
-            var current: (Date, Date)?
-            for interval in intervals {
-                if let c = current, interval.0 <= c.1 {
-                    current = (c.0, max(c.1, interval.1))
-                } else {
-                    if let c = current { totalSeconds += c.1.timeIntervalSince(c.0) }
-                    current = interval
+
+            // 合并重叠区间的通用方法
+            func mergedDuration(for filterValues: Set<Int>) -> Double {
+                let intervals = samples
+                    .filter { filterValues.contains($0.value) }
+                    .map { (max($0.startDate, windowStart), $0.endDate) }
+                    .filter { $0.1 > $0.0 }
+                    .sorted { $0.0 < $1.0 }
+                var totalSeconds: TimeInterval = 0
+                var current: (Date, Date)?
+                for interval in intervals {
+                    if let c = current, interval.0 <= c.1 {
+                        current = (c.0, max(c.1, interval.1))
+                    } else {
+                        if let c = current { totalSeconds += c.1.timeIntervalSince(c.0) }
+                        current = interval
+                    }
                 }
+                if let c = current { totalSeconds += c.1.timeIntervalSince(c.0) }
+                return totalSeconds / 3600.0
             }
-            if let c = current { totalSeconds += c.1.timeIntervalSince(c.0) }
-            guard totalSeconds > 0 else { return nil }
-            let hours = totalSeconds / 3600.0
-            return HealthMetricValue(kind: .sleep, value: hours, day: start)
+
+            let totalH = mergedDuration(for: asleepValues)
+            let remH = mergedDuration(for: [HKCategoryValueSleepAnalysis.asleepREM.rawValue])
+            let deepH = mergedDuration(for: [HKCategoryValueSleepAnalysis.asleepDeep.rawValue])
+
+            let totalMetric = totalH > 0 ? HealthMetricValue(kind: .sleep, value: totalH, day: start) : nil
+            let remMetric = remH > 0 ? HealthMetricValue(kind: .sleepREM, value: remH, day: start) : nil
+            let deepMetric = deepH > 0 ? HealthMetricValue(kind: .sleepDeep, value: deepH, day: start) : nil
+
+            return (totalMetric, remMetric, deepMetric)
+        } catch {
+            errors.append(describe(error))
+            return (nil, nil, nil)
+        }
+    }
+
+    /// 心率变异性采样（SDNN 毫秒，优先采集夜间睡眠到今晨的连续指标）。
+    private func hrvSample(start: Date) async -> HealthMetricValue? {
+        guard let type = HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { return nil }
+        let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: start) ?? start
+        let windowStart = calendar.date(byAdding: .hour, value: 18, to: yesterdayStart) ?? yesterdayStart
+        let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: .now, options: .strictStartDate)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: type, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)],
+            limit: 15
+        )
+        do {
+            let samples = try await descriptor.result(for: store)
+            guard !samples.isEmpty else { return nil }
+            let values = samples.map { $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli)) }.filter { $0 > 0 }
+            guard !values.isEmpty else { return nil }
+            let avg = values.reduce(0, +) / Double(values.count)
+            return HealthMetricValue(kind: .heartRateVariability, value: avg, day: start)
         } catch {
             errors.append(describe(error))
             return nil
         }
+    }
+
+    /// 静息心率采样（次/分）。
+    private func restingHeartRateSample(start: Date) async -> HealthMetricValue? {
+        await averageQuantity(for: .restingHeartRate, identifier: .restingHeartRate, unit: HKUnit.count().unitDivided(by: .minute()), start: start)
+    }
+
+    /// 提取用户过去 14 天的滚动基线（HRV 与静息心率的个人均值与标准差）。
+    func fetchBaseline(days: Int = 14) async -> HealthBaseline {
+        guard Self.isAvailable else { return .standard }
+        guard let hrvType = HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN),
+              let rhrType = HKObjectType.quantityType(forIdentifier: .restingHeartRate) else {
+            return .standard
+        }
+        let startDate = calendar.date(byAdding: .day, value: -days, to: .now) ?? .now
+        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: .now, options: .strictStartDate)
+
+        var hrvValues: [Double] = []
+        let hrvDescriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: hrvType, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)]
+        )
+        if let samples = try? await hrvDescriptor.result(for: store) {
+            hrvValues = samples.map { $0.quantity.doubleValue(for: HKUnit.secondUnit(with: .milli)) }.filter { $0 > 0 }
+        }
+
+        var rhrValues: [Double] = []
+        let rhrDescriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: rhrType, predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)]
+        )
+        if let samples = try? await rhrDescriptor.result(for: store) {
+            rhrValues = samples.map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute())) }.filter { $0 > 0 }
+        }
+
+        func calculateStats(of array: [Double], defaultMean: Double, defaultStd: Double) -> (Double, Double) {
+            guard array.count >= 3 else { return (defaultMean, defaultStd) }
+            let mean = array.reduce(0, +) / Double(array.count)
+            let variance = array.reduce(0) { $0 + pow($1 - mean, 2) } / Double(array.count)
+            let std = sqrt(variance)
+            return (mean, max(std, 2.0))
+        }
+
+        let (meanHRV, stdHRV) = calculateStats(of: hrvValues, defaultMean: 42.0, defaultStd: 15.0)
+        let (meanRHR, stdRHR) = calculateStats(of: rhrValues, defaultMean: 65.0, defaultStd: 6.0)
+
+        let baseline = HealthBaseline(
+            meanHRV: meanHRV,
+            stdHRV: stdHRV,
+            meanRestingHR: meanRHR,
+            stdRestingHR: stdRHR,
+            targetSleepHours: 7.5
+        )
+        self.userBaseline = baseline
+        return baseline
     }
 
     private func quantityIdentifier(for kind: HealthMetricKind) -> HKQuantityTypeIdentifier {
@@ -436,7 +545,9 @@ final class HealthKitService: ObservableObject {
         case .bloodOxygen: return .oxygenSaturation
         case .walkingSpeed: return .walkingSpeed
         case .respiratoryRate: return .respiratoryRate
-        case .sleep, .workoutDuration: return .stepCount
+        case .heartRateVariability: return .heartRateVariabilitySDNN
+        case .restingHeartRate: return .restingHeartRate
+        case .sleep, .sleepREM, .sleepDeep, .workoutDuration: return .stepCount
         }
     }
 

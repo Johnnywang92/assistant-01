@@ -157,6 +157,8 @@ struct TodoListView: View {
     private final class TodoClassificationCache {
         var key: Int = -1
         var query: String = ""
+        var activeCount: Int = -1
+        var doneCount: Int = -1
         var lastComputedTime: CFAbsoluteTime = 0
         var value: TodoClassification?
     }
@@ -183,6 +185,8 @@ struct TodoListView: View {
         let query = crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         if let cached = classificationCache.value,
            classificationCache.query == query,
+           classificationCache.activeCount == todos.count,
+           classificationCache.doneCount == recentDoneTodos.count,
            (now - classificationCache.lastComputedTime) < 0.05 {
             return cached
         }
@@ -190,7 +194,11 @@ struct TodoListView: View {
         let fingerprintBegin = CFAbsoluteTimeGetCurrent()
         let key = Self.classificationKey(for: todos, done: recentDoneTodos)
         StartupMetrics.markOnce("todoList.fingerprint", "n=\(todos.count)+\(recentDoneTodos.count) cost=\(Int((CFAbsoluteTimeGetCurrent() - fingerprintBegin) * 1000))ms")
-        if let cached = classificationCache.value, classificationCache.key == key, classificationCache.query == query {
+        if let cached = classificationCache.value,
+           classificationCache.key == key,
+           classificationCache.query == query,
+           classificationCache.activeCount == todos.count,
+           classificationCache.doneCount == recentDoneTodos.count {
             classificationCache.lastComputedTime = now
             return cached
         }
@@ -206,15 +214,19 @@ struct TodoListView: View {
         StartupMetrics.markOnce("todoList.classify", "n=\(source.count) cost=\(Int((CFAbsoluteTimeGetCurrent() - classifyBegin) * 1000))ms")
         classificationCache.key = key
         classificationCache.query = query
+        classificationCache.activeCount = todos.count
+        classificationCache.doneCount = recentDoneTodos.count
         classificationCache.lastComputedTime = now
         classificationCache.value = result
         return result
     }
 
-    /// 轻量内容指纹：覆盖 TodoClassification 分桶与 TodoPriority 排序所依赖的字段。
+    /// 轻量内容指纹：覆盖 TodoClassification 分桶、搜索匹配与 TodoPriority 排序所依赖的字段。
     private static func classificationKey(for items: [TodoItem], done doneItems: [TodoItem]) -> Int {
         var hasher = Hasher()
+        hasher.combine(items.count)
         for item in items {
+            hasher.combine(item.id)
             hasher.combine(item.statusRaw)
             hasher.combine(item.typeRaw)
             hasher.combine(item.isRecurring)
@@ -222,6 +234,9 @@ struct TodoListView: View {
             hasher.combine(item.dueAt?.timeIntervalSinceReferenceDate ?? -1)
             hasher.combine(item.title)
             hasher.combine(item.detail ?? "")
+            hasher.combine(item.pickupCode ?? "")
+            hasher.combine(item.station ?? "")
+            hasher.combine(item.location ?? "")
         }
         // 已完成事项只影响「已完成」分桶，按身份 + 状态/类型做轻量指纹即可
         hasher.combine(doneItems.count)
@@ -230,6 +245,7 @@ struct TodoListView: View {
             hasher.combine(item.statusRaw)
             hasher.combine(item.typeRaw)
             hasher.combine(item.isRecurring)
+            hasher.combine(item.title)
         }
         return hasher.finalize()
     }
@@ -334,6 +350,35 @@ struct TodoListView: View {
                 filterTabBar
                     .wallpaperReadableText()
 
+                // 搜索词非空时，提供一键跳往「跨模块全景搜索」入口（避免首字母拦截打断中文拼音输入）
+                if !crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    let trimmedQuery = crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    Button {
+                        router.prefilledSearchQuery = trimmedQuery
+                        router.activeSheet = .unifiedSearch
+                        crossModuleSearchText = ""
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass.circle.fill")
+                                .foregroundStyle(.tint)
+                            Text("在全景搜索中查找「\(trimmedQuery)」(账单·收纳·证件·备忘)")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 // 上下滑动排序模式开启提示横幅
                 if isReordering {
                     reorderingActiveBanner
@@ -431,15 +476,8 @@ struct TodoListView: View {
                     }
                 }
             }
-            // 首页专属搜索入口：统一唤起跨模块统一搜索，全域覆盖待办、账单、物品、证件与备忘
-            .searchable(text: $crossModuleSearchText, prompt: Text(L10n.tr("搜索待办、账单、物品、证件与备忘…")))
-            .onChange(of: crossModuleSearchText) { _, newQuery in
-                let trimmed = newQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-                router.prefilledSearchQuery = trimmed
-                router.activeSheet = .unifiedSearch
-                crossModuleSearchText = ""
-            }
+            // 首页搜索栏：输入时实时筛选当前页待办（支持完整中文拼音输入），按键盘「搜索」或点击横幅唤起跨模块全景搜索
+            .searchable(text: $crossModuleSearchText, prompt: Text(L10n.tr("搜索待办，回车跨模块搜账单/物品/证件/备忘…")))
             .onSubmit(of: .search) {
                 let trimmed = crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }

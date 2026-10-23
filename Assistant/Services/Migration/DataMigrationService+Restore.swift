@@ -92,6 +92,8 @@ extension DataMigrationService {
             try context.delete(model: LifeEventExpense.self)
             try context.delete(model: LifeEventGuest.self)
             try context.delete(model: OmniboxTransaction.self)
+            try context.delete(model: FoodIntakeRecord.self)
+            try context.delete(model: WaterIntakeRecord.self)
         }
 
         var details: [String] = []
@@ -124,6 +126,7 @@ extension DataMigrationService {
                 skillStageIndex: t.skillStageIndex ?? 0,
                 isSkillPractice: t.isSkillPractice ?? false,
                 skillPracticeMinutes: t.skillPracticeMinutes ?? 0,
+                calendarItemIdentifier: t.calendarItemIdentifier,
                 arrivalReminderAt: t.arrivalReminderAt,
                 arrivalTransportRaw: t.arrivalTransportRaw
             )
@@ -131,6 +134,7 @@ extension DataMigrationService {
             item.createdAt = t.createdAt
             item.completedAt = t.completedAt
             item.reminderOverrideAt = t.reminderOverrideAt
+            item.arrivalCheckFiredAt = t.arrivalCheckFiredAt
             context.insert(item)
             restoredTodos += 1
         }
@@ -321,14 +325,12 @@ extension DataMigrationService {
             if strategy == .merge && existingDocIDs.contains(d.id) { continue }
             var frontFileName: String? = nil
             if let frontData = d.frontImageData {
-                guard let image = UIImage(data: frontData) else { throw MigrationCryptoError.missingAttachment(d.title) }
-                frontFileName = IDPhotoStorage.saveImage(image)
+                frontFileName = IDPhotoStorage.saveData(frontData)
                 guard frontFileName != nil else { throw MigrationCryptoError.missingAttachment(d.title) }
             }
             var backFileName: String? = nil
             if let backData = d.backImageData {
-                guard let image = UIImage(data: backData) else { throw MigrationCryptoError.missingAttachment(d.title) }
-                backFileName = IDPhotoStorage.saveImage(image)
+                backFileName = IDPhotoStorage.saveData(backData)
                 guard backFileName != nil else { throw MigrationCryptoError.missingAttachment(d.title) }
             }
             let item = IDDocumentItem(
@@ -378,14 +380,12 @@ extension DataMigrationService {
             if strategy == .merge && existingVoiceMemoIDs.contains(vm.id) { continue }
 
             var actualAudioFileName = vm.audioFileName
-            if let audioData = vm.audioData {
+            if let audioData = vm.audioData, !audioData.isEmpty {
                 if let savedName = VoiceMemoStorage.save(data: audioData, preferredName: vm.audioFileName) {
                     actualAudioFileName = savedName
                 } else {
                     throw MigrationCryptoError.missingAttachment(vm.title)
                 }
-            } else if package.metadata.schemaVersion >= 2 {
-                throw MigrationCryptoError.missingAttachment(vm.title)
             }
 
             let item = VoiceMemo(
@@ -825,10 +825,79 @@ extension DataMigrationService {
         details.append("投喂事务: \(restoredTx) 笔")
         totalRestored += restoredTx
 
-        // 18. 偏好设置（仅覆盖策略：合并策略只搬数据，不改本机行为）。
+        // 18. 饮食热量记录（Schema V4）
+        let existingFoodIDs = Set(try context.fetch(FetchDescriptor<FoodIntakeRecord>()).map(\.id))
+        var restoredFood = 0
+        for f in package.foodIntakeRecords ?? [] {
+            if strategy == .merge && existingFoodIDs.contains(f.id) { continue }
+            let item = FoodIntakeRecord(
+                date: f.date,
+                foodName: f.foodName,
+                foodID: f.foodID,
+                portion: FoodPortion(rawValue: f.portionRaw) ?? .regular,
+                fullPortionCalories: f.fullPortionCalories,
+                consumedRatio: f.consumedRatio,
+                confidence: f.confidence,
+                isManuallyAdjusted: f.isManuallyAdjusted,
+                source: FoodIntakeSource(rawValue: f.sourceRaw) ?? .vision,
+                imageData: f.imageData,
+                linkedExpenseID: f.linkedExpenseID
+            )
+            item.id = f.id
+            item.consumedCalories = f.consumedCalories
+            item.createdAt = f.createdAt
+            context.insert(item)
+            restoredFood += 1
+        }
+        if restoredFood > 0 || package.foodIntakeRecords != nil {
+            details.append("饮食热量: \(restoredFood) 项")
+            totalRestored += restoredFood
+        }
+
+        // 19. 饮水摄入记录（Schema V5）
+        let existingWaterIDs = Set(try context.fetch(FetchDescriptor<WaterIntakeRecord>()).map(\.id))
+        var restoredWater = 0
+        for w in package.waterIntakeRecords ?? [] {
+            if strategy == .merge && existingWaterIDs.contains(w.id) { continue }
+            let item = WaterIntakeRecord(
+                date: w.date,
+                beverageType: HydrationBeverageType(rawValue: w.beverageTypeRaw) ?? .plainWater,
+                volumeML: w.volumeML,
+                hydrationFactor: w.hydrationFactor,
+                customName: w.customName,
+                note: w.note,
+                syncedToHealthKit: w.syncedToHealthKit,
+                linkedExpenseID: w.linkedExpenseID
+            )
+            item.id = w.id
+            item.effectiveHydrationML = w.effectiveHydrationML
+            item.caffeineMG = w.caffeineMG
+            item.calories = w.calories
+            item.createdAt = w.createdAt
+            context.insert(item)
+            restoredWater += 1
+        }
+        if restoredWater > 0 || package.waterIntakeRecords != nil {
+            details.append("饮水记录: \(restoredWater) 项")
+            totalRestored += restoredWater
+        }
+
+        // 20. 偏好设置（仅覆盖策略：合并策略只搬数据，不改本机行为）。
         // 放在 context.save() 之后：UserDefaults 无法随 context.rollback() 回滚，
         // 必须等数据库落库成功再动设置，避免「库回滚了、偏好却已写盘」的不一致。
         try context.save()
+
+        // 事务成功落库后，清理未被引用的沙盒孤儿证件照与语音文件（避免先删文件导致回滚丢失）
+        if strategy == .overwrite {
+            let finalDocs = (try? context.fetch(FetchDescriptor<IDDocumentItem>())) ?? []
+            let validPhotoNames = Set(finalDocs.flatMap { [$0.frontImageFileName, $0.backImageFileName].compactMap { $0 } })
+            IDPhotoStorage.pruneUnreferenced(keeping: validPhotoNames)
+
+            let finalMemos = (try? context.fetch(FetchDescriptor<VoiceMemo>())) ?? []
+            let validAudioNames = Set(finalMemos.map(\.audioFileName))
+            VoiceMemoStorage.pruneUnreferenced(keeping: validAudioNames)
+        }
+
         if strategy == .overwrite, let settings = package.settings {
             applySettingsSnapshot(settings)
             details.append("偏好设置: \(settings.itemCount) 项")

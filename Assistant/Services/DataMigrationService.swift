@@ -212,6 +212,8 @@ final class DataMigrationService {
         let dialogueRecords = (try? context.fetchCount(FetchDescriptor<DialogueMessageRecord>())) ?? 0
         let rawMessages = (try? context.fetchCount(FetchDescriptor<RawMessage>())) ?? 0
         let locationSamples = (try? context.fetchCount(FetchDescriptor<LocationStaySample>())) ?? 0
+        let foodRecords = (try? context.fetchCount(FetchDescriptor<FoodIntakeRecord>())) ?? 0
+        let waterRecords = (try? context.fetchCount(FetchDescriptor<WaterIntakeRecord>())) ?? 0
 
         return [
             "待办事项": todos,
@@ -231,7 +233,9 @@ final class DataMigrationService {
             "家庭常备药": medicineStocks,
             "对话历史": dialogueRecords,
             "原始消息": rawMessages,
-            "位置采样": locationSamples
+            "位置采样": locationSamples,
+            "饮食热量记录": foodRecords,
+            "饮水记录": waterRecords
         ]
     }
 

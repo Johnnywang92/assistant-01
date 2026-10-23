@@ -10,8 +10,19 @@ struct PeriodicReportView: View {
     @ObservedObject private var reportManager = PeriodicReportManager.shared
     @AppStorage(AppBackgroundStyle.defaultsKey) private var bgStyleRaw = AppBackgroundStyle.system.rawValue
 
-    @Query(sort: \ExpenseRecord.date, order: .reverse) private var recentExpenses: [ExpenseRecord]
-    @Query(sort: \TodoItem.createdAt, order: .reverse) private var recentTodos: [TodoItem]
+    private static var recentExpensesDescriptor: FetchDescriptor<ExpenseRecord> {
+        var descriptor = FetchDescriptor<ExpenseRecord>(sortBy: [SortDescriptor(\.date, order: .reverse)])
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
+    private static var recentTodosDescriptor: FetchDescriptor<TodoItem> {
+        var descriptor = FetchDescriptor<TodoItem>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        descriptor.fetchLimit = 30
+        return descriptor
+    }
+
+    @Query(PeriodicReportView.recentExpensesDescriptor) private var recentExpenses: [ExpenseRecord]
+    @Query(PeriodicReportView.recentTodosDescriptor) private var recentTodos: [TodoItem]
 
     @State private var selectedPeriod: ReportPeriodType = .daily
     @State private var currentDate: Date = .now
@@ -40,6 +51,7 @@ struct PeriodicReportView: View {
         var period: ReportPeriodType?
         var date: Date?
         var dataHash: Int?
+        var lastCheckedTime: CFAbsoluteTime = 0
         var data: PeriodicReportData?
     }
 
@@ -49,12 +61,12 @@ struct PeriodicReportView: View {
     private var dataFingerprint: Int {
         var hasher = Hasher()
         hasher.combine(recentExpenses.count)
-        for record in recentExpenses.prefix(30) {
+        for record in recentExpenses {
             hasher.combine(record.id)
             hasher.combine(record.amount)
         }
         hasher.combine(recentTodos.count)
-        for item in recentTodos.prefix(30) {
+        for item in recentTodos {
             hasher.combine(item.id)
             hasher.combine(item.status == .done)
             hasher.combine(item.completedAt)
@@ -63,17 +75,26 @@ struct PeriodicReportView: View {
     }
 
     private var reportData: PeriodicReportData {
+        let now = CFAbsoluteTimeGetCurrent()
+        if reportCache.period == selectedPeriod,
+           reportCache.date == currentDate,
+           let cached = reportCache.data,
+           (now - reportCache.lastCheckedTime) < 0.05 {
+            return cached
+        }
         let currentHash = dataFingerprint
         if reportCache.period == selectedPeriod,
            reportCache.date == currentDate,
            reportCache.dataHash == currentHash,
            let cached = reportCache.data {
+            reportCache.lastCheckedTime = now
             return cached
         }
         let result = reportManager.generateReport(period: selectedPeriod, for: currentDate, context: context)
         reportCache.period = selectedPeriod
         reportCache.date = currentDate
         reportCache.dataHash = currentHash
+        reportCache.lastCheckedTime = now
         reportCache.data = result
         return result
     }

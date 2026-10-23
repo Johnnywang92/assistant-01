@@ -42,6 +42,8 @@ extension DataMigrationService {
         let lifeEventExpenses = try context.fetch(FetchDescriptor<LifeEventExpense>())
         let lifeEventGuests = try context.fetch(FetchDescriptor<LifeEventGuest>())
         let omniboxTransactions = try context.fetch(FetchDescriptor<OmniboxTransaction>())
+        let foodIntakeRecords = try context.fetch(FetchDescriptor<FoodIntakeRecord>())
+        let waterIntakeRecords = try context.fetch(FetchDescriptor<WaterIntakeRecord>())
 
         let todoDTOs = todos.map {
             TodoDTO(
@@ -62,8 +64,10 @@ extension DataMigrationService {
                 skillStageIndex: $0.skillStageIndex,
                 isSkillPractice: $0.isSkillPractice,
                 skillPracticeMinutes: $0.skillPracticeMinutes,
+                calendarItemIdentifier: $0.calendarItemIdentifier,
                 arrivalReminderAt: $0.arrivalReminderAt,
-                arrivalTransportRaw: $0.arrivalTransportRaw
+                arrivalTransportRaw: $0.arrivalTransportRaw,
+                arrivalCheckFiredAt: $0.arrivalCheckFiredAt
             )
         }
 
@@ -149,11 +153,11 @@ extension DataMigrationService {
             )
         }
 
-        let documentDTOs = try documents.map { doc in
-            let frontImg = IDPhotoStorage.loadImage(fileName: doc.frontImageFileName)
-            let backImg = IDPhotoStorage.loadImage(fileName: doc.backImageFileName)
-            if doc.frontImageFileName != nil && frontImg == nil { throw MigrationCryptoError.missingAttachment(doc.title) }
-            if doc.backImageFileName != nil && backImg == nil { throw MigrationCryptoError.missingAttachment(doc.title) }
+        let documentDTOs = documents.map { doc in
+            let frontData = IDPhotoStorage.loadData(fileName: doc.frontImageFileName)
+                ?? IDPhotoStorage.loadImage(fileName: doc.frontImageFileName)?.jpegData(compressionQuality: 0.88)
+            let backData = IDPhotoStorage.loadData(fileName: doc.backImageFileName)
+                ?? IDPhotoStorage.loadImage(fileName: doc.backImageFileName)?.jpegData(compressionQuality: 0.88)
             return IDDocumentDTO(
                 id: doc.id,
                 title: doc.title,
@@ -163,8 +167,8 @@ extension DataMigrationService {
                 expiryDate: doc.expiryDate,
                 isPermanent: doc.isPermanent,
                 notes: doc.notes,
-                frontImageData: frontImg?.jpegData(compressionQuality: 0.88),
-                backImageData: backImg?.jpegData(compressionQuality: 0.88),
+                frontImageData: frontData,
+                backImageData: backData,
                 createdAt: doc.createdAt,
                 updatedAt: doc.updatedAt
             )
@@ -182,9 +186,8 @@ extension DataMigrationService {
             )
         }
 
-        let voiceMemoDTOs = try voiceMemos.map { memo in
+        let voiceMemoDTOs = voiceMemos.map { memo in
             let audioData = VoiceMemoStorage.loadData(memo.audioFileName)
-            guard audioData != nil else { throw MigrationCryptoError.missingAttachment(memo.title) }
             return VoiceMemoDTO(
                 id: memo.id,
                 title: memo.title,
@@ -380,6 +383,28 @@ extension DataMigrationService {
             )
         }
 
+        let foodIntakeDTOs = foodIntakeRecords.sorted { ($0.date, $0.id.uuidString) < ($1.date, $1.id.uuidString) }.map { r in
+            FoodIntakeRecordDTO(
+                id: r.id, date: r.date, foodName: r.foodName, foodID: r.foodID,
+                portionRaw: r.portionRaw, fullPortionCalories: r.fullPortionCalories,
+                consumedRatio: r.consumedRatio, consumedCalories: r.consumedCalories,
+                confidence: r.confidence, isManuallyAdjusted: r.isManuallyAdjusted,
+                sourceRaw: r.sourceRaw, createdAt: r.createdAt,
+                linkedExpenseID: r.linkedExpenseID, imageData: r.imageData
+            )
+        }
+
+        let waterIntakeDTOs = waterIntakeRecords.sorted { ($0.date, $0.id.uuidString) < ($1.date, $1.id.uuidString) }.map { w in
+            WaterIntakeRecordDTO(
+                id: w.id, date: w.date, beverageTypeRaw: w.beverageTypeRaw,
+                volumeML: w.volumeML, hydrationFactor: w.hydrationFactor,
+                effectiveHydrationML: w.effectiveHydrationML, caffeineMG: w.caffeineMG,
+                calories: w.calories, customName: w.customName, note: w.note,
+                syncedToHealthKit: w.syncedToHealthKit, createdAt: w.createdAt,
+                linkedExpenseID: w.linkedExpenseID
+            )
+        }
+
         let metadata = BackupPackage.Metadata(
             schemaVersion: 2,
             appVersion: "0.1.0",
@@ -425,6 +450,8 @@ extension DataMigrationService {
             lifeEventExpenses: lifeEventExpenseDTOs,
             lifeEventGuests: lifeEventGuestDTOs,
             omniboxTransactions: omniboxTransactionDTOs,
+            foodIntakeRecords: foodIntakeDTOs,
+            waterIntakeRecords: waterIntakeDTOs,
             settings: collectSettingsSnapshot()
         )
     }

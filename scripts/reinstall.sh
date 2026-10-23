@@ -32,6 +32,8 @@ xcodebuild \
   -derivedDataPath "$BUILD_DIR" \
   -allowProvisioningUpdates \
   -quiet \
+  DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+  BUNDLE_ID="$BUNDLE_ID" \
   build
 
 APP="$BUILD_DIR/Build/Products/Release-iphoneos/Assistant.app"

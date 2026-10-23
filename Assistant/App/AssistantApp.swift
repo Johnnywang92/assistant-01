@@ -106,19 +106,13 @@ struct AssistantApp: App {
                 // 到站/落地清点提醒的「开始清点」按钮，锁屏上点一下就进清单
                 await TripArrivalService.shared.registerCategory()
                 StartupMetrics.mark("notifyCategories ready")
-                // 优先刷新桌面小组件/锁屏组件共享快照，并对账扩展侧产生的指令
+                // 优先对账扩展侧（小组件/手表卡片）指令并刷新共享快照
                 StartupMetrics.measure("refreshSnapshot") { WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext) }
                 StartupMetrics.mark("root.task end")
 
-                // 延后耗时的后台通知全量对账与排期，优先保证首帧渲染顺畅秒开
-                Task {
-                    try? await Task.sleep(nanoseconds: 120_000_000)
-                    TodoNotificationManager.shared.syncAllTodoNotifications(context: Persistence.shared.mainContext)
-                    TripArrivalService.shared.syncAllReminders(context: Persistence.shared.mainContext)
-                    ExpiryReminder.schedule()
-                    PeriodicReportManager.shared.scheduleNotifications()
-                    // 冷启动也排空一次分享中转区（scenePhase 首帧即为 active 时 onChange 不补触发）
-                    await ShareInboxService.processAll()
+                // 冷启动首帧已处于 active 时 onChange(of: scenePhase) 可能不补触发，统一走防抖前台巡检
+                if scenePhase == .active {
+                    ForegroundAuditCoordinator.shared.scheduleAudit(delayNanoseconds: 250_000_000)
                 }
             }
             .onOpenURL { url in
@@ -130,47 +124,9 @@ struct AssistantApp: App {
             guard Persistence.recoveryError == nil else { return }
             if phase == .active {
                 lockManager.appWillEnterForeground()
-
-                // 异步平滑派发前台巡检与收件箱任务，避免阻塞首屏渲染与用户交互手势
-                Task {
-                    StartupMetrics.mark("foreground.audit scheduled")
-                    // 让出主线程，等待首帧转场动画和手势响应完成
-                    try? await Task.sleep(nanoseconds: 350_000_000)
-                    StartupMetrics.mark("foreground.audit begin")
-
-                    let context = Persistence.shared.mainContext
-                    // 1/4/9/11: 共用 BackgroundRefreshCoordinator 幂等巡检
-                    await BackgroundRefreshCoordinator.shared.performIdempotentAudits(context: context)
-
-                    // 2. 检查手机低电量
-                    _ = BatteryReminderService(context: context).checkDeviceBattery()
-                    // 3. 评估周期性家务与服药日程
-                    let scheduler = HabitAndMedicationScheduler(context: context)
-                    await scheduler.evaluatePeriodicHabits()
-                    scheduler.scheduleMedicationReminders()
-
-                    // 5. 执行对话记录超期自动滚动清理 (7天/30天自动保留)
-                    DialogueHistoryManager.shared.cleanExpiredRecords(context: context)
-
-                    // 5.1 如果用户在 App 里手动勾掉了已上岛的包裹，同步撤掉手腕上的销号通知
-                    PickupCheckoutService.reconcile(context: context)
-                    // 5.2 护航/清点卡已收时，同步摘掉对应的伴随控制通知
-                    LiveActivityControlNotifications.reconcile()
-
-                    // 6. 前台低功耗单次位置采样，自动喂入常驻地点自主学习引擎
-                    _ = await LocationReminderService.shared.requestSingleLocationSample(context: context)
-                    // 6.1 动态同步驿站地理围栏（有待取包裹时自动注册常用驿站围栏，取完自动释放）
-                    LocationReminderService.shared.syncParcelStationGeofences(context: context)
-
-                    // 7. 同步定期复盘报告定时推送日程
-                    PeriodicReportManager.shared.scheduleNotifications()
-
-                    // 8. 巡检查验并同步待办事项通知排期（注：TripArrivalService 已在 performIdempotentAudits 中完成对账与评估）
-                    TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
-
-                    // 10. 对账扩展侧（小组件/手表卡片）产生的指令并刷新共享快照
-                    WidgetSnapshotSyncController.shared.processPendingCommands(context: context)
-                }
+                // 回前台第一时间对账小组件/手表指令，确保 UI 立即反映用户在组件上的打勾/记账操作
+                WidgetSnapshotSyncController.shared.processPendingCommands(context: Persistence.shared.mainContext)
+                ForegroundAuditCoordinator.shared.scheduleAudit(delayNanoseconds: 350_000_000)
             } else if phase == .background {
                 lockManager.appDidEnterBackground()
                 let bgContext = Persistence.shared.mainContext
@@ -213,6 +169,65 @@ fileprivate extension View {
             self.dynamicTypeSize(manager.fontScale.dynamicTypeSize)
         } else {
             self
+        }
+    }
+}
+
+/// 统一协调冷启动与回前台的异步巡检任务，合并短时间内的重复触发，并将耗时的 GPS 单次定位采样与核心数据对账解耦。
+@MainActor
+private final class ForegroundAuditCoordinator {
+    static let shared = ForegroundAuditCoordinator()
+    private var auditTask: Task<Void, Never>?
+    private var lastCompletedAt: CFAbsoluteTime = 0
+
+    func scheduleAudit(delayNanoseconds: UInt64) {
+        // 2 秒内已完成过完整巡检则跳过重复触发（消除冷启动 root.task 与 scenePhase.active 的双重执行）
+        if CFAbsoluteTimeGetCurrent() - lastCompletedAt < 2.0 {
+            return
+        }
+        auditTask?.cancel()
+        auditTask = Task { @MainActor in
+            StartupMetrics.mark("foreground.audit scheduled")
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled else { return }
+            StartupMetrics.mark("foreground.audit begin")
+
+            let context = Persistence.shared.mainContext
+
+            // 0. 优先对账扩展侧（小组件/手表卡片）产生的指令
+            WidgetSnapshotSyncController.shared.processPendingCommands(context: context)
+
+            // 1. 共用 BackgroundRefreshCoordinator 幂等巡检（收件箱、防扣款/临期、周期记账、分享中转区、到站提醒）
+            await BackgroundRefreshCoordinator.shared.performIdempotentAudits(context: context)
+            guard !Task.isCancelled else { return }
+
+            // 2. 检查手机低电量 & 临期提醒
+            _ = BatteryReminderService(context: context).checkDeviceBattery()
+            ExpiryReminder.schedule()
+
+            // 3. 评估周期性家务与服药日程
+            let scheduler = HabitAndMedicationScheduler(context: context)
+            await scheduler.evaluatePeriodicHabits()
+            scheduler.scheduleMedicationReminders()
+
+            // 4. 执行对话记录超期自动滚动清理 (7天/30天自动保留)
+            DialogueHistoryManager.shared.cleanExpiredRecords(context: context)
+
+            // 5. 同步灵动岛/手表伴随通知状态
+            PickupCheckoutService.reconcile(context: context)
+            LiveActivityControlNotifications.reconcile()
+
+            // 6. 同步定期复盘报告与待办通知排期（以及驿站地理围栏）
+            PeriodicReportManager.shared.scheduleNotifications()
+            TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
+
+            self.lastCompletedAt = CFAbsoluteTimeGetCurrent()
+
+            // 7. 低功耗单次位置采样独立异步执行（室内 GPS 耗时可达数秒，不阻塞主巡检流水线）
+            Task { @MainActor in
+                _ = await LocationReminderService.shared.requestSingleLocationSample(context: context)
+                LocationReminderService.shared.syncParcelStationGeofences(context: context)
+            }
         }
     }
 }

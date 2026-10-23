@@ -2345,6 +2345,26 @@
         }
       }
     },
+    "%lld / %lld 项" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld / %2$lld 项"
+          }
+        }
+      }
+    },
+    "%lld / %lld 项已开启" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld / %2$lld 项已开启"
+          }
+        }
+      }
+    },
     "%lld / 4 项" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2605,6 +2625,16 @@
     },
     "%lld%%" : {
 
+    },
+    "%lld%% · %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld%% · %2$@"
+          }
+        }
+      }
     },
     "%lld%%折算" : {
 
@@ -7589,6 +7619,23 @@
         }
       }
     },
+    "Apple 健康数据" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Health Data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 健康数据"
+          }
+        }
+      }
+    },
     "Apple 服务按月连续扣款" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8059,6 +8106,23 @@
     "Q4_K_M (4-bit)" : {
 
     },
+    "REM 快速眼动" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "REM Sleep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "REM 快速眼动"
+          }
+        }
+      }
+    },
     "Rh阳性" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8468,6 +8532,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "一键识别填入表单"
+          }
+        }
+      }
+    },
+    "一键配置全部待授权项目" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant All Pending Permissions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一键配置全部待授权项目"
           }
         }
       }
@@ -14103,6 +14184,23 @@
         }
       }
     },
+    "全量权限已就绪 · 体验完整功能 🚀" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Permissions Ready · Enjoy 🚀"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全量权限已就绪 · 体验完整功能 🚀"
+          }
+        }
+      }
+    },
     "公交" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -17751,6 +17849,9 @@
         }
       }
     },
+    "功能权限就绪度：" : {
+
+    },
     "功能模块 (%lld)" : {
 
     },
@@ -18681,6 +18782,23 @@
     },
     "历史归档快照" : {
 
+    },
+    "压力负荷:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stress Load:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "压力负荷:"
+          }
+        }
+      }
     },
     "原 %lldml" : {
 
@@ -31120,6 +31238,23 @@
         }
       }
     },
+    "心率变异性(HRV)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HRV"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "心率变异性(HRV)"
+          }
+        }
+      }
+    },
     "必须" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -31832,6 +31967,23 @@
     },
     "想记一笔什么？例如：咖啡 18 元" : {
 
+    },
+    "愉悦指数" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pleasure Index"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "愉悦指数"
+          }
+        }
+      }
     },
     "意图判断：" : {
       "extractionState" : "manual",
@@ -32603,6 +32755,9 @@
           }
         }
       }
+    },
+    "所有权限均在设备本机运行，赋予后可直接在当前页面生效。若不便开启也可随时在系统设置中调整：" : {
+
     },
     "所选图片中未检测到有效二维码或可识别的待办信息，请换一张清晰图片重试。" : {
       "extractionState" : "manual",
@@ -35810,6 +35965,23 @@
         }
       }
     },
+    "收起减压建议" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapse Advice"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收起减压建议"
+          }
+        }
+      }
+    },
     "收起时间轴" : {
 
     },
@@ -38144,6 +38316,23 @@
         }
       }
     },
+    "智能感知与健康关怀" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sensing & Wellness"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "智能感知与健康关怀"
+          }
+        }
+      }
+    },
     "智能推断" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -40278,6 +40467,23 @@
         }
       }
     },
+    "权限检查与配置" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permissions Check & Setup"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "权限检查与配置"
+          }
+        }
+      }
+    },
     "来自 %@ · %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -40797,6 +41003,23 @@
     "查看识别到的小票原文" : {
 
     },
+    "查看身心减压建议" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View De-stress Advice"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看身心减压建议"
+          }
+        }
+      }
+    },
     "查看预约二维码 / 凭证" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41097,6 +41320,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "核对购房资格与征信"
+          }
+        }
+      }
+    },
+    "核心基础与交互" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Core & Interaction"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "核心基础与交互"
           }
         }
       }
@@ -48341,6 +48581,23 @@
         }
       }
     },
+    "相机拍摄与扫码" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Camera & Scanner"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "相机拍摄与扫码"
+          }
+        }
+      }
+    },
     "省博" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -50815,6 +51072,23 @@
         }
       }
     },
+    "系统日历协同" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Calendar"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统日历协同"
+          }
+        }
+      }
+    },
     "系统权限" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -50828,6 +51102,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系统权限"
+          }
+        }
+      }
+    },
+    "系统权限检查与配置中心" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permissions & Setup Center"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统权限检查与配置中心"
           }
         }
       }
@@ -52519,6 +52810,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "脊灰灭活疫苗 IPV (第1剂)"
+          }
+        }
+      }
+    },
+    "自主神经:" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Autonomic Nervous:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自主神经:"
           }
         }
       }
@@ -57448,6 +57756,23 @@
     "身体活力指数" : {
 
     },
+    "身心愉悦与压力" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wellness & Stress"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "身心愉悦与压力"
+          }
+        }
+      }
+    },
     "身高" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -58193,6 +58518,23 @@
         }
       }
     },
+    "运动与健身感知" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Motion & Fitness"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "运动与健身感知"
+          }
+        }
+      }
+    },
     "运动与药物保健品" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -58432,6 +58774,9 @@
       }
     },
     "近期饮食记录" : {
+
+    },
+    "返回上一页" : {
 
     },
     "返乡" : {
@@ -61095,6 +61440,23 @@
     },
     "随餐同服（促进脂溶性吸收）" : {
 
+    },
+    "集中检查与一键开启所有系统功能权限" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Centrally manage & grant all system permissions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "集中检查与一键开启所有系统功能权限"
+          }
+        }
+      }
     },
     "雨雪恶劣" : {
       "extractionState" : "manual",

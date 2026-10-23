@@ -53,6 +53,10 @@ public struct BackupPackage: Codable {
     public var lifeEventGuests: [LifeEventGuestDTO]?
     /// 投喂事务审计流水（旧版备份为 nil）
     public var omniboxTransactions: [OmniboxTransactionDTO]?
+    /// 饮食热量记录（Schema V4 新增；旧版备份为 nil）
+    public var foodIntakeRecords: [FoodIntakeRecordDTO]?
+    /// 饮水与饮品摄入记录（Schema V5 新增；旧版备份为 nil）
+    public var waterIntakeRecords: [WaterIntakeRecordDTO]?
     /// 用户偏好设置快照（旧版备份为 nil；收录原则见 AssistantCore 的 AssistantSettingsKeys）
     public var settings: SettingsSnapshotDTO?
 }
@@ -86,9 +90,11 @@ public struct TodoDTO: Codable {
     public var skillStageIndex: Int?
     public var isSkillPractice: Bool?
     public var skillPracticeMinutes: Int?
-    // 到站/落地清点提醒（旧备份为 nil）
+    // 系统日历联动与到站/落地清点提醒（旧备份为 nil）
+    public var calendarItemIdentifier: String?
     public var arrivalReminderAt: Date?
     public var arrivalTransportRaw: String?
+    public var arrivalCheckFiredAt: Date?
 }
 
 public struct SubscriptionDTO: Codable {
@@ -527,4 +533,38 @@ public struct OmniboxTransactionDTO: Codable {
     public var executedAt: Date?
     public var engineRaw: String
     public var undoJSON: Data?
+}
+
+
+public struct FoodIntakeRecordDTO: Codable {
+    public var id: UUID
+    public var date: Date
+    public var foodName: String
+    public var foodID: String?
+    public var portionRaw: String
+    public var fullPortionCalories: Double
+    public var consumedRatio: Double
+    public var consumedCalories: Double
+    public var confidence: Double
+    public var isManuallyAdjusted: Bool
+    public var sourceRaw: String
+    public var createdAt: Date
+    public var linkedExpenseID: UUID?
+    public var imageData: Data?
+}
+
+public struct WaterIntakeRecordDTO: Codable {
+    public var id: UUID
+    public var date: Date
+    public var beverageTypeRaw: String
+    public var volumeML: Double
+    public var hydrationFactor: Double
+    public var effectiveHydrationML: Double
+    public var caffeineMG: Double
+    public var calories: Double
+    public var customName: String?
+    public var note: String?
+    public var syncedToHealthKit: Bool
+    public var createdAt: Date
+    public var linkedExpenseID: UUID?
 }
