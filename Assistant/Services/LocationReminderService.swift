@@ -48,6 +48,14 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
         locationManager.requestAlwaysAuthorization()
     }
 
+    /// 读取当前连接的 Wi-Fi，供地点详情页手动关联。
+    @MainActor
+    public func captureCurrentWiFiSSID() async -> String? {
+        let ssid = await WiFiInfoService.currentSSID()
+        lastKnownWiFiSSID = ssid
+        return ssid
+    }
+
     /// 打开系统设置页（方便用户手动授予权限）
     public func openSystemSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
@@ -70,7 +78,7 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
             return nil
         }
 
-        let currentWiFiSSID = await WiFiInfoService.currentSSID()
+        let currentWiFiSSID = await captureCurrentWiFiSSID()
         return await withCheckedContinuation { continuation in
             self.isSamplingLocation = true
             self.lock.lock()

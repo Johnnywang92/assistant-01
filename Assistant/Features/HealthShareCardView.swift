@@ -220,7 +220,7 @@ public struct HealthShareCardView: View {
             }
         }
         .padding(18)
-        .frame(width: 350)
+        .frame(maxWidth: 350)
         .background(
             LinearGradient(
                 colors: [
@@ -290,7 +290,7 @@ public struct HealthShareCardView: View {
         let title: String = switch todoType {
         case .exercise: "运动"
         case .hydration: "补水"
-        case .medication: "作息"
+        case .sleep: "作息"
         }
 
         return HStack(spacing: 4) {

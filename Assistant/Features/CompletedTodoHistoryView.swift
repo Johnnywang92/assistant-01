@@ -34,9 +34,10 @@ struct CompletedTodoHistoryView: View {
             if item.isRecurring {
                 counts[.recurring, default: 0] += 1
             }
-            switch item.type {
-            case .general, .event:
+            if let comp = item.completedAt, Calendar.current.isDateInToday(comp) {
                 counts[.general, default: 0] += 1
+            }
+            switch item.type {
             case .work:
                 counts[.work, default: 0] += 1
             case .parcel, .returnParcel:
@@ -65,7 +66,13 @@ struct CompletedTodoHistoryView: View {
         // 分类过滤
         switch selectedCategory {
         case .all: break
-        case .general: result = result.filter { [.general, .event].contains($0.type) }
+        case .general:
+            result = result.filter { item in
+                if let comp = item.completedAt {
+                    return Calendar.current.isDateInToday(comp)
+                }
+                return false
+            }
         case .work: result = result.filter { $0.type == .work }
         case .recurring: result = result.filter { $0.isRecurring }
         case .parcel: result = result.filter { [.parcel, .returnParcel].contains($0.type) }

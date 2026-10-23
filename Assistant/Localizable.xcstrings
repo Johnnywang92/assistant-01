@@ -1941,6 +1941,16 @@
         }
       }
     },
+    "%@约 %lldg · 整份 %lld 千卡 · 实入 %lld 千卡" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@约 %2$lldg · 整份 %3$lld 千卡 · 实入 %4$lld 千卡"
+          }
+        }
+      }
+    },
     "%arg · 成长档案" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2626,16 +2636,6 @@
     "%lld%%" : {
 
     },
-    "%lld%% · %@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld%% · %2$@"
-          }
-        }
-      }
-    },
     "%lld%%折算" : {
 
     },
@@ -2644,6 +2644,16 @@
     },
     "%lldkcal" : {
 
+    },
+    "%llds %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$llds %2$@"
+          }
+        }
+      }
     },
     "%lld周期：每 %@ 天提醒一次" : {
       "extractionState" : "manual",
@@ -5971,6 +5981,9 @@
         }
       }
     },
+    "📋 今日待办（%lld）" : {
+
+    },
     "📋 日常待办（%@）" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6787,9 +6800,6 @@
         }
       }
     },
-    "3 秒" : {
-
-    },
     "3 秒（默认）" : {
 
     },
@@ -6865,9 +6875,6 @@
       }
     },
     "5 秒" : {
-
-    },
-    "5 秒（默认）" : {
 
     },
     "5A景区门票/游船预约（提前7-14天）" : {
@@ -8156,6 +8163,9 @@
           }
         }
       }
+    },
+    "USDA FDC %@" : {
+
     },
     "Wi-Fi名称" : {
       "extractionState" : "manual",
@@ -11571,6 +11581,26 @@
     "今日已超额" : {
 
     },
+    "今日待办" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日待办"
+          }
+        }
+      }
+    },
+    "今日待办（%lld）" : {
+
+    },
     "今日待办完成情况与消费账单已复盘完毕，点击查看今日专属总结。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11660,6 +11690,9 @@
       }
     },
     "今日日程/天气推荐" : {
+
+    },
+    "今日暂无待办事项" : {
 
     },
     "今日有效补水" : {
@@ -20971,6 +21004,9 @@
           }
         }
       }
+    },
+    "在全景搜索中查找「%@」(账单·收纳·证件·备忘)" : {
+
     },
     "在出租车、餐厅、会议室起身时，强制停留 3 秒钟检查座位与桌面，可减少 80% 的物品遗落。" : {
       "extractionState" : "manual",
@@ -36382,16 +36418,6 @@
     "整份 %lld" : {
 
     },
-    "整份 %lld 千卡 · 实入 %lld 千卡" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "整份 %1$lld 千卡 · 实入 %2$lld 千卡"
-          }
-        }
-      }
-    },
     "整份合计约 %lld 千卡" : {
 
     },
@@ -37339,9 +37365,6 @@
           }
         }
       }
-    },
-    "日常待办（%lld）" : {
-
     },
     "日常待办清单" : {
       "extractionState" : "manual",
@@ -41054,22 +41077,22 @@
         }
       }
     },
-    "标准份约 %lld 千卡 · 每100g %lld kcal" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "标准份约 %1$lld 千卡 · 每100g %2$lld kcal"
-          }
-        }
-      }
-    },
     "标准份约 %lld 千卡 · 识别度 %lld%%" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "标准份约 %1$lld 千卡 · 识别度 %2$lld%%"
+          }
+        }
+      }
+    },
+    "标准份约 %lldg / %lld 千卡 · 每100g %lld 千卡" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "标准份约 %1$lldg / %2$lld 千卡 · 每100g %3$lld 千卡"
           }
         }
       }
@@ -41752,7 +41775,7 @@
         }
       }
     },
-    "检测到剪贴板有内容自动唤起投喂口时，若您无意添加到 App，无需任何操作，弹窗将在指定秒数后自动关闭退出；期间点击任意位置或操作可暂停倒计时。" : {
+    "检测到剪贴板有内容自动唤起投喂口时，若您无意添加到 App，无需任何操作，弹窗将在指定秒数后自动关闭退出；期间轻点页面查看或操作将保留内容并不再自动关闭。" : {
 
     },
     "检验有效截止期" : {
@@ -44181,6 +44204,23 @@
         }
       }
     },
+    "活力指数" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vitality Index"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "活力指数"
+          }
+        }
+      }
+    },
     "活动前一天发送集合时间、交通停车与定位提醒" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -46249,6 +46289,9 @@
           }
         }
       }
+    },
+    "点击右上角 ➕ 即可快速添加今日待办。" : {
+
     },
     "点击右上角 ➕ 录入爱宠档案，为您自动守护每月驱虫、每年疫苗与日常养护提醒。" : {
       "extractionState" : "manual",
@@ -57751,9 +57794,6 @@
       }
     },
     "身体活力与健康" : {
-
-    },
-    "身体活力指数" : {
 
     },
     "身心愉悦与压力" : {

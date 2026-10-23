@@ -32,13 +32,6 @@ struct PasswordVaultView: View {
                         Image(systemName: "plus")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        auth.lock()
-                    } label: {
-                        Image(systemName: "lock.fill")
-                    }
-                }
             }
         }
         .sheet(isPresented: $showingAddSheet) { AddPasswordSheet() }
@@ -379,6 +372,7 @@ struct StandaloneGeneratorSheet: View {
     @State private var includeDigits: Bool = true
     @State private var includeSymbols: Bool = true
     @State private var classicLength: Int = 16
+    @State private var isCopied: Bool = false
 
     @State private var currentResult: GeneratedPasswordResult = PasswordSecurityService.generateSmartPassword()
 
@@ -465,10 +459,18 @@ struct StandaloneGeneratorSheet: View {
                                 Button {
                                     UIPasteboard.general.string = currentResult.password
                                     Haptic.success()
-                                    dismiss()
+                                    withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+                                        isCopied = true
+                                    }
+                                    Task {
+                                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                                        withAnimation {
+                                            isCopied = false
+                                        }
+                                    }
                                 } label: {
-                                    Label("复制密码", systemImage: "doc.on.doc")
-                                        .frame(maxWidth: .infinity)
+                                    Text(isCopied ? "已复制" : "复制")
+                                        .frame(maxWidth: .infinity, alignment: .center)
                                 }
                                 .buttonStyle(.borderedProminent)
                             }
@@ -538,6 +540,7 @@ struct StandaloneGeneratorSheet: View {
     }
 
     private func regenerate() {
+        isCopied = false
         currentResult = PasswordSecurityService.generateSmartPassword(
             mode: selectedMode,
             wordCount: wordCount,

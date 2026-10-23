@@ -1661,7 +1661,7 @@ struct AddOrEditExpenseSheet: View {
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
                                     .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 6))
-                                    .frame(width: 96)
+                                    .frame(minWidth: 68, idealWidth: 96, maxWidth: 96)
                                 Text("CNY")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)

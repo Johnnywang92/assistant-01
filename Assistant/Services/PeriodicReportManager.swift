@@ -1054,7 +1054,7 @@ final class PeriodicReportManager: ObservableObject {
 
             if let v = vitality {
                 segments.append(L10n.choose(
-                    "身体活力指数 \(v.score) 分（\(v.level.badge)）。\(v.summary)",
+                    "活力指数 \(v.score) 分（\(v.level.badge)）。\(v.summary)",
                     "Vitality index is \(v.score) (\(v.level.rawValue)). \(v.summary)"
                 ))
             }

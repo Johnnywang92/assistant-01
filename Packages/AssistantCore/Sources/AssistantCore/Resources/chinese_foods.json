@@ -1,0 +1,1119 @@
+{
+  "meta": {
+    "source": "用户提供的 nutrition_bundle.json，含 dishes 与 noodles_snacks",
+    "version": "2.0.0"
+  },
+  "foods": [
+    {
+      "id": "d001",
+      "name": "番茄炒蛋",
+      "aliases": [
+        "西红柿炒鸡蛋",
+        "番茄炒鸡蛋"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 250.0,
+      "kcal": 128.78,
+      "serving_kcal": 321.95,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d002",
+      "name": "青椒肉丝",
+      "aliases": [
+        "尖椒肉丝"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 250.0,
+      "kcal": 109.948,
+      "serving_kcal": 274.87,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d003",
+      "name": "麻婆豆腐",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 300.0,
+      "kcal": 137.12,
+      "serving_kcal": 411.36,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d004",
+      "name": "红烧肉",
+      "aliases": [
+        "东坡肉"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 250.0,
+      "kcal": 410.092,
+      "serving_kcal": 1025.23,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d005",
+      "name": "宫保鸡丁",
+      "aliases": [
+        "宫爆鸡丁"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 300.0,
+      "kcal": 183.1033,
+      "serving_kcal": 549.31,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d006",
+      "name": "鱼香肉丝",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 300.0,
+      "kcal": 122.3633,
+      "serving_kcal": 367.09,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d007",
+      "name": "回锅肉",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 280.0,
+      "kcal": 329.3821,
+      "serving_kcal": 922.27,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d008",
+      "name": "酸辣土豆丝",
+      "aliases": [
+        "土豆丝"
+      ],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 250.0,
+      "kcal": 146.144,
+      "serving_kcal": 365.36,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d009",
+      "name": "西红柿牛腩",
+      "aliases": [
+        "番茄牛腩"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 350.0,
+      "kcal": 105.2686,
+      "serving_kcal": 368.44,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d010",
+      "name": "红烧排骨",
+      "aliases": [
+        "糖醋排骨"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 300.0,
+      "kcal": 224.78,
+      "serving_kcal": 674.34,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d011",
+      "name": "蒜蓉西兰花",
+      "aliases": [
+        "清炒西兰花"
+      ],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 200.0,
+      "kcal": 82.975,
+      "serving_kcal": 165.95,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d012",
+      "name": "手撕包菜",
+      "aliases": [
+        "炒包菜",
+        "炝炒圆白菜"
+      ],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 250.0,
+      "kcal": 92.22,
+      "serving_kcal": 230.55,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d013",
+      "name": "干煸四季豆",
+      "aliases": [
+        "四季豆"
+      ],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 200.0,
+      "kcal": 159.565,
+      "serving_kcal": 319.13,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d014",
+      "name": "西红柿鸡蛋汤",
+      "aliases": [
+        "番茄蛋汤"
+      ],
+      "name_en": "Chinese dish",
+      "category": "soup",
+      "serving_g": 350.0,
+      "kcal": 35.4057,
+      "serving_kcal": 123.92,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d015",
+      "name": "紫菜蛋花汤",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "soup",
+      "serving_g": 300.0,
+      "kcal": 30.31,
+      "serving_kcal": 90.93,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d016",
+      "name": "冬瓜排骨汤",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "soup",
+      "serving_g": 400.0,
+      "kcal": 103.745,
+      "serving_kcal": 414.98,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d017",
+      "name": "西红柿豆腐汤",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "soup",
+      "serving_g": 350.0,
+      "kcal": 48.56,
+      "serving_kcal": 169.96,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d018",
+      "name": "蒸蛋羹",
+      "aliases": [
+        "鸡蛋羹"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 200.0,
+      "kcal": 105.58,
+      "serving_kcal": 211.16,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d019",
+      "name": "清蒸鲈鱼",
+      "aliases": [
+        "蒸鱼"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 350.0,
+      "kcal": 78.4571,
+      "serving_kcal": 274.6,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d020",
+      "name": "可乐鸡翅",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 250.0,
+      "kcal": 181.932,
+      "serving_kcal": 454.83,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d021",
+      "name": "土豆炖牛肉",
+      "aliases": [
+        "土豆牛腩"
+      ],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 350.0,
+      "kcal": 148.9971,
+      "serving_kcal": 521.49,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d022",
+      "name": "香菇滑鸡",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 280.0,
+      "kcal": 86.8929,
+      "serving_kcal": 243.3,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d023",
+      "name": "黄瓜炒鸡蛋",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 220.0,
+      "kcal": 135.0,
+      "serving_kcal": 297.0,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d024",
+      "name": "葱爆羊肉",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 250.0,
+      "kcal": 153.284,
+      "serving_kcal": 383.21,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d025",
+      "name": "油焖大虾",
+      "aliases": [
+        "大虾"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 250.0,
+      "kcal": 161.176,
+      "serving_kcal": 402.94,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d026",
+      "name": "西红柿炒花菜",
+      "aliases": [
+        "炒花菜",
+        "干锅花菜"
+      ],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 250.0,
+      "kcal": 88.528,
+      "serving_kcal": 221.32,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d027",
+      "name": "蒸南瓜",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 250.0,
+      "kcal": 36.12,
+      "serving_kcal": 90.3,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d028",
+      "name": "凉拌黄瓜",
+      "aliases": [
+        "拍黄瓜"
+      ],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 200.0,
+      "kcal": 36.55,
+      "serving_kcal": 73.1,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d029",
+      "name": "蒸虾",
+      "aliases": [
+        "白灼虾"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 200.0,
+      "kcal": 78.955,
+      "serving_kcal": 157.91,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d030",
+      "name": "蛋炒饭",
+      "aliases": [
+        "炒饭"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 350.0,
+      "kcal": 189.8314,
+      "serving_kcal": 664.41,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d031",
+      "name": "扬州炒饭",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 350.0,
+      "kcal": 214.7943,
+      "serving_kcal": 751.78,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d032",
+      "name": "白菜猪肉饺子",
+      "aliases": [
+        "猪肉白菜饺子"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 250.0,
+      "kcal": 281.0,
+      "serving_kcal": 702.5,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d033",
+      "name": "白灼菜心",
+      "aliases": [
+        "焯青菜"
+      ],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 200.0,
+      "kcal": 23.61,
+      "serving_kcal": 47.22,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d034",
+      "name": "蒜蓉生菜",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 200.0,
+      "kcal": 28.26,
+      "serving_kcal": 56.52,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d035",
+      "name": "肉末茄子",
+      "aliases": [
+        "鱼香茄子"
+      ],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 280.0,
+      "kcal": 112.5286,
+      "serving_kcal": 315.08,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d036",
+      "name": "清炒虾仁",
+      "aliases": [
+        "滑炒虾仁"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 220.0,
+      "kcal": 130.6818,
+      "serving_kcal": 287.5,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d037",
+      "name": "冬瓜烧毛豆",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 250.0,
+      "kcal": 152.2,
+      "serving_kcal": 380.5,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d038",
+      "name": "红烧茄子",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 280.0,
+      "kcal": 105.6,
+      "serving_kcal": 295.68,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d039",
+      "name": "糖醋里脊",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 250.0,
+      "kcal": 385.032,
+      "serving_kcal": 962.58,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d040",
+      "name": "干锅花菜",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 250.0,
+      "kcal": 156.5,
+      "serving_kcal": 391.25,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d041",
+      "name": "香菇青菜",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 220.0,
+      "kcal": 78.3,
+      "serving_kcal": 172.26,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d042",
+      "name": "韭菜炒蛋",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 200.0,
+      "kcal": 153.315,
+      "serving_kcal": 306.63,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d043",
+      "name": "豆角焖面",
+      "aliases": [
+        "焖面"
+      ],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 400.0,
+      "kcal": 132.735,
+      "serving_kcal": 530.94,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d044",
+      "name": "疙瘩汤",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "soup",
+      "serving_g": 400.0,
+      "kcal": 142.35,
+      "serving_kcal": 569.4,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d045",
+      "name": "酸辣汤",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "soup",
+      "serving_g": 350.0,
+      "kcal": 52.8857,
+      "serving_kcal": 185.1,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d046",
+      "name": "红烧排骨土豆",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "veggie",
+      "serving_g": 350.0,
+      "kcal": 188.7143,
+      "serving_kcal": 660.5,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d047",
+      "name": "水煮肉片",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 400.0,
+      "kcal": 140.9025,
+      "serving_kcal": 563.61,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "d048",
+      "name": "酸菜鱼",
+      "aliases": [],
+      "name_en": "Chinese dish",
+      "category": "meat",
+      "serving_g": 400.0,
+      "kcal": 88.97,
+      "serving_kcal": 355.88,
+      "source": "dishes.json / 标准油量"
+    },
+    {
+      "id": "n001",
+      "name": "春卷(鸡肉,冷冻加热)",
+      "aliases": [],
+      "name_en": "Egg rolls, chicken, refrigerated, heated",
+      "category": "snack",
+      "serving_g": 50.0,
+      "kcal": 197.0,
+      "serving_kcal": 98.5,
+      "source": "usda_direct"
+    },
+    {
+      "id": "n002",
+      "name": "春卷(猪肉,冷冻加热)",
+      "aliases": [],
+      "name_en": "Egg rolls, pork, refrigerated, heated",
+      "category": "snack",
+      "serving_g": 50.0,
+      "kcal": 227.0,
+      "serving_kcal": 113.5,
+      "source": "usda_direct"
+    },
+    {
+      "id": "n003",
+      "name": "春卷皮",
+      "aliases": [],
+      "name_en": "Wonton wrappers (includes egg roll wrappers)",
+      "category": "snack",
+      "serving_g": 30.0,
+      "kcal": 291.0,
+      "serving_kcal": 87.3,
+      "source": "usda_direct"
+    },
+    {
+      "id": "n004",
+      "name": "速冻猪肉蔬菜馄饨",
+      "aliases": [],
+      "name_en": "Potsticker or wonton, pork and vegetable, frozen, unprepared",
+      "category": "staple",
+      "serving_g": 200.0,
+      "kcal": 136.0,
+      "serving_kcal": 272.0,
+      "source": "usda_direct"
+    },
+    {
+      "id": "n005",
+      "name": "馄饨汤",
+      "aliases": [],
+      "name_en": "Soup, wonton, Chinese restaurant",
+      "category": "staple",
+      "serving_g": 250.0,
+      "kcal": 32.0,
+      "serving_kcal": 80.0,
+      "source": "usda_direct"
+    },
+    {
+      "id": "n006",
+      "name": "蛋面(熟)",
+      "aliases": [],
+      "name_en": "Noodles, egg, unenriched, cooked, without added salt",
+      "category": "staple",
+      "serving_g": 150.0,
+      "kcal": 138.0,
+      "serving_kcal": 207.0,
+      "source": "usda_direct"
+    },
+    {
+      "id": "n007",
+      "name": "方便面(干,含调料包)",
+      "aliases": [],
+      "name_en": "Noodles, egg, dry, enriched",
+      "category": "staple",
+      "serving_g": 100.0,
+      "kcal": 384.0,
+      "serving_kcal": 384.0,
+      "source": "usda_direct"
+    },
+    {
+      "id": "n008",
+      "name": "白馒头",
+      "aliases": [],
+      "name_en": "Rolls, dinner, plain, commercially prepared (includes bran rolls)",
+      "category": "staple",
+      "serving_g": 100.0,
+      "kcal": 310.0,
+      "serving_kcal": 310.0,
+      "source": "usda_direct"
+    },
+    {
+      "id": "n009",
+      "name": "蒸饺(猪肉白菜)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 250.0,
+      "kcal": 220.0,
+      "serving_kcal": 550.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n010",
+      "name": "水饺(猪肉韭菜)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 250.0,
+      "kcal": 240.0,
+      "serving_kcal": 600.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n011",
+      "name": "烧麦(猪肉糯米)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 150.0,
+      "kcal": 238.0,
+      "serving_kcal": 357.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n012",
+      "name": "猪肉包子",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 80.0,
+      "kcal": 227.0,
+      "serving_kcal": 181.6,
+      "source": "cfct"
+    },
+    {
+      "id": "n013",
+      "name": "菜包(素馅)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 80.0,
+      "kcal": 200.0,
+      "serving_kcal": 160.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n014",
+      "name": "豆沙包",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 80.0,
+      "kcal": 215.0,
+      "serving_kcal": 172.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n015",
+      "name": "小笼包",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 100.0,
+      "kcal": 200.0,
+      "serving_kcal": 200.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n016",
+      "name": "油条",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 50.0,
+      "kcal": 388.0,
+      "serving_kcal": 194.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n017",
+      "name": "炸酱面",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 400.0,
+      "kcal": 385.0,
+      "serving_kcal": 1540.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n018",
+      "name": "阳春面(清汤面)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 400.0,
+      "kcal": 392.0,
+      "serving_kcal": 1568.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n019",
+      "name": "热干面",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 350.0,
+      "kcal": 420.0,
+      "serving_kcal": 1470.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n020",
+      "name": "牛肉面",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 450.0,
+      "kcal": 540.0,
+      "serving_kcal": 2430.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n021",
+      "name": "白粥",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 250.0,
+      "kcal": 46.0,
+      "serving_kcal": 115.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n022",
+      "name": "皮蛋瘦肉粥",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 400.0,
+      "kcal": 367.0,
+      "serving_kcal": 1468.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n023",
+      "name": "肠粉",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 250.0,
+      "kcal": 240.0,
+      "serving_kcal": 600.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n024",
+      "name": "三鲜豆皮",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 200.0,
+      "kcal": 240.0,
+      "serving_kcal": 480.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n025",
+      "name": "韭菜盒子",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 130.0,
+      "kcal": 260.0,
+      "serving_kcal": 338.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n026",
+      "name": "煎饼果子",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 250.0,
+      "kcal": 333.0,
+      "serving_kcal": 832.5,
+      "source": "cfct"
+    },
+    {
+      "id": "n027",
+      "name": "手抓饼",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 100.0,
+      "kcal": 320.0,
+      "serving_kcal": 320.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n028",
+      "name": "葱油饼",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 100.0,
+      "kcal": 326.0,
+      "serving_kcal": 326.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n029",
+      "name": "烧饼",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 100.0,
+      "kcal": 326.0,
+      "serving_kcal": 326.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n030",
+      "name": "红豆沙汤圆",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 250.0,
+      "kcal": 240.0,
+      "serving_kcal": 600.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n031",
+      "name": "粽子(肉粽)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 200.0,
+      "kcal": 300.0,
+      "serving_kcal": 600.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n032",
+      "name": "汤圆(芝麻馅)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 100.0,
+      "kcal": 280.0,
+      "serving_kcal": 280.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n033",
+      "name": "豆花(甜)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 350.0,
+      "kcal": 180.0,
+      "serving_kcal": 630.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n034",
+      "name": "豆腐脑(咸)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 350.0,
+      "kcal": 90.0,
+      "serving_kcal": 315.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n035",
+      "name": "麻团",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 80.0,
+      "kcal": 380.0,
+      "serving_kcal": 304.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n036",
+      "name": "炸春卷(猪肉)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 50.0,
+      "kcal": 240.0,
+      "serving_kcal": 120.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n037",
+      "name": "广式肠粉(猪肉)",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "staple",
+      "serving_g": 250.0,
+      "kcal": 260.0,
+      "serving_kcal": 650.0,
+      "source": "cfct"
+    },
+    {
+      "id": "n038",
+      "name": "小笼汤包",
+      "aliases": [],
+      "name_en": "Chinese noodle or snack",
+      "category": "snack",
+      "serving_g": 120.0,
+      "kcal": 240.0,
+      "serving_kcal": 288.0,
+      "source": "cfct"
+    },
+    {
+      "id": "c144",
+      "name": "面粉(中筋)",
+      "aliases": [
+        "面粉",
+        "中筋面粉",
+        "小麦粉"
+      ],
+      "name_en": "Wheat flour, all-purpose",
+      "category": "staple",
+      "serving_g": 100.0,
+      "kcal": 364.0,
+      "serving_kcal": 364.0,
+      "source": "nutrition_bundle.json ingredients"
+    },
+    {
+      "id": "c145",
+      "name": "挂面(干)",
+      "aliases": [
+        "挂面",
+        "干面条"
+      ],
+      "name_en": "Noodles, wheat, dry",
+      "category": "staple",
+      "serving_g": 100.0,
+      "kcal": 348.0,
+      "serving_kcal": 348.0,
+      "source": "nutrition_bundle.json ingredients"
+    },
+    {
+      "id": "c146",
+      "name": "米粉(干)",
+      "aliases": [
+        "米粉",
+        "米线"
+      ],
+      "name_en": "Rice noodles, dry",
+      "category": "staple",
+      "serving_g": 100.0,
+      "kcal": 348.0,
+      "serving_kcal": 348.0,
+      "source": "nutrition_bundle.json ingredients"
+    },
+    {
+      "id": "c147",
+      "name": "糯米(生)",
+      "aliases": [
+        "糯米",
+        "江米"
+      ],
+      "name_en": "Rice, glutinous, raw",
+      "category": "staple",
+      "serving_g": 100.0,
+      "kcal": 348.0,
+      "serving_kcal": 348.0,
+      "source": "nutrition_bundle.json ingredients"
+    },
+    {
+      "id": "c148",
+      "name": "四季豆",
+      "aliases": [
+        "芸豆",
+        "四季豆",
+        "豆角"
+      ],
+      "name_en": "Beans, kidney, green",
+      "category": "veggie",
+      "serving_g": 100.0,
+      "kcal": 30.0,
+      "serving_kcal": 30.0,
+      "source": "nutrition_bundle.json ingredients"
+    },
+    {
+      "id": "c149",
+      "name": "酸菜",
+      "aliases": [
+        "酸菜",
+        "泡菜"
+      ],
+      "name_en": "Mustard greens, pickled with salt",
+      "category": "veggie",
+      "serving_g": 100.0,
+      "kcal": 15.0,
+      "serving_kcal": 15.0,
+      "source": "nutrition_bundle.json ingredients"
+    },
+    {
+      "id": "c150",
+      "name": "木耳(泡发)",
+      "aliases": [
+        "木耳",
+        "黑木耳"
+      ],
+      "name_en": "Fungus, wood ear, soaked",
+      "category": "veggie",
+      "serving_g": 50.0,
+      "kcal": 27.0,
+      "serving_kcal": 13.5,
+      "source": "nutrition_bundle.json ingredients"
+    },
+    {
+      "id": "c151",
+      "name": "猪五花(肥瘦)",
+      "aliases": [
+        "五花肉",
+        "猪五花"
+      ],
+      "name_en": "Pork, fresh, belly, raw",
+      "category": "meat",
+      "serving_g": 100.0,
+      "kcal": 518.0,
+      "serving_kcal": 518.0,
+      "source": "nutrition_bundle.json ingredients"
+    }
+  ]
+}

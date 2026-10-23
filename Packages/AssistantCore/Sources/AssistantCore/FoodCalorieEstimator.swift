@@ -98,6 +98,12 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
     public let visionIdentifiers: [String]
     /// 中文别名，用于 LLM 把识别结果映射到具体食物
     public let aliases: [String]
+    /// USDA 资料对应的常见份量；nil 时沿用内置估算份量。
+    public let referenceServingGrams: Double?
+    /// FoodData Central 原始记录 ID，用于追溯营养数值。
+    public let fdcID: String?
+    /// USDA 原始英文食物描述，可用于区分生熟及具体品种。
+    public let referenceDescription: String?
 
     public init(id: String,
                 name: String,
@@ -105,7 +111,10 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
                 caloriesPer100g: Double,
                 category: FoodCategory = .staple,
                 visionIdentifiers: [String] = [],
-                aliases: [String] = []) {
+                aliases: [String] = [],
+                referenceServingGrams: Double? = nil,
+                fdcID: String? = nil,
+                referenceDescription: String? = nil) {
         self.id = id
         self.name = name
         self.nameEn = nameEn
@@ -113,6 +122,9 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
         self.category = category
         self.visionIdentifiers = visionIdentifiers
         self.aliases = aliases
+        self.referenceServingGrams = referenceServingGrams
+        self.fdcID = fdcID
+        self.referenceDescription = referenceDescription
     }
 
     /// 创建一个用户自定义名称和热量的食物条目
@@ -133,19 +145,40 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
 
     /// 克隆并替换名称或热量
     public func withCustom(name: String? = nil, caloriesPer100g: Double? = nil) -> FoodItem {
-        FoodItem(
+        let changed = name != nil || caloriesPer100g != nil
+        return FoodItem(
             id: id,
             name: name ?? self.name,
             nameEn: nameEn,
             caloriesPer100g: caloriesPer100g ?? self.caloriesPer100g,
             category: category,
             visionIdentifiers: visionIdentifiers,
-            aliases: aliases
+            aliases: aliases,
+            referenceServingGrams: referenceServingGrams,
+            fdcID: changed ? nil : fdcID,
+            referenceDescription: changed ? nil : referenceDescription
+        )
+    }
+
+    /// 使用已核对的 FoodData Central 记录，保持 App 中既有的菜名、别名和识别 ID。
+    func withUSDAReference(_ reference: USDAFoodReference.Entry) -> FoodItem {
+        FoodItem(
+            id: id,
+            name: name,
+            nameEn: nameEn,
+            caloriesPer100g: reference.per100g.kcal,
+            category: category,
+            visionIdentifiers: visionIdentifiers,
+            aliases: aliases,
+            referenceServingGrams: reference.servingGrams,
+            fdcID: reference.fdcID.value,
+            referenceDescription: reference.nameEn
         )
     }
 
     /// 标准份（一碗/一份/一个）的克数假设。用于从「每 100g」推算「一份多少千卡」。
     public var standardServingGrams: Double {
+        if let referenceServingGrams { return referenceServingGrams }
         if id.hasPrefix("custom_") { return 100 }
         switch id {
         case "rice": return 200
@@ -268,8 +301,41 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
 /// 数据不追求穷尽，目标是**覆盖常见场景**并保证命中项的数值合理。
 public enum FoodCatalog {
 
+    /// 仅关联含义明确的食物。复合菜、生熟状态不一致及错误中文映射须先人工核对。
+    private static let usdaCrosswalk: [String: String] = [
+        "rice": "f001", "fried_rice": "f114", "noodles": "f007",
+        "fried_chicken": "f119", "pizza": "f121", "hamburger": "f118",
+        "chips": "f124", "coffee": "f136", "pure_milk": "f052",
+        "cola": "f131", "sugar_free_cola": "b001", "apple": "f085",
+        "banana": "f086", "watermelon": "f089", "avocado": "f098"
+    ]
+
+    /// 资料中含义清楚、但旧食物库没有独立条目的食物。生食明确标注，避免套用熟菜的热量。
+    private static let usdaAdditional: [(referenceID: String, category: FoodCategory, displayName: String, aliases: [String])] = [
+        ("f002", .staple, "糙米饭", ["糙米饭", "brown rice"]),
+        ("f048", .veggie, "水煮蛋", ["水煮蛋", "白煮蛋", "煮鸡蛋"]),
+        ("f010", .staple, "鲜玉米（生）", ["生玉米"]),
+        ("f011", .staple, "红薯（生）", ["生红薯"]),
+        ("f058", .veggie, "西兰花（生）", ["生西兰花"]),
+        ("f059", .veggie, "菠菜（生）", ["生菠菜"]),
+        ("f064", .veggie, "黄瓜（生）", ["黄瓜", "生黄瓜"]),
+        ("f065", .veggie, "番茄（生）", ["番茄", "西红柿", "生番茄"]),
+        ("f066", .veggie, "胡萝卜（生）", ["生胡萝卜"]),
+        ("f087", .drink, "橙子", ["橙子", "orange"]),
+        ("f088", .drink, "葡萄", ["葡萄", "grapes"]),
+        ("f090", .drink, "草莓", ["草莓", "strawberry"]),
+        ("f091", .drink, "蓝莓", ["蓝莓", "blueberry"]),
+        ("f092", .drink, "梨", ["梨", "雪梨"]),
+        ("f093", .drink, "桃子", ["桃子", "水蜜桃"]),
+        ("f095", .drink, "菠萝", ["菠萝", "凤梨"]),
+        ("f096", .drink, "猕猴桃", ["猕猴桃", "奇异果"]),
+        ("f100", .dessert, "核桃", ["核桃"]),
+        ("f101", .dessert, "杏仁", ["杏仁"]),
+        ("f102", .dessert, "花生", ["花生"])
+    ]
+
     /// 食物库条目（收录高频中餐主食、早点、荤菜、素菜、汤品、特色小吃、水果饮品）。
-    public static let items: [FoodItem] = [
+    private static let baseItems: [FoodItem] = [
         // MARK: - 主食与早点 (Staple)
         FoodItem(id: "rice", name: "米饭", nameEn: "Steamed Rice", caloriesPer100g: 116, category: .staple,
                  visionIdentifiers: ["rice"], aliases: ["米饭", "白饭", "白米饭", "大米饭", "rice", "steamed rice"]),
@@ -471,6 +537,52 @@ public enum FoodCatalog {
                  visionIdentifiers: [], aliases: ["牛油果", "鳄梨", "avocado"])
     ]
 
+    public static let items: [FoodItem] = baseItems.map { food in
+        guard let referenceID = usdaCrosswalk[food.id],
+              let reference = USDAFoodReference.entriesByID[referenceID],
+              reference.servingGrams > 0,
+              reference.per100g.kcal.isFinite,
+              reference.per100g.kcal >= 0 else { return food }
+        return food.withUSDAReference(reference)
+    } + usdaAdditional.compactMap { item in
+        guard let reference = USDAFoodReference.entriesByID[item.referenceID],
+              reference.servingGrams > 0,
+              reference.per100g.kcal.isFinite,
+              reference.per100g.kcal >= 0 else { return nil }
+        return FoodItem(
+            id: "usda_\(item.referenceID)",
+            name: item.displayName,
+            nameEn: reference.nameEn,
+            caloriesPer100g: reference.per100g.kcal,
+            category: item.category,
+            aliases: item.aliases,
+            referenceServingGrams: reference.servingGrams,
+            fdcID: reference.fdcID.value,
+            referenceDescription: reference.nameEn
+        )
+    } + ChineseFoodReference.entries.map { entry in
+        FoodItem(
+            id: "cn_\(entry.id)",
+            name: entry.name,
+            nameEn: entry.nameEn,
+            caloriesPer100g: entry.kcalPer100g,
+            category: category(for: entry.category),
+            aliases: entry.aliases,
+            referenceServingGrams: entry.servingGrams,
+            referenceDescription: entry.source
+        )
+    }
+
+    private static func category(for sourceCategory: String) -> FoodCategory {
+        switch sourceCategory {
+        case "staple": return .staple
+        case "snack": return .snack
+        case "veggie": return .veggie
+        case "soup": return .soup
+        default: return .meat
+        }
+    }
+
     /// 按 id 查找。
     public static func item(id: String) -> FoodItem? {
         items.first { $0.id == id }
@@ -516,27 +628,20 @@ public enum FoodCatalog {
         guard !key.isEmpty else { return nil }
         let lowerKey = key.lowercased()
 
-        // 规则 1：完全相等
-        for food in items {
-            if food.name.lowercased() == lowerKey
-                || food.nameEn.lowercased() == lowerKey
-                || food.aliases.contains(where: { $0.lowercased() == lowerKey }) {
-                return food
-            }
+        // 规则 1：完整名称优先于宽泛旧条目的别名（例如「橙子」优先于「橙子/柑橘/柚子」）。
+        if let exact = items.first(where: { $0.name.lowercased() == lowerKey || $0.nameEn.lowercased() == lowerKey }) {
+            return exact
+        }
+        if let alias = items.first(where: { $0.aliases.contains(where: { $0.lowercased() == lowerKey }) }) {
+            return alias
         }
 
         // 规则 2：剥离量词/修饰后相等
         let stripped = stripPortionModifiers(key)
         guard stripped != key, !stripped.isEmpty else { return nil }
         let lowerStripped = stripped.lowercased()
-        for food in items {
-            if food.name.lowercased() == lowerStripped
-                || food.nameEn.lowercased() == lowerStripped
-                || food.aliases.contains(where: { $0.lowercased() == lowerStripped }) {
-                return food
-            }
-        }
-        return nil
+        return items.first(where: { $0.name.lowercased() == lowerStripped || $0.nameEn.lowercased() == lowerStripped })
+            ?? items.first(where: { $0.aliases.contains(where: { $0.lowercased() == lowerStripped }) })
     }
 
     /// 剥离中文菜名前的量词与修饰词（如「一份」「小份」「这个」）。

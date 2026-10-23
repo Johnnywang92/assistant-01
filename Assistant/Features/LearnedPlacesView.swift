@@ -13,6 +13,7 @@ struct LearnedPlacesView: View {
     @State private var isSampling = false
     @State private var isRefreshingPlaces = false
     @State private var sampleResultMessage: String?
+    @AppStorage("learnedPlacesEnabled") private var learnedPlacesEnabled = true
 
     var body: some View {
         List {
@@ -64,6 +65,16 @@ struct LearnedPlacesView: View {
                         }
                     }
 
+                    Toggle("启用常用地点感知", isOn: $learnedPlacesEnabled)
+                        .font(.subheadline)
+                        .onChange(of: learnedPlacesEnabled) { _, enabled in
+                            if !enabled {
+                                sampleResultMessage = "常用地点感知已关闭，不再自动采样或匹配当前地点。"
+                            } else {
+                                sampleResultMessage = "常用地点感知已开启。"
+                            }
+                        }
+
                     // 权限未就绪时的提示与跳转
                     if !isLocationAuthorized {
                         Button {
@@ -108,7 +119,7 @@ struct LearnedPlacesView: View {
                         .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor))
                         .foregroundStyle(.white)
                     }
-                    .disabled(isSampling || !isLocationAuthorized)
+                    .disabled(isSampling || !isLocationAuthorized || !learnedPlacesEnabled)
                     .buttonStyle(.plain)
 
                     // 智能重新聚类与地名解析按钮
@@ -133,7 +144,7 @@ struct LearnedPlacesView: View {
                             .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(0.12)))
                             .foregroundStyle(.purple)
                         }
-                        .disabled(isRefreshingPlaces)
+                        .disabled(isRefreshingPlaces || !learnedPlacesEnabled)
                         .buttonStyle(.plain)
                     }
 
@@ -146,7 +157,7 @@ struct LearnedPlacesView: View {
                 }
                 .padding(.vertical, 4)
             } footer: {
-                Text("学习规则：相距 300 米内的漂移点自动合并并解析街道/商圈名称；晚间、清晨或周末高频驻留自动识别为「家」，工作日白天高频驻留自动识别为「公司」。")
+                Text("学习规则：相距 300 米内的漂移点自动合并并解析街道/商圈名称；只有深夜清晨长期停留才会识别为「家」，只有工作日白天长期停留才会识别为「公司」，其他地点保留为待确认地点。")
             }
 
             // MARK: - 地点列表
@@ -325,6 +336,8 @@ struct PlaceRow: View {
         case .home: return .blue
         case .company: return .indigo
         case .parcelStation: return .orange
+        case .park: return .green
+        case .restaurant: return .pink
         case .other: return .secondary
         }
     }
@@ -420,6 +433,13 @@ struct LearnedPlaceDetailView: View {
                     }
                     .disabled(newWiFiSSID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+
+                Button {
+                    captureCurrentWiFi()
+                } label: {
+                    Label("读取当前 Wi-Fi 并关联", systemImage: "wifi")
+                }
+                .disabled(isUpdatingLocation)
             }
         }
         .navigationTitle(place.name)
@@ -446,6 +466,26 @@ struct LearnedPlaceDetailView: View {
                     "已成功校准坐标，并关联 Wi‑Fi「\($0)」！"
                 } ?? "已成功校准为当前坐标！"
                 Haptic.success()
+            }
+            isUpdatingLocation = false
+        }
+    }
+
+    private func captureCurrentWiFi() {
+        guard !isUpdatingLocation else { return }
+        isUpdatingLocation = true
+        updateLocationFeedback = nil
+        Task {
+            if let ssid = await LocationReminderService.shared.captureCurrentWiFiSSID() {
+                if !place.associatedWiFiSSIDs.contains(ssid) {
+                    place.associatedWiFiSSIDs.append(ssid)
+                }
+                try? context.save()
+                updateLocationFeedback = "已关联当前 Wi-Fi「\(ssid)」"
+                Haptic.success()
+            } else {
+                updateLocationFeedback = "暂时读取不到 Wi-Fi。当前个人开发团队不支持自动读取 Wi-Fi，请在上方输入框中手动关联网络名称。"
+                Haptic.error()
             }
             isUpdatingLocation = false
         }

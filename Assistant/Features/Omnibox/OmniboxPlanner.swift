@@ -24,20 +24,32 @@ struct OmniboxPlanner {
         var needsClarification: Bool = false
     }
 
+    struct DetectedFoodInfo {
+        var estimate: FoodCalorieEstimate
+        var thumbnailData: Data?
+    }
+
     func plan(capture: OmniboxCapture) async -> PlanResult {
-        // 1. 归一输入：文字直接收集；图片并发 OCR（多图时比串行快数倍），最终拼接为一段完整文本
+        // 1. 归一输入：文字直接收集；图片并发 OCR（多图时比串行快数倍），并进行端侧食物视觉识别
         var parts: [String] = []
         var imageDatas: [Data] = []
+        var userTextParts: [String] = []
         for payload in capture.payloads {
             switch payload {
             case .text(let t), .audioTranscript(let t):
                 let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { parts.append(trimmed) }
+                if !trimmed.isEmpty {
+                    parts.append(trimmed)
+                    userTextParts.append(trimmed)
+                }
             case .image(let data):
                 imageDatas.append(data)
             }
         }
+        let userRawText = userTextParts.joined(separator: " ")
         let imageCount = imageDatas.count
+
+        var detectedFoodInfos: [DetectedFoodInfo] = []
 
         if !imageDatas.isEmpty {
             // 并发 OCR，按提交顺序回填保持图文对应
@@ -64,12 +76,23 @@ struct OmniboxPlanner {
                     parts.append("【图片识别内容】\n\(trimmed)")
                 }
             }
+
+            // 对图片进行端侧食物与饮食热量视觉识别（支持托盘餐、单品菜肴、饮品等）
+            for data in imageDatas {
+                guard let image = UIImage(data: data) else { continue }
+                if let foodInfo = await Self.detectFoodInImage(image, userText: userRawText) {
+                    detectedFoodInfos.append(foodInfo)
+                    parts.append("【食物与热量识别】\n\(foodInfo.estimate.displayName) · 预估 \(Int(foodInfo.estimate.fullPortionCalories))千卡")
+                }
+            }
         }
         let normalizedText = parts.joined(separator: "\n\n")
 
         guard !normalizedText.isEmpty || imageCount > 0 else {
             return PlanResult(actions: [], engine: "rules", normalizedText: "")
         }
+
+        let foodThumbnailBase64 = detectedFoodInfos.first?.thumbnailData?.base64EncodedString()
 
         // 2. 意图判别：先分类再抽取。判别层只决定「是哪一类」，参数仍由 LLM 抽。
         //    这一步的收益是把 9 类判别与参数抽取解耦——抽取阶段的提示词只需讲 1 类，
@@ -93,17 +116,21 @@ struct OmniboxPlanner {
                 let enriched = Self.enrichForeignCurrencyIfNeeded(actions: actions, sourceText: normalizedText)
                 let sanitized = Self.sanitizeAndEnrichLLMActions(actions: enriched, sourceText: normalizedText)
                 let calibrated = Self.applyIntentConfidence(sanitized, distribution: distribution)
+                let withImages = Self.attachImageDataIfNeeded(actions: calibrated, foodThumbnailBase64: foodThumbnailBase64)
                 return PlanResult(
-                    actions: calibrated,
+                    actions: withImages,
                     engine: "llm",
                     normalizedText: normalizedText,
                     intentDistribution: distribution,
-                    needsClarification: Self.needsClarification(calibrated)
+                    needsClarification: Self.needsClarification(withImages)
                 )
             }
             let reason = outcome.fallbackReason ?? "未知原因"
             print("⚠️ [Omnibox] LLM 路径未采纳，已降级规则引擎：\(reason)｜归一文 \(normalizedText.count) 字")
-            let ruleActions = Self.rulePlan(normalizedText)
+            let ruleActions = Self.attachImageDataIfNeeded(
+                actions: Self.rulePlan(normalizedText),
+                foodThumbnailBase64: foodThumbnailBase64
+            )
             return PlanResult(
                 actions: ruleActions,
                 engine: "rules",
@@ -115,7 +142,24 @@ struct OmniboxPlanner {
                 needsClarification: Self.needsClarification(ruleActions)
             )
         }
-        return PlanResult(actions: Self.rulePlan(normalizedText), engine: "rules", normalizedText: normalizedText)
+        let fallbackActions = Self.attachImageDataIfNeeded(
+            actions: Self.rulePlan(normalizedText),
+            foodThumbnailBase64: foodThumbnailBase64
+        )
+        return PlanResult(actions: fallbackActions, engine: "rules", normalizedText: normalizedText)
+    }
+
+    /// 若识别出食物照片，为所有食物记录动作挂载缩略图 Base64，落库时同步存储照片
+    private static func attachImageDataIfNeeded(actions: [PlannedAction], foodThumbnailBase64: String?) -> [PlannedAction] {
+        guard let foodThumbnailBase64 else { return actions }
+        return actions.map { action in
+            guard action.capability == .foodRecord else { return action }
+            var updated = action
+            if updated.params["imageDataBase64"] == nil {
+                updated.params["imageDataBase64"] = foodThumbnailBase64
+            }
+            return updated
+        }
     }
 
     /// 是否需要提示用户核对。按**最终动作的置信度**推导，而不是直接用判别层的结论：
@@ -346,6 +390,12 @@ struct OmniboxPlanner {
         // 0.4 纯饮水/饮品摄入检测（如“喝了500ml水”、“喝了一杯冰美式”）
         if let waterAction = Self.extractWaterRecord(from: text) {
             actions.append(waterAction)
+            return actions
+        }
+
+        // 0.45 食物热量视觉识别提取（由食物照片解析出的【食物与热量识别】）
+        if let foodAction = Self.extractFoodRecordFromRecognition(text) {
+            actions.append(foodAction)
             return actions
         }
 
@@ -976,12 +1026,141 @@ struct OmniboxPlanner {
 
     // MARK: - 全域数据模型规则抽取与 LLM 防幻觉增强
 
+    // MARK: - 食物图像视觉识别与饮食记录构造
+
+    static func detectFoodInImage(_ image: UIImage, userText: String?) async -> DetectedFoodInfo? {
+        let candidates = await FoodVisionService.shared.recognize(in: image)
+        let detectedDishes = await MainActor.run {
+            FoodVisionService.shared.detectedMealDishes
+        }
+        let rawClassifications = await MainActor.run {
+            FoodVisionService.shared.rawClassifications
+        }
+
+        let trimmedText = userText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let thumbnail = image.scaledDown(maxDimension: 480).jpegData(compressionQuality: 0.7)
+
+        // 1. 如果已通过 Vision 映射到具体的食物库菜品（如披萨、汉堡、拉面、米饭、炒菜等）
+        if !candidates.isEmpty {
+            if let meal = FoodCalorieEstimator.estimateMeal(from: candidates, detectedDishes: detectedDishes) {
+                if !trimmedText.isEmpty,
+                   let hinted = FoodCalorieEstimator.estimateMeal(fromHint: trimmedText) {
+                    return DetectedFoodInfo(estimate: hinted, thumbnailData: thumbnail)
+                }
+                return DetectedFoodInfo(estimate: meal, thumbnailData: thumbnail)
+            }
+            if let single = FoodCalorieEstimator.estimate(from: candidates) {
+                return DetectedFoodInfo(estimate: single, thumbnailData: thumbnail)
+            }
+        }
+
+        // 2. 如果视觉库未命中具体菜品，但用户文本明确说明了吃了什么（如“午餐吃了这碗拌面”）
+        if !trimmedText.isEmpty,
+           let hinted = FoodCalorieEstimator.estimateMeal(fromHint: trimmedText) {
+            return DetectedFoodInfo(estimate: hinted, thumbnailData: thumbnail)
+        }
+
+        // 3. 泛类食物检测（Vision 认出了是食物/菜肴/果蔬/饮品，但未精确映射到具体库条目）
+        let genericFoodKeywords = ["food", "dish", "meal", "cuisine", "delicacy", "fast_food", "snack", "produce", "baked_goods", "beverage", "drink"]
+        let hasGenericFoodSignal = rawClassifications.contains { item in
+            let id = item.identifier.lowercased()
+            return genericFoodKeywords.contains(where: { id.contains($0) }) && item.confidence >= 0.20
+        }
+
+        if hasGenericFoodSignal {
+            let defaultFood = FoodItem(
+                id: "meal_generic",
+                name: "餐食",
+                nameEn: "Meal",
+                caloriesPer100g: 150,
+                category: .staple,
+                visionIdentifiers: [],
+                aliases: ["餐食", "食物"]
+            )
+            let estimate = FoodCalorieEstimate(
+                food: defaultFood,
+                portion: .regular,
+                confidence: 0.45,
+                fullPortionCaloriesOverride: 400,
+                customDisplayName: "餐食"
+            )
+            return DetectedFoodInfo(estimate: estimate, thumbnailData: thumbnail)
+        }
+
+        return nil
+    }
+
+    static func extractFoodRecordFromRecognition(_ text: String) -> PlannedAction? {
+        guard text.contains("【食物与热量识别】") else { return nil }
+        let lines = text.components(separatedBy: .newlines)
+        for (i, line) in lines.enumerated() where line.contains("【食物与热量识别】") {
+            if i + 1 < lines.count {
+                let content = lines[i + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+                let comp = content.components(separatedBy: "·")
+                let foodName = comp.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                guard !foodName.isEmpty else { continue }
+
+                var caloriesStr: String? = nil
+                if comp.count > 1 {
+                    let calPart = comp[1]
+                    if let num = calPart.range(of: "[0-9]+", options: .regularExpression) {
+                        caloriesStr = String(calPart[num])
+                    }
+                }
+
+                let currentHour = Calendar.current.component(.hour, from: .now)
+                let slot: String
+                if containsAny(text, ["早饭", "早餐"]) { slot = "早餐" }
+                else if containsAny(text, ["午饭", "午餐", "午"]) { slot = "午餐" }
+                else if containsAny(text, ["晚饭", "晚餐", "晚"]) { slot = "晚餐" }
+                else if containsAny(text, ["夜宵", "宵夜"]) { slot = "夜宵" }
+                else if containsAny(text, ["加餐", "下午茶"]) { slot = "加餐" }
+                else {
+                    if currentHour >= 5 && currentHour < 10 { slot = "早餐" }
+                    else if currentHour >= 10 && currentHour < 15 { slot = "午餐" }
+                    else if currentHour >= 15 && currentHour < 21 { slot = "晚餐" }
+                    else { slot = "加餐" }
+                }
+
+                var params: [String: String] = [
+                    "foodName": foodName,
+                    "mealSlot": slot,
+                    "rawText": text
+                ]
+                if let caloriesStr {
+                    params["calories"] = caloriesStr
+                } else if let estimate = FoodCalorieEstimator.estimateMeal(fromHint: foodName) {
+                    params["calories"] = "\(Int(estimate.fullPortionCalories))"
+                }
+
+                let isGeneric = foodName == "餐食"
+                let confidence = isGeneric ? 0.5 : 0.9
+
+                return PlannedAction(
+                    capability: .foodRecord,
+                    params: params,
+                    confidence: confidence,
+                    summary: Self.summary(for: .foodRecord, params: params)
+                )
+            }
+        }
+        return nil
+    }
+
     static func makeFoodRecordAction(from text: String) -> PlannedAction {
+        let currentHour = Calendar.current.component(.hour, from: .now)
         let slot: String
         if containsAny(text, ["早饭", "早餐"]) { slot = "早餐" }
-        else if containsAny(text, ["午饭", "午餐"]) { slot = "午餐" }
-        else if containsAny(text, ["晚饭", "晚餐"]) { slot = "晚餐" }
-        else { slot = "加餐" }
+        else if containsAny(text, ["午饭", "午餐", "午"]) { slot = "午餐" }
+        else if containsAny(text, ["晚饭", "晚餐", "晚"]) { slot = "晚餐" }
+        else if containsAny(text, ["夜宵", "宵夜"]) { slot = "夜宵" }
+        else if containsAny(text, ["加餐", "下午茶"]) { slot = "加餐" }
+        else {
+            if currentHour >= 5 && currentHour < 10 { slot = "早餐" }
+            else if currentHour >= 10 && currentHour < 15 { slot = "午餐" }
+            else if currentHour >= 15 && currentHour < 21 { slot = "晚餐" }
+            else { slot = "加餐" }
+        }
 
         var params: [String: String] = [
             "mealSlot": slot,
@@ -1027,6 +1206,10 @@ struct OmniboxPlanner {
                     result.append(water)
                     continue
                 }
+                if let food = extractFoodRecordFromRecognition(sourceText) {
+                    result.append(food)
+                    continue
+                }
                 if isPureMealStatement(sourceText) {
                     result.append(makeFoodRecordAction(from: sourceText))
                     continue
@@ -1051,6 +1234,21 @@ struct OmniboxPlanner {
                     result.append(life)
                     continue
                 }
+            }
+            if action.capability == .foodRecord {
+                var updated = action
+                if (updated.params["calories"] ?? "").isEmpty {
+                    let foodName = updated.params["foodName"] ?? ""
+                    if let est = FoodCalorieEstimator.estimateMeal(fromHint: foodName) {
+                        updated.params["calories"] = "\(Int(est.fullPortionCalories))"
+                        if updated.params["foodID"] == nil {
+                            updated.params["foodID"] = est.food.id
+                        }
+                        updated.summary = Self.summary(for: .foodRecord, params: updated.params)
+                    }
+                }
+                result.append(updated)
+                continue
             }
             result.append(action)
         }

@@ -23,8 +23,7 @@ struct OmniboxView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var router = NavigationRouter.shared
     @ObservedObject private var clipboard = ClipboardIngestionService.shared
-    @AppStorage(ClipboardIngestionService.autoIngestKey) private var autoIngest = true
-    @AppStorage("omnibox_clipboard_auto_dismiss_seconds") private var clipboardAutoDismissSeconds: Int = 5
+    @AppStorage("omnibox_clipboard_auto_dismiss_seconds") private var clipboardAutoDismissSeconds: Int = 3
     @AppStorage("omnibox_auto_dismiss_seconds") private var autoDismissSeconds: Int = 3
 
     @State private var inputText = ""
@@ -48,7 +47,7 @@ struct OmniboxView: View {
     @State private var isCountdownPaused: Bool = false
     @State private var countdownTask: Task<Void, Never>?
     @State private var isClipboardAutoTriggered: Bool = false
-    @State private var clipboardRemainingSeconds: Int = 5
+    @State private var clipboardRemainingSeconds: Int = 3
     @State private var isClipboardDismissPaused: Bool = false
     @State private var clipboardDismissTask: Task<Void, Never>?
 
@@ -60,9 +59,9 @@ struct OmniboxView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if isClipboardAutoTriggered && clipboardAutoDismissSeconds > 0 && phase != .executed {
                         clipboardAutoDismissBanner
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
 
-                    headerCard
                     inputCard
 
                     switch phase {
@@ -80,10 +79,24 @@ struct OmniboxView: View {
             }
             .background(Color(.systemGroupedBackground))
             .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    if isClipboardAutoTriggered {
+                        cancelClipboardDismiss()
+                    }
+                }
+            )
+            .simultaneousGesture(
+                DragGesture().onChanged { _ in
+                    if isClipboardAutoTriggered {
+                        cancelClipboardDismiss()
+                    }
+                }
+            )
             .onTapGesture {
                 dismissKeyboard()
                 if isClipboardAutoTriggered {
-                    pauseClipboardDismiss()
+                    cancelClipboardDismiss()
                 }
             }
             .navigationTitle(L10n.tr("万能投喂口"))
@@ -195,137 +208,6 @@ struct OmniboxView: View {
         attachments = Array((attachments + [OmniboxImageAttachment(image: image)]).prefix(5))
     }
 
-    // MARK: - 顶部说明
-
-    private var headerCard: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "tray.and.arrow.down.fill")
-                .font(.title2)
-                .foregroundStyle(.white)
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(Color.purple))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.tr("万物皆可丢进来"))
-                    .font(.headline)
-                Text(L10n.tr("文字、短信、小票、订单截图——自动拆解成记账、待办、饮食和备忘"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    capabilityChip(icon: "yensign.circle.fill", label: L10n.tr("记账"), color: .green)
-                    capabilityChip(icon: "checklist", label: L10n.tr("待办"), color: .blue)
-                    capabilityChip(icon: "fork.knife", label: L10n.tr("饮食"), color: .pink)
-                    capabilityChip(icon: "tray.full.fill", label: L10n.tr("收集箱"), color: .orange)
-                    Spacer()
-                }
-                .padding(.top, 6)
-                HStack(spacing: 4) {
-                    Text(L10n.tr("自动投喂：检测到剪贴板新内容时自动打开"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Toggle("", isOn: $autoIngest)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .scaleEffect(0.62, anchor: .trailing)
-                        .frame(width: 36, height: 22)
-                }
-                .padding(.top, 2)
-
-                HStack(spacing: 4) {
-                    Text(L10n.tr("剪贴板唤起后无操作自动退出"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Menu {
-                        ForEach([0, 3, 5, 8, 10], id: \.self) { seconds in
-                            Button {
-                                clipboardAutoDismissSeconds = seconds
-                                if seconds == 0 {
-                                    cancelClipboardDismiss()
-                                } else if isClipboardAutoTriggered {
-                                    clipboardRemainingSeconds = seconds
-                                }
-                            } label: {
-                                HStack {
-                                    Text(seconds == 0 ? L10n.tr("不自动退出") : "\(seconds) \(L10n.tr("秒"))\(seconds == 5 ? " (\(L10n.tr("默认")))" : "")")
-                                    if clipboardAutoDismissSeconds == seconds {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(clipboardAutoDismissSeconds == 0 ? L10n.tr("不自动退出") : "\(clipboardAutoDismissSeconds)s")
-                                .font(.caption2.bold())
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2)
-                        }
-                        .foregroundStyle(.purple)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.purple.opacity(0.1), in: Capsule())
-                    }
-                }
-                .padding(.top, 2)
-
-                HStack(spacing: 4) {
-                    Text(L10n.tr("确认执行后自动关闭"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Menu {
-                        ForEach([0, 1, 2, 3, 5], id: \.self) { seconds in
-                            Button {
-                                autoDismissSeconds = seconds
-                                if seconds == 0 {
-                                    cancelCountdown()
-                                } else if phase == .executed {
-                                    startCountdownIfNeeded()
-                                }
-                            } label: {
-                                HStack {
-                                    Text(seconds == 0 ? L10n.tr("不自动关闭") : "\(seconds) \(L10n.tr("秒"))\(seconds == 3 ? " (\(L10n.tr("默认")))" : "")")
-                                    if autoDismissSeconds == seconds {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(autoDismissSeconds == 0 ? L10n.tr("不自动关闭") : "\(autoDismissSeconds)s")
-                                .font(.caption2.bold())
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2)
-                        }
-                        .foregroundStyle(.purple)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.purple.opacity(0.1), in: Capsule())
-                    }
-                }
-                .padding(.top, 2)
-            }
-            Spacer()
-        }
-        .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-
-    private func capabilityChip(icon: String, label: String, color: Color) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: icon)
-                .font(.caption2)
-            Text(label)
-                .font(.caption2.bold())
-        }
-        .foregroundStyle(color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(color.opacity(0.12)))
-    }
-
     // MARK: - 投喂输入区
 
     private var inputCard: some View {
@@ -412,6 +294,13 @@ struct OmniboxView: View {
         }
         .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                if isClipboardAutoTriggered {
+                    cancelClipboardDismiss()
+                }
+            }
+        )
         .dropDestination(for: Data.self) { payload, _ in
             cancelClipboardDismiss()
             let dropped = payload.compactMap(UIImage.init(data:))
@@ -451,6 +340,13 @@ struct OmniboxView: View {
         }
         .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                if isClipboardAutoTriggered {
+                    cancelClipboardDismiss()
+                }
+            }
+        )
     }
 
     // MARK: - 确认卡（可勾选可编辑，永不静默执行）
@@ -516,6 +412,13 @@ struct OmniboxView: View {
         }
         .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                if isClipboardAutoTriggered {
+                    cancelClipboardDismiss()
+                }
+            }
+        )
     }
 
     private var selectedCount: Int { actions.filter(\.isSelected).count }
@@ -725,6 +628,15 @@ struct OmniboxView: View {
                     .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
             case .foodRecord:
                 HStack(spacing: 8) {
+                    if let base64 = action.wrappedValue.params["imageDataBase64"],
+                       let data = Data(base64Encoded: base64),
+                       let uiImg = UIImage(data: data) {
+                        Image(uiImage: uiImg)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 32, height: 32)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
                     TextField(L10n.tr("食物名称"), text: textBinding(action, key: "foodName"))
                         .font(.subheadline)
                         .padding(6)
@@ -1305,6 +1217,13 @@ struct OmniboxView: View {
         }
         .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                if isClipboardAutoTriggered {
+                    cancelClipboardDismiss()
+                }
+            }
+        )
     }
 
     // MARK: - 流程
@@ -1336,10 +1255,10 @@ struct OmniboxView: View {
         planNeedsClarification = plan.needsClarification
         planIntentReason = plan.intentDistribution?.reasonText
         if plan.actions.isEmpty {
-            // 纯图片但 OCR 颗粒无收时给出针对性提示
+            // 纯图片但 OCR 与食物视觉识别均无结果时给出针对性提示
             let hasImages = !images.isEmpty
             errorMessage = (hasImages && plan.normalizedText.isEmpty)
-                ? L10n.tr("图片里没认出文字，试试拍清楚一点，或手动输入金额和事项")
+                ? L10n.tr("图片里没认出文字或食物，试试拍清楚一点，或手动输入菜名/金额")
                 : L10n.tr("没能从内容里拆出可执行动作，试试补充金额、时间或事项名")
             phase = .idle
             return
@@ -1411,71 +1330,100 @@ struct OmniboxView: View {
     // MARK: - 剪贴板自动唤起倒计时横幅与控制
 
     private var clipboardAutoDismissBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: isClipboardDismissPaused ? "pause.circle.fill" : "timer")
-                    .foregroundStyle(isClipboardDismissPaused ? Color.orange : Color.purple)
-                    .font(.subheadline)
+        VStack(spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.purple.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "doc.on.clipboard.fill")
+                        .font(.title3)
+                        .foregroundStyle(.purple)
+                }
 
-                Text(L10n.tr("已识别剪贴板内容"))
-                    .font(.subheadline.weight(.semibold))
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(L10n.tr("已识别剪贴板内容"))
+                            .font(.headline.bold())
+                            .foregroundStyle(.primary)
 
-                Spacer()
+                        Spacer()
 
-                Text(isClipboardDismissPaused
-                     ? L10n.tr("倒计时已暂停")
-                     : "\(clipboardRemainingSeconds)s \(L10n.tr("后自动退出"))")
-                    .font(.caption2.bold())
-                    .foregroundStyle(isClipboardDismissPaused ? Color.orange : Color.purple)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule().fill(isClipboardDismissPaused ? Color.orange.opacity(0.12) : Color.purple.opacity(0.12))
-                    )
+                        // 显著加大的粗体倒计时药丸徽章
+                        HStack(spacing: 4) {
+                            Image(systemName: "timer")
+                                .font(.caption.bold())
+                            Text("\(clipboardRemainingSeconds)s \(L10n.tr("后自动退出"))")
+                                .font(.subheadline.bold())
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(
+                                LinearGradient(
+                                    colors: [Color.purple, Color.indigo],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                        )
+                        .shadow(color: Color.purple.opacity(0.3), radius: 3, x: 0, y: 1.5)
+                    }
+
+                    Text(L10n.tr("无操作将自动关闭；轻点页面或查看即保留"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
 
-            Text(L10n.tr("若无需添加到 App，等待倒计时结束将自动关闭退出；点击任意操作或暂停可保留。"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
+            // 醒目操作按钮
             HStack(spacing: 10) {
                 Button {
-                    if isClipboardDismissPaused {
-                        resumeClipboardDismiss()
-                    } else {
-                        pauseClipboardDismiss()
-                    }
+                    cancelClipboardDismiss()
+                    Haptic.light()
                 } label: {
-                    Label(isClipboardDismissPaused ? L10n.tr("恢复倒计时") : L10n.tr("暂停倒计时"),
-                          systemImage: isClipboardDismissPaused ? "play.fill" : "pause.fill")
-                        .font(.caption.bold())
+                    HStack(spacing: 6) {
+                        Image(systemName: "eye.fill")
+                        Text(L10n.tr("查看并保留内容"))
+                    }
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .tint(.purple)
 
                 Button(role: .cancel) {
                     cancelClipboardDismiss()
                     dismiss()
                 } label: {
-                    Label(L10n.tr("无需添加，立即关闭"), systemImage: "xmark")
-                        .font(.caption.bold())
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark")
+                        Text(L10n.tr("立即关闭"))
+                    }
+                    .font(.subheadline.bold())
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(.tertiarySystemFill))
-                .foregroundStyle(.primary)
-
-                Spacer()
+                .buttonStyle(.bordered)
             }
         }
-        .padding(12)
+        .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isClipboardDismissPaused ? Color.orange.opacity(0.08) : Color.purple.opacity(0.08))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+                .shadow(color: Color.purple.opacity(0.12), radius: 8, x: 0, y: 3)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(isClipboardDismissPaused ? Color.orange.opacity(0.25) : Color.purple.opacity(0.25), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.purple.opacity(0.35), lineWidth: 1.5)
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            cancelClipboardDismiss()
+            Haptic.light()
+        }
     }
 
     private func startClipboardDismissCountdown() {
@@ -1501,7 +1449,12 @@ struct OmniboxView: View {
     private func cancelClipboardDismiss() {
         clipboardDismissTask?.cancel()
         clipboardDismissTask = nil
-        isClipboardAutoTriggered = false
+        if isClipboardAutoTriggered {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                isClipboardAutoTriggered = false
+                isClipboardDismissPaused = false
+            }
+        }
     }
 
     private func pauseClipboardDismiss() {

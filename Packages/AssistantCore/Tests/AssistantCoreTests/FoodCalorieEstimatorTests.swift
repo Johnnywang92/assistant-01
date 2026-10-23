@@ -194,7 +194,7 @@ final class FoodCalorieEstimatorTests: XCTestCase {
     func testAllFoodsHavePlausibleServingCalories() {
         for item in FoodCatalog.items {
             let calories = item.standardServingCalories
-            XCTAssertGreaterThan(calories, 0, "\(item.name) 的标准份热量应为正")
+            XCTAssertGreaterThanOrEqual(calories, 0, "\(item.name) 的标准份热量不能为负")
             XCTAssertLessThan(calories, 1500, "\(item.name) 的标准份热量异常偏高：\(calories)")
         }
     }
@@ -202,6 +202,39 @@ final class FoodCalorieEstimatorTests: XCTestCase {
     func testCoffeeHasLowCaloriePerServing() {
         let coffee = FoodCatalog.item(id: "coffee")!
         XCTAssertLessThan(coffee.standardServingCalories, 50, "一杯咖啡不应超过 50 千卡")
+    }
+
+    func testUSDAReferenceOverridesEnergyAndServingTogether() throws {
+        XCTAssertEqual(USDAFoodReference.entriesByID.count, 143)
+        let rice = try XCTUnwrap(FoodCatalog.item(id: "rice"))
+        XCTAssertEqual(rice.caloriesPer100g, 130, accuracy: 0.01)
+        XCTAssertEqual(rice.standardServingGrams, 150, accuracy: 0.01)
+        XCTAssertEqual(rice.standardServingCalories, 195, accuracy: 0.01)
+        XCTAssertEqual(rice.fdcID, "168878")
+
+        let burger = try XCTUnwrap(FoodCatalog.item(id: "hamburger"))
+        XCTAssertEqual(burger.standardServingGrams, 110, accuracy: 0.01)
+        XCTAssertEqual(burger.standardServingCalories, 289.3, accuracy: 0.01)
+        XCTAssertEqual(burger.fdcID, "170694")
+    }
+
+    func testUSDAZeroEnergyAndQuestionableMapping() throws {
+        let cola = try XCTUnwrap(FoodCatalog.item(id: "sugar_free_cola"))
+        XCTAssertEqual(cola.standardServingCalories, 0, accuracy: 0.01)
+        XCTAssertEqual(cola.fdcID, "2438151")
+        // 原资料中的“芒果”对应罐装芒果汁，不能覆盖水果条目。
+        XCTAssertNil(FoodCatalog.item(id: "usda_f094"))
+        XCTAssertNil(FoodCatalog.item(id: "latte")?.fdcID)
+    }
+
+    func testUSDAAdditionalFoodsKeepPreparationState() throws {
+        let egg = try XCTUnwrap(FoodCatalog.item(id: "usda_f048"))
+        XCTAssertEqual(egg.name, "水煮蛋")
+        XCTAssertEqual(egg.standardServingCalories, 77.5, accuracy: 0.01)
+        XCTAssertEqual(egg.fdcID, "173424")
+        let broccoli = try XCTUnwrap(FoodCatalog.item(id: "usda_f058"))
+        XCTAssertTrue(broccoli.name.contains("生"))
+        XCTAssertEqual(FoodCatalog.item(matchingNameStrict: "橙子")?.id, "usda_f087")
     }
 
     // MARK: - 多菜托盘餐组合与热量累加回归测试
@@ -344,5 +377,18 @@ final class FoodCalorieEstimatorTests: XCTestCase {
         XCTAssertTrue(dishIDs.contains("corn_sweetpotato"), "应识别出玉米")
         XCTAssertTrue(dishIDs.contains("pure_milk"), "应识别出纯牛奶")
         XCTAssertGreaterThan(m.fullPortionCalories, 200)
+    }
+
+    /// 测试图片视觉识别候选构造整餐估算
+    func testEstimateMealFromVisionCandidates() {
+        let candidates = FoodCalorieEstimator.candidates(from: [
+            ("pizza", 0.85),
+            ("coke", 0.70)
+        ])
+        XCTAssertFalse(candidates.isEmpty)
+        let estimate = FoodCalorieEstimator.estimateMeal(from: candidates)
+        XCTAssertNotNil(estimate)
+        XCTAssertEqual(estimate?.food.id, "pizza")
+        XCTAssertEqual(estimate?.fullPortionCalories ?? 0, 428.8, accuracy: 0.1)
     }
 }

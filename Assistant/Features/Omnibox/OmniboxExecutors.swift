@@ -544,6 +544,14 @@ enum OmniboxExecutor {
 
         let foodID: String? = action.params["foodID"] ?? estimate?.food.id ?? (FoodCatalog.item(matchingNameStrict: foodName)?.id)
 
+        let imageData: Data? = {
+            if let base64 = action.params["imageDataBase64"],
+               let data = Data(base64Encoded: base64) {
+                return data
+            }
+            return nil
+        }()
+
         let record = FoodIntakeRecord(
             date: date,
             foodName: foodName,
@@ -553,8 +561,8 @@ enum OmniboxExecutor {
             consumedRatio: 1.0,
             confidence: parsedCalories != nil ? 0.9 : (estimate != nil ? 0.85 : 0.5),
             isManuallyAdjusted: false,
-            source: .manual,
-            imageData: nil,
+            source: imageData != nil ? .vision : .manual,
+            imageData: imageData,
             linkedExpenseID: nil
         )
 

@@ -109,15 +109,18 @@ public enum ExpenseFoodMatcher {
     /// 在标题中找「中心词」食物：取别名出现位置**最靠后**的食物，位置相同取别名更长的。
     static func headFood(in title: String) -> FoodItem? {
         let text = title.lowercased()
-        var best: (food: FoodItem, end: Int, length: Int)?
+        var best: (food: FoodItem, end: Int, length: Int, exactName: Bool)?
         for food in FoodCatalog.items {
             let names = [food.name, food.nameEn] + food.aliases
             for name in names {
                 let key = name.lowercased()
                 guard key.count >= 2, let range = text.range(of: key, options: .backwards) else { continue }
                 let end = text.distance(from: text.startIndex, to: range.upperBound)
-                if best == nil || end > best!.end || (end == best!.end && key.count > best!.length) {
-                    best = (food, end, key.count)
+                let exactName = food.name.lowercased() == key || food.nameEn.lowercased() == key
+                if best == nil || end > best!.end
+                    || (end == best!.end && key.count > best!.length)
+                    || (end == best!.end && key.count == best!.length && exactName && !best!.exactName) {
+                    best = (food, end, key.count, exactName)
                 }
             }
         }

@@ -93,7 +93,7 @@ public enum HealthMetricKind: String, CaseIterable, Sendable {
         switch self {
         case .stepCount, .activeEnergy, .workoutDuration: return .exercise
         case .dietaryWater: return .hydration
-        case .sleep: return .medication
+        case .sleep: return .sleep
         default: return nil
         }
     }
@@ -105,13 +105,13 @@ public enum HealthMetricKind: String, CaseIterable, Sendable {
 public enum HealthRelatedTodoType: String, CaseIterable, Sendable {
     case exercise
     case hydration
-    case medication
+    case sleep
 
     public var displayName: String {
         switch self {
         case .exercise: return "运动提醒"
         case .hydration: return "喝水提醒"
-        case .medication: return "服药提醒"
+        case .sleep: return "睡眠作息"
         }
     }
 }

@@ -215,7 +215,7 @@ struct TodoCategoryCustomizationView: View {
     private func categoryIcon(_ category: TodoFilterCategory) -> String {
         switch category {
         case .all: return "square.grid.2x2.fill"
-        case .general: return "checkmark.circle"
+        case .general: return "calendar"
         case .work: return "briefcase.fill"
         case .recurring: return "repeat"
         case .parcel: return "shippingbox.fill"

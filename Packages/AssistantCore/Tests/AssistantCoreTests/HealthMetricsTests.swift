@@ -142,7 +142,7 @@ final class HealthMetricsTests: XCTestCase {
         XCTAssertEqual(HealthMetricKind.stepCount.relatedTodoType, .exercise)
         XCTAssertEqual(HealthMetricKind.activeEnergy.relatedTodoType, .exercise)
         XCTAssertEqual(HealthMetricKind.dietaryWater.relatedTodoType, .hydration)
-        XCTAssertEqual(HealthMetricKind.sleep.relatedTodoType, .medication)
+        XCTAssertEqual(HealthMetricKind.sleep.relatedTodoType, .sleep)
     }
 
     func testProgressForTodoTypePicksMatchingGoal() {

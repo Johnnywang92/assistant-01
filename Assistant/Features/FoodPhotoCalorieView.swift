@@ -490,7 +490,7 @@ struct FoodPhotoCalorieView: View {
                                         .font(.caption2)
                                         .foregroundStyle(AppColor.primary)
                                 }
-                                Text("整份 \(Int(dish.fullPortionCalories.rounded())) 千卡 · 实入 \(Int(dish.consumedCalories.rounded())) 千卡")
+                                Text("\(dish.portion.displayName)约 \(Int((dish.food.standardServingGrams * dish.portion.multiplier).rounded()))g · 整份 \(Int(dish.fullPortionCalories.rounded())) 千卡 · 实入 \(Int(dish.consumedCalories.rounded())) 千卡")
                                     .font(.caption2)
                                     .foregroundStyle(AppColor.secondaryText)
                             }
@@ -1127,9 +1127,14 @@ struct FoodSelectionSheet: View {
                                                 .background(Capsule().fill(Color.secondary.opacity(0.12)))
                                                 .foregroundStyle(AppColor.secondaryText)
                                         }
-                                        Text("标准份约 \(Int(food.standardServingCalories.rounded())) 千卡 · 每100g \(Int(food.caloriesPer100g.rounded())) kcal")
+                                        Text("标准份约 \(Int(food.standardServingGrams.rounded()))g / \(Int(food.standardServingCalories.rounded())) 千卡 · 每100g \(Int(food.caloriesPer100g.rounded())) 千卡")
                                             .font(.caption)
                                             .foregroundStyle(AppColor.secondaryText)
+                                        if let fdcID = food.fdcID {
+                                            Text("USDA FDC \(fdcID)")
+                                                .font(.caption2)
+                                                .foregroundStyle(AppColor.secondaryText)
+                                        }
                                     }
                                     Spacer()
                                     Image(systemName: "plus.circle")
@@ -1281,7 +1286,7 @@ struct FoodIntakeRecordAdjustmentSheet: View {
                         TextField("千卡", text: $fullCaloriesText)
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
-                            .frame(width: 80)
+                            .frame(minWidth: 60, idealWidth: 80, maxWidth: 80)
                             .onChange(of: fullCaloriesText) { _, newText in
                                 if let val = Double(newText), val > 0 {
                                     fullPortionCalories = val

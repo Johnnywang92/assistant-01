@@ -33,6 +33,12 @@ final class ExpenseFoodMatcherTests: XCTestCase {
         XCTAssertEqual(s.foodID, "chips")
     }
 
+    func testExactUSDAFoodWinsOverBroadLegacyAlias() throws {
+        let orange = try XCTUnwrap(ExpenseFoodMatcher.suggest(title: "橙子"))
+        XCTAssertEqual(orange.foodID, "usda_f087")
+        XCTAssertEqual(orange.fullPortionCalories, 61, accuracy: 1)
+    }
+
     func testUnknownTitleReturnsNil() {
         XCTAssertNil(ExpenseFoodMatcher.suggest(title: "滴滴打车"))
         XCTAssertNil(ExpenseFoodMatcher.suggest(title: "  "))
@@ -53,10 +59,10 @@ final class ExpenseFoodMatcherTests: XCTestCase {
     }
 
     func testLLMCaloriesReconciledWithCatalogBaseline() throws {
-        // 给米饭估 900 千卡（标准份约 232）→ 回退食物库基准
+        // 给米饭估 900 千卡（USDA 标准份 195）→ 回退食物库基准
         let p = FoodLLMOutputParser.Parsed(foodName: "米饭", calories: 900, portion: nil, confidence: nil)
         let s = try XCTUnwrap(ExpenseFoodMatcher.suggestion(fromLLM: p))
-        XCTAssertEqual(s.fullPortionCalories, 232, accuracy: 1)
+        XCTAssertEqual(s.fullPortionCalories, 195, accuracy: 1)
         XCTAssertEqual(s.foodID, "rice")
     }
 

@@ -90,7 +90,7 @@ struct PermissionOnboardingView: View {
                                 icon: "heart.text.square.fill",
                                 color: .pink,
                                 title: "Apple 健康数据",
-                                description: "读取心率变异性(HRV)、睡眠分期与静息心率以推断身心愉悦与压力，同步饮水打卡。",
+                                description: "读取心率变异性(HRV)、睡眠分期与静息心率以推断愉悦指数，同步饮水打卡。",
                                 privacyTag: "端侧分析 · 绝不上云",
                                 state: pm.healthStatus
                             ) {

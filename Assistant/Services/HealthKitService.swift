@@ -5,7 +5,7 @@ import HealthKit
 /// Apple 健康（HealthKit）只读接入服务。
 ///
 /// ## 范围
-/// 只**读**步数、活动能量、饮水、睡眠四类数据，喂给 `exercise`/`hydration`/`medication`
+/// 只**读**步数、活动能量、饮水、睡眠四类数据，喂给 `exercise`/`hydration`/`sleep`
 /// 三类待办的打卡页。**不写入**任何健康数据（`toShare` 传空集），
 /// 因此不需要 `NSHealthUpdateUsageDescription` 之外的写权限负担。
 ///
@@ -31,7 +31,7 @@ final class HealthKitService: ObservableObject {
     @Published private(set) var snapshot: HealthDaySnapshot?
     /// 用户的 14 天动态基线
     @Published private(set) var userBaseline: HealthBaseline = .standard
-    /// 综合推断的身心愉悦与压力评估报告
+    /// 综合推断的愉悦指数评估报告
     @Published private(set) var pleasureEvaluation: PleasureIndexEvaluation?
     /// 拉取失败时的可诊断描述（面向开发者，不直接展示给用户）。
     @Published private(set) var lastError: String?
@@ -224,7 +224,7 @@ final class HealthKitService: ObservableObject {
             snapshot = HealthMetrics.mergeSnapshot(existing, newSnapshot)
         }
 
-        // 异步更新 14 天基线并推断身心愉悦与压力指数
+        // 异步更新 14 天基线并推断愉悦指数
         let baseline = await fetchBaseline()
         if let current = snapshot {
             pleasureEvaluation = PleasureIndexEvaluator.evaluate(snapshot: current, baseline: baseline)

@@ -234,7 +234,7 @@ struct TodoShareCardView: View {
             }
         }
         .padding(22)
-        .frame(width: 350)
+        .frame(maxWidth: 350)
         .background(theme.backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
@@ -340,7 +340,7 @@ struct TodoQRCodeCardView: View {
             .clipShape(Capsule())
         }
         .padding(20)
-        .frame(width: 340)
+        .frame(maxWidth: 340)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(
@@ -394,7 +394,16 @@ struct TodoShareSheet: View {
         case .all:
             return allTodos
         case .general:
-            return allTodos.filter { [.general, .event].contains($0.type) }
+            return allTodos.filter { item in
+                let cal = Calendar.current
+                if let override = item.reminderOverrideAt {
+                    if cal.isDateInToday(override) || override < cal.startOfDay(for: .now) { return true }
+                }
+                if let due = item.dueAt {
+                    return cal.isDateInToday(due) || due < cal.startOfDay(for: .now)
+                }
+                return cal.isDateInToday(item.createdAt)
+            }
         case .work:
             return allTodos.filter { $0.type == .work }
         case .recurring:

@@ -71,7 +71,7 @@ struct SettingsView: View {
     @AppStorage("user_off_work_minutes") private var offWorkMinutes: Int = 18 * 60
     @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true
     @AppStorage(ClipboardIngestionService.autoIngestKey) private var autoIngest: Bool = true
-    @AppStorage("omnibox_clipboard_auto_dismiss_seconds") private var clipboardAutoDismissSeconds: Int = 5
+    @AppStorage("omnibox_clipboard_auto_dismiss_seconds") private var clipboardAutoDismissSeconds: Int = 3
     @AppStorage("omnibox_auto_dismiss_seconds") private var autoDismissSeconds: Int = 3
     @AppStorage("expense_monthly_budget") private var monthlyBudget: Double = 0
     @ObservedObject private var tabManager = TabBarManager.shared
@@ -145,20 +145,24 @@ struct SettingsView: View {
                     HStack {
                         Text("助手命名")
                         Spacer()
-                        TextField("名称", text: $assistantName)
-                            .multilineTextAlignment(.trailing)
-                            .foregroundStyle(.primary)
-                            .submitLabel(.done)
+                        HStack(spacing: 6) {
+                            TextField("名称", text: $assistantName)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundStyle(.primary)
+                                .submitLabel(.done)
 
-                        if !assistantName.isEmpty && assistantName != "小助" {
-                            Button {
-                                assistantName = "小助"
-                                Haptic.light()
-                            } label: {
-                                Image(systemName: "arrow.counterclockwise.circle.fill")
-                                    .foregroundStyle(.secondary)
+                            if !assistantName.isEmpty && assistantName != "小助" {
+                                Button {
+                                    assistantName = "小助"
+                                    Haptic.light()
+                                } label: {
+                                    Image(systemName: "arrow.counterclockwise.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                Color.clear.frame(width: 22, height: 22)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
 
@@ -166,20 +170,24 @@ struct SettingsView: View {
                     HStack {
                         Text("对我的称呼")
                         Spacer()
-                        TextField("称呼", text: $userTitle)
-                            .multilineTextAlignment(.trailing)
-                            .foregroundStyle(.primary)
-                            .submitLabel(.done)
+                        HStack(spacing: 6) {
+                            TextField("称呼", text: $userTitle)
+                                .multilineTextAlignment(.trailing)
+                                .foregroundStyle(.primary)
+                                .submitLabel(.done)
 
-                        if !userTitle.isEmpty && userTitle != "你" {
-                            Button {
-                                userTitle = "你"
-                                Haptic.light()
-                            } label: {
-                                Image(systemName: "arrow.counterclockwise.circle.fill")
-                                    .foregroundStyle(.secondary)
+                            if !userTitle.isEmpty && userTitle != "你" {
+                                Button {
+                                    userTitle = "你"
+                                    Haptic.light()
+                                } label: {
+                                    Image(systemName: "arrow.counterclockwise.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                Color.clear.frame(width: 22, height: 22)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 } header: {
@@ -577,8 +585,8 @@ struct SettingsView: View {
                     Toggle("剪贴板检测自动打开投喂口", isOn: $autoIngest)
                     Picker("剪贴板唤起后无操作自动退出", selection: $clipboardAutoDismissSeconds) {
                         Text("不自动退出").tag(0)
-                        Text("3 秒").tag(3)
-                        Text("5 秒（默认）").tag(5)
+                        Text("3 秒（默认）").tag(3)
+                        Text("5 秒").tag(5)
                         Text("8 秒").tag(8)
                         Text("10 秒").tag(10)
                     }
@@ -592,7 +600,7 @@ struct SettingsView: View {
                 } header: {
                     Text("万能投喂口")
                 } footer: {
-                    Text("检测到剪贴板有内容自动唤起投喂口时，若您无意添加到 App，无需任何操作，弹窗将在指定秒数后自动关闭退出；期间点击任意位置或操作可暂停倒计时。")
+                    Text("检测到剪贴板有内容自动唤起投喂口时，若您无意添加到 App，无需任何操作，弹窗将在指定秒数后自动关闭退出；期间轻点页面查看或操作将保留内容并不再自动关闭。")
                 }
 
                 Section("AI 模型") {

@@ -13,6 +13,10 @@ import SwiftData
 /// 4. 真实地名补全：自动通过 CLGeocoder 解析街道/商圈/小区名，彻底告别「未命名地点 1/2/3」。
 @MainActor
 final class PlaceLearningEngine {
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: "learnedPlacesEnabled") as? Bool ?? true
+    }
+
     private let context: ModelContext
     private static var geocodingCache: [String: String] = [:]
 
@@ -30,20 +34,27 @@ final class PlaceLearningEngine {
         wifiSSID: String? = nil,
         timestamp: Date = .now
     ) throws -> LearnedPlace? {
+        guard Self.isEnabled else { return nil }
         let sample = LocationStaySample(
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
-            wifiSSID: wifiSSID,
+            wifiSSID: Self.normalizeWiFi(wifiSSID),
             timestamp: timestamp
         )
         context.insert(sample)
 
+        let hasValidCoordinate = coordinate.latitude.isFinite && coordinate.longitude.isFinite
+            && (coordinate.latitude != 0 || coordinate.longitude != 0)
+        let normalizedWiFi = Self.normalizeWiFi(wifiSSID)
+
         // 寻找附近是否已有现存地点（300米半径阈值或相同 Wi-Fi，兼容室内定位漂移）
         let allPlaces = (try? context.fetch(FetchDescriptor<LearnedPlace>())) ?? []
         let matchedPlace = allPlaces.first { place in
-            if let wifi = wifiSSID, !wifi.isEmpty, place.associatedWiFiSSIDs.contains(wifi) {
+            if let wifi = normalizedWiFi,
+               place.associatedWiFiSSIDs.contains(where: { Self.normalizeWiFi($0) == wifi }) {
                 return true
             }
+            guard hasValidCoordinate else { return false }
             let locA = CLLocation(latitude: place.latitude, longitude: place.longitude)
             let locB = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
             return locA.distance(from: locB) <= max(place.radiusMeters, 300)
@@ -54,11 +65,13 @@ final class PlaceLearningEngine {
             targetPlace = existing
             // 采用滑动加权平滑更新中心坐标，减小单次漂移误差
             let weight = Double(min(existing.visitCount, 20))
-            targetPlace.latitude = (existing.latitude * weight + coordinate.latitude) / (weight + 1.0)
-            targetPlace.longitude = (existing.longitude * weight + coordinate.longitude) / (weight + 1.0)
+            if hasValidCoordinate {
+                targetPlace.latitude = (existing.latitude * weight + coordinate.latitude) / (weight + 1.0)
+                targetPlace.longitude = (existing.longitude * weight + coordinate.longitude) / (weight + 1.0)
+            }
             targetPlace.visitCount += 1
             targetPlace.lastVisitedAt = timestamp
-            if let wifi = wifiSSID, !wifi.isEmpty, !targetPlace.associatedWiFiSSIDs.contains(wifi) {
+            if let wifi = normalizedWiFi, !targetPlace.associatedWiFiSSIDs.contains(wifi) {
                 targetPlace.associatedWiFiSSIDs.append(wifi)
             }
         } else {
@@ -68,7 +81,7 @@ final class PlaceLearningEngine {
                 latitude: coordinate.latitude,
                 longitude: coordinate.longitude,
                 radiusMeters: 200,
-                associatedWiFiSSIDs: wifiSSID.map { [$0] } ?? []
+                associatedWiFiSSIDs: normalizedWiFi.map { [$0] } ?? []
             )
             context.insert(newPlace)
             targetPlace = newPlace
@@ -88,6 +101,7 @@ final class PlaceLearningEngine {
 
     /// 合并漂移碎片地点、重算全部未锁定地点的「家/公司/驿站」角色，并补全真实地名
     public func refreshAndDeduplicateAllPlaces(useAI: Bool = false) async {
+        guard Self.isEnabled else { return }
         do {
             try mergeNearbyDriftedPlaces()
             try reanalyzeAllPlaces()
@@ -154,9 +168,6 @@ final class PlaceLearningEngine {
         ))
         let allSamples = (try? context.fetch(FetchDescriptor<LocationStaySample>())) ?? []
 
-        // 统计最高访问量地点，辅助判断常驻主地点
-        let maxVisitCount = allPlaces.map(\.visitCount).max() ?? 1
-
         for place in allPlaces {
             let loc = CLLocation(latitude: place.latitude, longitude: place.longitude)
             let nearbySamples = allSamples.filter { sample in
@@ -165,18 +176,14 @@ final class PlaceLearningEngine {
             }
 
             if !nearbySamples.isEmpty {
-                var homeWeightedScore = 0.0
+                var nightCount = 0
                 var workdayDayCount = 0
                 let total = Double(nearbySamples.count)
 
                 for s in nearbySamples {
-                    // 家庭休息时段：深夜/清晨 (22:00~08:00)、工作日傍晚 (19:00~22:00) 或周末全天
+                    // 只有深夜/清晨才计入居家证据。晚餐、逛公园等活动不再算作居家。
                     if s.hourOfDay >= 22 || s.hourOfDay <= 8 {
-                        homeWeightedScore += 1.0
-                    } else if s.hourOfDay >= 19 {
-                        homeWeightedScore += 0.85
-                    } else if s.isWeekend {
-                        homeWeightedScore += 0.80
+                        nightCount += 1
                     }
 
                     // 工作日白天办公时段 (周一至周五 09:00 ~ 18:00)
@@ -185,7 +192,7 @@ final class PlaceLearningEngine {
                     }
                 }
 
-                let homeProb = min(1.0, homeWeightedScore / total)
+                let homeProb = Double(nightCount) / total
                 let workdayProb = Double(workdayDayCount) / total
                 place.nightStayProbability = homeProb
                 place.workdayDayStayProbability = workdayProb
@@ -196,23 +203,40 @@ final class PlaceLearningEngine {
             let homeProb = place.nightStayProbability
             let workdayProb = place.workdayDayStayProbability
 
-            // 规则 1：居家特征显著，或是用户压倒性高频驻留点（例如停留 >= 10 次且占比最高，且非纯工作日白天点）
-            let isDominantStay = place.visitCount >= 8 && place.visitCount == maxVisitCount && workdayProb < 0.65
-            if homeProb >= 0.40 || isDominantStay {
+            // 规则 1：必须有足够样本，且深夜/清晨证据明确；单纯高频或周末访问不能推断为家。
+            let nearbySampleCount = allSamples.filter { sample in
+                let sampleLocation = CLLocation(latitude: sample.latitude, longitude: sample.longitude)
+                return loc.distance(from: sampleLocation) <= 300
+            }.count
+            if nearbySampleCount >= 5 && homeProb >= 0.60 && nightCount(for: nearbySamples) >= 3 {
                 place.category = .home
-                if place.nightStayProbability < 0.40 {
-                    place.nightStayProbability = max(place.nightStayProbability, 0.72)
-                }
                 if Self.isPlaceholderName(place.name) {
                     place.name = "家"
                 }
-            } else if workdayProb >= 0.45 && place.visitCount >= 3 {
+            } else if nearbySampleCount >= 5 && workdayProb >= 0.65 && homeProb <= 0.20 {
                 place.category = .company
                 if Self.isPlaceholderName(place.name) {
                     place.name = "公司"
                 }
+            } else if place.category == .home || place.category == .company {
+                place.category = .other
+                if place.name == "家" || place.name == "公司" || place.name.hasPrefix("家（") || place.name.hasPrefix("公司（") {
+                    place.name = "其他地点"
+                }
             }
         }
+    }
+
+    private func nightCount(for samples: [LocationStaySample]) -> Int {
+        samples.reduce(into: 0) { count, sample in
+            if sample.hourOfDay >= 22 || sample.hourOfDay <= 8 { count += 1 }
+        }
+    }
+
+    static func normalizeWiFi(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// 判断名称是否仍为未命名占位符
@@ -258,6 +282,8 @@ final class PlaceLearningEngine {
                     place.name = "公司（\(geo)）"
                 case .parcelStation:
                     place.name = "常用驿站（\(geo)）"
+                case .park, .restaurant:
+                    place.name = "\(place.category.rawValue)（\(geo)）"
                 case .other:
                     place.name = geo
                 }
@@ -273,6 +299,10 @@ final class PlaceLearningEngine {
                 place.name = "公司"
             case .parcelStation:
                 place.name = "常用驿站"
+            case .park:
+                place.name = "散步公园"
+            case .restaurant:
+                place.name = "常去餐馆"
             case .other:
                 place.name = String(format: "常去地点 (%.3f, %.3f)", place.latitude, place.longitude)
             }
@@ -283,7 +313,7 @@ final class PlaceLearningEngine {
             let geoDesc = resolvedGeoLabel ?? place.name
             let wifiDesc = place.associatedWiFiSSIDs.isEmpty ? "无" : place.associatedWiFiSSIDs.joined(separator: ",")
             let sys = """
-            你是地点语义角色推断助手。请根据用户在该地点的驻留统计与周边地名，判断该地点属于「家」、「公司」、「常用驿站」还是「其他地点」，并给出一个简短易读的名称（10字以内）。
+            你是地点语义角色推断助手。请根据用户在该地点的驻留统计与周边地名，判断该地点属于「家」、「公司」、「常用驿站」、「散步公园」、「常去餐馆」还是「其他地点」。只有深夜/清晨长期停留才可判断为家，只有工作日白天长期停留才可判断为公司，无法确定时选择其他地点。请给出一个简短易读的名称（10字以内）。
             严格按以下格式输出一行（不要解释）：
             分类｜地点名称
             """
@@ -304,6 +334,12 @@ final class PlaceLearningEngine {
                         place.category = .company
                     } else if catStr.contains("驿站") || catStr.contains("快递") {
                         place.category = .parcelStation
+                    } else if catStr.contains("公园") || catStr.contains("散步") {
+                        place.category = .park
+                    } else if catStr.contains("餐馆") || catStr.contains("餐厅") || catStr.contains("饭店") {
+                        place.category = .restaurant
+                    } else if catStr.contains("其他") {
+                        place.category = .other
                     }
                     if !nameStr.isEmpty && nameStr.count <= 18 && !Self.isPlaceholderName(nameStr) {
                         place.name = nameStr
@@ -355,13 +391,15 @@ final class PlaceLearningEngine {
         wifiSSID: String? = nil,
         coordinate: CLLocationCoordinate2D? = nil
     ) -> LearnedPlace? {
+        guard Self.isEnabled else { return nil }
         let allPlaces = (try? context.fetch(FetchDescriptor<LearnedPlace>(
             sortBy: [SortDescriptor(\.visitCount, order: .reverse)]
         ))) ?? []
 
         // 1. 优先使用 Wi-Fi 快速匹配
         if let wifi = wifiSSID, !wifi.isEmpty {
-            if let hit = allPlaces.first(where: { $0.associatedWiFiSSIDs.contains(wifi) }) {
+            if let normalized = Self.normalizeWiFi(wifi),
+               let hit = allPlaces.first(where: { $0.associatedWiFiSSIDs.contains(where: { Self.normalizeWiFi($0) == normalized }) }) {
                 return hit
             }
         }

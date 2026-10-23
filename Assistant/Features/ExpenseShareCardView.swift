@@ -199,7 +199,8 @@ public struct ExpenseShareCardView: View {
             }
         }
         .padding(18)
-        .frame(width: 350)
+        // 窄屏时允许卡片收缩，分享卡片仍保留 350pt 的最大宽度。
+        .frame(maxWidth: 350)
         .background(Color(red: 0.97, green: 0.96, blue: 0.94))
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(

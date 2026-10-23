@@ -6,6 +6,8 @@ public enum PlaceCategory: String, Codable, CaseIterable {
     case home = "家"
     case company = "公司"
     case parcelStation = "常用驿站"
+    case park = "散步公园"
+    case restaurant = "常去餐馆"
     case other = "其他地点"
 
     public var displayName: String { L10n.tr(rawValue) }
@@ -15,6 +17,8 @@ public enum PlaceCategory: String, Codable, CaseIterable {
         case .home: "house.fill"
         case .company: "building.2.fill"
         case .parcelStation: "shippingbox.fill"
+        case .park: "figure.walk"
+        case .restaurant: "fork.knife"
         case .other: "mappin.and.ellipse"
         }
     }

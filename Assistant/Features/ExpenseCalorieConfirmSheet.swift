@@ -17,7 +17,7 @@ struct ExpenseCalorieConfirmSheet: View {
     private var parsedCalories: Double? {
         guard let v = Double(caloriesText.trimmingCharacters(in: .whitespaces)),
               ExpenseFoodMatcher.plausibleCalorieRange.contains(v) || v == 0 else { return nil }
-        return v > 0 ? v : nil
+        return v
     }
 
     private var slot: MealSlot {

@@ -244,7 +244,7 @@ struct ReportShareCardView: View {
             }
         }
         .padding(18)
-        .frame(width: 350)
+        .frame(maxWidth: 350)
         .background(
             LinearGradient(
                 colors: gradientBackground,

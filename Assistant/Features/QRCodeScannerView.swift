@@ -147,6 +147,9 @@ struct QRCodeScannerView: View {
                     Text("将二维码放入框内，或从相册选择预约截图导入")
                         .font(.subheadline)
                         .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 24)
                         .padding(.top, 24)
                         .shadow(radius: 4)
 
@@ -188,6 +191,8 @@ struct QRCodeScannerView: View {
                             }
                         }
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 24)
                     .padding(.bottom, 48)
                 }
             }

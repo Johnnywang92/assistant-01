@@ -13,6 +13,7 @@ fileprivate struct TodoClassification {
     var recurring: [TodoItem] = []
     var overdue: [TodoItem] = []
 
+    var todayTodos: [TodoItem] = []
     var generals: [TodoItem] = []
     var works: [TodoItem] = []
     var parcels: [TodoItem] = []
@@ -63,8 +64,14 @@ fileprivate struct TodoClassification {
         TodoPriority.sort(&active)
         overdue.sort { ($0.dueAt ?? .now) < ($1.dueAt ?? .now) }
 
+        let cal = Calendar.current
+        let startOfToday = cal.startOfDay(for: now)
+
         // 各活跃分组直接沿用已排好序的 active 流进行分发，天然保持正确优先级，避免 15 次冗余全量排序
         for item in active {
+            if Self.isTodayItem(item, cal: cal, startOfToday: startOfToday) {
+                todayTodos.append(item)
+            }
             if item.isRecurring { recurring.append(item) }
             switch item.type {
             case .general, .event, .travelBooking: generals.append(item)
@@ -86,6 +93,18 @@ fileprivate struct TodoClassification {
             default: others.append(item)
             }
         }
+    }
+
+    static func isTodayItem(_ item: TodoItem, cal: Calendar, startOfToday: Date) -> Bool {
+        if let override = item.reminderOverrideAt {
+            if cal.isDateInToday(override) || override < startOfToday {
+                return true
+            }
+        }
+        if let due = item.dueAt {
+            return cal.isDateInToday(due) || due < startOfToday
+        }
+        return cal.isDateInToday(item.createdAt)
     }
 }
 
@@ -319,6 +338,7 @@ struct TodoListView: View {
         }
     }
 
+    private var todayTodos: [TodoItem] { classified.todayTodos }
     private var generals: [TodoItem] { classified.generals }
     private var works: [TodoItem] { classified.works }
     private var parcels: [TodoItem] { classified.parcels }
@@ -1144,12 +1164,21 @@ struct TodoListView: View {
 
     @ViewBuilder
     private func renderGroupedAllSections() -> some View {
-        if !generals.isEmpty {
-            Section("📋 日常待办（\(generals.count)）") {
-                ForEach(generals) { item in
-                    todoRow(item, within: generals)
+        if !todayTodos.isEmpty {
+            Section("📋 今日待办（\(todayTodos.count)）") {
+                ForEach(todayTodos) { item in
+                    todoRow(item, within: todayTodos)
                 }
-                .onMove { from, to in reorder(items: generals, fromOffsets: from, toOffset: to) }
+                .onMove { from, to in reorder(items: todayTodos, fromOffsets: from, toOffset: to) }
+            }
+        }
+        let remainingGenerals = generals.filter { !todayTodos.contains($0) }
+        if !remainingGenerals.isEmpty {
+            Section("📋 日常待办（\(remainingGenerals.count)）") {
+                ForEach(remainingGenerals) { item in
+                    todoRow(item, within: remainingGenerals)
+                }
+                .onMove { from, to in reorder(items: remainingGenerals, fromOffsets: from, toOffset: to) }
             }
         }
         if !works.isEmpty {
@@ -1258,15 +1287,26 @@ struct TodoListView: View {
 
     @ViewBuilder
     private func renderGeneralSection() -> some View {
-        Section(generals.isEmpty ? "日常待办" : "日常待办（\(generals.count)）") {
-            if generals.isEmpty {
-                Text("暂无日常待办，点击右上角 ➕ 即可快速添加。")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(generals) { item in
-                    todoRow(item, within: generals)
+        Section(todayTodos.isEmpty ? "今日待办" : "今日待办（\(todayTodos.count)）") {
+            if todayTodos.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 38))
+                        .foregroundStyle(Color.accentColor.opacity(0.7))
+                    Text("今日暂无待办事项")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.primary)
+                    Text("点击右上角 ➕ 即可快速添加今日待办。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .onMove { from, to in reorder(items: generals, fromOffsets: from, toOffset: to) }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            } else {
+                ForEach(todayTodos) { item in
+                    todoRow(item, within: todayTodos)
+                }
+                .onMove { from, to in reorder(items: todayTodos, fromOffsets: from, toOffset: to) }
             }
         }
     }
@@ -1679,7 +1719,7 @@ struct TodoListView: View {
     private func badgeCount(for category: TodoFilterCategory) -> Int {
         switch category {
         case .all: return activeTodos.count
-        case .general: return generals.count
+        case .general: return todayTodos.count
         case .work: return works.count
         case .recurring: return recurring.count
         case .parcel: return parcels.count + returnParcels.count
@@ -1711,7 +1751,12 @@ struct TodoListView: View {
         case .all:
             return done
         case .general:
-            return done.filter { [.general, .event].contains($0.type) }
+            return done.filter { item in
+                if let comp = item.completedAt {
+                    return Calendar.current.isDateInToday(comp)
+                }
+                return false
+            }
         case .work:
             return done.filter { $0.type == .work }
         case .recurring:

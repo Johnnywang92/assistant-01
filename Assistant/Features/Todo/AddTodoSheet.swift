@@ -81,10 +81,16 @@ struct AddTodoSheet: View {
         let defaultDue: Date
 
         switch initialCategory {
-        case .all, .general:
+        case .all:
             defaultType = .general
             defaultHasDueDate = false
             defaultDue = Calendar.current.date(byAdding: .hour, value: 2, to: .now) ?? .now
+        case .general:
+            defaultType = .general
+            defaultHasDueDate = true
+            let calendar = Calendar.current
+            let tonight = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: .now) ?? .now
+            defaultDue = tonight > .now ? tonight : (calendar.date(byAdding: .hour, value: 2, to: .now) ?? .now)
         case .work:
             defaultType = .work
             defaultHasDueDate = true
@@ -165,7 +171,12 @@ struct AddTodoSheet: View {
         if !candidates.contains(type) {
             type = candidates.first ?? .general
         }
-        if newCat == .life || newCat == .alert || newCat == .recurring || newCat == .parenting || newCat == .pet || newCat == .work {
+        if newCat == .general {
+            hasDueDate = true
+            let calendar = Calendar.current
+            let tonight = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: .now) ?? .now
+            dueDate = tonight > .now ? tonight : (calendar.date(byAdding: .hour, value: 2, to: .now) ?? .now)
+        } else if newCat == .life || newCat == .alert || newCat == .recurring || newCat == .parenting || newCat == .pet || newCat == .work {
             hasDueDate = true
             if newCat == .recurring && recurrenceRule == .none {
                 recurrenceRule = .weekly

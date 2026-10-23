@@ -3,7 +3,7 @@ import SwiftData
 import SwiftUI
 
 /// Apple 健康数据页：展示当天的步数、活动能量、饮水与睡眠，
-/// 并把健康侧数值与本地的运动 / 喝水 / 服药打卡待办并排呈现。
+/// 并把健康侧数值与本地的运动 / 喝水 / 睡眠打卡待办并排呈现。
 ///
 /// ## 诚实性约束（贯穿本文件）
 /// HealthKit **不向 App 暴露读权限状态**：用户拒绝读取后，查询静默返回空，
@@ -391,7 +391,7 @@ struct HealthDataView: View {
 
         return VStack(alignment: .leading, spacing: AppSpacing.md) {
             HStack {
-                Label("身体活力指数", systemImage: "bolt.heart.fill")
+                Label("活力指数", systemImage: "bolt.heart.fill")
                     .font(.headline)
                     .foregroundStyle(AppColor.text)
                 Spacer()
@@ -585,7 +585,93 @@ struct HealthDataView: View {
         .appCard()
     }
 
-    // MARK: - 身心愉悦与压力指数卡
+    // MARK: - 愉悦指数卡
+
+    private struct PleasureHighlightTileItem: Identifiable {
+        let id: String
+        let icon: String
+        let title: String
+        let valueText: String
+        let isPositive: Bool
+    }
+
+    private func pleasureHighlights(for eval: PleasureIndexEvaluation) -> [PleasureHighlightTileItem] {
+        var items: [PleasureHighlightTileItem] = []
+
+        // 1. 压力负荷
+        items.append(PleasureHighlightTileItem(
+            id: "stress",
+            icon: "gauge.with.needle.fill",
+            title: "压力负荷",
+            valueText: "\(eval.stressScore)% · \(eval.stressLevel.rawValue)",
+            isPositive: eval.stressScore <= 50
+        ))
+
+        // 2. 自主神经
+        items.append(PleasureHighlightTileItem(
+            id: "autonomic",
+            icon: "figure.mind.and.body",
+            title: "自主神经",
+            valueText: eval.autonomicBalance.rawValue,
+            isPositive: eval.autonomicBalance != .sympatheticDominant
+        ))
+
+        // 3. 心率变异性 / 静息心率
+        let hrvDetail = eval.details.first(where: { $0.title.contains("HRV") || $0.title.contains("变异") })
+        if let hrv = hrvDetail {
+            items.append(PleasureHighlightTileItem(
+                id: "hrv",
+                icon: "heart.fill",
+                title: "心率变异性",
+                valueText: hrv.valueText,
+                isPositive: hrv.isPositive
+            ))
+        } else if let rhr = eval.details.first(where: { $0.title.contains("静息") }) {
+            items.append(PleasureHighlightTileItem(
+                id: "rhr",
+                icon: "heart.circle.fill",
+                title: "静息心率",
+                valueText: rhr.valueText,
+                isPositive: rhr.isPositive
+            ))
+        }
+
+        // 4. 睡眠 / 情绪修复
+        let sleepDetail = eval.details.first(where: { $0.title.contains("REM") || $0.title.contains("睡眠") })
+        if let sleep = sleepDetail {
+            items.append(PleasureHighlightTileItem(
+                id: "sleep",
+                icon: "moon.stars.fill",
+                title: sleep.title.contains("REM") ? "REM情绪修复" : "睡眠恢复",
+                valueText: sleep.valueText,
+                isPositive: sleep.isPositive
+            ))
+        }
+
+        // 补齐至 4 项（保持与活力指数卡一致的 2x2 极简布局）
+        if items.count < 4 {
+            for d in eval.details {
+                guard items.count < 4 else { break }
+                if items.contains(where: { $0.id == d.id || $0.title == d.title }) { continue }
+                let icon: String = if d.title.contains("心率") {
+                    "heart.circle.fill"
+                } else if d.title.contains("深度") {
+                    "bed.double.fill"
+                } else {
+                    "sparkles"
+                }
+                items.append(PleasureHighlightTileItem(
+                    id: d.id,
+                    icon: icon,
+                    title: d.title,
+                    valueText: d.valueText,
+                    isPositive: d.isPositive
+                ))
+            }
+        }
+
+        return items
+    }
 
     private func pleasureScoreCard(_ eval: PleasureIndexEvaluation) -> some View {
         let stateColor: Color = switch eval.state {
@@ -596,9 +682,11 @@ struct HealthDataView: View {
         case .overloaded: AppColor.danger
         }
 
+        let highlights = pleasureHighlights(for: eval)
+
         return VStack(alignment: .leading, spacing: AppSpacing.md) {
             HStack {
-                Label("身心愉悦与压力", systemImage: "heart.text.square.fill")
+                Label("愉悦指数", systemImage: "heart.text.square.fill")
                     .font(.headline)
                     .foregroundStyle(AppColor.text)
                 Spacer()
@@ -610,62 +698,41 @@ struct HealthDataView: View {
                     .background(AppColor.softFill(stateColor), in: Capsule())
             }
 
-            // 核心数值与对比仪表
+            // 核心数值与极简摘要
             HStack(spacing: AppSpacing.md) {
-                // 愉悦指数得分
                 VStack(spacing: 2) {
                     Text("\(eval.pleasureScore)")
                         .font(.system(size: 34, weight: .bold, design: .rounded))
                         .foregroundStyle(stateColor)
-                    Text("愉悦指数")
+                    Text("满分 100")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(AppColor.secondaryText)
                 }
-                .frame(width: 72, height: 60)
-                .background(AppColor.softFill(stateColor, opacity: 0.1), in: RoundedRectangle(cornerRadius: AppRadius.card))
+                .frame(width: 68, height: 56)
+                .background(AppColor.softFill(stateColor, opacity: 0.08), in: RoundedRectangle(cornerRadius: AppRadius.card))
 
-                // 压力指数与自律神经平衡
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: AppSpacing.xs) {
-                        Text("压力负荷:")
-                            .font(.caption)
-                            .foregroundStyle(AppColor.secondaryText)
-                        Text("\(eval.stressScore)% · \(eval.stressLevel.rawValue)")
-                            .font(.caption.bold())
-                            .foregroundStyle(eval.stressScore > 50 ? AppColor.warning : AppColor.success)
-                    }
-
-                    HStack(spacing: AppSpacing.xs) {
-                        Text("自主神经:")
-                            .font(.caption)
-                            .foregroundStyle(AppColor.secondaryText)
-                        Text(eval.autonomicBalance.rawValue)
-                            .font(.caption.bold())
-                            .foregroundStyle(AppColor.primary)
-                    }
-
-                    Text(eval.summary)
-                        .font(.caption2)
-                        .foregroundStyle(AppColor.text)
-                        .lineLimit(2)
-                }
+                Text(eval.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(AppColor.text)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 0)
             }
 
-            // 关键细分指标胶囊
-            if !eval.details.isEmpty {
+            // 关键指标摘要（2列紧凑胶囊卡，参考活力指数卡布局）
+            if !highlights.isEmpty {
                 LazyVGrid(
                     columns: [GridItem(.flexible(), spacing: AppSpacing.sm), GridItem(.flexible(), spacing: AppSpacing.sm)],
                     spacing: AppSpacing.sm
                 ) {
-                    ForEach(eval.details) { d in
-                        pleasureDetailTile(d)
+                    ForEach(highlights) { h in
+                        pleasureHighlightTile(h)
                     }
                 }
             }
 
-            // 身心关怀建议展开
+            // 身心关怀建议：轻量收折，按需展开
             if !eval.advice.isEmpty {
                 VStack(alignment: .leading, spacing: AppSpacing.xs) {
                     Button {
@@ -680,9 +747,8 @@ struct HealthDataView: View {
                             Text(isPleasureAdviceExpanded ? "收起减压建议" : "查看身心减压建议")
                                 .font(.caption2.bold())
                                 .foregroundStyle(AppColor.secondaryText)
-                            Spacer()
                             Image(systemName: isPleasureAdviceExpanded ? "chevron.up" : "chevron.down")
-                                .font(.caption2)
+                                .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(AppColor.secondaryText)
                         }
                     }
@@ -692,9 +758,11 @@ struct HealthDataView: View {
                         Text(eval.advice)
                             .font(.caption)
                             .foregroundStyle(AppColor.secondaryText)
+                            .lineSpacing(3)
                             .padding(AppSpacing.sm)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+                            .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.chip))
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
             }
@@ -703,30 +771,27 @@ struct HealthDataView: View {
         .appCard()
     }
 
-    private func pleasureDetailTile(_ d: PleasureDetailMetric) -> some View {
+    private func pleasureHighlightTile(_ h: PleasureHighlightTileItem) -> some View {
         HStack(spacing: AppSpacing.xs) {
-            Image(systemName: d.isPositive ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(.caption)
-                .foregroundStyle(d.isPositive ? AppColor.success : AppColor.warning)
+            Image(systemName: h.icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(h.isPositive ? AppColor.success : AppColor.warning)
+                .frame(width: 18)
+
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    Text(d.title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(AppColor.secondaryText)
-                    Spacer(minLength: 0)
-                    Text(d.valueText)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(AppColor.text)
-                }
-                Text(d.statusText)
-                    .font(.system(size: 10))
+                Text(h.title)
+                    .font(.caption2)
                     .foregroundStyle(AppColor.secondaryText)
+                Text(h.valueText)
+                    .font(.caption.bold())
+                    .foregroundStyle(AppColor.text)
                     .lineLimit(1)
             }
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, AppSpacing.sm)
-        .padding(.vertical, 6)
-        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.chip))
     }
 
     private func statBox(title: String, value: String, icon: String, tint: Color) -> some View {
@@ -888,7 +953,7 @@ struct HealthDataView: View {
         switch todoType {
         case .exercise: return AppColor.success
         case .hydration: return AppColor.info
-        case .medication: return AppColor.feature
+        case .sleep: return .indigo
         }
     }
 
@@ -896,7 +961,7 @@ struct HealthDataView: View {
         switch todoType {
         case .exercise: return "figure.run"
         case .hydration: return "drop.fill"
-        case .medication: return "pills.fill"
+        case .sleep: return "bed.double.fill"
         }
     }
 }
