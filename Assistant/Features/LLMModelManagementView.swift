@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
@@ -127,6 +128,23 @@ struct LLMModelManagementView: View {
                             Text("存储位置").foregroundStyle(.secondary).font(.caption)
                             Text("Models/\(modelManager.selectedPreset.fileName)").font(.caption.monospaced()).lineLimit(1)
                         }
+                        if let release = ModelReleaseCatalog.entry(id: modelManager.selectedPreset.rawValue) {
+                            GridRow {
+                                Text("发布指纹").foregroundStyle(.secondary).font(.caption)
+                                Text(release.releaseVersion).font(.caption.monospaced()).lineLimit(1)
+                            }
+                        }
+                    }
+
+                    // 完整 SHA-256：供用户在 Mac 上用 `shasum -a 256` 自行比对，
+                    // 不必信任本 App 的结论
+                    if let release = ModelReleaseCatalog.entry(id: modelManager.selectedPreset.rawValue) {
+                        Text("SHA-256 \(release.sha256)")
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
                     }
                 }
                 .padding(.vertical, 4)
@@ -262,6 +280,23 @@ struct LLMModelManagementView: View {
                             .controlSize(.small)
                         }
 
+                        // 核验结论如实呈现：只有拿到发布方指纹背书才写「已核验」，
+                        // 否则说明当前只是自洽校验，不夸大成「安全无误」
+                        if let release = modelManager.verifiedReleaseVersion {
+                            Label {
+                                Text("已核验发布版本：\(release)")
+                                    .font(.caption)
+                            } icon: {
+                                Image(systemName: "checkmark.seal")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(AppColor.feature)
+                        } else {
+                            Label("未获得发布指纹背书（仅本地自洽校验）", systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(AppColor.warning)
+                        }
+
                         HStack(spacing: 10) {
                             if inferenceService.isLocalModelLoaded {
                                 Label("Metal 显存已就绪", systemImage: "bolt.horizontal.circle.fill")
@@ -365,7 +400,12 @@ struct LLMModelManagementView: View {
             } header: {
                 Text("模型文件获取与管理")
             } footer: {
-                Text("💡 提示：您也可以在 Mac 上下载好 `\(modelManager.selectedPreset.fileName)`（或任意 Qwen3 / Qwen2.5 GGUF 模型）后，通过 AirDrop 发送至 iPhone「文件」App 导入。")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("💡 提示：您也可以在 Mac 上下载好 `\(modelManager.selectedPreset.fileName)` 后，通过 AirDrop 发送至 iPhone「文件」App 导入。")
+                    Text("导入需与已核验的发布版本完全一致（体积与 SHA-256 都要对得上），否则会被拒绝且保留原有模型。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             // MARK: - 3. 本地推理与问答沙盒测试

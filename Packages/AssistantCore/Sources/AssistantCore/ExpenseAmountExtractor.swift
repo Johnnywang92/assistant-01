@@ -66,6 +66,50 @@ public enum ExpenseAmountExtractor {
         return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
     }()
 
+    // MARK: - 合格金额（供多笔拆分使用）
+
+    /// 合格金额 = 带货币单位/货币符号/消费动词的金额。裸数字（「3人」「24期」）不算，
+    /// 否则多笔拆分会把人数/期数误当成一笔消费的金额。
+    /// 匹配范围覆盖整个金额 token（含口语小数尾「10块9」），供拆分切点使用。
+    private static let qualifiedAmountRegexes: [NSRegularExpression] = {
+        let patterns = [
+            // 口语金额（与 spokenAmountRegex 同构，整体作切点）
+            "(?<![0-9.．])([0-9]+(?:[.．][0-9]{1,})?|[零〇一二两三四五六七八九十百千万]+)(?![0-9])\\s*(?:日元|日币|日圓|円|美元|美金|美刀|刀|欧元|欧|港币|港元|韩元|韩币|泰铢|铢|英镑|镑|新币|新加坡元|新元|新台币|台币|林吉特|马币|令吉|澳元|澳币|加元|加币|瑞郎|瑞士法郎|澳门元|葡币|元|块|块钱)\\s*([0-9]+(?![0-9])|[零〇一二两三四五六七八九十]+(?![零〇一二两三四五六七八九十]))?\\s*(?:毛|角)?",
+            // 货币符号金额
+            "(?:JP[¥￥]|HK\\$|NT\\$|US\\$|MOP\\$|S\\$|A\\$|C\\$|RM|CHF|[¥￥\\$€£₩฿])\\s*([0-9]+(?:[.．][0-9]{1,})?)",
+            // 消费动词 + 金额（中文数字或阿拉伯）
+            "(?:花了|付了|用去|支出|消费|收入|进账|共计|借出|spent|paid|cost|earned|received)\\s*(?:JP[¥￥]|HK\\$|NT\\$|US\\$|MOP\\$|S\\$|A\\$|C\\$|RM|CHF|[¥￥\\$€£₩฿])?\\s*([0-9]+(?:[.．][0-9]{1,})?|[零〇一二两三四五六七八九十百千万]+)(?![0-9])\\s*(?:毛|角)?"
+        ]
+        return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
+    }()
+
+    /// 全文所有合格金额的匹配范围（按出现顺序，重叠区间已合并）。
+    public static func qualifiedAmountNSRanges(in text: String) -> [NSRange] {
+        let fullRange = NSRange(text.startIndex..., in: text)
+        var raw: [NSRange] = []
+        for regex in qualifiedAmountRegexes {
+            raw.append(contentsOf: regex.matches(in: text, range: fullRange).map(\.range))
+        }
+        guard !raw.isEmpty else { return [] }
+        let sorted = raw.sorted { $0.location < $1.location }
+        var merged: [NSRange] = [sorted[0]]
+        for range in sorted.dropFirst() {
+            let last = merged[merged.count - 1]
+            if range.location < last.location + last.length {
+                let end = max(last.location + last.length, range.location + range.length)
+                merged[merged.count - 1] = NSRange(location: last.location, length: end - last.location)
+            } else {
+                merged.append(range)
+            }
+        }
+        return merged
+    }
+
+    /// 是否存在合格金额。
+    public static func hasQualifiedAmount(_ text: String) -> Bool {
+        !qualifiedAmountNSRanges(in: text).isEmpty
+    }
+
     // MARK: - 提取入口
 
     /// 从一句话中提取金额（原始单位，不做币种折算）。

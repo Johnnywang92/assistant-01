@@ -22,6 +22,7 @@ struct HealthDataView: View {
     @State private var isVitalitySuggestionExpanded = false
     @State private var isPleasureAdviceExpanded = true
     @State private var showShareSheet = false
+    @State private var dietTrendDays = 7
 
     /// 本地打卡目标：与健康侧指标一一对应
     private let goals = HealthGoal.defaults
@@ -45,6 +46,16 @@ struct HealthDataView: View {
         return VitalityEvaluator.evaluate(snapshot: health.snapshot, foodIntakeCalories: todayFoodCalories)
     }
 
+    /// 近 N 天饮食摄入趋势（纯函数聚合在 AssistantCore.TrendAnalytics）
+    private var dietTrend: TrendAnalytics.DietTrend {
+        TrendAnalytics.dietTrend(
+            entries: foodRecords.map {
+                TrendAnalytics.DietEntry(date: $0.date, calories: $0.consumedCalories)
+            },
+            dayCount: dietTrendDays
+        )
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.md) {
@@ -56,6 +67,7 @@ struct HealthDataView: View {
                 }
                 waterTrackerEntryCard
                 foodCalorieEntryCard
+                DietTrendCard(trend: dietTrend, dayCount: $dietTrendDays)
                 if !HealthKitService.isAvailable {
                     unavailableCard
                 } else {
@@ -87,6 +99,7 @@ struct HealthDataView: View {
             HealthShareSheet(
                 snapshot: health.snapshot,
                 vitality: vitalityEvaluation,
+                pleasure: health.pleasureEvaluation,
                 todayFoodCalories: todayFoodCalories,
                 todayWaterML: todayEffectiveWaterML,
                 goals: goals
@@ -636,33 +649,45 @@ struct HealthDataView: View {
             ))
         }
 
-        // 4. 睡眠 / 情绪修复
-        let sleepDetail = eval.details.first(where: { $0.title.contains("REM") || $0.title.contains("睡眠") })
+        // 4. 睡眠 / 情绪修复。
+        //    注意与活力卡去重：活力卡已展示「睡眠恢复 X 小时」，这里优先 REM；
+        //    无 REM 只有时长兜底时改叫「睡眠情绪储备」——同一数值不该两张卡同名再放一遍。
+        let sleepDetail = eval.details.first(where: { $0.title.contains("REM") })
+            ?? eval.details.first(where: { $0.title.contains("睡眠") })
         if let sleep = sleepDetail {
             items.append(PleasureHighlightTileItem(
                 id: "sleep",
-                icon: "moon.stars.fill",
-                title: sleep.title.contains("REM") ? "REM情绪修复" : "睡眠恢复",
+                icon: sleep.title.contains("REM") ? "moon.stars.fill" : "sparkles",
+                title: sleep.title.contains("REM") ? "REM情绪修复" : "睡眠情绪储备",
                 valueText: sleep.valueText,
                 isPositive: sleep.isPositive
             ))
         }
 
-        // 补齐至 4 项（保持与活力指数卡一致的 2x2 极简布局）
+        // 补齐至 4 项（保持与活力指数卡一致的 2x2 极简布局）。
+        // 跳过与活力卡重复的心率/睡眠时长原始条目，优先补 REM/深度睡眠等情绪修复向指标。
         if items.count < 4 {
+            let preferred = eval.details.filter { $0.title.contains("REM") || $0.title.contains("深度") }
+            for d in preferred {
+                guard items.count < 4 else { break }
+                if items.contains(where: { $0.id == d.id || $0.title == d.title }) { continue }
+                items.append(PleasureHighlightTileItem(
+                    id: d.id,
+                    icon: d.title.contains("深度") ? "bed.double.fill" : "moon.stars.fill",
+                    title: d.title.contains("深度") ? "深度睡眠" : d.title,
+                    valueText: d.valueText,
+                    isPositive: d.isPositive
+                ))
+            }
             for d in eval.details {
                 guard items.count < 4 else { break }
                 if items.contains(where: { $0.id == d.id || $0.title == d.title }) { continue }
-                let icon: String = if d.title.contains("心率") {
-                    "heart.circle.fill"
-                } else if d.title.contains("深度") {
-                    "bed.double.fill"
-                } else {
-                    "sparkles"
-                }
+                // 心率类与睡眠时长类不补：活力卡/生命体征区已展示，避免同一数值重复出现
+                if d.title.contains("心率") && !d.title.contains("变异") { continue }
+                if d.title.contains("睡眠时长") { continue }
                 items.append(PleasureHighlightTileItem(
                     id: d.id,
-                    icon: icon,
+                    icon: "sparkles",
                     title: d.title,
                     valueText: d.valueText,
                     isPositive: d.isPositive

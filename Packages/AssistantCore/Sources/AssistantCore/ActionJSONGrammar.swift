@@ -1,6 +1,6 @@
 import Foundation
 
-/// 端侧模型动作 JSON 输出的 GBNF 语法约束，与 `ActionCapability` 9 类 schema 一一对应。
+/// 端侧模型动作 JSON 输出的 GBNF 语法约束，与 `ActionCapability` 16 类 schema 一一对应。
 ///
 /// 设计约束：
 /// - 只允许输出「至少含一个动作对象」的 JSON 数组：空数组被语法禁止，杜绝模型用小尾巴躲开拆解；

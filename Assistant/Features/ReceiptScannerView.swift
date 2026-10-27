@@ -1,3 +1,4 @@
+import AssistantCore
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -291,7 +292,7 @@ struct ReceiptScannerView: View {
                 pages.append(try await OCRService.shared.recognizeText(from: image))
             }
             let text = pages.joined(separator: "\n")
-            let parsed = ReceiptTextParser.parse(text)
+            let parsed = ReceiptScanParser.parse(text)
 
             await MainActor.run {
                 recognizedText = text
@@ -346,6 +347,9 @@ struct ReceiptScannerView: View {
 
 // MARK: - 小票智能解析与置信度评估
 
+/// 小票解析结果的 App 侧视图：把 AssistantCore 的 `ReceiptParseResult`
+/// （categoryRaw 为 `ExpenseCategory.rawValue`）映射回枚举。
+/// 解析正则本体只有一份，位于 AssistantCore `ReceiptTextParser`。
 struct ReceiptScanOutcome {
     var amount: Double
     var title: String
@@ -356,169 +360,18 @@ struct ReceiptScanOutcome {
     var candidateAmounts: [Double]
 }
 
-private enum ReceiptTextParser {
+enum ReceiptScanParser {
     static func parse(_ text: String) -> ReceiptScanOutcome {
-        let candidates = extractAllCandidateAmounts(from: text)
-        let labeledTotal = extractLabeledTotalAmount(from: text)
-        let merchant = extractMerchantOrTitle(from: text)
-        let category = guessCategory(merchant: merchant, text: text)
-        let date = OmniboxPlanner.extractTransactionDate(from: text) ?? .now
-
-        if let explicit = labeledTotal {
-            return ReceiptScanOutcome(
-                amount: explicit,
-                title: merchant,
-                category: category,
-                date: date,
-                confidence: 0.92,
-                confidenceReason: nil,
-                candidateAmounts: candidates
-            )
-        } else if let maxCandidate = candidates.max() {
-            return ReceiptScanOutcome(
-                amount: maxCandidate,
-                title: merchant,
-                category: category,
-                date: date,
-                confidence: 0.60,
-                confidenceReason: "未明确检测到“合计/实付”标签，已提取最大可能金额，请核对",
-                candidateAmounts: candidates
-            )
-        } else {
-            return ReceiptScanOutcome(
-                amount: 0.0,
-                title: merchant,
-                category: category,
-                date: date,
-                confidence: 0.25,
-                confidenceReason: "未能自动识别金额，请手动输入或重拍",
-                candidateAmounts: []
-            )
-        }
-    }
-
-    /// 提取明确带有「合计/实付/总计/应付」等字样的金额
-    private static func extractLabeledTotalAmount(from text: String) -> Double? {
-        let patterns = [
-            "(?:合计|总计|实付|应付|实际支付|支付金额|订单金额|实收|消费金额|账单金额|结算金额|小计|TOTAL|Total|PAID)\\s*[:：]?\\s*[¥￥]?\\s*([0-9]+(?:[.,][0-9]{1,2})?)",
-            "[¥￥]\\s*([0-9]+(?:[.,][0-9]{1,2})?)\\s*(?:元)?\\s*(?:合计|实付|应付|实收)",
-            "(?:合计|实付|应付|实收)\\s*[¥￥]?\\s*([0-9]+(?:[.,][0-9]{1,2})?)"
-        ]
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
-                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-                  match.range(at: 1).location != NSNotFound,
-                  let range = Range(match.range(at: 1), in: text),
-                  let amount = Double(text[range].replacingOccurrences(of: ",", with: ".")),
-                  amount > 0 else { continue }
-            return amount
-        }
-        return nil
-    }
-
-    /// 提取全文中所有合法的金额数值
-    private static func extractAllCandidateAmounts(from text: String) -> [Double] {
-        let patterns = [
-            "[¥￥]\\s*([0-9]+(?:[.,][0-9]{1,2})?)",
-            "([0-9]+(?:[.,][0-9]{1,2})?)\\s*(?:元|块)",
-            "\\b([0-9]+\\.[0-9]{2})\\b"
-        ]
-        var amounts: Set<Double> = []
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            for match in matches where match.range(at: 1).location != NSNotFound {
-                if let range = Range(match.range(at: 1), in: text),
-                   let val = Double(text[range].replacingOccurrences(of: ",", with: ".")),
-                   val > 0 && val < 500000 {
-                    amounts.insert(val)
-                }
-            }
-        }
-        return amounts.sorted(by: >)
-    }
-
-    /// 从头部提取商户名或门店名称
-    private static func extractMerchantOrTitle(from text: String) -> String {
-        // 1. 尝试匹配显式的商户/门店标签
-        let labeledPatterns = [
-            "(?:商户名称|门店名称|商户|门店|店铺|收款方|商户全称)\\s*[:：]\\s*([^\\n\\r]{2,20})",
-            "欢迎光临\\s*([^\\n\\r]{2,20})"
-        ]
-        for pattern in labeledPatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern),
-               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-               match.range(at: 1).location != NSNotFound,
-               let range = Range(match.range(at: 1), in: text) {
-                let candidate = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !candidate.isEmpty { return candidate }
-            }
-        }
-
-        // 2. 检查前几行非空文本，排除常规表头、分隔线与纯数字
-        let ignoreKeywords = ["结账单", "收银单", "销售小票", "发票", "存根", "POS签购单", "明细", "小票", "小票消费", "欢迎光临", "交易凭条"]
-        let lines = text.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        for line in lines.prefix(6) {
-            if line.count >= 2 && line.count <= 25 {
-                let isIgnore = ignoreKeywords.contains { line.contains($0) }
-                let isPureDigitsOrSymbols = line.range(of: "^[0-9\\-—*#:=. /]+$", options: .regularExpression) != nil
-                if !isIgnore && !isPureDigitsOrSymbols {
-                    return line
-                }
-            }
-        }
-
-        return "小票消费"
-    }
-
-    /// 智能分类判定
-    private static func guessCategory(merchant: String, text: String) -> ExpenseCategory {
-        let combined = merchant + " " + text
-
-        let mapping: [(ExpenseCategory, [String])] = [
-            (.food, [
-                "餐饮", "饭店", "餐馆", "火锅", "咖啡", "奶茶", "快餐", "美食", "茶饮", "面馆",
-                "米线", "烤肉", "料理", "酒楼", "烘焙", "甜品", "面包", "堂食", "外卖", "麦当劳",
-                "肯德基", "星巴克", "瑞幸", "喜茶", "蜜雪", "汉堡", "披萨", "必胜客", "海底捞",
-                "西贝", "真功夫", "吉野家", "味千", "老乡鸡", "霸王茶姬", "茶百道", "茶颜悦色",
-                "萨莉亚", "达美乐", "烧烤", "麻辣烫", "小吃", "早餐", "午餐", "晚餐"
-            ]),
-            (.living, [
-                "超市", "便利店", "生鲜", "百货", "果蔬", "菜场", "粮油", "日用", "全家", "罗森",
-                "7-11", "7-ELEVEN", "大润发", "沃尔玛", "永辉", "盒马", "物美", "华润万家",
-                "家乐福", "屈臣氏", "名创优品", "便利蜂", "杂货", "菜市", "百联"
-            ]),
-            (.transport, [
-                "加油", "中石化", "中石油", "中国海油", "加气", "充电桩", "停车", "收费站", "高速",
-                "滴滴", "出租车", "打车", "地铁", "公交", "ETC", "铁路", "客运", "高德打车"
-            ]),
-            (.medical, [
-                "药房", "药店", "大药房", "同仁堂", "海王星辰", "益丰", "国大", "老百姓", "一心堂",
-                "医院", "门诊", "诊所", "体检", "卫生院", "口腔", "眼科", "处方", "挂号"
-            ]),
-            (.entertainment, [
-                "影城", "影院", "电影", "万达影城", "大地影院", "KTV", "密室", "剧本杀", "乐园",
-                "游乐", "网吧", "电竞", "健身", "游泳", "保龄球", "桌游"
-            ]),
-            (.digital, [
-                "数码", "手机", "电脑", "专卖店", "Apple", "苹果", "华为", "小米", "OPPO",
-                "vivo", "大疆", "联想", "电子产品", "苏宁易购"
-            ]),
-            (.pets, [
-                "宠物", "萌宠", "猫粮", "狗粮", "宠物医院", "宠物洗护", "猫砂"
-            ])
-        ]
-
-        for (cat, keywords) in mapping {
-            if keywords.contains(where: { combined.localizedCaseInsensitiveContains($0) }) {
-                return cat
-            }
-        }
-
-        return .shopping
+        let parsed = AssistantCore.ReceiptTextParser.parse(text)
+        return ReceiptScanOutcome(
+            amount: parsed.amount,
+            title: parsed.title,
+            category: ExpenseCategory(rawValue: parsed.categoryRaw) ?? .shopping,
+            date: parsed.date,
+            confidence: parsed.confidence,
+            confidenceReason: parsed.confidenceReason,
+            candidateAmounts: parsed.candidateAmounts
+        )
     }
 }
 

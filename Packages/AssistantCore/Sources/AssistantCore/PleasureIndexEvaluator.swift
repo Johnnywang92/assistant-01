@@ -24,8 +24,10 @@ public enum PleasureState: String, Sendable, CaseIterable {
     case serene = "平和舒畅"
     /// ⚡️ 适度紧绷（50 ~ 69 分）
     case strained = "适度紧绷"
-    /// 🔋 能量偏低（35 ~ 49 分）
-    case fatigued = "能量偏低"
+    /// 🍂 情绪耗竭（35 ~ 49 分）。
+    /// 不叫「能量偏低」——那是 VitalityLevel.low 的文案，两卡并排时会撞名；
+    /// 这一级描述的是情绪调节资源耗竭，与身体能量是不同维度。
+    case fatigued = "情绪耗竭"
     /// 🌧️ 身心超载（< 35 分）
     case overloaded = "身心超载"
 
@@ -46,7 +48,7 @@ public enum PleasureState: String, Sendable, CaseIterable {
         case .euphoric: return "🌟 欣快充沛"
         case .serene: return "🌿 平和舒畅"
         case .strained: return "⚡️ 适度紧绷"
-        case .fatigued: return "🔋 能量偏低"
+        case .fatigued: return "🍂 情绪耗竭"
         case .overloaded: return "🌧️ 身心超载"
         }
     }

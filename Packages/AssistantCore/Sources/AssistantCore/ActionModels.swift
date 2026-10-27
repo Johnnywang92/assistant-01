@@ -204,7 +204,8 @@ public enum ActionParser: Sendable {
 
         case .expenseUpdate:
             let target = params["target"] ?? "既有支出"
-            let amount = params["amount"].map { " 改为 ¥\($0)" } ?? ""
+            // 新金额在 newAmount（执行器键）；amount 只作匹配提示，展示也认它以免旧数据丢文案
+            let amount = (params["newAmount"].flatMap { $0.isEmpty ? nil : $0 } ?? params["amount"]).map { " 改为 ¥\($0)" } ?? ""
             return "修改账目：\(target)\(amount)"
 
         case .todoCreate:

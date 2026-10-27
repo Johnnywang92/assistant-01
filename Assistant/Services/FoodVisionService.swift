@@ -37,9 +37,13 @@ final class FoodVisionService: ObservableObject {
 
     /// 识别一张食物照片（全图 + 多区域分区扫描，解决托盘餐/多碗菜只识别到米饭而漏掉配菜的问题）。
     ///
+    /// - Parameters:
+    ///   - image: 食物图片。
+    ///   - mealDate: 用餐日期时间（用于计算时段先验加权）。
+    ///   - history: 用户常吃历史先验。
     /// - Returns: 候选列表。**空数组表示没认出来**，调用方应引导用户手动选择。
     @discardableResult
-    func recognize(in image: UIImage) async -> [FoodCandidate] {
+    func recognize(in image: UIImage, mealDate: Date = .now, history: FoodHistoryPrior? = nil) async -> [FoodCandidate] {
         isRecognizing = true
         lastError = nil
         defer { isRecognizing = false }
@@ -78,7 +82,13 @@ final class FoodVisionService: ObservableObject {
                 .sorted { $0.confidence > $1.confidence }
 
             rawClassifications = meaningful
-            let allCandidates = FoodCalorieEstimator.candidates(from: meaningful, limit: 8)
+            let mealTime = MealTimePeriod.from(date: mealDate)
+            let allCandidates = FoodCalorieEstimator.candidates(
+                from: meaningful,
+                limit: 8,
+                mealTime: mealTime,
+                history: history
+            )
             candidates = allCandidates
             detectedMealDishes = Self.extractMealDishes(
                 fullClassifications: fullClassifications,

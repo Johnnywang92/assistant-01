@@ -509,6 +509,7 @@ struct EditTodoSheet: View {
             } else {
                 TodoNotificationManager.shared.cancelNotification(for: item.id)
             }
+            LifeEventTodoLink.syncTask(for: item, in: context)
         }
 
         applyArrivalCheck()

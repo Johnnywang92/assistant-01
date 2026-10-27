@@ -142,3 +142,52 @@ enum OmniboxTransactionStatus: String, Codable {
     case executed
     case undone
 }
+
+// MARK: - 判别反馈（点赞/点踩，SwiftData 持久化）
+
+/// 用户对「这次意图判断准不准」的反馈。回流到 `IntentFeedbackMemory` 提升下次判断：
+/// 被点踩的输入下次强制确认，被点赞的意图下次优先预填。
+/// 同时快照 topProbability/margin，为判别层阈值校准积累真实语料。
+@Model
+final class OmniboxJudgmentFeedback {
+    var id: UUID
+    var createdAt: Date
+    /// 归一化后的输入文本（IntentFeedbackMemory.normalize）
+    var inputText: String
+    /// 反馈时刻判别的标签（OmniboxIntentLabel.rawValue）
+    var labelRaw: String
+    /// up / down
+    var verdictRaw: String
+    var topProbability: Double
+    var margin: Double
+    /// 判别时次选标签（top2）快照。点踩且未纠正时，与 labelRaw 构成疑似混淆对。
+    var runnerUpLabelRaw: String?
+    /// 点踩后用户点选的正确标签。与 labelRaw 构成实锤混淆对（判成 X、实际 Y）。
+    var correctedLabelRaw: String?
+
+    init(_ feedback: JudgmentFeedback) {
+        self.id = feedback.id
+        self.createdAt = feedback.createdAt
+        self.inputText = feedback.inputText
+        self.labelRaw = feedback.labelRaw
+        self.verdictRaw = feedback.verdict.rawValue
+        self.topProbability = feedback.topProbability
+        self.margin = feedback.margin
+        self.runnerUpLabelRaw = feedback.runnerUpLabelRaw
+        self.correctedLabelRaw = feedback.correctedLabelRaw
+    }
+
+    var feedback: JudgmentFeedback {
+        JudgmentFeedback(
+            id: id,
+            inputText: inputText,
+            labelRaw: labelRaw,
+            verdict: JudgmentFeedback.Verdict(rawValue: verdictRaw) ?? .up,
+            topProbability: topProbability,
+            margin: margin,
+            runnerUpLabelRaw: runnerUpLabelRaw,
+            correctedLabelRaw: correctedLabelRaw,
+            createdAt: createdAt
+        )
+    }
+}

@@ -43,6 +43,9 @@ struct FoodPhotoCalorieView: View {
     /// 饮食偏好服务与详情弹窗
     @StateObject private var preferenceService = DietaryPreferenceService.shared
     @State private var showingPreferenceDetail = false
+    /// 离线语音听写服务
+    @StateObject private var voiceService = VoiceDialogueService.shared
+    @State private var isListeningVoice = false
 
     private var todayRecords: [FoodIntakeRecord] {
         let cal = Calendar.current
@@ -153,12 +156,25 @@ struct FoodPhotoCalorieView: View {
         .onAppear {
             preferenceService.refresh(with: context)
         }
+        .onDisappear {
+            stopVoiceListening()
+        }
         .onChange(of: records) { _, _ in
             preferenceService.refresh(with: context)
         }
         .onChange(of: pickedItems) { _, items in
             guard !items.isEmpty else { return }
             Task { await loadPickedImage(items) }
+        }
+        .onChange(of: voiceService.isListening) { _, listening in
+            if !listening && isListeningVoice {
+                stopVoiceListeningAndEstimate()
+            }
+        }
+        .onChange(of: voiceService.recognizedText) { _, newText in
+            if isListeningVoice && !newText.isEmpty {
+                hintText = newText
+            }
         }
     }
 
@@ -373,17 +389,92 @@ struct FoodPhotoCalorieView: View {
             }
             .font(.footnote)
 
-            // 补充描述：识别不准时，用户的说明比模型猜更准
+            // 补充描述与语音输入：识别不准时，用户的说明比模型猜更准
             if photo != nil {
-                TextField("补充描述（支持多菜，如：米饭、辣椒炒肉、凉拌海带丝）", text: $hintText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.footnote)
-                    .onSubmit { Task { await runEstimation() } }
-                if !hintText.isEmpty {
-                    Button("按描述重新估算") {
-                        Task { await runEstimation() }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        TextField("补充描述（支持多菜，如：米饭、辣椒炒肉）", text: $hintText)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.footnote)
+                            .onSubmit { Task { await runEstimation() } }
+
+                        // 离线语音一键输入按钮
+                        Button {
+                            toggleVoiceListening()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: isListeningVoice ? "waveform" : "mic.fill")
+                                    .font(.subheadline)
+                                    .foregroundStyle(isListeningVoice ? .red : AppColor.primary)
+                                    .symbolEffect(.bounce, value: isListeningVoice)
+                                if isListeningVoice {
+                                    Text("说完了")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(.red)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(isListeningVoice ? Color.red.opacity(0.12) : AppColor.primary.opacity(0.12))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isListeningVoice ? "停止语音输入" : "语音输入菜名")
                     }
-                    .font(.caption)
+
+                    if isListeningVoice {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 6, height: 6)
+                            Text("正在聆听中（纯本地离线识别），可直接说出菜名组合…")
+                                .font(.caption2)
+                                .foregroundStyle(Color.red)
+                        }
+                        .padding(.leading, 2)
+                    } else if !hintText.isEmpty {
+                        Button("按描述重新估算") {
+                            Task { await runEstimation() }
+                        }
+                        .font(.caption)
+                    }
+
+                    // 快捷时段与常吃菜品气泡推荐
+                    let suggestions = quickSuggestionFoods
+                    if !suggestions.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("快捷补菜 / 搭配推荐：")
+                                .font(.caption2)
+                                .foregroundStyle(AppColor.secondaryText)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(suggestions) { food in
+                                        Button {
+                                            handleQuickSuggestionTap(food)
+                                        } label: {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "plus.circle.fill")
+                                                    .font(.caption2)
+                                                Text(food.name)
+                                                    .font(.caption.weight(.medium))
+                                            }
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .background(AppColor.surface)
+                                            .clipShape(Capsule())
+                                            .overlay(
+                                                Capsule()
+                                                    .stroke(AppColor.primary.opacity(0.2), lineWidth: 1)
+                                            )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
                 }
             }
         }
@@ -857,11 +948,142 @@ struct FoodPhotoCalorieView: View {
         .appCard()
     }
 
+    // MARK: - 快捷推荐与离线语音交互
+
+    private var quickSuggestionFoods: [FoodItem] {
+        let period = MealTimePeriod.from(date: mealDate)
+        let currentDishIDs: Set<String> = {
+            if let est = estimation.estimate {
+                return Set(est.dishes.map(\.food.id))
+            }
+            return []
+        }()
+
+        // 统计历史记录中高频食用的菜品
+        var countMap: [String: Int] = [:]
+        for r in records {
+            if let fID = r.foodID {
+                for id in fID.components(separatedBy: "+") {
+                    let clean = id.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !clean.isEmpty else { continue }
+                    countMap[clean, default: 0] += 1
+                }
+            }
+        }
+        let userFrequentIDs = countMap.sorted(by: { $0.value > $1.value }).map(\.key)
+
+        var result: [FoodItem] = []
+        var addedIDs = Set<String>()
+
+        // 优先级 1：用户常吃中匹配当前时段先验（乘数 >= 1.0）且不在当前餐中的菜品
+        for fid in userFrequentIDs {
+            guard !currentDishIDs.contains(fid), !addedIDs.contains(fid) else { continue }
+            if let item = FoodCatalog.items.first(where: { $0.id == fid }) {
+                if period.priorMultiplier(for: item) >= 1.0 {
+                    result.append(item)
+                    addedIDs.insert(item.id)
+                }
+            }
+            if result.count >= 4 { break }
+        }
+
+        // 优先级 2：当前用餐时段的高频代表性菜品
+        let timeBasedCandidates: [String] = {
+            switch period {
+            case .breakfast:
+                return ["steamed_bun", "soy_milk", "egg", "youtiao", "pancake_roll", "congee", "coffee"]
+            case .lunch:
+                return ["rice", "vegetable_dish", "stir_fry_meat", "tomato_egg_soup", "tofu", "chicken_breast"]
+            case .afternoonTea:
+                return ["coffee", "latte", "fruit", "lemon_tea", "cake", "pure_milk"]
+            case .dinner:
+                return ["rice", "vegetable_dish", "soup", "fish", "stir_fry_cabbage", "sour_potato_shreds"]
+            case .lateNight:
+                return ["dumpling", "barbecue", "oden", "fruit", "soy_milk"]
+            }
+        }()
+
+        for fid in timeBasedCandidates {
+            guard !currentDishIDs.contains(fid), !addedIDs.contains(fid) else { continue }
+            if let item = FoodCatalog.items.first(where: { $0.id == fid }) {
+                result.append(item)
+                addedIDs.insert(item.id)
+            }
+            if result.count >= 8 { break }
+        }
+
+        return result
+    }
+
+    private func handleQuickSuggestionTap(_ food: FoodItem) {
+        if estimation.estimate != nil {
+            estimation.addDish(food: food)
+            didAdjust = true
+            Haptic.light()
+        } else {
+            if hintText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                hintText = food.name
+            } else {
+                hintText += "、" + food.name
+            }
+            Haptic.light()
+            Task {
+                await runEstimation()
+            }
+        }
+    }
+
+    private func toggleVoiceListening() {
+        if isListeningVoice {
+            stopVoiceListeningAndEstimate()
+        } else {
+            startVoiceListening()
+        }
+    }
+
+    private func startVoiceListening() {
+        Task {
+            let granted = await voiceService.requestPermissions()
+            guard granted else { return }
+            do {
+                try voiceService.startListening()
+                isListeningVoice = true
+                Haptic.medium()
+            } catch {
+                isListeningVoice = false
+            }
+        }
+    }
+
+    private func stopVoiceListeningAndEstimate() {
+        guard isListeningVoice else { return }
+        isListeningVoice = false
+        voiceService.stopListening()
+        Haptic.light()
+        let clean = hintText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !clean.isEmpty {
+            Task {
+                await runEstimation()
+            }
+        }
+    }
+
+    private func stopVoiceListening() {
+        isListeningVoice = false
+        voiceService.stopListening()
+    }
+
     // MARK: - 动作
 
     private func runEstimation() async {
         guard let photo else { return }
-        _ = await estimation.estimateCalories(for: photo, userHint: hintText)
+        let historyPrior = FoodEstimationService.buildHistoryPrior(from: records)
+        _ = await estimation.estimateCalories(
+            for: photo,
+            userHint: hintText,
+            mealDate: mealDate,
+            history: historyPrior
+        )
         didAdjust = false
     }
 

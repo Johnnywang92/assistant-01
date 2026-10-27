@@ -121,18 +121,29 @@ enum ShareInboxService {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        if let parsed = ExpenseNaturalLanguageParser.parse(trimmed) {
-            let record = ExpenseRecord(
-                amount: parsed.amount,
-                isIncome: parsed.isIncome,
-                category: parsed.category,
-                title: parsed.title,
-                rawText: trimmed,
-                date: parsed.date
-            )
-            context.insert(record)
+        let parsedItems = ExpenseNaturalLanguageParser.parseMulti(trimmed)
+        if !parsedItems.isEmpty {
+            for parsed in parsedItems {
+                let record = ExpenseRecord(
+                    amount: parsed.amount,
+                    isIncome: parsed.isIncome,
+                    category: parsed.category,
+                    title: parsed.title,
+                    rawText: trimmed,
+                    date: parsed.date,
+                    currencyCode: parsed.isForeignCurrency ? parsed.currency.rawValue : nil,
+                    foreignAmount: parsed.foreignAmount,
+                    exchangeRateToCNY: parsed.exchangeRateToCNY
+                )
+                context.insert(record)
+            }
             try? context.save()
-            NotificationService.post(title: "助手 · 分享记账", body: "已记 ¥\(formatAmount(parsed.amount)) \(record.title)")
+            if parsedItems.count == 1, let parsed = parsedItems.first {
+                NotificationService.post(title: "助手 · 分享记账", body: "已记 ¥\(formatAmount(parsed.amount)) \(parsed.title)")
+            } else {
+                let total = parsedItems.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount }
+                NotificationService.post(title: "助手 · 分享记账", body: "已记 \(parsedItems.count) 笔 · 合计 ¥\(formatAmount(total))")
+            }
             return
         }
 

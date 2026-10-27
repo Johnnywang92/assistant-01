@@ -198,6 +198,8 @@ final class TodoItem {
     var isSkillPractice: Bool = false
     /// 该条打卡的预估投入分钟数
     var skillPracticeMinutes: Int = 0
+    /// 关联的人生大事任务 ID（AI 行动项镜像待办；软关联，旧数据为 nil）
+    var lifeEventTaskID: UUID?
     /// 写入系统日历后的 EKEvent identifier（用于双向同步与删除，防止孤儿日程）
     var calendarItemIdentifier: String?
     /// 到站/落地前清点随身物品的提醒时刻；非 nil 即表示该待办开启了到站提醒。
@@ -215,6 +217,7 @@ final class TodoItem {
          qrCodePayload: String? = nil, qrCodeImageData: Data? = nil, attachmentImageData: Data? = nil,
          skillPathID: UUID? = nil, skillStageIndex: Int = 0,
          isSkillPractice: Bool = false, skillPracticeMinutes: Int = 0,
+         lifeEventTaskID: UUID? = nil,
          calendarItemIdentifier: String? = nil,
          arrivalReminderAt: Date? = nil, arrivalTransportRaw: String? = nil) {
         self.id = UUID()
@@ -240,6 +243,7 @@ final class TodoItem {
         self.skillStageIndex = skillStageIndex
         self.isSkillPractice = isSkillPractice
         self.skillPracticeMinutes = skillPracticeMinutes
+        self.lifeEventTaskID = lifeEventTaskID
         self.calendarItemIdentifier = calendarItemIdentifier
         self.arrivalReminderAt = arrivalReminderAt
         self.arrivalTransportRaw = arrivalTransportRaw
@@ -350,6 +354,8 @@ final class TodoItem {
     @discardableResult
     func markAsCompleted(in context: ModelContext) -> TodoItem? {
         self.status = .done
+        // 人生大事镜像联动：首页勾完 → 项目任务同步完成
+        LifeEventTodoLink.syncTask(for: self, in: context)
         TodoNotificationManager.shared.cancelNotification(for: self.id)
         // 行程已完成，到站清点提醒随之撤销（递归事项下一期不继承该提醒）
         Task { @MainActor in TripArrivalService.shared.cancelAllReminders(for: self.id) }

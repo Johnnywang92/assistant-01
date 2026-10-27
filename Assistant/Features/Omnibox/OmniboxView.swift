@@ -37,6 +37,16 @@ struct OmniboxView: View {
     @State private var planNeedsClarification = false
     /// 意图分布的可读摘要（如「记账 78%（次选 新建待办 12%）」）。
     @State private var planIntentReason: String?
+    /// 判别层完整分布：用于「按可能性排序」的候选条与反馈快照。
+    @State private var planDistribution: IntentDistribution?
+    /// 用户点选的意图（可能性排序候选切换）；nil 表示按模型判别的 top1 预填。
+    @State private var forcedCapability: ActionCapability?
+    /// 本条拆解已收到点赞/点踩：收到后隐藏按钮，避免重复记录。
+    @State private var feedbackRecorded = false
+    @State private var feedbackHint: String?
+    /// 最近一条点踩记录：随后点选候选 chip 切换意图时，把该标签回填为「正确意图」，
+    /// 构成实锤混淆对（判成 X、实际是 Y），供识别质量统计。
+    @State private var lastDownFeedback: OmniboxJudgmentFeedback?
     @State private var outcomes: [ActionExecutionOutcome] = []
     @State private var errorMessage: String?
     @State private var lastCapture: OmniboxCapture?
@@ -50,8 +60,43 @@ struct OmniboxView: View {
     @State private var clipboardRemainingSeconds: Int = 3
     @State private var isClipboardDismissPaused: Bool = false
     @State private var clipboardDismissTask: Task<Void, Never>?
+    /// 剪贴板带入内容的指纹：关闭时若最终未执行，记入拒绝记忆，同内容不再唤起
+    @State private var clipboardPrefillKey: String?
+    /// 用户点过「查看并保留内容」→ 明确想要这条内容，关闭时不记拒绝
+    @State private var clipboardContentKept = false
+    /// 本次会话执行过写库 → 内容已被采纳，关闭时不记拒绝
+    @State private var clipboardDidExecute = false
+    /// AI 决策导入已执行：回执区给「关联到人生大事」入口
+    @State private var showAIDecisionArchive = false
+    /// 归档完成提示（如「已关联 3 条待办到「购车」」）
+    @State private var archiveHint: String?
+    /// 投喂口内麦克风（缺口 4）：复用 VoiceDialogueService，转写实时进输入框
+    @ObservedObject private var voiceService = VoiceDialogueService.shared
+    @State private var isVoiceListening = false
+    /// 开听前输入框已有内容：实时转写 = 基底 + 空格 + 识别文本，避免覆盖用户手输
+    @State private var preSpeechBase = ""
 
     private var images: [UIImage] { attachments.map(\.image) }
+
+    /// 趋势问句执行后应跳转的图表页（expense → 记账页趋势卡；diet → 健康数据饮食趋势卡）
+    private var trendNavigationDomain: String? {
+        for outcome in outcomes where outcome.succeeded {
+            if outcome.action.capability == .queryLookup,
+               outcome.action.params["kind"] == "trend" {
+                return outcome.action.params["domain"] ?? "expense"
+            }
+        }
+        return nil
+    }
+
+    /// 本次执行里来自 AI 决策导入的待办（回执区挂「关联到人生大事」用）
+    private var aiDecisionImportedCount: Int {
+        outcomes.filter {
+            $0.succeeded
+                && $0.action.capability == .todoCreate
+                && $0.action.params["fromAIDecision"] == "1"
+        }.count
+    }
 
     var body: some View {
         NavigationStack {
@@ -143,10 +188,23 @@ struct OmniboxView: View {
             }
             Task { await reloadPickerAttachments(items) }
         }
+        .onChange(of: voiceService.recognizedText) { _, transcript in
+            guard isVoiceListening else { return }
+            let clean = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            inputText = clean.isEmpty ? preSpeechBase : (preSpeechBase.isEmpty ? clean : preSpeechBase + " " + clean)
+        }
+        .onChange(of: voiceService.isListening) { _, listening in
+            // 引擎侧自行收尾（识别结束/被其他语音入口抢占）时同步本地状态
+            if !listening && isVoiceListening {
+                isVoiceListening = false
+            }
+        }
         .onAppear {
             consumePrefillIfPresent()
         }
         .onDisappear {
+            stopVoiceListening()
+            recordClipboardRejectionIfNeeded()
             cancelCountdown()
             cancelClipboardDismiss()
         }
@@ -157,6 +215,16 @@ struct OmniboxView: View {
         .sheet(isPresented: $showHistory) {
             OmniboxHistoryView()
                 .environment(\.locale, LanguageManager.shared.locale)
+        }
+        .sheet(isPresented: $showAIDecisionArchive) {
+            AIDecisionArchivePicker(
+                onPick: { project in
+                    archiveDecision(to: project)
+                    showAIDecisionArchive = false
+                },
+                onCancel: { showAIDecisionArchive = false }
+            )
+            .environment(\.locale, LanguageManager.shared.locale)
         }
     }
 
@@ -186,11 +254,24 @@ struct OmniboxView: View {
         router.omniboxPrefill = nil
         isClipboardAutoTriggered = router.omniboxIsClipboardAutoIngest
         router.omniboxIsClipboardAutoIngest = false
+        // 记下内容指纹：关闭时若未执行，记入拒绝记忆（见 recordClipboardRejectionIfNeeded）
+        clipboardPrefillKey = ClipboardIngestionService.contentKey(of: payload)
+        clipboardContentKept = false
+        clipboardDidExecute = false
         apply(payload: payload)
         Task { await runPlan() }
         if isClipboardAutoTriggered {
             startClipboardDismissCountdown()
         }
+    }
+
+    /// 剪贴板带入的内容被「看过就关」且从未执行 → 记住这条内容不需要，下次不再唤起。
+    /// 「查看并保留内容」或执行过写库的不记——用户已经表达了需要它。
+    private func recordClipboardRejectionIfNeeded() {
+        guard let key = clipboardPrefillKey, !key.isEmpty,
+              !clipboardContentKept, !clipboardDidExecute else { return }
+        clipboardPrefillKey = nil
+        ClipboardIngestionService.shared.markContentKeyRejected(key)
     }
 
     private func apply(payload: OmniboxPayload) {
@@ -255,10 +336,39 @@ struct OmniboxView: View {
                 }
             }
 
+            // 语音聆听态：实时声波 + 提示。说完再点一次麦克风结束并保留转写。
+            if isVoiceListening {
+                HStack(spacing: 8) {
+                    HStack(alignment: .center, spacing: 2) {
+                        ForEach(0..<5, id: \.self) { index in
+                            Capsule()
+                                .fill(Color.red.opacity(0.75))
+                                .frame(width: 3, height: 6 + CGFloat(voiceLevel(at: index)) * 16)
+                        }
+                    }
+                    Text(L10n.tr("正在聆听…说完再点一次结束"))
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                    Spacer()
+                }
+                .padding(.horizontal, 4)
+            }
+
             HStack(spacing: 12) {
                 PhotosPicker(selection: $pickerItems, maxSelectionCount: 5, matching: .images) {
                     Label(L10n.tr("图片"), systemImage: "photo.on.rectangle")
                         .font(.subheadline)
+                }
+                Button {
+                    cancelClipboardDismiss()
+                    toggleVoiceListening()
+                } label: {
+                    Label(
+                        L10n.tr("语音"),
+                        systemImage: isVoiceListening ? "stop.circle.fill" : "mic"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(isVoiceListening ? .red : .primary)
                 }
                 if inputText.isEmpty && images.isEmpty && clipboard.hasIngestibleContent {
                     Button {
@@ -316,6 +426,51 @@ struct OmniboxView: View {
     private var canSubmit: Bool {
         phase != .planning &&
         (!inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty)
+    }
+
+    // MARK: - 投喂口内语音输入
+
+    private func toggleVoiceListening() {
+        if isVoiceListening {
+            stopVoiceListening()
+            Haptic.light()
+        } else {
+            startVoiceListening()
+        }
+    }
+
+    private func startVoiceListening() {
+        Task {
+            let granted = await voiceService.requestPermissions()
+            guard granted else {
+                errorMessage = L10n.tr("需要麦克风与语音识别权限才能语音投喂")
+                return
+            }
+            do {
+                // 基底取当前输入框内容：转写在其后追加，不覆盖手输/粘贴的内容
+                preSpeechBase = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+                try voiceService.startListening()
+                isVoiceListening = true
+                Haptic.medium()
+            } catch {
+                isVoiceListening = false
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func stopVoiceListening() {
+        guard isVoiceListening else { return }
+        isVoiceListening = false
+        voiceService.stopListening()
+        preSpeechBase = ""
+    }
+
+    /// 声波条各柱的相对高度（0~1）：按 audioLevel 加一点相位差，避免五根同高
+    private func voiceLevel(at index: Int) -> Float {
+        let level = voiceService.audioLevel
+        let phase = [0.0, 0.35, 0.7, 0.35, 0.0][index % 5]
+        return min(1, max(0.12, level * Float(1.0 - phase * 0.6)))
     }
 
     private var emptyHint: some View {
@@ -385,9 +540,44 @@ struct OmniboxView: View {
                     .foregroundStyle(.orange)
             }
 
+            // 按可能性排序的意图候选：点选切换即按该意图重新拆解并预填写。
+            if let distribution = planDistribution, distribution.ranked.count > 1 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.tr("按可能性排序 · 点选切换意图重新预填"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(distribution.ranked.prefix(3), id: \.label) { score in
+                                let isForced = forcedCapability == score.label.capability
+                                let isTop = forcedCapability == nil && score.label == distribution.top
+                                Button {
+                                    cancelClipboardDismiss()
+                                    recordIntentCorrection(to: score.label)
+                                    forcedCapability = score.label.capability
+                                    Task { await runPlan(force: true, forcedCapability: score.label.capability) }
+                                } label: {
+                                    Text("\(score.label.displayName) \(Int((score.probability * 100).rounded()))%")
+                                        .font(.caption.bold())
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            Capsule().fill((isForced || isTop) ? Color.purple.opacity(0.18) : Color(.tertiarySystemGroupedBackground))
+                                        )
+                                        .foregroundStyle((isForced || isTop) ? Color.purple : Color.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+
             ForEach(actions) { action in
                 actionCard(actionBinding(for: action))
             }
+
+            judgmentFeedbackBar
 
             if let errorMessage {
                 Text(errorMessage)
@@ -422,6 +612,87 @@ struct OmniboxView: View {
     }
 
     private var selectedCount: Int { actions.filter(\.isSelected).count }
+
+    // MARK: - 判断反馈（点赞/点踩）
+
+    /// 「这次理解准确吗」的点赞/点踩条。反馈落库后回流到判别：
+    /// 被点踩的输入下次强制进确认，被点赞的意图下次优先预填。
+    private var judgmentFeedbackBar: some View {
+        HStack(spacing: 10) {
+            if feedbackRecorded {
+                Label(feedbackHint ?? L10n.tr("已记录你的反馈，下次会更准"), systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            } else {
+                Text(L10n.tr("这次理解准确吗？"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button {
+                    recordFeedback(.up)
+                } label: {
+                    Image(systemName: "hand.thumbsup")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                Button {
+                    recordFeedback(.down)
+                } label: {
+                    Image(systemName: "hand.thumbsdown")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                if let feedbackHint {
+                    Text(feedbackHint)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+            }
+            Spacer()
+        }
+    }
+
+    /// 记录一次判别反馈。label 取判别层 top1（判别不可用时退化为首个动作的能力标签），
+    /// 同时快照 topProbability/margin 与次选标签，为阈值校准与识别质量统计积累真实语料。
+    private func recordFeedback(_ verdict: JudgmentFeedback.Verdict) {
+        let labelRaw = planDistribution?.top?.rawValue
+            ?? actions.first.flatMap { action in
+                OmniboxIntentLabel.allCases.first { $0.capability == action.capability }?.rawValue
+            }
+            ?? ""
+        let record = JudgmentFeedback(
+            inputText: IntentFeedbackMemory.normalize(lastCapture?.payloads.compactMap { payload -> String? in
+                switch payload {
+                case .text(let t), .audioTranscript(let t): return t
+                case .image: return nil
+                }
+            }.joined(separator: " ") ?? inputText),
+            labelRaw: labelRaw,
+            verdict: verdict,
+            topProbability: planDistribution?.topProbability ?? 0,
+            margin: planDistribution?.margin ?? 0,
+            runnerUpLabelRaw: planDistribution.flatMap { dist in
+                dist.ranked.count > 1 ? dist.ranked[1].label.rawValue : nil
+            }
+        )
+        let stored = OmniboxJudgmentFeedback(record)
+        context.insert(stored)
+        try? context.save()
+        feedbackRecorded = true
+        lastDownFeedback = verdict == .down ? stored : nil
+        feedbackHint = verdict == .down
+            ? L10n.tr("下次同类输入会让你先确认；可点上方候选切换意图")
+            : nil
+        Haptic.selection()
+    }
+
+    /// 点踩后点选候选 chip = 用户给出了正确意图 → 回填 correctedLabelRaw，
+    /// 与原判别标签构成实锤混淆对（缺口 7 识别质量统计的核心语料）。
+    private func recordIntentCorrection(to label: OmniboxIntentLabel) {
+        guard let down = lastDownFeedback, down.correctedLabelRaw == nil,
+              label.rawValue != down.labelRaw else { return }
+        down.correctedLabelRaw = label.rawValue
+        try? context.save()
+    }
 
     /// 按 ID 安全索引动作 Binding：避免 `actions` 清空或重算过渡帧中，
     /// UIKit `UISwitch` / `TextField` 持有的旧下标 Binding 触发 Array 越界断言闪退。
@@ -1186,6 +1457,46 @@ struct OmniboxView: View {
                 .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
+            // 趋势问句 → 一键跳趋势图表页（缺口 6：趋势问句路由到趋势查询）
+            if let domain = trendNavigationDomain {
+                Button {
+                    openTrendChart(domain: domain)
+                } label: {
+                    Label(
+                        domain == "diet" ? L10n.tr("查看饮食趋势图") : L10n.tr("查看消费趋势图"),
+                        systemImage: "chart.line.uptrend.xyaxis"
+                    )
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+                .tint(.purple)
+            }
+
+            // AI 决策导入 → 可归档到人生大事项目（复用导入解析器的项目关联语义）
+            if let archiveHint {
+                Label(archiveHint, systemImage: "checkmark.seal.fill")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            } else if aiDecisionImportedCount > 0 {
+                Button {
+                    showAIDecisionArchive = true
+                } label: {
+                    Label(
+                        L10n.tr("关联到人生大事项目") + "（\(aiDecisionImportedCount)）",
+                        systemImage: "sparkles"
+                    )
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+            }
+
+            judgmentFeedbackBar
+
             if let errorMessage {
                 Text(errorMessage)
                     .font(.caption)
@@ -1228,12 +1539,15 @@ struct OmniboxView: View {
 
     // MARK: - 流程
 
-    private func runPlan(force: Bool = false) async {
-        guard canSubmit else { return }
+    private func runPlan(force: Bool = false, forcedCapability: ActionCapability? = nil) async {
+        guard force || canSubmit else { return }
         Haptic.selection()
         dismissKeyboard()
         phase = .planning
         errorMessage = nil
+        feedbackRecorded = false
+        feedbackHint = nil
+        archiveHint = nil
         if force { actions = [] }
 
         var payloads: [OmniboxPayload] = []
@@ -1249,12 +1563,23 @@ struct OmniboxView: View {
             source: images.isEmpty ? .paste : .mixed
         )
 
-        let plan = await OmniboxPlanner().plan(capture: capture)
+        // 反馈回流：被点踩的输入强制进确认，被点赞的意图优先预填
+        let feedback = loadFeedbackMemory()
+        let plan = await OmniboxPlanner().plan(
+            capture: capture,
+            forcedCapability: forcedCapability ?? self.forcedCapability,
+            feedback: feedback
+        )
         planEngine = plan.engine
         planFallbackReason = plan.fallbackReason
         planNeedsClarification = plan.needsClarification
         planIntentReason = plan.intentDistribution?.reasonText
+        planDistribution = plan.intentDistribution
         if plan.actions.isEmpty {
+            // P0-2：拆解失败的投喂也要留痕（planned 状态事务），历史页可追溯原文
+            let trace = OmniboxTransaction(capture: capture, actions: [], engine: plan.engine)
+            context.insert(trace)
+            try? context.save()
             // 纯图片但 OCR 与食物视觉识别均无结果时给出针对性提示
             let hasImages = !images.isEmpty
             errorMessage = (hasImages && plan.normalizedText.isEmpty)
@@ -1268,11 +1593,19 @@ struct OmniboxView: View {
         phase = .confirm
     }
 
+    /// 从持久化的点赞/点踩记录构建判别回流记忆
+    private func loadFeedbackMemory() -> IntentFeedbackMemory {
+        let records = ((try? context.fetch(FetchDescriptor<OmniboxJudgmentFeedback>())) ?? [])
+            .map(\.feedback)
+        return IntentFeedbackMemory(records: records)
+    }
+
     private func executeSelected() {
         cancelCountdown()
         cancelClipboardDismiss()
         let selected = actions.filter(\.isSelected)
         guard !selected.isEmpty else { return }
+        clipboardDidExecute = true
         Haptic.success()
         dismissKeyboard()
 
@@ -1314,17 +1647,81 @@ struct OmniboxView: View {
     }
 
     private func resetForNextFeed() {
+        stopVoiceListening()
         cancelCountdown()
         cancelClipboardDismiss()
+        lastDownFeedback = nil
         inputText = ""
         attachments = []
         pickerItems = []
         actions = []
         outcomes = []
         errorMessage = nil
+        archiveHint = nil
         lastCapture = nil
         lastTransaction = nil
         phase = .idle
+    }
+
+    // MARK: - 趋势问句跳转图表页（缺口 6）
+
+    private func openTrendChart(domain: String) {
+        cancelCountdown()
+        cancelClipboardDismiss()
+        if domain == "diet" {
+            // 饮食趋势卡在「生活档案 → 健康数据」
+            NavigationRouter.shared.navigateTo(tab: .vault, vaultDestination: "healthData")
+        } else {
+            // 消费趋势卡在「记账」页
+            NavigationRouter.shared.selectedTab = .expenses
+        }
+        dismiss()
+    }
+
+    // MARK: - AI 决策归档到人生大事项目（缺口 6）
+
+    /// 把本次导入的 AI 决策待办软关联到所选人生大事项目：
+    /// 存项目级决策摘要 + 建 LifeEventTask + 回填 TodoItem.lifeEventTaskID（双向联动）。
+    /// 与 `LifeEventHomeTodoMirror` 同口径，但不再重复建首页待办（执行时已建）。
+    private func archiveDecision(to project: LifeEventProject) {
+        let pid = project.id
+        let stages = ((try? context.fetch(
+            FetchDescriptor<LifeEventStage>(predicate: #Predicate { $0.projectID == pid })
+        )) ?? []).sorted { $0.sortOrder < $1.sortOrder }
+
+        let stage: LifeEventStage
+        if let existing = stages.first {
+            stage = existing
+        } else {
+            // 项目还没有阶段时补一个默认筹备阶段，避免 stageID 悬空
+            stage = LifeEventStage(projectID: project.id, title: "筹备", sortOrder: 0)
+            context.insert(stage)
+        }
+
+        project.aiDecisionSummary = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        project.aiDecisionAt = .now
+
+        var linked = 0
+        for outcome in outcomes
+        where outcome.succeeded
+            && outcome.action.capability == .todoCreate
+            && outcome.action.params["fromAIDecision"] == "1" {
+            guard let todoID = outcome.undo.recordID else { continue }
+            let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == todoID })
+            guard let todo = (try? context.fetch(descriptor))?.first else { continue }
+
+            let task = LifeEventTask(projectID: project.id, stageID: stage.id, title: todo.title)
+            context.insert(task)
+            todo.lifeEventTaskID = task.id
+            todo.detail = "人生大事·\(project.title)（\(stage.title)）· AI 决策建议"
+            todo.sourceText = "来自人生大事：\(project.title)"
+            linked += 1
+        }
+
+        try? context.save()
+        WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
+        Haptic.success()
+        archiveHint = "已关联 \(linked) 条待办到「\(project.title)」"
     }
 
     // MARK: - 剪贴板自动唤起倒计时横幅与控制
@@ -1380,6 +1777,7 @@ struct OmniboxView: View {
             // 醒目操作按钮
             HStack(spacing: 10) {
                 Button {
+                    clipboardContentKept = true
                     cancelClipboardDismiss()
                     Haptic.light()
                 } label: {
@@ -1526,5 +1924,82 @@ private extension View {
             #selector(UIResponder.resignFirstResponder),
             to: nil, from: nil, for: nil
         )
+    }
+}
+
+// MARK: - AI 决策归档项目选择器
+
+/// 从投喂口把 AI 决策待办关联到人生大事项目时的轻量项目选择器。
+/// 选中项目即回调，归档逻辑在 OmniboxView.archiveDecision（建任务 + 软关联 + 存摘要）。
+private struct AIDecisionArchivePicker: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+
+    let onPick: (LifeEventProject) -> Void
+    let onCancel: () -> Void
+
+    @State private var projects: [LifeEventProject] = []
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if projects.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "sparkles")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                        Text(L10n.tr("还没有人生大事项目"))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Text(L10n.tr("先在「人生大事」里创建项目，再把 AI 决策归档进来"))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
+                } else {
+                    List(projects) { project in
+                        Button {
+                            onPick(project)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(project.title)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    if let summary = project.aiDecisionSummary, !summary.isEmpty {
+                                        Text(L10n.tr("已有关联决策"))
+                                            .font(.caption2)
+                                            .foregroundStyle(.orange)
+                                    }
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(L10n.tr("关联到人生大事"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.tr("取消")) {
+                        onCancel()
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .onAppear {
+            let descriptor = FetchDescriptor<LifeEventProject>(
+                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+            )
+            projects = ((try? context.fetch(descriptor)) ?? [])
+                .filter { $0.statusRaw == "active" }
+        }
     }
 }

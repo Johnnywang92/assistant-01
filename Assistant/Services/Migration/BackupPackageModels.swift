@@ -57,6 +57,10 @@ public struct BackupPackage: Codable {
     public var foodIntakeRecords: [FoodIntakeRecordDTO]?
     /// 饮水与饮品摄入记录（Schema V5 新增；旧版备份为 nil）
     public var waterIntakeRecords: [WaterIntakeRecordDTO]?
+    /// 判别反馈语料（Schema V3 备份格式新增；旧版备份为 nil）
+    public var judgmentFeedbacks: [JudgmentFeedbackDTO]?
+    /// 每日健康快照（Schema V4 备份格式新增；旧版备份为 nil）
+    public var healthSnapshots: [HealthDaySnapshotRecordDTO]?
     /// 用户偏好设置快照（旧版备份为 nil；收录原则见 AssistantCore 的 AssistantSettingsKeys）
     public var settings: SettingsSnapshotDTO?
 }
@@ -90,6 +94,8 @@ public struct TodoDTO: Codable {
     public var skillStageIndex: Int?
     public var isSkillPractice: Bool?
     public var skillPracticeMinutes: Int?
+    // 人生大事镜像关联（旧备份为 nil）
+    public var lifeEventTaskID: UUID?
     // 系统日历联动与到站/落地清点提醒（旧备份为 nil）
     public var calendarItemIdentifier: String?
     public var arrivalReminderAt: Date?
@@ -464,6 +470,9 @@ public struct LifeEventProjectDTO: Codable {
     public var budgetLimit: Double
     public var statusRaw: String
     public var createdAt: Date
+    /// 项目级 AI 决策摘要（可选，旧备份缺键解出 nil）。
+    public var aiDecisionSummary: String?
+    public var aiDecisionAt: Date?
 }
 
 public struct LifeEventStageDTO: Codable {
@@ -484,6 +493,11 @@ public struct LifeEventTaskDTO: Codable {
     public var statusRaw: String
     public var ownerName: String?
     public var createdAt: Date
+    /// 需求问答答案 / AI 决策摘要 / 导入行动项（均可选，旧备份缺键解出 nil）。
+    public var answersJSON: String?
+    public var aiDecisionSummary: String?
+    public var aiActionItemsJSON: String?
+    public var aiConsultedAt: Date?
 }
 
 public struct LifeEventPersonDTO: Codable {
@@ -567,4 +581,43 @@ public struct WaterIntakeRecordDTO: Codable {
     public var syncedToHealthKit: Bool
     public var createdAt: Date
     public var linkedExpenseID: UUID?
+}
+
+/// 判别反馈语料（点赞/点踩 + 概率快照 + 混淆对标签）。
+/// 是阈值校准与识别质量统计的全部数据源，丢了就得从零攒。
+public struct JudgmentFeedbackDTO: Codable {
+    public var id: UUID
+    public var createdAt: Date
+    public var inputText: String
+    public var labelRaw: String
+    public var verdictRaw: String
+    public var topProbability: Double
+    public var margin: Double
+    public var runnerUpLabelRaw: String?
+    public var correctedLabelRaw: String?
+}
+
+/// 每日健康快照（睡眠/步数/体征等日粒度记录）。
+/// 是睡眠与健康分数趋势的唯一数据源；HealthKit 不可回溯，丢了补不回来。
+public struct HealthDaySnapshotRecordDTO: Codable {
+    public var id: UUID
+    /// 归属日（当天 00:00）
+    public var day: Date
+    public var stepCount: Double?
+    public var activeEnergy: Double?
+    public var restingEnergy: Double?
+    public var dietaryWater: Double?
+    public var sleepHours: Double?
+    public var sleepREM: Double?
+    public var sleepDeep: Double?
+    public var heartRate: Double?
+    public var restingHeartRate: Double?
+    public var heartRateVariability: Double?
+    public var bloodOxygen: Double?
+    public var bodyTemperature: Double?
+    public var walkingSpeed: Double?
+    public var respiratoryRate: Double?
+    public var workoutMinutes: Double?
+    public var workoutCount: Int?
+    public var updatedAt: Date
 }

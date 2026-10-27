@@ -137,6 +137,10 @@ enum OmniboxExecutor {
             ExpenseWaterService.handleSaved(record, context: context)
         }
 
+        if !record.isIncome {
+            BudgetAlertService.shared.evaluateAndNotify(context: context)
+        }
+
         return ActionExecutionOutcome(
             id: action.id,
             action: action,
@@ -180,6 +184,9 @@ enum OmniboxExecutor {
         if record.category == .food {
             ExpenseWaterService.handleSaved(record, context: context)
         }
+        if !record.isIncome {
+            BudgetAlertService.shared.evaluateAndNotify(context: context)
+        }
 
         return ActionExecutionOutcome(
             id: action.id,
@@ -202,12 +209,27 @@ enum OmniboxExecutor {
         let detail = action.params["detail"]
         let dueAt = Self.resolveDueAt(params: action.params)
 
+        // 图片票务结构化识别的富参数（类型/取票码/站点/到站提醒）；缺省时保持旧行为
+        let type = TodoType(rawValue: action.params["typeRaw"] ?? "") ?? .general
+        let arrivalReminderAt: Date? = {
+            guard action.params["travelPickupMode"] != "pickup",
+                  let iso = action.params["arrivalAtISO"],
+                  let date = OmniboxPlanner.parseParamDate(iso), date > .now else { return nil }
+            return date
+        }()
+
         let todo = TodoItem(
-            type: .general,
+            type: type,
             title: title,
             detail: detail,
+            pickupCode: action.params["pickupCode"],
+            station: action.params["station"],
+            location: action.params["location"],
             dueAt: dueAt,
-            sourceText: "Omnibox投喂"
+            sourceText: action.params["sourceText"] ?? "Omnibox投喂",
+            qrCodePayload: action.params["qrCodePayload"],
+            arrivalReminderAt: arrivalReminderAt,
+            arrivalTransportRaw: action.params["arrivalTransport"]
         )
         context.insert(todo)
         TodoNotificationManager.shared.scheduleNotification(for: todo)
@@ -386,59 +408,33 @@ enum OmniboxExecutor {
 
     // MARK: query.lookup
 
+    /// 查询执行入口：结构化查询意图（汇总/趋势/日程/查找）走 `LifeQueryService` 一句话回答，
+    /// 取数全部谓词 + fetchLimit 下推 SQLite（原四表全扫已消除）。
     private static func executeLookup(_ action: PlannedAction, context: ModelContext) -> ActionExecutionOutcome {
-        let mention = action.params["target"] ?? action.params["query"] ?? "查询事项"
-        let keyword = mention.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawText = (action.params["query"] ?? action.params["target"] ?? "查询事项")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // 1. 优先查物品收纳与位置
-        if let stored = try? context.fetch(FetchDescriptor<StoredItem>()).first(where: {
-            $0.name.localizedStandardContains(keyword) || keyword.localizedStandardContains($0.name)
-        }) {
+        // 1. 结构化查询意图：「上周花了多少」「今天有什么安排」「最近消费趋势」「护照放哪了」
+        if let insight = QueryInsightEngine.parse(rawText) {
             return ActionExecutionOutcome(
                 id: action.id, action: action,
-                summary: "🔍 找到收纳：\(stored.name) 位于【\(stored.roomArea) · \(stored.location)】",
+                summary: LifeQueryService.answer(insight, context: context),
                 undo: OmniboxUndoToken(kind: .memoLine)
             )
         }
 
-        // 2. 查家庭常备药
-        if let med = try? context.fetch(FetchDescriptor<MedicineItem>()).first(where: {
-            $0.name.localizedStandardContains(keyword) || keyword.localizedStandardContains($0.name)
-        }) {
-            return ActionExecutionOutcome(
-                id: action.id, action: action,
-                summary: "🔍 找到常备药：\(med.name) 位于【\(med.roomArea) · \(med.storageLocation)】",
-                undo: OmniboxUndoToken(kind: .memoLine)
-            )
-        }
-
-        // 3. 查重要证件
-        if let doc = try? context.fetch(FetchDescriptor<IDDocumentItem>()).first(where: {
-            $0.title.localizedStandardContains(keyword) || keyword.localizedStandardContains($0.title)
-        }) {
-            let num = doc.documentNumber.map { "（号码：\($0)）" } ?? ""
-            return ActionExecutionOutcome(
-                id: action.id, action: action,
-                summary: "🔍 找到证件：\(doc.title)\(num)",
-                undo: OmniboxUndoToken(kind: .memoLine)
-            )
-        }
-
-        // 4. 查纪念日
-        if let anniv = try? context.fetch(FetchDescriptor<AnniversaryItem>()).first(where: {
-            $0.title.localizedStandardContains(keyword) || keyword.localizedStandardContains($0.title)
-        }) {
-            return ActionExecutionOutcome(
-                id: action.id, action: action,
-                summary: "🔍 找到纪念日：\(anniv.title)（还有 \(anniv.daysUntilNext) 天）",
-                undo: OmniboxUndoToken(kind: .memoLine)
-            )
-        }
-
+        // 2. 纯关键词查找（「查找发票」这类无领域词检索）
+        let keyword = QueryInsightEngine.extractLookupKeyword(rawText) ?? rawText
+        let lookupInsight = QueryInsight(
+            domain: .storage,
+            kind: .lookup,
+            timeRange: .allTime,
+            keyword: keyword,
+            rawText: rawText
+        )
         return ActionExecutionOutcome(
-            id: action.id,
-            action: action,
-            summary: "🔍 查询完成：未找到匹配的收纳或特定记录，已检索「\(keyword)」",
+            id: action.id, action: action,
+            summary: LifeQueryService.lookup(insight: lookupInsight, context: context),
             undo: OmniboxUndoToken(kind: .memoLine)
         )
     }
@@ -932,6 +928,7 @@ enum OmniboxExecutor {
                     if let detail = snapshot["detail"] { todo.detail = detail }
                     if let statusRaw = snapshot["statusRaw"], let status = TodoStatus(rawValue: statusRaw) {
                         todo.status = status
+                        LifeEventTodoLink.syncTask(for: todo, in: context)
                     }
                     if let dueAtISO = snapshot["dueAtISO"] {
                         todo.dueAt = ISO8601DateFormatter().date(from: dueAtISO)

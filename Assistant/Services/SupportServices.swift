@@ -64,18 +64,61 @@ enum NotificationService {
     }
 }
 
-/// 免费账号签名 7 天过期提醒。
+/// 免费账号签名 7 天过期提醒与证书有效期解析。
 enum ExpiryReminder {
-    /// 本次安装时间（App 包的创建时间，每次重装都会更新）
-    static var installDate: Date {
-        let attrs = try? FileManager.default.attributesOfItem(atPath: Bundle.main.bundlePath)
-        return attrs?[.creationDate] as? Date ?? .now
+    /// 从应用包内的 embedded.mobileprovision 提取苹果签发的真实到期时间
+    static var actualExpiryDate: Date? {
+        guard let path = Bundle.main.path(forResource: "embedded", ofType: "mobileprovision"),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            return nil
+        }
+        guard let start = data.range(of: Data("<?xml".utf8)),
+              let end = data.range(of: Data("</plist>".utf8), options: .backwards, in: start.lowerBound..<data.count) else {
+            return nil
+        }
+        let plistData = data.subdata(in: start.lowerBound..<end.upperBound)
+        guard let plist = try? PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any],
+              let expirationDate = plist["ExpirationDate"] as? Date else {
+            return nil
+        }
+        return expirationDate
     }
 
-    static var expiryDate: Date { installDate.addingTimeInterval(7 * 24 * 3600) }
+    /// 证书到期时间（优先取真实签名描述文件到期时间，无描述文件时降级回退）
+    static var expiryDate: Date {
+        if let actual = actualExpiryDate {
+            return actual
+        }
+        let attrs = try? FileManager.default.attributesOfItem(atPath: Bundle.main.bundlePath)
+        let installDate = attrs?[.creationDate] as? Date ?? .now
+        return installDate.addingTimeInterval(7 * 24 * 3600)
+    }
 
+    /// 剩余有效天数
     static var daysLeft: Int {
-        max(0, Calendar.current.dateComponents([.day], from: .now, to: expiryDate).day ?? 0)
+        let diff = Calendar.current.dateComponents([.day, .hour], from: .now, to: expiryDate)
+        let days = diff.day ?? 0
+        let hours = diff.hour ?? 0
+        if days == 0 && hours > 0 {
+            return 1
+        }
+        return max(0, days)
+    }
+
+    /// 友好展示文本（如："剩 6 天 23 小时"）
+    static var displayDescription: String {
+        let now = Date.now
+        if expiryDate <= now {
+            return L10n.tr("已过期")
+        }
+        let diff = Calendar.current.dateComponents([.day, .hour], from: now, to: expiryDate)
+        let d = diff.day ?? 0
+        let h = diff.hour ?? 0
+        if d > 0 {
+            return L10n.isEnglish ? "\(d) days \(h) hrs left" : "剩 \(d) 天 \(h) 小时"
+        } else {
+            return L10n.isEnglish ? "\(h) hrs left" : "仅剩 \(h) 小时"
+        }
     }
 
     /// 在到期前 1 天发提醒（重复调用会覆盖之前的计划）。

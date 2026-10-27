@@ -66,6 +66,7 @@ public enum AssistantSettingsKeys {
         "user_lifestyle_profile",              // 生活节奏画像
         "senior_font_scale_level",             // 长辈模式字号
         "departure_selected_scene_raw",        // 上次选择的出门场景
+        "safe_to_spend_rhythm_mode",           // 安心花节奏模式
         ExpenseCurrency.preferredCurrencyKey   // 记账默认币种（出国游偏好）
     ]
 
@@ -82,12 +83,20 @@ public enum AssistantSettingsKeys {
         "periodic_report_weekly_enabled",          // 周报开关
         "periodic_report_monthly_enabled",         // 月报开关
         "floating_voice_enabled",                  // 悬浮语音球
-        "weather_alerts_enabled"                   // 天气预警
+        "weather_alerts_enabled",                  // 天气预警
+        "all_tab_grouping_mode",                   // 待办「全部」按类型分组
+        "learnedPlacesEnabled",                    // 常用地点感知
+        "voice_memo_auto_transcribe",              // 语音备忘自动转写
+        "voice_use_llm_engine"                     // 语音对话用 LLM 引擎
     ]
 
     public static let intKeys: [String] = [
-        "user_off_work_minutes",           // 下班时间（分钟）
-        "periodic_report_weekly_weekday"   // 周报星期
+        "user_off_work_minutes",                  // 下班时间（分钟）
+        "periodic_report_weekly_weekday",         // 周报星期
+        "day_timeline_wake_minutes",              // 日程轴起床时间（分钟）
+        "day_timeline_off_minutes",               // 日程轴下班时间（分钟）
+        "omnibox_auto_dismiss_seconds",           // 投喂口执行后自动关闭
+        "omnibox_clipboard_auto_dismiss_seconds"  // 投喂口剪贴板自动关闭
     ]
 
     public static let doubleKeys: [String] = [
@@ -97,7 +106,10 @@ public enum AssistantSettingsKeys {
         "app_background_dim",                    // 背景压暗
         "periodic_report_daily_time_interval",   // 日报推送时间
         "periodic_report_weekly_time_interval",  // 周报推送时间
-        "periodic_report_monthly_time_interval"  // 月报推送时间
+        "periodic_report_monthly_time_interval", // 月报推送时间
+        "daily_water_goal_ml",                   // 每日纯水目标
+        "intent_threshold_min_top",              // 判别阈值校准覆盖 · top1 下限
+        "intent_threshold_min_margin"            // 判别阈值校准覆盖 · 与次选最小差
     ] + ExpenseCurrency.allCases.filter { $0 != .cny }.map(\.customRateDefaultsKey)
 
     /// Data 型：首页 Tab 顺序（JSON 编码的板块列表）

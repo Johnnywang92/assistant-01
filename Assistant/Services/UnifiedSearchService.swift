@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import SwiftData
 import SwiftUI
@@ -113,7 +114,19 @@ public final class UnifiedSearchService: ObservableObject {
         var items: [UnifiedSearchResultItem] = []
 
         // 1. 待办事项 (TodoItem)
-        var todoDescriptor = FetchDescriptor<TodoItem>(
+        //
+        // 两段式检索：先取「完全命中」（标题 / 取件码全等），再取「包含命中」。
+        // 只按时间倒序取 20 条的话，一万条待办里那条三个月前的旧记录会被新记录
+        // 挤出结果区——用户输入了正确关键词也搜不到。那不是「搜得慢」，是「搜不到」。
+        var exactDescriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate<TodoItem> {
+                $0.title == trimmed || ($0.pickupCode != nil && $0.pickupCode! == trimmed)
+            },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        exactDescriptor.fetchLimit = 20
+
+        var containsDescriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate<TodoItem> {
                 $0.title.localizedStandardContains(trimmed) ||
                 ($0.detail != nil && $0.detail!.localizedStandardContains(trimmed)) ||
@@ -123,9 +136,32 @@ public final class UnifiedSearchService: ObservableObject {
             },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        todoDescriptor.fetchLimit = 20
-        if let todos = try? context.fetch(todoDescriptor) {
-            for t in todos {
+        containsDescriptor.fetchLimit = 60
+
+        var todoPool: [TodoItem] = []
+        if let exactTodos = try? context.fetch(exactDescriptor) {
+            todoPool += exactTodos
+        }
+        if let containsTodos = try? context.fetch(containsDescriptor) {
+            let exactIDs = Set(todoPool.map(\.id))
+            todoPool += containsTodos.filter { !exactIDs.contains($0.id) }
+        }
+
+        // 相关性排序口径在 Core（`SearchRelevance`），有单测覆盖「旧记录也能排到前面」
+        let rankedCandidates = SearchRelevance.rank(
+            todoPool.map {
+                SearchCandidate(
+                    id: $0.id, title: $0.title, detail: $0.detail, pickupCode: $0.pickupCode,
+                    courier: $0.courier, station: $0.station, location: $0.location,
+                    sourceText: $0.sourceText, date: $0.dueAt ?? $0.createdAt
+                )
+            },
+            query: trimmed,
+            limit: 20
+        )
+        let todoByID = Dictionary(todoPool.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for candidate in rankedCandidates {
+            guard let t = todoByID[candidate.id] else { continue }
                 let sub: String? = {
                     if let code = t.pickupCode, !code.isEmpty {
                         let stationText = t.station ?? t.location ?? ""
@@ -146,7 +182,6 @@ public final class UnifiedSearchService: ObservableObject {
                         vaultDestination: nil
                     )
                 )
-            }
         }
 
         // 2. 记账记录 (ExpenseRecord)

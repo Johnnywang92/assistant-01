@@ -619,6 +619,11 @@ struct SettingsView: View {
                                 .lineLimit(1)
                         }
                     }
+                    NavigationLink {
+                        IntentThresholdCalibrationView()
+                    } label: {
+                        Label("判别阈值校准", systemImage: "slider.horizontal.3")
+                    }
                 }
 
                 Section("安全") {
@@ -629,7 +634,12 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("快捷方式") {
+                Section("快捷方式与多端协同") {
+                    NavigationLink {
+                        WatchIntegrationGuideView()
+                    } label: {
+                        Label("Apple Watch 腕上协同指南", systemImage: "applewatch")
+                    }
                     NavigationLink {
                         ShortcutsGuideView()
                     } label: {
@@ -638,7 +648,13 @@ struct SettingsView: View {
                     NavigationLink("短信同步向导") { SetupGuideView() }
                 }
 
-                Section("数据管理") {
+                Section("数据管理与云同步") {
+                    NavigationLink {
+                        WebDAVSyncView()
+                    } label: {
+                        Label("NAS 与私有云同步 (WebDAV)", systemImage: "externaldrive.badge.icloud")
+                    }
+
                     NavigationLink {
                         DataMigrationView()
                     } label: {
@@ -647,7 +663,7 @@ struct SettingsView: View {
                 }
 
                 Section("系统信息") {
-                    LabeledContent("证书签名有效期", value: L10n.isEnglish ? "\(ExpiryReminder.daysLeft) days" : "\(ExpiryReminder.daysLeft) 天")
+                    LabeledContent("证书签名有效期", value: ExpiryReminder.displayDescription)
                     NavigationLink("最近收到的原生消息") { RawMessagesView() }
                 }
             }

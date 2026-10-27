@@ -10,7 +10,7 @@ final class OmniboxIntentRouterTests: XCTestCase {
 
     // MARK: - 标签集
 
-    func testLabelSetCoversAllNineCapabilities() {
+    func testLabelSetCoversAllCapabilities() {
         let labels = OmniboxIntentLabel.allCases
         XCTAssertEqual(labels.count, 16)
         XCTAssertEqual(Set(labels.map(\.capability)).count, 16, "标签与能力必须一一对应")

@@ -22,6 +22,8 @@ struct OmniboxPlanner {
         var intentDistribution: IntentDistribution? = nil
         /// 判别成功但置信不足：应提示用户补充，而非硬猜。
         var needsClarification: Bool = false
+        /// 用户点选的强制意图（按可能性排序预填写的选中项）；nil 表示未指定。
+        var forcedCapability: ActionCapability? = nil
     }
 
     struct DetectedFoodInfo {
@@ -29,7 +31,16 @@ struct OmniboxPlanner {
         var thumbnailData: Data?
     }
 
-    func plan(capture: OmniboxCapture) async -> PlanResult {
+    /// - Parameters:
+    ///   - forcedCapability: 用户从「可能性排序」候选里点选的意图。
+    ///     指定后拆解只围绕该意图展开（LLM 提示词收窄到单一能力，规则路径优先产出该能力），
+    ///     即「按可能性排序拆解 → 预填写」的切换入口。
+    ///   - feedback: 点赞/点踩回流记忆。被点踩过的输入强制进确认；被点赞过的意图优先预填。
+    func plan(
+        capture: OmniboxCapture,
+        forcedCapability: ActionCapability? = nil,
+        feedback: IntentFeedbackMemory = IntentFeedbackMemory()
+    ) async -> PlanResult {
         // 1. 归一输入：文字直接收集；图片并发 OCR（多图时比串行快数倍），并进行端侧食物视觉识别
         var parts: [String] = []
         var imageDatas: [Data] = []
@@ -50,35 +61,58 @@ struct OmniboxPlanner {
         let imageCount = imageDatas.count
 
         var detectedFoodInfos: [DetectedFoodInfo] = []
+        /// 图片结构化识别（票务/小票）直接产出的动作，不再让文本流重猜
+        var structuredActions: [PlannedAction] = []
+        /// 已被票务/小票认领的图片下标：不再喂给食物视觉，避免把票根识别成「餐食」
+        var claimedImageIndices = Set<Int>()
 
         if !imageDatas.isEmpty {
-            // 并发 OCR，按提交顺序回填保持图文对应
-            let ocrTexts: [String?] = await withTaskGroup(
-                of: (Int, String?).self,
-                returning: [String?].self
+            // 并发结构化识别（内含全文 OCR + 二维码/票务提取），按提交顺序回填保持图文对应
+            let recognitions: [(Int, ImageTodoRecognitionResult?)] = await withTaskGroup(
+                of: (Int, ImageTodoRecognitionResult?).self,
+                returning: [(Int, ImageTodoRecognitionResult?)].self
             ) { group in
                 for (index, data) in imageDatas.enumerated() {
                     group.addTask {
                         guard let image = UIImage(data: data) else { return (index, nil) }
-                        let text = try? await OCRService.shared.recognizeText(from: image)
-                        return (index, text)
+                        return (index, try? await OCRService.shared.recognizeTodo(from: image))
                     }
                 }
-                var results = [String?](repeating: nil, count: imageDatas.count)
-                for await (index, text) in group {
-                    results[index] = text
+                var results = [ImageTodoRecognitionResult?](repeating: nil, count: imageDatas.count)
+                for await (index, recognition) in group {
+                    results[index] = recognition
                 }
-                return results
+                return results.enumerated().map { ($0.offset, $0.element) }
             }
-            for text in ocrTexts.compactMap({ $0 }) {
-                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            for (index, recognition) in recognitions {
+                guard let recognition else { continue }
+
+                // 1. 票务/预约/行程等结构化命中 → 直接产出待办动作（带类型/时间/取票码/站点）
+                if forcedCapability == nil || forcedCapability == .todoCreate,
+                   let todo = Self.structuredTodoAction(from: recognition) {
+                    structuredActions.append(todo)
+                    claimedImageIndices.insert(index)
+                    continue
+                }
+
+                // 2. 小票/发票（存在明确「合计/实付」总额标签）→ 直接产出记账动作
+                if forcedCapability == nil || forcedCapability == .expenseCreate,
+                   let expense = Self.structuredExpenseAction(from: recognition.rawText) {
+                    structuredActions.append(expense)
+                    claimedImageIndices.insert(index)
+                    continue
+                }
+
+                // 3. 兜底：未命中结构化的图片文本回流文本管线（LLM/规则拆解）
+                let trimmed = recognition.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
                     parts.append("【图片识别内容】\n\(trimmed)")
                 }
             }
 
-            // 对图片进行端侧食物与饮食热量视觉识别（支持托盘餐、单品菜肴、饮品等）
-            for data in imageDatas {
+            // 对未被结构化认领的图片进行端侧食物与饮食热量视觉识别（支持托盘餐、单品菜肴、饮品等）
+            for (index, data) in imageDatas.enumerated() where !claimedImageIndices.contains(index) {
                 guard let image = UIImage(data: data) else { continue }
                 if let foodInfo = await Self.detectFoodInImage(image, userText: userRawText) {
                     detectedFoodInfos.append(foodInfo)
@@ -92,16 +126,37 @@ struct OmniboxPlanner {
             return PlanResult(actions: [], engine: "rules", normalizedText: "")
         }
 
+        // 1.5 大模型决策输出分流（缺口 6）：长文带「行动待办」结构的粘贴内容不再走
+        //     16 类意图判别（会被误判成收集箱备忘），直接复用人生大事的导入解析器拆行动项。
+        //     用户显式点选意图时不劫持——尊重用户指定。分流在判别层之前，分布为 nil。
+        if forcedCapability == nil,
+           LifeEventTaskPlanningEngine.looksLikeAIDecisionOutput(normalizedText) {
+            let decisionActions = Self.aiDecisionActions(from: normalizedText)
+            let merged = IntentConfidenceCalibrator.applySelectionPolicy(structuredActions + decisionActions)
+            return PlanResult(
+                actions: merged,
+                engine: "rules",
+                normalizedText: normalizedText,
+                intentDistribution: nil,
+                needsClarification: false,
+                forcedCapability: forcedCapability
+            )
+        }
+
         let foodThumbnailBase64 = detectedFoodInfos.first?.thumbnailData?.base64EncodedString()
 
+        // 反馈回流：被点踩过的输入不再默认信模型（强制进确认）；
+        // 被点赞过的意图优先预填（提升到判别分布首位）。
+        let disputedInput = !normalizedText.isEmpty && feedback.isDisputed(normalizedText)
+
         // 2. 意图判别：先分类再抽取。判别层只决定「是哪一类」，参数仍由 LLM 抽。
-        //    这一步的收益是把 9 类判别与参数抽取解耦——抽取阶段的提示词只需讲 1 类，
+        //    这一步的收益是把 16 类判别与参数抽取解耦——抽取阶段的提示词只需讲 1 类，
         //    且我们第一次拿到了**真实概率**（生成式路径的 confidence 是写死的常量）。
         var distribution: IntentDistribution?
-        if !normalizedText.isEmpty {
+        if !normalizedText.isEmpty, forcedCapability == nil {
             do {
                 let routed = try await OmniboxIntentRouter().route(normalizedText)
-                distribution = routed.distribution
+                distribution = feedback.promoted(routed.distribution, for: normalizedText)
             } catch {
                 // 判别失败（模型未就绪 / logits 不可读 / 标签映射不成立）不是致命错误，
                 // 直接降级到原有的生成式路径，保持既有行为不退化。
@@ -110,27 +165,31 @@ struct OmniboxPlanner {
         }
 
         // 3. LLM 优先：解析失败先带一次纠正重试，仍失败才降级规则兜底，且降级原因必须留痕
+        //    图片结构化动作（票务/小票）排最前——它们来自确定性识别，不是模型猜测。
         if !normalizedText.isEmpty {
-            let outcome = await Self.llmPlan(normalizedText, intentHint: distribution)
+            let outcome = await Self.llmPlan(normalizedText, intentHint: distribution, forcedCapability: forcedCapability)
             if let actions = outcome.actions, !actions.isEmpty {
                 let enriched = Self.enrichForeignCurrencyIfNeeded(actions: actions, sourceText: normalizedText)
                 let sanitized = Self.sanitizeAndEnrichLLMActions(actions: enriched, sourceText: normalizedText)
-                let calibrated = Self.applyIntentConfidence(sanitized, distribution: distribution)
+                let calibrated = IntentConfidenceCalibrator.apply(to: sanitized, distribution: distribution)
                 let withImages = Self.attachImageDataIfNeeded(actions: calibrated, foodThumbnailBase64: foodThumbnailBase64)
+                let merged = IntentConfidenceCalibrator.applySelectionPolicy(structuredActions + withImages)
                 return PlanResult(
-                    actions: withImages,
+                    actions: merged,
                     engine: "llm",
                     normalizedText: normalizedText,
                     intentDistribution: distribution,
-                    needsClarification: Self.needsClarification(withImages)
+                    needsClarification: disputedInput || IntentConfidenceCalibrator.needsClarification(merged),
+                    forcedCapability: forcedCapability
                 )
             }
             let reason = outcome.fallbackReason ?? "未知原因"
             print("⚠️ [Omnibox] LLM 路径未采纳，已降级规则引擎：\(reason)｜归一文 \(normalizedText.count) 字")
-            let ruleActions = Self.attachImageDataIfNeeded(
-                actions: Self.rulePlan(normalizedText),
+            var ruleActions = Self.attachImageDataIfNeeded(
+                actions: Self.rulePlan(normalizedText, preferredCapability: forcedCapability),
                 foodThumbnailBase64: foodThumbnailBase64
             )
+            ruleActions = IntentConfidenceCalibrator.applySelectionPolicy(structuredActions + ruleActions)
             return PlanResult(
                 actions: ruleActions,
                 engine: "rules",
@@ -139,14 +198,94 @@ struct OmniboxPlanner {
                 intentDistribution: distribution,
                 // 规则引擎自己带置信度（短信模板 0.9、松散金额 0.55），
                 // 不该被模型判别层的低置信覆盖——模板命中本来就是确定信号。
-                needsClarification: Self.needsClarification(ruleActions)
+                needsClarification: disputedInput || IntentConfidenceCalibrator.needsClarification(ruleActions),
+                forcedCapability: forcedCapability
             )
         }
-        let fallbackActions = Self.attachImageDataIfNeeded(
-            actions: Self.rulePlan(normalizedText),
-            foodThumbnailBase64: foodThumbnailBase64
+        // 纯图片且文本流无内容：结构化命中时照常返回动作，否则留痕空动作
+        let fallbackActions = IntentConfidenceCalibrator.applySelectionPolicy(
+            structuredActions + Self.attachImageDataIfNeeded(actions: [], foodThumbnailBase64: foodThumbnailBase64)
         )
-        return PlanResult(actions: fallbackActions, engine: "rules", normalizedText: normalizedText)
+        return PlanResult(
+            actions: fallbackActions,
+            engine: "rules",
+            normalizedText: normalizedText,
+            needsClarification: disputedInput,
+            forcedCapability: forcedCapability
+        )
+    }
+
+    // MARK: - 图片结构化识别 → 动作（票务/小票）
+
+    /// 票务/预约/行程等结构化识别结果 → 待办动作。
+    ///
+    /// 只认「识别器给了明确结构」的结果（标题非兜底、且带时间/取票码/行程元数据），
+    /// 低置信或纯文本命中交回文本管线，不硬编。
+    private static func structuredTodoAction(from recognition: ImageTodoRecognitionResult) -> PlannedAction? {
+        // 兜底标题说明没提炼出事件名，置信度已被识别器压到 0.48 以下
+        guard recognition.title != "图片识别待办事项",
+              recognition.confidence >= 0.72,
+              recognition.dueAt != nil
+                || recognition.pickupCode != nil
+                || recognition.travelPickup != nil
+                || recognition.station != nil else { return nil }
+
+        var params: [String: String] = [
+            "title": recognition.title,
+            "typeRaw": recognition.type.rawValue
+        ]
+        var detailParts: [String] = []
+        if let detail = recognition.detail, !detail.isEmpty { detailParts.append(detail) }
+        if let slot = recognition.timeSlotText, !slot.isEmpty { detailParts.append(slot) }
+        if !detailParts.isEmpty { params["detail"] = detailParts.joined(separator: " · ") }
+        if let dueAt = recognition.dueAt {
+            params["dueAtISO"] = dateTimeFormatter.string(from: dueAt)
+        }
+        if let code = recognition.pickupCode, !code.isEmpty { params["pickupCode"] = code }
+        if let station = recognition.station, !station.isEmpty { params["station"] = station }
+        if let location = recognition.location, !location.isEmpty { params["location"] = location }
+        if let qr = recognition.qrCodePayload, !qr.isEmpty { params["qrCodePayload"] = qr }
+        if let pickup = recognition.travelPickup {
+            params["arrivalAtISO"] = dateTimeFormatter.string(from: pickup.arrivalAt)
+            params["arrivalTransport"] = pickup.isFlight ? "flight" : "train"
+            params["travelPickupMode"] = pickup.isPickupMode ? "pickup" : "travel"
+        }
+
+        return PlannedAction(
+            capability: .todoCreate,
+            params: params,
+            confidence: recognition.confidence,
+            confidenceReason: recognition.confidenceReason ?? "图片票务结构化识别",
+            summary: Self.summary(for: .todoCreate, params: params)
+        )
+    }
+
+    /// 小票/发票 OCR 文本 → 记账动作。
+    ///
+    /// 只认「合计/实付」等明确总额标签（`hasLabeledTotal`）：普通文稿里的数字
+    /// 绝不能被误建账。松散金额场景仍走文本管线，由 LLM/规则结合语境判断。
+    private static func structuredExpenseAction(from rawText: String) -> PlannedAction? {
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, ReceiptTextParser.hasLabeledTotal(trimmed) else { return nil }
+
+        let parsed = ReceiptTextParser.parse(trimmed)
+        guard parsed.amount > 0 else { return nil }
+
+        var params: [String: String] = [
+            "amount": String(format: "%.2f", parsed.amount),
+            "isIncome": "false",
+            "category": parsed.categoryRaw,
+            "title": parsed.title
+        ]
+        params["dateISO"] = dateTimeFormatter.string(from: parsed.date)
+
+        return PlannedAction(
+            capability: .expenseCreate,
+            params: params,
+            confidence: parsed.confidence,
+            confidenceReason: parsed.confidenceReason ?? "小票总额标签识别",
+            summary: Self.summary(for: .expenseCreate, params: params)
+        )
     }
 
     /// 若识别出食物照片，为所有食物记录动作挂载缩略图 Base64，落库时同步存储照片
@@ -162,58 +301,28 @@ struct OmniboxPlanner {
         }
     }
 
-    /// 是否需要提示用户核对。按**最终动作的置信度**推导，而不是直接用判别层的结论：
-    /// 判别层说不确定，但规则引擎从扣款短信里抽出了 0.9 置信的完整动作时，
-    /// 展示「不太确定」反而与用户看到的确定结果矛盾。
-    private static func needsClarification(_ actions: [PlannedAction]) -> Bool {
-        !actions.isEmpty && actions.contains { $0.confidence < PlannedAction.lowConfidenceThreshold }
-    }
-
-    /// 用判别层的真实概率校准动作置信度。
-    ///
-    /// 生成式路径过去把 `confidence` 写死成 0.85，导致 `needsConfirmation`
-    /// （阈值 0.6）永远为false——模型不确定时系统也察觉不到。
-    /// 这里只在判别成功且指向同一能力时校准，避免用「判别A能力」的概率去标注「B能力」的动作。
-    /// 校准后低于阈值 → 动作自动进入确认卡，而非直接写库。
-    private static func applyIntentConfidence(
-        _ actions: [PlannedAction],
-        distribution: IntentDistribution?
-    ) -> [PlannedAction] {
-        guard let distribution, let top = distribution.top else { return actions }
-        // 破坏性动作本就强制确认，不需要概率；破坏性动作置信度被压低反而会
-        // 让 UI 出现「模型不确定要删」的误导性解释。
-        let probability = distribution.topProbability
-        let rounded = (probability * 20).rounded() / 20 // 保留一位有效小数，避免日志噪声
-        return actions.map { action in
-            guard action.capability == top.capability, !action.capability.isDestructive else {
-                return action
-            }
-            var updated = action
-            updated.confidence = rounded
-            updated.confidenceReason = distribution.needsClarification
-                ? L10n.tr("意图判断把握度：\(distribution.reasonText)")
-                : L10n.tr("意图判断：\(distribution.reasonText)")
-            return updated
-        }
-    }
-
     // MARK: - LLM 路径
 
     /// 返回动作数组与降级原因：actions 为 nil/空时 fallbackReason 必非空（审计凭据）
     ///
-    /// - Parameter intentHint: 判别层给出的意图分布。为 nil 时行为与旧版完全一致
-    ///   （列出全部 9 类让模型自己判）；非 nil 时按判别结果收窄候选能力，
-    ///   让抽取阶段的提示词只讲最可能的 2~3 类，弱模型受益明显。
+    /// - Parameters:
+    ///   - intentHint: 判别层给出的意图分布。为 nil 时行为与旧版完全一致
+    ///     （列出全部 16 类让模型自己判）；非 nil 时按判别结果收窄候选能力，
+    ///     让抽取阶段的提示词只讲最可能的 2~3 类，弱模型受益明显。
+    ///   - forcedCapability: 用户从可能性排序里点选的意图，收窄到单一能力（预填写路径）。
     private static func llmPlan(
         _ text: String,
-        intentHint: IntentDistribution? = nil
+        intentHint: IntentDistribution? = nil,
+        forcedCapability: ActionCapability? = nil
     ) async -> (actions: [PlannedAction]?, fallbackReason: String?) {
-        let systemInstruction = Self.makeSystemInstruction(intentHint: intentHint)
+        let systemInstruction = Self.makeSystemInstruction(intentHint: intentHint, forcedCapability: forcedCapability)
         let now = Date()
         let dateText = Self.yyyyMMdd.string(from: now)
         let weekdayText = Self.weekdayFormatter.string(from: now)
         var baseUserContent = "今天是\(dateText) \(weekdayText)。\n输入：\n\(text)"
-        if let hint = intentHint, hint.top != nil {
+        if let forcedCapability {
+            baseUserContent += "\n（用户明确选择意图：「\(forcedCapability.displayName)」，请只抽取该类动作）"
+        } else if let hint = intentHint, hint.top != nil {
             baseUserContent += "\n（意图判别结果：\(hint.reasonText)，请据此抽取参数）"
         }
 
@@ -259,10 +368,18 @@ struct OmniboxPlanner {
     /// 抽取阶段的系统提示词。
     ///
     /// 有判别结论时只讲最可能的 2~3 类能力，让弱模型的注意力集中在少数选项上；
-    /// 判别不可用或分布过于分散（top1 概率低于 0.4，说明模型确实没分清）时，
-    /// 退回列出全部 9 类，避免用错误的先验把模型锁死在错的那一类。
-    private static func makeSystemInstruction(intentHint: IntentDistribution?) -> String {
+    /// 用户点选了意图（forcedCapability）时只讲那一类；判别不可用或分布过于分散
+    /// （top1 概率低于 0.4，说明模型确实没分清）时，退回列出全部 16 类，
+    /// 避免用错误的先验把模型锁死在错的那一类。
+    private static func makeSystemInstruction(
+        intentHint: IntentDistribution?,
+        forcedCapability: ActionCapability? = nil
+    ) -> String {
         let schema = Self.capabilitySchema
+
+        if let forcedCapability {
+            return Self.basePrompt(schema: schema, narrowed: [forcedCapability], hint: intentHint, forced: true)
+        }
 
         guard let hint = intentHint, let top = hint.top, hint.topProbability >= 0.4 else {
             return Self.basePrompt(schema: schema)
@@ -291,7 +408,7 @@ struct OmniboxPlanner {
             (.todoComplete, #"完成待办：{"capability":"todo.complete","target":"待完成事项匹配词"}"#),
             (.todoCancel, #"取消待办：{"capability":"todo.cancel","target":"待取消事项匹配词"}"#),
             (.reminderSnooze, #"推迟提醒：{"capability":"reminder.snooze","target":"提醒事项匹配词","duration":"10分钟|1小时|明早"}"#),
-            (.queryLookup, #"查询事项：{"capability":"query.lookup","target":"查询关键词"}"#),
+            (.queryLookup, #"查询事项：{"capability":"query.lookup","target":"查询关键词或完整问句（如「护照放哪了」「上周花了多少」「今天有什么安排」）"}"#),
             (.memoInbox, #"收集箱：{"capability":"memo.inbox","memo":"原文摘录"}"#),
             (.foodRecord, #"饮食记录：{"capability":"food.record","foodName":"食物名","mealSlot":"早餐|午餐|晚餐|加餐","calories":"预估千卡可省"}"#),
             (.waterRecord, #"饮水记录：{"capability":"water.record","beverageType":"白开水|纯茶|黑咖啡|拿铁|牛奶|奶茶|含糖饮料|苏打水","volumeML":"毫升数字","customName":"饮品名可省"}"#),
@@ -306,7 +423,8 @@ struct OmniboxPlanner {
     private static func basePrompt(
         schema: [(capability: ActionCapability, line: String)],
         narrowed: [ActionCapability]? = nil,
-        hint: IntentDistribution? = nil
+        hint: IntentDistribution? = nil,
+        forced: Bool = false
     ) -> String {
         let lines: String
         if let narrowed {
@@ -323,7 +441,11 @@ struct OmniboxPlanner {
         \(lines)
         规则：
         """
-        if let hint, let top = hint.top {
+        if forced {
+            prompt += """
+            - 用户已明确选择动作类型，必须输出该类型的动作；即使表述含糊，也按该类型预填参数。
+            """
+        } else if let hint, let top = hint.top {
             prompt += """
             - 意图判别倾向于「\(top.displayName)」，但仍需按输入实际内容核对；若明显不符，输出更合适的动作。
             """
@@ -332,7 +454,7 @@ struct OmniboxPlanner {
         - 提到“完成”、“搞定”、“做好了”某个待办时，必须输出 todo.complete 动作，target 为事项名。
         - 提到“取消”、“删掉”、“不要提醒”某个事项时，输出 todo.cancel 动作。
         - 提到“推迟”、“稍后提醒”、“延后”时，输出 reminder.snooze 动作。
-        - 识别到消费/支出金额且非修改时，输出 expense.create 动作。
+        - 识别到消费/支出金额且非修改时，输出 expense.create 动作。一句话含多笔消费时（如“咖啡10.9元，午餐22元，公交1元”），为每一笔分别输出一条 expense.create 动作，标题与金额不得合并。
         - 【纯饮食与饮水边界】：若用户仅描述吃了什么食物（如“早饭吃了一根玉米和一杯牛奶”）且未提及花费金额，绝不虚构金额输出 expense.create，必须输出 food.record！若仅描述喝水或喝咖啡/茶/奶茶/饮料（如“喝了500ml水”、“喝了一杯冰美式”），输出 water.record。
         - 【物品收纳与常备药】：提到“把X放在Y”、“X收在Y”、“药箱备了X”时，输出 storage.record 动作。
         - 【习惯与服药打卡】：提到“吃了XX药”、“服用了维生素”、“完成晨跑打卡”、“早起打卡”时，输出 habit.log 动作。
@@ -340,7 +462,8 @@ struct OmniboxPlanner {
         - 【出门清单】：提到“出门清单加上X”、“出门必带X”时，输出 departure.add 动作。
         - 【生活档案】：提到宠物驱虫/疫苗/洗澡/体重（domain=pet）、车辆加油/充电/保养/里程（domain=vehicle）、宝宝身高体重/里程碑（domain=child）、技能练习打卡（domain=skill）、重要证件登记（domain=document）、人生大事筹备（domain=event）时，输出 life.record 动作。
         - 识别到针对已有记录改金额、改标题时，输出对应的 expense.update 或 todo.update。
-        - 提到“X放哪了”、“查找X”等检索请求时，输出 query.lookup 动作。
+        - 提到“X放哪了”、“查找X”等检索请求，以及“上周花了多少”、“今天有什么安排”、“最近消费趋势怎么样”等统计/趋势/日程问句时，输出 query.lookup 动作，target 填完整问句或关键词。
+        - 【大模型决策输出】：若输入是粘贴的大模型回复（含「行动待办/下一步/落地动作」清单），为每条行动待办输出一个 todo.create（detail 填「AI 决策导入」），决策全文输出一个 memo.inbox。
         - 完全无法归类时输出一个收集箱 memo.inbox 动作。
         """
         return prompt
@@ -348,111 +471,176 @@ struct OmniboxPlanner {
 
     // MARK: - 规则兜底路径
 
-    static func rulePlan(_ text: String) -> [PlannedAction] {
+    /// 规则兜底总入口。
+    ///
+    /// P1-4 修复：组合输入（「完成晨跑打卡，顺便喝了500ml水」）先按强分隔符切子句，
+    /// 每个子句独立走「单意图优先级链」，互不吞并——此前操作类命中即 return，
+    /// 后半句的动作被直接丢弃。
+    ///
+    /// - Parameter preferredCapability: 用户点选的意图（预填写路径）。
+    ///   指定时优先产出该能力；产出不了则按该能力预填一张参数草稿卡。
+    static func rulePlan(_ text: String, preferredCapability: ActionCapability? = nil) -> [PlannedAction] {
+        // 大模型决策输出必须在切子句之前整段识别——多行决策文被切碎后就认不出来了
+        if preferredCapability == nil,
+           LifeEventTaskPlanningEngine.looksLikeAIDecisionOutput(text) {
+            return aiDecisionActions(from: text)
+        }
+
+        let clauses = OmniboxClauseSplitter.split(text)
         var actions: [PlannedAction] = []
 
-        // 0. 操作类指令优先：完成/取消/推迟/查询等动作明确，避免被误判成新建或普通备忘
-        if let complete = Self.extractTodoComplete(from: text) {
-            actions.append(complete)
-            return actions
-        }
-        if let cancel = Self.extractTodoCancel(from: text) {
-            actions.append(cancel)
-            return actions
-        }
-        if let snooze = Self.extractReminderSnooze(from: text) {
-            actions.append(snooze)
-            return actions
-        }
-        if let lookup = Self.extractQueryLookup(from: text) {
-            actions.append(lookup)
-            return actions
+        for clause in clauses {
+            actions.append(contentsOf: singleClauseActions(clause))
         }
 
-        // 0.2 全域生活记录精确提取（收纳 / 出门清单 / 习惯与服药 / 纪念日与订阅保质期 / 宠物爱车育儿技能证件大事）
+        // 用户点选意图：优先保留该能力的动作；都没有时按该能力预填草稿（预填写语义）
+        if let preferredCapability {
+            let preferred = actions.filter { $0.capability == preferredCapability }
+            if !preferred.isEmpty {
+                actions = preferred
+            } else {
+                actions = [prefillDraftAction(capability: preferredCapability, text: text)]
+            }
+        }
+
+        // 跨域联动：同批记账挂到待办/生活档案的依赖上（拓扑序）
+        let expenseIDs = actions.filter { $0.capability == .expenseCreate }.map(\.id)
+        if !expenseIDs.isEmpty {
+            for index in actions.indices
+            where actions[index].dependsOn.isEmpty
+                && (actions[index].capability == .todoCreate || actions[index].capability == .lifeRecord) {
+                actions[index].dependsOn = expenseIDs
+            }
+        }
+
+        // 收集箱兜底：无法归类时永不报错，全部落收集箱（Flomo 原则）
+        if actions.isEmpty {
+            let memo = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !memo.isEmpty {
+                actions.append(PlannedAction(
+                    capability: .memoInbox,
+                    params: ["memo": String(memo.prefix(500))],
+                    confidence: 0.9,
+                    summary: L10n.tr("收入收集箱：") + String(memo.prefix(40))
+                ))
+            }
+        }
+        return actions
+    }
+
+    /// 单子句的意图优先级链：修改类 > 操作类 > 生活记录类 > 创建类，命中即返回。
+    /// 单句单意图假设成立（组合输入已在外层切开），保留优先级防止
+    /// 「取消会议提醒」同时生成待办这类误报。
+    private static func singleClauseActions(_ text: String) -> [PlannedAction] {
+        // 0. 修改类（P1-3）：「把那笔账改成30」「待办改到后天」
+        if let expenseUpdate = extractExpenseUpdateAction(from: text) {
+            return [expenseUpdate]
+        }
+        if let todoUpdate = extractTodoUpdateAction(from: text) {
+            return [todoUpdate]
+        }
+
+        // 0.1 操作类指令：完成/取消/推迟/查询等动作明确，避免被误判成新建或普通备忘
+        if let complete = Self.extractTodoComplete(from: text) {
+            return [complete]
+        }
+        if let cancel = Self.extractTodoCancel(from: text) {
+            return [cancel]
+        }
+        if let snooze = Self.extractReminderSnooze(from: text) {
+            return [snooze]
+        }
+        if let lookup = Self.extractQueryLookup(from: text) {
+            return [lookup]
+        }
+
+        // 0.2 全域生活记录精确提取（收纳 / 出门清单 / 习惯与服药 / 纪念日与订阅保质期）
         if let storage = Self.extractStorageRecord(from: text) {
-            actions.append(storage)
-            return actions
+            return [storage]
         }
         if let departure = Self.extractDepartureItem(from: text) {
-            actions.append(departure)
-            return actions
+            return [departure]
         }
         if let habitOrMed = Self.extractHabitOrMedicationLog(from: text) {
-            actions.append(habitOrMed)
-            return actions
+            return [habitOrMed]
         }
         if let anniversary = Self.extractAnniversaryOrExpiry(from: text) {
-            actions.append(anniversary)
-            return actions
+            return [anniversary]
         }
 
         // 0.4 纯饮水/饮品摄入检测（如“喝了500ml水”、“喝了一杯冰美式”）
         if let waterAction = Self.extractWaterRecord(from: text) {
-            actions.append(waterAction)
-            return actions
+            return [waterAction]
         }
 
         // 0.45 食物热量视觉识别提取（由食物照片解析出的【食物与热量识别】）
         if let foodAction = Self.extractFoodRecordFromRecognition(text) {
-            actions.append(foodAction)
-            return actions
+            return [foodAction]
         }
 
         // 0.5 纯饮食摄入陈述检测：若用户陈述早饭/午饭/晚饭吃了/喝了什么，且不含花费/金额词时，直接生成 food.record 饮食记录
         if Self.isPureMealStatement(text) {
-            actions.append(Self.makeFoodRecordAction(from: text))
-            return actions
+            return [Self.makeFoodRecordAction(from: text)]
         }
 
-        // 0.6 垂类生活档案检测（宠物/爱车/育儿/技能/证件/大事；若同时含加油/买猫粮等金额，可与下方记账并存）
+        // 0.6 垂类生活档案检测（宠物/爱车/育儿/技能/证件/大事；若同时含加油/买猫粮等金额，与下方记账并存）
         let lifeAction = Self.extractLifeRecord(from: text)
         if let lifeAction, !Self.hasExplicitMoneyExpression(in: text) {
-            actions.append(lifeAction)
-            return actions
+            return [lifeAction]
         }
 
-        // 1. 记账：优先按短信/订单截图结构化模板提取（最高置信），再复用既有自然语言解析器，最后宽松正则兜底
+        var actions: [PlannedAction] = []
+
+        // 1. 记账：优先按短信/订单截图结构化模板提取（最高置信），再复用既有自然语言解析器（支持一句话多笔），最后宽松正则兜底
         if let structured = Self.extractStructuredExpense(from: text) {
             actions.append(structured)
-        } else if let parsed = ExpenseNaturalLanguageParser.parse(text, defaultCurrency: ExpenseCurrency.preferred()) {
-            var params: [String: String] = [
-                "amount": String(format: "%.2f", parsed.amount),
-                "isIncome": parsed.isIncome ? "true" : "false",
-                "category": parsed.category.rawValue,
-                "title": parsed.title
-            ]
-            if parsed.isForeignCurrency, let foreignAmt = parsed.foreignAmount {
-                params["currency"] = parsed.currency.rawValue
-                params["foreignAmount"] = String(format: "%.2f", foreignAmt)
-                params["exchangeRate"] = String(format: "%.6f", parsed.exchangeRateToCNY ?? parsed.currency.currentRateToCNY)
+        } else {
+            let parsedItems = ExpenseNaturalLanguageParser.parseMulti(text, defaultCurrency: ExpenseCurrency.preferred())
+            if !parsedItems.isEmpty {
+                for parsed in parsedItems {
+                    var params: [String: String] = [
+                        "amount": String(format: "%.2f", parsed.amount),
+                        "isIncome": parsed.isIncome ? "true" : "false",
+                        "category": parsed.category.rawValue,
+                        "title": parsed.title
+                    ]
+                    if parsed.isForeignCurrency, let foreignAmt = parsed.foreignAmount {
+                        params["currency"] = parsed.currency.rawValue
+                        params["foreignAmount"] = String(format: "%.2f", foreignAmt)
+                        params["exchangeRate"] = String(format: "%.6f", parsed.exchangeRateToCNY ?? parsed.currency.currentRateToCNY)
+                    }
+                    if parsedItems.count > 1 {
+                        params["dateISO"] = Self.dateTimeFormatter.string(from: parsed.date)
+                    }
+                    actions.append(PlannedAction(
+                        capability: .expenseCreate,
+                        params: params,
+                        confidence: parsedItems.count > 1 ? 0.78 : 0.8,
+                        confidenceReason: parsedItems.count > 1 ? "已从多笔消费中拆分" : nil,
+                        summary: Self.summary(for: .expenseCreate, params: params)
+                    ))
+                }
+            } else if let amount = Self.extractLooseAmount(from: text) {
+                let isIncome = Self.containsAny(text, ["收到", "入账", "工资", "报销", "退款", "红包", "收入"])
+                let category = Self.guessCategory(from: text)
+                let title = Self.guessExpenseTitle(from: text)
+                var params = [
+                    "amount": String(format: "%.2f", amount),
+                    "isIncome": isIncome ? "true" : "false",
+                    "category": category.rawValue,
+                    "title": title
+                ]
+                if let date = Self.extractTransactionDate(from: text) {
+                    params["dateISO"] = Self.dateTimeFormatter.string(from: date)
+                }
+                actions.append(PlannedAction(
+                    capability: .expenseCreate,
+                    params: params,
+                    confidence: 0.55,
+                    confidenceReason: "松散匹配到金额，建议核对分类与金额",
+                    summary: Self.summary(for: .expenseCreate, params: params)
+                ))
             }
-            actions.append(PlannedAction(
-                capability: .expenseCreate,
-                params: params,
-                confidence: 0.8,
-                summary: Self.summary(for: .expenseCreate, params: params)
-            ))
-        } else if let amount = Self.extractLooseAmount(from: text) {
-            let isIncome = Self.containsAny(text, ["收到", "入账", "工资", "报销", "退款", "红包", "收入"])
-            let category = Self.guessCategory(from: text)
-            let title = Self.guessExpenseTitle(from: text)
-            var params = [
-                "amount": String(format: "%.2f", amount),
-                "isIncome": isIncome ? "true" : "false",
-                "category": category.rawValue,
-                "title": title
-            ]
-            if let date = Self.extractTransactionDate(from: text) {
-                params["dateISO"] = Self.dateTimeFormatter.string(from: date)
-            }
-            actions.append(PlannedAction(
-                capability: .expenseCreate,
-                params: params,
-                confidence: 0.55,
-                confidenceReason: "松散匹配到金额，建议核对分类与金额",
-                summary: Self.summary(for: .expenseCreate, params: params)
-            ))
         }
 
         // 2. 待办：取件码 / 相对时间关键词 / 保修与收货意图
@@ -471,7 +659,6 @@ struct OmniboxPlanner {
                 params: params,
                 confidence: 0.65,
                 confidenceReason: "根据相对时间词推测，建议核对截止日期",
-                dependsOn: actions.filter { $0.capability == .expenseCreate }.map(\.id),
                 summary: Self.summary(for: .todoCreate, params: params)
             ))
         }
@@ -487,30 +674,86 @@ struct OmniboxPlanner {
                 params: params,
                 confidence: 0.58,
                 confidenceReason: "根据保修关键词推测，默认1年期",
-                dependsOn: actions.filter { $0.capability == .expenseCreate }.map(\.id),
                 summary: Self.summary(for: .todoCreate, params: params)
             ))
         }
 
-        // 2.5 若存在车务/宠物等生活档案动作且同时命中了记账（如“车子加了300块95号汽油”），自动追加联动动作
+        // 2.5 若存在车务/宠物等生活档案动作且同时命中了记账（如“车子加了300块95号汽油”），联动挂依赖
         if var lifeAction {
             lifeAction.dependsOn = actions.filter { $0.capability == .expenseCreate }.map(\.id)
             actions.append(lifeAction)
         }
-
-        // 3. 收集箱兜底：无法归类时永不报错，全部落收集箱（Flomo 原则）
-        if actions.isEmpty {
-            let memo = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !memo.isEmpty {
-                actions.append(PlannedAction(
-                    capability: .memoInbox,
-                    params: ["memo": String(memo.prefix(500))],
-                    confidence: 0.9,
-                    summary: L10n.tr("收入收集箱：") + String(memo.prefix(40))
-                ))
-            }
-        }
         return actions
+    }
+
+    /// 修改类动作构造：参数键与执行器（executeExpenseUpdate / executeTodoUpdate）严格一致
+    static func extractExpenseUpdateAction(from text: String) -> PlannedAction? {
+        guard let update = OmniboxUpdateExtractor.extractExpenseUpdate(from: text) else { return nil }
+        var params: [String: String] = ["target": update.target]
+        if !update.newAmount.isEmpty { params["newAmount"] = update.newAmount }
+        if let newTitle = update.newTitle, !newTitle.isEmpty { params["newTitle"] = newTitle }
+        return PlannedAction(
+            capability: .expenseUpdate,
+            params: params,
+            confidence: 0.85,
+            summary: Self.summary(for: .expenseUpdate, params: params)
+        )
+    }
+
+    static func extractTodoUpdateAction(from text: String) -> PlannedAction? {
+        guard let update = OmniboxUpdateExtractor.extractTodoUpdate(from: text) else { return nil }
+        var params: [String: String] = ["target": update.target]
+        if let newTitle = update.newTitle, !newTitle.isEmpty { params["newTitle"] = newTitle }
+        if let days = update.dueAtDays { params["dueAtDays"] = String(days) }
+        if let time = update.dueAtTime { params["dueAtTime"] = time }
+        return PlannedAction(
+            capability: .todoUpdate,
+            params: params,
+            confidence: 0.85,
+            summary: Self.summary(for: .todoUpdate, params: params)
+        )
+    }
+
+    /// 按用户点选的意图预填一张草稿卡（LLM 与规则都产出不了该能力时的兜底）。
+    /// 参数尽量从原文复用既有提取器填上，填不出的留空给确认卡编辑；默认不勾选，等人核对。
+    static func prefillDraftAction(capability: ActionCapability, text: String) -> PlannedAction {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var params: [String: String] = [:]
+        switch capability {
+        case .expenseCreate:
+            if let amount = Self.extractLooseAmount(from: trimmed) {
+                params["amount"] = String(format: "%.2f", amount)
+                params["isIncome"] = Self.containsAny(trimmed, ["收到", "入账", "工资", "报销", "退款", "红包", "收入"]) ? "true" : "false"
+                params["category"] = Self.guessCategory(from: trimmed).rawValue
+                params["title"] = Self.guessExpenseTitle(from: trimmed)
+            } else {
+                params = ["amount": "", "isIncome": "false", "category": ExpenseCategory.other.rawValue, "title": String(trimmed.prefix(12))]
+            }
+        case .todoCreate:
+            params = ["title": String(trimmed.prefix(24)), "detail": trimmed]
+        case .memoInbox:
+            params = ["memo": String(trimmed.prefix(500))]
+        case .foodRecord:
+            return Self.makeFoodRecordAction(from: trimmed)
+        case .waterRecord:
+            params = ["beverageType": "白开水", "volumeML": "250"]
+        default:
+            // 修改/操作/查询/生活记录类：原文做匹配词，细节留确认卡编辑
+            params = [
+                "target": trimmed,
+                "title": String(trimmed.prefix(24)),
+                "name": String(trimmed.prefix(24)),
+                "detail": trimmed
+            ]
+        }
+        return PlannedAction(
+            capability: capability,
+            params: params,
+            confidence: 0.5,
+            confidenceReason: "按所选意图预填，请核对参数",
+            isSelected: false,
+            summary: "\(capability.displayName)：\(String(trimmed.prefix(24)))"
+        )
     }
 
     // MARK: - 参数补全工具（确认卡编辑时也调用）
@@ -804,55 +1047,9 @@ struct OmniboxPlanner {
     }
 
     /// 提取交易时间（短信/截图里的 MM月dd日 HH:mm、yyyy-MM-dd HH:mm 等）
+    /// 转发到 AssistantCore 单一实现（小票解析共用同一份正则，避免漂移）
     static func extractTransactionDate(from text: String) -> Date? {
-        // 完整日期 + 时间
-        if let regex = try? NSRegularExpression(pattern: "(\\d{4})[-/年](\\d{1,2})[-/月](\\d{1,2})日?\\s*(\\d{1,2}):(\\d{2})"),
-           let comps = Self.dateComponents(regex, in: text, hasYear: true) {
-            return Calendar.current.date(from: comps)
-        }
-        // 完整日期无时间
-        if let regex = try? NSRegularExpression(pattern: "(\\d{4})[-/年](\\d{1,2})[-/月](\\d{1,2})日?"),
-           let comps = Self.dateComponents(regex, in: text, hasYear: true) {
-            return Calendar.current.date(from: comps)
-        }
-        // 月日 + 时间（默认今年）
-        if let regex = try? NSRegularExpression(pattern: "(\\d{1,2})月(\\d{1,2})日\\s*(\\d{1,2}):(\\d{2})"),
-           let comps = Self.dateComponents(regex, in: text, hasYear: false) {
-            return Calendar.current.date(from: comps)
-        }
-        // 仅日期
-        if let regex = try? NSRegularExpression(pattern: "(\\d{1,2})月(\\d{1,2})日"),
-           let comps = Self.dateComponents(regex, in: text, hasYear: false) {
-            return Calendar.current.date(from: comps)
-        }
-        return nil
-    }
-
-    private static func dateComponents(_ regex: NSRegularExpression, in text: String, hasYear: Bool) -> DateComponents? {
-        guard let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: text.utf16.count)) else {
-            return nil
-        }
-        func captured(_ index: Int) -> Int? {
-            guard match.range(at: index).location != NSNotFound,
-                  let range = Range(match.range(at: index), in: text),
-                  let value = Int(text[range]) else { return nil }
-            return value
-        }
-        var comps = DateComponents()
-        var offset = 0
-        if hasYear {
-            guard let year = captured(1) else { return nil }
-            comps.year = year
-            offset = 1
-        }
-        guard let month = captured(offset + 1), let day = captured(offset + 2) else { return nil }
-        comps.month = month
-        comps.day = day
-        if let hour = captured(offset + 3) { comps.hour = hour }
-        if let minute = captured(offset + 4) { comps.minute = minute }
-        if comps.year == nil { comps.year = Calendar.current.component(.year, from: .now) }
-        if comps.hour == nil { comps.hour = 12 }
-        return comps
+        TransactionDateExtractor.extract(from: text)
     }
 
     private static func firstCapturedNumber(_ pattern: String, in text: String) -> Double? {
@@ -1280,28 +1477,68 @@ struct OmniboxPlanner {
         )
     }
 
+    /// 大模型决策输出 → 动作组：每条行动项一个待办 + 决策全文落收集箱保底。
+    /// 复用 `LifeEventTaskPlanningEngine.parseAIDecisionOutput`（与人生大事导入视图同一解析器）。
+    /// `fromAIDecision` 标记供回执区识别，挂「关联到人生大事」入口。
+    private static func aiDecisionActions(from text: String) -> [PlannedAction] {
+        let parsed = LifeEventTaskPlanningEngine.parseAIDecisionOutput(rawOutput: text)
+        var actions: [PlannedAction] = []
+
+        for item in parsed.actionItems {
+            let params: [String: String] = [
+                "title": item,
+                "detail": "AI 决策导入",
+                "fromAIDecision": "1",
+                "sourceText": "Omnibox投喂·AI决策"
+            ]
+            actions.append(PlannedAction(
+                capability: .todoCreate,
+                params: params,
+                confidence: 0.88,
+                confidenceReason: "识别为大模型决策输出的行动待办",
+                summary: "✨ AI 决策待办：\(item)"
+            ))
+        }
+
+        // Flomo 原则：内容永不丢失——决策全文（截断到收集箱容量）落 memo 保底，
+        // 即便行动项提取有遗漏，原文仍可检索。
+        actions.append(PlannedAction(
+            capability: .memoInbox,
+            params: ["memo": String(text.prefix(500)), "fromAIDecision": "1"],
+            confidence: 0.85,
+            summary: "✨ AI 决策全文已收入集箱"
+        ))
+        return actions
+    }
+
     static func extractQueryLookup(from text: String) -> PlannedAction? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let queryPatterns = [
-            "(?:查|找|问|搜)?\\s*(.+?)\\s*(?:放哪了|在哪里|在什么地方|放在哪|放在哪里)[？?]?$",
-            "^(?:查找|查询|检索|搜索)\\s*(.+)"
-        ]
-        for pattern in queryPatterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-            let ns = trimmed as NSString
-            let matches = regex.matches(in: trimmed, range: NSRange(location: 0, length: ns.length))
-            if let first = matches.first, first.numberOfRanges > 1 {
-                let target = ns.substring(with: first.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !target.isEmpty && target.count < 40 {
-                    let params = ["target": target]
-                    return PlannedAction(
-                        capability: .queryLookup,
-                        params: params,
-                        confidence: 0.9,
-                        summary: "🔍 查询事项与收纳位置：\(target)"
-                    )
-                }
-            }
+
+        // 1. 结构化查询意图（汇总/趋势/日程/查找）：「上周花了多少」「今天有什么安排」「最近消费趋势」
+        //    解析器自带记账句/祈使句守卫（宁可少解析，不可解析错），命中即整句交查询执行器
+        if let insight = QueryInsightEngine.parse(trimmed) {
+            let params: [String: String] = [
+                "query": trimmed,
+                "domain": insight.domain.rawValue,
+                "kind": insight.kind.rawValue
+            ]
+            return PlannedAction(
+                capability: .queryLookup,
+                params: params,
+                confidence: 0.92,
+                summary: "🔍 查询：\(trimmed)"
+            )
+        }
+
+        // 2. 纯关键词查找（「查找发票」这类无领域词的检索）：正则单份在 QueryInsightEngine
+        if let target = QueryInsightEngine.extractLookupKeyword(trimmed) {
+            let params = ["target": target, "query": trimmed]
+            return PlannedAction(
+                capability: .queryLookup,
+                params: params,
+                confidence: 0.9,
+                summary: "🔍 查询事项与收纳位置：\(target)"
+            )
         }
         return nil
     }

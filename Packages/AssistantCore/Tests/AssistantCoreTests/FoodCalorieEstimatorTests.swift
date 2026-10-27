@@ -391,4 +391,49 @@ final class FoodCalorieEstimatorTests: XCTestCase {
         XCTAssertEqual(estimate?.food.id, "pizza")
         XCTAssertEqual(estimate?.fullPortionCalories ?? 0, 428.8, accuracy: 0.1)
     }
+
+    /// 测试用餐时段先验加权：在早餐时段，包子等早点得到权重加成，火锅等夜宵/大菜被降权
+    func testMealTimePeriodPriorWeightsBreakfastAndDinner() {
+        let breakfastBun = FoodCatalog.item(id: "steamed_bun")!
+        let hotpot = FoodCatalog.item(id: "hotpot")!
+
+        XCTAssertGreaterThan(MealTimePeriod.breakfast.priorMultiplier(for: breakfastBun), 1.2)
+        XCTAssertLessThan(MealTimePeriod.breakfast.priorMultiplier(for: hotpot), 0.7)
+
+        // 模拟早晨 08:30 时段
+        var cal = Calendar.current
+        cal.timeZone = TimeZone(secondsFromGMT: 0)!
+        var comps = DateComponents()
+        comps.year = 2026
+        comps.month = 10
+        comps.day = 26
+        comps.hour = 8
+        comps.minute = 30
+        let morning = cal.date(from: comps)!
+        let period = MealTimePeriod.from(date: morning, calendar: cal)
+        XCTAssertEqual(period, .breakfast)
+
+        // 当分类器同时给出置信度相同的包子和火锅时，早餐时段包子排第一
+        let candidates = FoodCalorieEstimator.candidates(from: [
+            ("hotpot", 0.50),
+            ("bun", 0.50)
+        ], limit: 2, mealTime: period)
+
+        XCTAssertEqual(candidates.first?.food.id, "steamed_bun", "早餐时段应优先排包子")
+    }
+
+    /// 测试用户常吃历史先验：高频食用菜品在相近置信度下获得先验提升
+    func testFoodHistoryPriorPromotesFrequentUserDishes() {
+        // 用户常吃米饭（10次），最近刚吃过
+        let prior = FoodHistoryPrior(frequentItemCounts: ["rice": 10], recentItemIDs: ["rice"])
+        XCTAssertGreaterThan(prior.multiplier(for: "rice"), 1.2)
+
+        // 即使原始分类置信度稍微偏低，常吃加权也能使其超越不常吃的候选
+        let candidates = FoodCalorieEstimator.candidates(from: [
+            ("sushi", 0.45),
+            ("rice", 0.40)
+        ], limit: 2, history: prior)
+
+        XCTAssertEqual(candidates.first?.food.id, "rice", "用户常吃菜品加权后应浮现至首位")
+    }
 }

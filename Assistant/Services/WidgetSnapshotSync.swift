@@ -196,18 +196,26 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
 
     @discardableResult
     private func quickAddExpenseInDB(text: String, context: ModelContext) -> Double {
-        guard let result = ExpenseNaturalLanguageParser.parse(text) else { return 0 }
-        let record = ExpenseRecord(
-            amount: result.amount,
-            isIncome: result.isIncome,
-            category: result.category,
-            title: result.title,
-            rawText: text,
-            date: result.date
-        )
-        context.insert(record)
-        WidgetSnapshotStore.applyExpenseLocally(amount: result.isIncome ? 0 : result.amount)
-        return result.isIncome ? 0 : result.amount
+        let results = ExpenseNaturalLanguageParser.parseMulti(text)
+        guard !results.isEmpty else { return 0 }
+        var totalExpense = 0.0
+        for result in results {
+            let record = ExpenseRecord(
+                amount: result.amount,
+                isIncome: result.isIncome,
+                category: result.category,
+                title: result.title,
+                rawText: text,
+                date: result.date,
+                currencyCode: result.isForeignCurrency ? result.currency.rawValue : nil,
+                foreignAmount: result.foreignAmount,
+                exchangeRateToCNY: result.exchangeRateToCNY
+            )
+            context.insert(record)
+            if !result.isIncome { totalExpense += result.amount }
+        }
+        WidgetSnapshotStore.applyExpenseLocally(amount: totalExpense)
+        return totalExpense
     }
 
     @discardableResult
@@ -248,26 +256,42 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
 
     func handleQuickAddExpense(text: String) async -> String? {
         let context = Persistence.shared.mainContext
-        guard let result = ExpenseNaturalLanguageParser.parse(text) else { return nil }
-        let record = ExpenseRecord(
-            amount: result.amount,
-            isIncome: result.isIncome,
-            category: result.category,
-            title: result.title,
-            rawText: text,
-            date: result.date
-        )
-        context.insert(record)
+        let results = ExpenseNaturalLanguageParser.parseMulti(text)
+        guard !results.isEmpty else { return nil }
+        var totalExpense = 0.0
+        var titles: [String] = []
+        for result in results {
+            let record = ExpenseRecord(
+                amount: result.amount,
+                isIncome: result.isIncome,
+                category: result.category,
+                title: result.title,
+                rawText: text,
+                date: result.date,
+                currencyCode: result.isForeignCurrency ? result.currency.rawValue : nil,
+                foreignAmount: result.foreignAmount,
+                exchangeRateToCNY: result.exchangeRateToCNY
+            )
+            context.insert(record)
+            if !result.isIncome { totalExpense += result.amount }
+            titles.append(result.title)
+        }
         try? context.save()
         refreshSnapshot(context: context)
 
-        let amountText = String(format: result.amount.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", result.amount)
-        if result.isIncome {
-            return "已入账收入 \(amountText) 元：\(result.title)"
+        if results.count == 1, let result = results.first {
+            let amountText = String(format: result.amount.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", result.amount)
+            if result.isIncome {
+                return "已入账收入 \(amountText) 元：\(result.title)"
+            }
+            let dayTotal = Self.todayExpenseTotal(context: context)
+            let dayText = String(format: dayTotal.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", dayTotal)
+            return "已记账 \(amountText) 元（\(result.category.displayName)），今日累计支出 \(dayText) 元"
         }
+        let totalText = String(format: totalExpense.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", totalExpense)
         let dayTotal = Self.todayExpenseTotal(context: context)
         let dayText = String(format: dayTotal.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", dayTotal)
-        return "已记账 \(amountText) 元（\(result.category.displayName)），今日累计支出 \(dayText) 元"
+        return "已记账 \(results.count) 笔合计 \(totalText) 元（\(titles.joined(separator: "、"))），今日累计支出 \(dayText) 元"
     }
 
     func handleQuickAddTodo(text: String) async -> String? {
@@ -299,6 +323,52 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         var reply = "待取快递 \(items.count) 件：" + codes.joined(separator: "、")
         if items.count > 5 { reply += " 等" }
         reply += started ? "，已送上灵动岛与手表 🏝️" : "（实时活动不可用，可在锁屏查看小组件）"
+        return reply
+    }
+
+    func handleQueryBudget() async -> String {
+        let context = Persistence.shared.mainContext
+        let dayTotal = Self.todayExpenseTotal(context: context)
+        let dayText = String(format: dayTotal.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", dayTotal)
+        let monthlyBudget = BudgetSettings.monthlyBudget
+        if monthlyBudget > 0 {
+            let records = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
+            let fixedMonthlyTotal = RecurringExpenseManager.shared.monthlyEstimatedTotal
+            let input = SafeToSpendCalculator.inputFromRecords(
+                records: records,
+                fixedMonthlyTotal: fixedMonthlyTotal,
+                monthlyBudget: monthlyBudget
+            )
+            let result = SafeToSpendCalculator.compute(input: input)
+            let safeText = String(format: "%.0f", result.safeToSpendToday)
+            let remainMonthText = String(format: "%.0f", max(0, result.remainingThisMonth))
+            if result.isTodayOverspent {
+                let overText = String(format: "%.0f", result.todayOverspentAmount)
+                return "今日已支出 \(dayText) 元（超支 \(overText) 元），本月剩余 ¥\(remainMonthText)。适度收一收，慢慢花。"
+            } else {
+                return "今日已支出 \(dayText) 元，今天还能安心花 ¥\(safeText)，本月剩余 ¥\(remainMonthText)。放宽心，慢慢花。"
+            }
+        }
+        return "今日已累计支出 \(dayText) 元。放宽心，慢慢花。"
+    }
+
+    func handleQueryTodayTodos() async -> String {
+        let context = Persistence.shared.mainContext
+        let activeRaw = TodoStatus.active.rawValue
+        let descriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.statusRaw == activeRaw }
+        )
+        var items = (try? context.fetch(descriptor)) ?? []
+        TodoPriority.sort(&items)
+        if items.isEmpty {
+            return "今日待办已全部清空，好好休息吧！"
+        }
+        let topCount = min(3, items.count)
+        let titles = items.prefix(topCount).map(\.displayConciseTitle).joined(separator: "、")
+        var reply = "今日待办共有 \(items.count) 项。优先处理：\(titles)"
+        if items.count > topCount {
+            reply += " 等"
+        }
         return reply
     }
 }

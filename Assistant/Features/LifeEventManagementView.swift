@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 
@@ -6,6 +7,7 @@ struct LifeEventManagementView: View {
     @Query(sort: [SortDescriptor(\LifeEventProject.targetDate, order: .forward)]) private var projects: [LifeEventProject]
     @State private var showCreate = false
     @State private var selectedProject: LifeEventProject?
+    @State private var projectToEdit: LifeEventProject?
 
     var body: some View {
         NavigationStack {
@@ -27,6 +29,27 @@ struct LifeEventManagementView: View {
                                     LifeEventProjectCard(project: project)
                                 }
                                 .buttonStyle(.plain)
+                                .swipeActions(edge: .leading) {
+                                    Button {
+                                        projectToEdit = project
+                                    } label: {
+                                        Label("编辑", systemImage: "pencil")
+                                    }
+                                    .tint(.blue)
+                                }
+                                .contextMenu {
+                                    Button {
+                                        projectToEdit = project
+                                    } label: {
+                                        Label("编辑基本信息", systemImage: "pencil")
+                                    }
+                                    Button(role: .destructive) {
+                                        deleteProjectCascade(project)
+                                        try? context.save()
+                                    } label: {
+                                        Label("删除项目", systemImage: "trash")
+                                    }
+                                }
                             }
                             .onDelete { offsets in
                                 for index in offsets {
@@ -46,8 +69,17 @@ struct LifeEventManagementView: View {
                     Button("新建", systemImage: "plus") { showCreate = true }
                 }
             }
-            .sheet(isPresented: $showCreate) { LifeEventCreateView() }
-            .sheet(item: $selectedProject) { project in LifeEventProjectDetailView(project: project) }
+            .sheet(isPresented: $showCreate) {
+                LifeEventCreateView { newProject in
+                    selectedProject = newProject
+                }
+            }
+            .sheet(item: $selectedProject) { project in
+                LifeEventProjectDetailView(project: project)
+            }
+            .sheet(item: $projectToEdit) { project in
+                LifeEventProjectEditSheet(mode: .edit(project))
+            }
         }
     }
 
@@ -57,6 +89,7 @@ struct LifeEventManagementView: View {
             stages.forEach { context.delete($0) }
         }
         if let tasks = try? context.fetch(FetchDescriptor<LifeEventTask>(predicate: #Predicate { $0.projectID == pid })) {
+            LifeEventTodoLink.removeMirrors(taskIDs: tasks.map(\.id), in: context)
             tasks.forEach { context.delete($0) }
         }
         if let people = try? context.fetch(FetchDescriptor<LifeEventPerson>(predicate: #Predicate { $0.projectID == pid })) {
@@ -83,9 +116,26 @@ private struct LifeEventProjectCard: View {
                 .frame(width: 44, height: 44)
                 .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
-                Text(project.title).font(.headline).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(project.title).font(.headline).lineLimit(1)
+                    if project.statusRaw == "done" {
+                        Text("已完成")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.green)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.green.opacity(0.12), in: Capsule())
+                    } else if project.statusRaw == "archived" {
+                        Text("已归档")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.12), in: Capsule())
+                    }
+                }
                 Text(L10n.tr(project.template.rawValue)).font(.caption).foregroundStyle(.secondary)
-                Text(project.daysRemaining >= 0 ? "还有 \(project.daysRemaining) 天" : "已过目标日期 \(abs(project.daysRemaining)) 天")
+                Text(project.daysRemaining >= 0 ? "还有 \(project.daysRemaining) 天 · \(project.targetDate.formatted(date: .abbreviated, time: .omitted))" : "已过目标日期 \(abs(project.daysRemaining)) 天")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(project.daysRemaining < 0 ? Color.red : Color.accentColor)
             }
@@ -96,59 +146,267 @@ private struct LifeEventProjectCard: View {
     }
 }
 
-struct LifeEventCreateView: View {
+/// 人生大事基本信息编辑/创建模式
+enum LifeEventProjectEditMode: Identifiable {
+    case create(LifeEventTemplate)
+    case edit(LifeEventProject)
+
+    var id: String {
+        switch self {
+        case .create(let template): return "create_\(template.rawValue)"
+        case .edit(let project): return "edit_\(project.id.uuidString)"
+        }
+    }
+
+    var template: LifeEventTemplate {
+        switch self {
+        case .create(let template): return template
+        case .edit(let project): return project.template
+        }
+    }
+
+    var navigationTitle: String {
+        switch self {
+        case .create: return "填写基本信息"
+        case .edit: return "修改基本信息"
+        }
+    }
+
+    var confirmButtonTitle: String {
+        switch self {
+        case .create: return "完成创建"
+        case .edit: return "保存"
+        }
+    }
+}
+
+/// 人生大事基本信息录入与修改弹窗
+struct LifeEventProjectEditSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @State private var selectedTemplate: LifeEventTemplate = .engagementWedding
-    @State private var title = ""
-    @State private var targetDate = Calendar.current.date(byAdding: .month, value: 6, to: .now) ?? .now
-    @State private var location = ""
-    @State private var budget = ""
+
+    let mode: LifeEventProjectEditMode
+    var onSave: ((LifeEventProject) -> Void)? = nil
+
+    @State private var title: String
+    @State private var targetDate: Date
+    @State private var location: String
+    @State private var budget: String
+    @State private var statusRaw: String
+
+    init(mode: LifeEventProjectEditMode, onSave: ((LifeEventProject) -> Void)? = nil) {
+        self.mode = mode
+        self.onSave = onSave
+
+        switch mode {
+        case .create(let template):
+            _title = State(initialValue: template.defaultTitle)
+            _targetDate = State(initialValue: Calendar.current.date(byAdding: .month, value: 6, to: .now) ?? .now)
+            _location = State(initialValue: "")
+            _budget = State(initialValue: "")
+            _statusRaw = State(initialValue: "active")
+        case .edit(let project):
+            _title = State(initialValue: project.title)
+            _targetDate = State(initialValue: project.targetDate)
+            _location = State(initialValue: project.location ?? "")
+            let budgetVal = project.budgetLimit
+            _budget = State(initialValue: budgetVal > 0 ? (budgetVal.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(budgetVal)) : String(budgetVal)) : "")
+            _statusRaw = State(initialValue: project.statusRaw)
+        }
+    }
 
     var body: some View {
         NavigationStack {
             Form {
+                // 顶部模板信息卡片
+                Section {
+                    HStack(spacing: 12) {
+                        Image(systemName: mode.template.icon)
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
+                            .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(mode.template.displayName)
+                                .font(.headline)
+                            if mode.template != .custom {
+                                Text("自动生成 \(mode.template.defaultStages.count) 个阶段 · \(mode.template.starterTasks.count) 项起步清单")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("自由规划各阶段与分工事项")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // 基本信息填写（创建或修改时即刻呈现于上方）
+                Section("基本信息") {
+                    HStack {
+                        Text("项目名称")
+                            .frame(width: 70, alignment: .leading)
+                        TextField("例如：我们的婚礼", text: $title)
+                    }
+
+                    DatePicker("目标日期", selection: $targetDate, displayedComponents: [.date])
+
+                    HStack {
+                        Text("地点")
+                            .frame(width: 70, alignment: .leading)
+                        TextField("筹备或举办地点（可选）", text: $location)
+                    }
+
+                    HStack {
+                        Text("预算上限")
+                            .frame(width: 70, alignment: .leading)
+                        TextField("预算金额，单位元（可选）", text: $budget)
+                            .keyboardType(.decimalPad)
+                    }
+                }
+
+                // 编辑模式下可调整状态
+                if case .edit = mode {
+                    Section("项目状态") {
+                        Picker("当前状态", selection: $statusRaw) {
+                            Text("进行中").tag("active")
+                            Text("已完成").tag("done")
+                            Text("已归档").tag("archived")
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+
+                // 创建模式下提供即将生成的阶段与清单预览
+                if case .create(let template) = mode, template != .custom {
+                    Section("起步阶段预览") {
+                        ForEach(template.defaultStages.indices, id: \.self) { idx in
+                            HStack(spacing: 8) {
+                                Text("\(idx + 1)")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(.white)
+                                    .frame(width: 18, height: 18)
+                                    .background(Color.accentColor, in: Circle())
+                                Text(template.defaultStages[idx])
+                                    .font(.subheadline)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle(mode.navigationTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(mode.confirmButtonTitle) {
+                        saveAction()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func saveAction() {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty else { return }
+        let cleanLocation = location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let budgetValue = Double(budget.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+
+        switch mode {
+        case .create(let template):
+            let project = LifeEventTemplateFactory.createProject(
+                title: cleanTitle,
+                template: template,
+                targetDate: targetDate,
+                location: cleanLocation,
+                budgetLimit: budgetValue,
+                in: context
+            )
+            Haptic.success()
+            dismiss()
+            onSave?(project)
+
+        case .edit(let project):
+            project.title = cleanTitle
+            project.targetDate = targetDate
+            project.location = cleanLocation
+            project.budgetLimit = budgetValue
+            project.statusRaw = statusRaw
+            try? context.save()
+            Haptic.success()
+            dismiss()
+            onSave?(project)
+        }
+    }
+}
+
+/// 选择人生大事模板页面，点击任意模板立即弹出基本信息填写弹窗
+struct LifeEventCreateView: View {
+    @Environment(\.dismiss) private var dismiss
+    var onCreated: ((LifeEventProject) -> Void)? = nil
+
+    @State private var templateToConfigure: LifeEventTemplate? = nil
+
+    var body: some View {
+        NavigationStack {
+            List {
                 ForEach(LifeEventTemplate.groupedSelectableCases) { group in
                     Section(group.category.displayName) {
                         ForEach(group.templates) { template in
-                            Button { selectedTemplate = template } label: {
-                                Label {
+                            Button {
+                                templateToConfigure = template
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: template.icon)
+                                        .font(.title3)
+                                        .foregroundStyle(.tint)
+                                        .frame(width: 32, height: 32)
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(template.displayName).foregroundStyle(.primary)
+                                        Text(template.displayName)
+                                            .font(.body.weight(.medium))
+                                            .foregroundStyle(.primary)
                                         if template != .custom {
-                                            Text("自动生成 \(template.defaultStages.count) 个阶段与 \(template.starterTasks.count) 项起步清单")
-                                                .font(.caption).foregroundStyle(.secondary)
+                                            Text("包含 \(template.defaultStages.count) 个阶段 · \(template.starterTasks.count) 项起步清单")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        } else {
+                                            Text("自由规划阶段与分工任务")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
                                         }
                                     }
-                                } icon: {
-                                    Image(systemName: template.icon).foregroundStyle(.tint)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.tertiary)
                                 }
-                                Spacer()
-                                if selectedTemplate == template { Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint) }
                             }
                             .buttonStyle(.plain)
                         }
                     }
                 }
-                Section("基本信息") {
-                    TextField("项目名称，例如：我的婚礼", text: $title)
-                    DatePicker("目标日期", selection: $targetDate, displayedComponents: [.date])
-                    TextField("地点（可选）", text: $location)
-                    TextField("预算上限（可选）", text: $budget).keyboardType(.decimalPad)
-                }
             }
-            .navigationTitle("创建人生大事")
+            .navigationTitle("选择人生大事类型")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("创建") {
-                        let name = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? selectedTemplate.displayName : title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        _ = LifeEventTemplateFactory.createProject(title: name, template: selectedTemplate, targetDate: targetDate, location: location.isEmpty ? nil : location, budgetLimit: Double(budget) ?? 0, in: context)
-                        dismiss()
-                    }
-                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedTemplate == .custom)
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
                 }
+            }
+            .sheet(item: $templateToConfigure) { template in
+                LifeEventProjectEditSheet(
+                    mode: .create(template),
+                    onSave: { project in
+                        dismiss()
+                        onCreated?(project)
+                    }
+                )
             }
         }
     }
@@ -166,6 +424,9 @@ struct LifeEventProjectDetailView: View {
     @State private var showAddExpense = false
     @State private var showAddGuest = false
     @State private var taskToEdit: LifeEventTask?
+    @State private var taskToPlan: LifeEventTask?
+    @State private var showEditProject = false
+    @State private var showAIImport = false
     let project: LifeEventProject
 
     init(project: LifeEventProject) {
@@ -197,10 +458,32 @@ struct LifeEventProjectDetailView: View {
     var body: some View {
         List {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(project.title).font(.title2.bold())
-                    Text(project.daysRemaining >= 0 ? "距离目标日期还有 \(project.daysRemaining) 天" : "目标日期已过去 \(abs(project.daysRemaining)) 天")
-                        .foregroundStyle(project.daysRemaining < 0 ? Color.red : Color.accentColor)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(project.title).font(.title2.bold())
+                            Text(project.daysRemaining >= 0 ? "距离目标日期还有 \(project.daysRemaining) 天 · \(project.targetDate.formatted(date: .abbreviated, time: .omitted))" : "目标日期已过去 \(abs(project.daysRemaining)) 天")
+                                .font(.subheadline)
+                                .foregroundStyle(project.daysRemaining < 0 ? Color.red : Color.accentColor)
+                        }
+                        Spacer()
+                        Button {
+                            showEditProject = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "pencil")
+                                Text("编辑")
+                            }
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Color.accentColor)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Color.accentColor.opacity(0.12))
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     if let location = project.location, !location.isEmpty {
                         Button {
                             MapNavigationService.openDirections(to: location)
@@ -216,34 +499,77 @@ struct LifeEventProjectDetailView: View {
                     Text("已完成 \(completedCount) / \(projectTasks.count) 项")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, 6)
             }
             ForEach(projectStages) { stage in
                 let stageTasks = projectTasks.filter { $0.stageID == stage.id }
                 Section(stage.title) {
                     ForEach(stageTasks) { task in
-                        Button {
-                            task.statusRaw = task.isDone ? "active" : "done"
-                            try? context.save()
-                            Haptic.light()
-                        } label: {
-                            HStack(spacing: 8) {
-                                Label(task.title, systemImage: task.isDone ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(task.isDone ? .secondary : .primary)
-                                Spacer()
-                                if let dueDate = task.dueDate {
-                                    Text(dueDate, format: .dateTime.month().day())
-                                        .font(.caption2)
-                                        .foregroundStyle(!task.isDone && dueDate < .now ? .red : .secondary)
-                                }
+                        HStack(spacing: 4) {
+                            // 勾选按钮：一键完成/取消，不动规划入口
+                            Button {
+                                task.statusRaw = task.isDone ? "active" : "done"
+                                LifeEventTodoLink.syncMirrors(for: task, in: context)
+                                try? context.save()
+                                Haptic.light()
+                            } label: {
+                                Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
+                                    .font(.title3)
+                                    .foregroundStyle(task.isDone ? Color.green : Color.secondary)
+                                    .frame(width: 36, height: 36)
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(task.isDone ? "标记为未完成" : "标记为已完成")
+
+                            // 行主体：进入需求规划与 AI 咨询
+                            Button {
+                                taskToPlan = task
+                            } label: {
+                                HStack(spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(task.title)
+                                            .foregroundStyle(task.isDone ? .secondary : .primary)
+                                            .strikethrough(task.isDone, color: .secondary)
+                                        let filled = LifeEventTaskPlanningEngine.filledCount(
+                                            questions: LifeEventTaskPlanningEngine.questions(for: task.title, templateRaw: project.template.rawValue),
+                                            answers: LifeEventTaskPlanningEngine.decodeAnswers(task.answersJSON)
+                                        )
+                                        if filled > 0 || task.aiDecisionSummary != nil {
+                                            HStack(spacing: 6) {
+                                                if filled > 0 {
+                                                    Text("需求 \(filled) 项")
+                                                }
+                                                if task.aiDecisionSummary != nil {
+                                                    Label("AI 决策", systemImage: "sparkles")
+                                                }
+                                            }
+                                            .font(.caption2.weight(.medium))
+                                            .foregroundStyle(Color.accentColor)
+                                        }
+                                    }
+                                    Spacer()
+                                    if let dueDate = task.dueDate {
+                                        Text(dueDate, format: .dateTime.month().day())
+                                            .font(.caption2)
+                                            .foregroundStyle(!task.isDone && dueDate < .now ? .red : .secondary)
+                                    }
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("需求规划：\(task.title)")
+                            .accessibilityHint("填写需求问答并咨询 AI 决策")
                         }
-                        .buttonStyle(.plain)
                         .contextMenu {
+                            Button("需求规划与 AI 咨询", systemImage: "sparkles") { taskToPlan = task }
                             Button("编辑任务", systemImage: "pencil") { taskToEdit = task }
                             if !task.isDone {
                                 Button("标记已完成", systemImage: "checkmark.circle") {
                                     task.statusRaw = "done"
+                                    LifeEventTodoLink.syncMirrors(for: task, in: context)
                                     try? context.save()
                                 }
                             }
@@ -347,10 +673,18 @@ struct LifeEventProjectDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button("编辑基本信息", systemImage: "pencil") { showEditProject = true }
+                    Divider()
                     Button("添加人物", systemImage: "person.badge.plus") { showAddPerson = true }
                     if project.template.supportsGuests {
                         Button("添加宾客", systemImage: "person.2.badge.plus") { showAddGuest = true }
                     }
+                    Divider()
+                    ShareLink(item: consultationShareText, preview: SharePreview("完整筹备档案")) {
+                        Label("复制完整档案给 AI", systemImage: "sparkles.rectangle.stack")
+                    }
+                    Button("导入 AI 决策建议", systemImage: "square.and.arrow.down") { showAIImport = true }
+                    Divider()
                     ShareLink(item: shareText, preview: SharePreview(project.title)) {
                         Label("分享筹备摘要", systemImage: "square.and.arrow.up")
                     }
@@ -370,6 +704,9 @@ struct LifeEventProjectDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showEditProject) {
+            LifeEventProjectEditSheet(mode: .edit(project))
+        }
         .sheet(isPresented: $showAddPerson) {
             LifeEventAddPersonView(projectID: project.id)
         }
@@ -382,9 +719,30 @@ struct LifeEventProjectDetailView: View {
         .sheet(item: $taskToEdit) { task in
             LifeEventTaskEditView(task: task)
         }
+        .sheet(item: $taskToPlan) { task in
+            LifeEventTaskPlanningView(
+                task: task,
+                project: project,
+                stageTitle: projectStages.first(where: { $0.id == task.stageID })?.title ?? ""
+            )
+        }
+        .sheet(isPresented: $showAIImport) {
+            LifeEventAIDecisionImportView(project: project, stages: projectStages)
+        }
     }
 
     private var projectPeople: [LifeEventPerson] { people }
+
+    /// 给外部大模型的完整筹备档案（含需求答案与已有 AI 决策）。
+    private var consultationShareText: String {
+        LifeEventArchiveBuilder.makeArchive(
+            project: project,
+            stages: projectStages,
+            tasks: projectTasks,
+            people: projectPeople,
+            expenses: projectExpenses
+        )
+    }
 
     private var projectExpenses: [LifeEventExpense] { expenses }
 

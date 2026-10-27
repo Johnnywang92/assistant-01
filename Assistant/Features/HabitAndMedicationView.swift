@@ -517,6 +517,16 @@ struct HabitEditorSheet: View {
     @State private var preferredTime = Calendar.current.date(from: DateComponents(hour: 10, minute: 0)) ?? .now
     @State private var homeKitScene = ""
 
+    private let workoutPresets: [(title: String, detail: String, recurrence: RecurrenceInterval)] = [
+        ("跑步 30分钟", "有氧慢跑，保持心率稳定", .everyOtherDay),
+        ("居家瑜伽/拉伸", "全身柔韧性舒展与核心激活", .daily),
+        ("力量训练", "哑铃/自重抗阻训练", .everyOtherDay),
+        ("晚间散步/快走", "饭后消食快走 4000 步", .daily),
+        ("八段锦/冥想", "舒缓肩颈与呼吸调节", .daily),
+        ("游泳", "全身低冲击有氧训练", .weekly),
+        ("户外骑行", "有氧耐力骑行", .weekly)
+    ]
+
     private var isEditing: Bool { habit != nil }
 
     init(habit: PeriodicHabit?) {
@@ -535,6 +545,31 @@ struct HabitEditorSheet: View {
             Form {
                 Section("运动内容") {
                     TextField("运动名称（如：跑步、瑜伽、力量训练）", text: $title)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(workoutPresets, id: \.title) { preset in
+                                let isSelected = title == preset.title
+                                Button {
+                                    title = preset.title
+                                    if detail.isEmpty { detail = preset.detail }
+                                    recurrence = preset.recurrence
+                                    Haptic.selection()
+                                } label: {
+                                    Text(preset.title)
+                                        .font(.caption.weight(isSelected ? .semibold : .regular))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(Capsule().fill(isSelected ? Color.purple.opacity(0.18) : Color(.tertiarySystemFill)))
+                                        .overlay(Capsule().stroke(isSelected ? Color.purple : Color.clear, lineWidth: 1))
+                                        .foregroundStyle(isSelected ? Color.purple : Color.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+
                     TextField("补充备注（可选）", text: $detail)
                     Picker("重复周期", selection: $recurrence) {
                         ForEach(RecurrenceInterval.allCases, id: \.self) { r in
@@ -616,6 +651,7 @@ struct HabitEditorSheet: View {
 struct MedicationEditorSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Query private var cabinetMedicines: [MedicineItem]
 
     let med: MedicationPlan?
 
@@ -627,10 +663,23 @@ struct MedicationEditorSheet: View {
     @State private var mealRelation: MedicationMealRelation = .afterMeal(minutes: 30)
 
     private let amountOptions: [Double] = [0.5, 1, 1.5, 2, 3, 4, 6]
-    private let unitOptions = ["片", "粒", "颗", "袋", "支", "毫升", "滴", "勺"]
+    private let unitOptions = ["片", "粒", "颗", "袋", "支", "毫升", "滴", "包", "丸", "勺"]
     private let frequencyOptions = [1, 2, 3, 4, 5, 6]
+    private let mealRelationPresets: [MedicationMealRelation] = [
+        .afterMeal(minutes: 30),
+        .afterMeal(minutes: 15),
+        .withMeal,
+        .beforeMeal(minutes: 30),
+        .bedtime,
+        .unrestricted
+    ]
     /// 补齐新增时间槽时的默认小时（错开分布）
     private let defaultHours = [8, 20, 13, 16, 10, 22]
+
+    private var activeCabinetMedicines: [MedicineItem] {
+        var seen = Set<String>()
+        return cabinetMedicines.filter { !$0.isDisposed && seen.insert($0.name).inserted }
+    }
 
     private var isEditing: Bool { med != nil }
 
@@ -655,6 +704,80 @@ struct MedicationEditorSheet: View {
             Form {
                 Section("药品信息") {
                     TextField("药品名称（如：维生素C、感冒药）", text: $medName)
+
+                    if !activeCabinetMedicines.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("从家庭药箱直接点选（自动带入用法）")
+                                .font(.caption2.bold())
+                                .foregroundStyle(.secondary)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(activeCabinetMedicines) { item in
+                                        let isSelected = medName == item.name
+                                        Button {
+                                            applyCabinetMedicine(item)
+                                            Haptic.selection()
+                                        } label: {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "archivebox.fill")
+                                                    .font(.caption2)
+                                                Text(item.name)
+                                                    .font(.caption)
+                                            }
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .background(Capsule().fill(isSelected ? Color.green.opacity(0.18) : Color(.tertiarySystemFill)))
+                                            .overlay(Capsule().stroke(isSelected ? Color.green : Color.clear, lineWidth: 1))
+                                            .foregroundStyle(isSelected ? Color.green : Color.primary)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("常用药快捷预设")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.secondary)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(commonMedicinePresets) { preset in
+                                    let isSelected = medName == preset.name
+                                    Button {
+                                        medName = preset.name
+                                        dosageAmount = preset.dosageAmount
+                                        dosageUnit = preset.dosageUnit
+                                        mealRelation = preset.mealRelation
+                                        let count = max(1, min(6, preset.frequencyCount > 0 ? preset.frequencyCount : 1))
+                                        frequency = count
+                                        var draft = MedicineUsageDraft()
+                                        draft.frequencyCount = count
+                                        draft.frequencySpecial = preset.frequencySpecial
+                                        draft.mealRelation = preset.mealRelation
+                                        let parsedDates = draft.defaultTimePoints.compactMap { Self.date(fromTime: $0) }
+                                        if !parsedDates.isEmpty {
+                                            timePoints = parsedDates
+                                        }
+                                        Haptic.selection()
+                                    } label: {
+                                        Text(preset.name)
+                                            .font(.caption)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .background(Capsule().fill(isSelected ? Color.blue.opacity(0.18) : Color(.tertiarySystemFill)))
+                                            .overlay(Capsule().stroke(isSelected ? Color.blue : Color.clear, lineWidth: 1))
+                                            .foregroundStyle(isSelected ? Color.blue : Color.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+
                     if let notes = med?.notes {
                         TextField("备注", text: .constant(notes))
                             .disabled(true)
@@ -662,44 +785,112 @@ struct MedicationEditorSheet: View {
                     }
                 }
 
-                // 用餐时效关系（自适应联动）
+                // 用餐时效关系（滑动点选）
                 Section("饮食时效要求（防伤胃与吸收自适应）") {
-                    Picker("时效要求", selection: $mealRelation) {
-                        Label("饭后 30 分钟（护胃防刺激）", systemImage: "cup.and.saucer.fill")
-                            .tag(MedicationMealRelation.afterMeal(minutes: 30))
-                        Label("饭后 15 分钟（快速饭后）", systemImage: "cup.and.saucer.fill")
-                            .tag(MedicationMealRelation.afterMeal(minutes: 15))
-                        Label("饭前 30 分钟（空腹吸收充分）", systemImage: "fork.knife.circle")
-                            .tag(MedicationMealRelation.beforeMeal(minutes: 30))
-                        Label("随餐同服（促进脂溶性吸收）", systemImage: "fork.knife")
-                            .tag(MedicationMealRelation.withMeal)
-                        Label("睡前服用（夜间平稳起效）", systemImage: "moon.stars.fill")
-                            .tag(MedicationMealRelation.bedtime)
-                        Label("不限时间（任何时段均可）", systemImage: "clock")
-                            .tag(MedicationMealRelation.unrestricted)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(mealRelationPresets, id: \.self) { rel in
+                                let isSelected = mealRelation == rel
+                                Button {
+                                    mealRelation = rel
+                                    Haptic.selection()
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: rel.iconName)
+                                            .font(.caption)
+                                        Text(rel.displayName)
+                                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                                    }
+                                    .padding(.horizontal, 11)
+                                    .padding(.vertical, 6)
+                                    .background(Capsule().fill(isSelected ? Color.blue : Color(.tertiarySystemFill)))
+                                    .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 2)
                     }
                 }
 
                 // 用量滑动选择，不手动输入
-                Section("单次用量（滑动选择）") {
-                    Picker("用量", selection: $dosageAmount) {
-                        ForEach(amountOptions, id: \.self) { a in
-                            Text(Self.formatAmount(a)).tag(a)
+                Section("单次用量（滑动点选）") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("每次用量")
+                                .font(.subheadline.bold())
+                            Spacer()
+                            Text("每次 \(Self.formatAmount(dosageAmount)) \(dosageUnit)")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.green)
                         }
-                    }
-                    .pickerStyle(.wheel)
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity, alignment: .center)
 
-                    Picker("单位", selection: $dosageUnit) {
-                        ForEach(unitOptions, id: \.self) { Text($0).tag($0) }
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(amountOptions, id: \.self) { a in
+                                    let isSelected = abs(dosageAmount - a) < 0.001
+                                    Button {
+                                        dosageAmount = a
+                                        Haptic.selection()
+                                    } label: {
+                                        Text(Self.formatAmount(a))
+                                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(Capsule().fill(isSelected ? Color.green.opacity(0.18) : Color(.tertiarySystemFill)))
+                                            .overlay(Capsule().stroke(isSelected ? Color.green : Color.clear, lineWidth: 1.5))
+                                            .foregroundStyle(isSelected ? Color.green : Color.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(unitOptions, id: \.self) { u in
+                                    let isSelected = dosageUnit == u
+                                    Button {
+                                        dosageUnit = u
+                                        Haptic.selection()
+                                    } label: {
+                                        Text(u)
+                                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                                            .padding(.horizontal, 11)
+                                            .padding(.vertical, 6)
+                                            .background(Capsule().fill(isSelected ? Color.green : Color(.tertiarySystemFill)))
+                                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
                     }
                 }
 
-                // 频次与服用时间：频次用滑动选择，时间用滚轮
+                // 频次与服用时间：频次用滑动胶囊选择
                 Section("服用频次与时间") {
-                    Picker("每日频次", selection: $frequency) {
-                        ForEach(frequencyOptions, id: \.self) { Text("\($0) 次/天").tag($0) }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(frequencyOptions, id: \.self) { f in
+                                let isSelected = frequency == f
+                                Button {
+                                    frequency = f
+                                    Haptic.selection()
+                                } label: {
+                                    Text("一日 \(f) 次")
+                                        .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(Capsule().fill(isSelected ? Color.green : Color(.tertiarySystemFill)))
+                                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 2)
                     }
 
                     ForEach(timePoints.indices, id: \.self) { idx in
@@ -726,6 +917,20 @@ struct MedicationEditorSheet: View {
             .onChange(of: frequency) { _, newValue in
                 adjustTimePoints(to: newValue)
             }
+        }
+    }
+
+    private func applyCabinetMedicine(_ item: MedicineItem) {
+        medName = item.name
+        let draft = MedicineUsageDraft.parse(from: item.usageMethod ?? "")
+        dosageAmount = draft.dosageAmount
+        dosageUnit = draft.dosageUnit
+        mealRelation = draft.mealRelation
+        let count = max(1, min(6, draft.frequencyCount > 0 ? draft.frequencyCount : 1))
+        frequency = count
+        let parsedDates = draft.defaultTimePoints.compactMap { Self.date(fromTime: $0) }
+        if !parsedDates.isEmpty {
+            timePoints = parsedDates
         }
     }
 

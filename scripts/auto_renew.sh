@@ -18,23 +18,53 @@ source "$CONFIG"
 
 BUILD_DIR="$ROOT/build"
 mkdir -p "$BUILD_DIR"
-STAMP_FILE="$BUILD_DIR/.last_renew_timestamp"
-RENEW_INTERVAL_SECONDS=$((3 * 86400)) # 每满 3 天自动续签一次（免费证书有效期 7 天）
+APP="$BUILD_DIR/Build/Products/Release-iphoneos/Assistant.app"
+PROVISION_FILE="$APP/embedded.mobileprovision"
+EXPIRY_FILE="$BUILD_DIR/.profile_expiration_timestamp"
 
 FORCE=0
 if [[ "${1:-}" == "--force" ]]; then
   FORCE=1
 fi
 
-if [[ "$FORCE" -eq 0 && -f "$STAMP_FILE" ]]; then
-  LAST_TS=$(cat "$STAMP_FILE" 2>/dev/null || echo 0)
-  NOW_TS=$(date +%s)
-  ELAPSED=$((NOW_TS - LAST_TS))
-  if (( ELAPSED < RENEW_INTERVAL_SECONDS )); then
-    REMAINING_HOURS=$(( (RENEW_INTERVAL_SECONDS - ELAPSED) / 3600 ))
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] 距离下次自动续签还有约 ${REMAINING_HOURS} 小时，跳过。"
-    exit 0
+# 获取当前 App 描述文件（Provisioning Profile）的实际到期时间戳
+get_profile_expiry() {
+  if [[ -f "$PROVISION_FILE" ]]; then
+    python3 -c "
+import plistlib, sys
+try:
+    with open('$PROVISION_FILE', 'rb') as f:
+        content = f.read()
+    s = content.find(b'<?xml')
+    e = content.find(b'</plist>') + 8
+    if s != -1 and e != -1:
+        data = plistlib.loads(content[s:e])
+        print(int(data['ExpirationDate'].timestamp()))
+        sys.exit(0)
+except Exception:
+    pass
+sys.exit(1)
+" 2>/dev/null && return 0
   fi
+  if [[ -f "$EXPIRY_FILE" ]]; then
+    cat "$EXPIRY_FILE"
+    return 0
+  fi
+  echo 0
+}
+
+EXPIRY_TS=$(get_profile_expiry)
+NOW_TS=$(date +%s)
+REMAINING_SECONDS=$((EXPIRY_TS - NOW_TS))
+
+# 缓冲阈值：剩余不足 48 小时（2天）时自动触发续签；若已过期或无记录，立即触发
+RENEW_THRESHOLD_SECONDS=$((48 * 3600))
+
+if [[ "$FORCE" -eq 0 && "$REMAINING_SECONDS" -gt "$RENEW_THRESHOLD_SECONDS" ]]; then
+  REMAINING_HOURS=$((REMAINING_SECONDS / 3600))
+  EXPIRY_STR=$(date -r "$EXPIRY_TS" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "未知")
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] 证书仍在有效期内（剩余约 ${REMAINING_HOURS} 小时，到期时间：${EXPIRY_STR}），暂无需续签。"
+  exit 0
 fi
 
 # 检查目标 iPhone 是否在同局域网 Wi-Fi 或 USB 下可达
@@ -44,7 +74,7 @@ if [[ -z "$DEVICE_LINE" ]] || ! echo "$DEVICE_LINE" | grep -Eq "connected|availa
   exit 0
 fi
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] 检测到 iPhone 在线，开始无线重签安装…"
-"$ROOT/scripts/reinstall.sh"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] 检测到 iPhone 在线且证书即将到期/强制重签，开始无线重签安装…"
+"$ROOT/scripts/reinstall.sh" --clean-profile
 
 osascript -e 'display notification "已通过 Wi-Fi 自动为 iPhone 续签「小助」（有效期 7 天）" with title "小助自动续签完成"' >/dev/null 2>&1 || true

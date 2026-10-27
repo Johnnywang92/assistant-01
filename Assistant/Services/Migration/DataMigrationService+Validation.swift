@@ -46,6 +46,8 @@ public struct BackupInspectionSummary: Identifiable {
     public var omniboxTransactionCount: Int = 0
     public var foodIntakeCount: Int = 0
     public var waterIntakeCount: Int = 0
+    public var judgmentFeedbackCount: Int = 0
+    public var healthSnapshotCount: Int = 0
     public var settingsKeyCount: Int = 0
     public var isEncryptedWithPIN: Bool = false
 
@@ -59,7 +61,8 @@ public struct BackupInspectionSummary: Identifiable {
         childHealthVisitCount + childVaccinationCount + reminderActionCount +
         lifeEventProjectCount + lifeEventStageCount + lifeEventTaskCount +
         lifeEventPersonCount + lifeEventExpenseCount + lifeEventGuestCount +
-        medicineCount + omniboxTransactionCount + foodIntakeCount + waterIntakeCount + settingsKeyCount
+        medicineCount + omniboxTransactionCount + foodIntakeCount + waterIntakeCount +
+        judgmentFeedbackCount + healthSnapshotCount + settingsKeyCount
     }
 }
 
@@ -108,20 +111,35 @@ extension DataMigrationService {
             omniboxTransactionCount: package.omniboxTransactions?.count ?? 0,
             foodIntakeCount: package.foodIntakeRecords?.count ?? 0,
             waterIntakeCount: package.waterIntakeRecords?.count ?? 0,
+            judgmentFeedbackCount: package.judgmentFeedbacks?.count ?? 0,
+            healthSnapshotCount: package.healthSnapshots?.count ?? 0,
             settingsKeyCount: package.settings?.itemCount ?? 0,
             isEncryptedWithPIN: isEncryptedWithPIN
         )
     }
 
     /// 在覆盖本地数据库前验证备份结构，避免重复 ID 或损坏附件进入还原流程。
+    /// 导出后也会调用同一套规则（导出后校验），两侧共用一份判据。
     func validate(package: BackupPackage) throws {
-        guard (1...2).contains(package.metadata.schemaVersion) else {
+        guard (1...4).contains(package.metadata.schemaVersion) else {
             throw MigrationCryptoError.corruptedData
         }
         if package.metadata.schemaVersion >= 2 {
             guard package.expenses != nil, package.documents != nil, package.departureItems != nil,
                   package.voiceMemos != nil, package.vehicles != nil, package.storedItems != nil,
                   package.dialogueRecords != nil, package.rawMessages != nil, package.locationSamples != nil else {
+                throw MigrationCryptoError.corruptedData
+            }
+        }
+        if package.metadata.schemaVersion >= 3 {
+            // v3 起判别反馈语料是承诺范围（字段可缺省是为了兼容更早的包，不是让 v3 导出偷懒）
+            guard package.judgmentFeedbacks != nil else {
+                throw MigrationCryptoError.corruptedData
+            }
+        }
+        if package.metadata.schemaVersion >= 4 {
+            // v4 起每日健康快照是承诺范围（HealthKit 不可回溯，导出漏了就永远补不回趋势）
+            guard package.healthSnapshots != nil else {
                 throw MigrationCryptoError.corruptedData
             }
         }
@@ -168,6 +186,8 @@ extension DataMigrationService {
         try requireUniqueIDs(package.omniboxTransactions?.map(\.id) ?? [])
         try requireUniqueIDs(package.foodIntakeRecords?.map(\.id) ?? [])
         try requireUniqueIDs(package.waterIntakeRecords?.map(\.id) ?? [])
+        try requireUniqueIDs(package.judgmentFeedbacks?.map(\.id) ?? [])
+        try requireUniqueIDs(package.healthSnapshots?.map(\.id) ?? [])
 
         // 阶段与打卡流水必须挂到已备份的路径上，否则还原后成孤儿数据
         if let stages = package.skillStages {

@@ -81,9 +81,10 @@ final class BackgroundRefreshCoordinator {
             auditor.auditAll()
         }
 
-        // 3. 巡检查验固定周期支出并自动入账
+        // 3. 巡检查验固定周期支出并自动入账，随后评估预算超支预警
         if !isExpired() {
             RecurringExpenseManager.shared.processDueRecurringExpenses(in: context)
+            BudgetAlertService.shared.evaluateAndNotify(context: context)
         }
 
         // 4. 排空分享扩展中转区
@@ -95,6 +96,11 @@ final class BackgroundRefreshCoordinator {
         if !isExpired() {
             TripArrivalService.shared.syncAllReminders(context: context)
             await TripArrivalService.shared.evaluate(context: context)
+        }
+
+        // 6. 若开启了 NAS / 私有云盘自动同步，执行一次静默后台加密备份
+        if !isExpired() {
+            await WebDAVSyncService.shared.performBackgroundSyncIfNeeded(context: context)
         }
     }
 }

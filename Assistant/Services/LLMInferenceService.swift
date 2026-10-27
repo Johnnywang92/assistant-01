@@ -1148,25 +1148,59 @@ public final class LLMInferenceService: ObservableObject {
             return nil
         }
 
-        // 统一走 OmniboxPlanner 规划动作（LLM 优先，规则兜底）
+        // 统一走 OmniboxPlanner 规划动作（LLM 优先，规则兜底），并接入点赞/点踩回流
+        let feedbackRecords = ((try? context.fetch(FetchDescriptor<OmniboxJudgmentFeedback>())) ?? [])
+            .map(\.feedback)
+        let feedback = IntentFeedbackMemory(records: feedbackRecords)
         let capture = OmniboxCapture(payloads: [.text(trimmed)], source: .voice)
-        let planResult = await OmniboxPlanner().plan(capture: capture)
-        let executableActions = planResult.actions.filter {
+        let planResult = await OmniboxPlanner().plan(capture: capture, feedback: feedback)
+
+        // 只保留真正写库的动作；query/memo 由对话层直接回复，不重复落库
+        let actionable = planResult.actions.filter {
             $0.capability != .queryLookup && $0.capability != .memoInbox
         }
-        guard !executableActions.isEmpty else {
+        guard !actionable.isEmpty else {
             return nil
         }
 
+        // P0-1：语音通道永不静默执行需要人工确认的动作——
+        // 破坏性动作（取消待办/修改账目）、低置信动作，以及被点踩过的输入，
+        // 一律转入确认卡由用户显式执行，与投喂口「强制确认」原则对齐。
+        let normalized = planResult.normalizedText.isEmpty ? trimmed : planResult.normalizedText
+        let disputedInput = feedback.isDisputed(normalized)
+        let executable = actionable.filter { !$0.needsConfirmation && !disputedInput }
+        let deferred = actionable.filter { $0.needsConfirmation || disputedInput }
+
+        if executable.isEmpty {
+            // 留痕（planned 状态事务），历史页可追溯这次语音投喂，而不是凭空消失
+            let trace = OmniboxTransaction(capture: capture, actions: actionable, engine: planResult.engine)
+            context.insert(trace)
+            try? context.save()
+            let names = deferred.map(\.summary).joined(separator: "；")
+            return "已理解：\(names)。涉及修改/取消或把握不足的动作需要你确认，请到万能投喂口确认后执行。"
+        }
+
         // 拓扑执行并获取回执
-        let outcomes = OmniboxExecutor.executeTopologically(executableActions, context: context)
-        let summaries = outcomes.compactMap { outcome -> String? in
+        let outcomes = OmniboxExecutor.executeTopologically(executable, context: context)
+
+        // 落事务记录（含原始输入与撤销令牌），与投喂口历史页完全合流、可一键撤销
+        let transaction = OmniboxTransaction(capture: capture, actions: executable, engine: planResult.engine)
+        transaction.status = .executed
+        transaction.executedAt = .now
+        transaction.undoJSON = try? JSONEncoder().encode(outcomes.filter(\.succeeded).map(\.undo))
+        context.insert(transaction)
+        try? context.save()
+
+        var summaries = outcomes.compactMap { outcome -> String? in
             if outcome.succeeded {
                 return outcome.summary
             } else if let err = outcome.errorText {
                 return "执行异常：\(err)"
             }
             return nil
+        }
+        if !deferred.isEmpty {
+            summaries.append("（\(deferred.map(\.summary).joined(separator: "；"))）需要确认，请到万能投喂口处理")
         }
         guard !summaries.isEmpty else { return nil }
         return summaries.joined(separator: "；")

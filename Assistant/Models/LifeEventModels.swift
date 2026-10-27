@@ -98,6 +98,24 @@ static var groupedSelectableCases: [LifeEventTemplateGroup] {
         }
     }
 
+    /// 模板默认推荐的项目名称。
+    var defaultTitle: String {
+        let raw: String = switch self {
+        case .engagementWedding: "我们的婚礼"
+        case .buyHouse: "置业购房计划"
+        case .homeRenovation: "新家装修"
+        case .movingHome, .houseMove: "乔迁新居"
+        case .childbirth: "宝宝待产与新生"
+        case .secondChild: "二宝降生筹备"
+        case .babyCelebration, .newborn: "宝宝百日/周岁宴"
+        case .buyCar: "提车计划"
+        case .graduation: "升学宴"
+        case .birthdayBanquet: "长辈寿宴"
+        case .custom: "人生大事筹备"
+        }
+        return L10n.tr(raw)
+    }
+
     /// 「人物与分工」板块的空态提示，按模板给出对应的角色示例。
     var peopleHint: String {
         let raw: String = switch self {
@@ -183,6 +201,9 @@ final class LifeEventProject {
     var budgetLimit: Double
     var statusRaw: String
     var createdAt: Date
+    /// 项目级 AI 全局决策摘要（粘贴大模型全局规划回复后保存）。
+    var aiDecisionSummary: String?
+    var aiDecisionAt: Date?
 
     init(title: String, template: LifeEventTemplate, targetDate: Date, location: String? = nil, budgetLimit: Double = 0) {
         self.id = UUID()
@@ -193,6 +214,8 @@ final class LifeEventProject {
         self.budgetLimit = budgetLimit
         self.statusRaw = "active"
         self.createdAt = .now
+        self.aiDecisionSummary = nil
+        self.aiDecisionAt = nil
     }
 
     var template: LifeEventTemplate { LifeEventTemplate(rawValue: templateRaw) ?? .custom }
@@ -229,6 +252,14 @@ final class LifeEventTask {
     var statusRaw: String
     var ownerName: String?
     var createdAt: Date
+    /// 需求问答的结构化答案（JSON：questionId → {presets, note}），由
+    /// `LifeEventTaskPlanningEngine.encodeAnswers/decodeAnswers` 存取。
+    var answersJSON: String?
+    /// 大模型决策回复的完整摘要（粘贴回填后保存）。
+    var aiDecisionSummary: String?
+    /// 从大模型输出解析并导入的行动项清单（JSON 字符串数组，仅作记录展示）。
+    var aiActionItemsJSON: String?
+    var aiConsultedAt: Date?
 
     init(projectID: UUID, stageID: UUID, title: String, dueDate: Date? = nil) {
         self.id = UUID()
@@ -240,6 +271,10 @@ final class LifeEventTask {
         self.statusRaw = "active"
         self.ownerName = nil
         self.createdAt = .now
+        self.answersJSON = nil
+        self.aiDecisionSummary = nil
+        self.aiActionItemsJSON = nil
+        self.aiConsultedAt = nil
     }
 
     var isDone: Bool { statusRaw == "done" }

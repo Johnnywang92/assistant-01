@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import SwiftData
 
@@ -39,7 +40,7 @@ enum Persistence {
             } catch {
                 // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
                 storedRecoveryError = Self.diagnose(openError: error)
-                let memSchema = Schema(AssistantSchemaV5.models)
+                let memSchema = Schema(AssistantSchemaV7.models)
                 if let memContainer = try? ModelContainer(for: memSchema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
                     return memContainer
                 }
@@ -52,7 +53,7 @@ enum Persistence {
     /// 旧库（V1）经 lightweight 阶段自动升级到 V2；**任何失败都不动磁盘文件**，
     /// 由调用方走恢复页导出原库。详见 `AssistantMigrationPlan`。
     private static func openStore() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV5.models)
+        let schema = Schema(AssistantSchemaV7.models)
         let config = ModelConfiguration(schema: schema)
         #if DEBUG
         Self.assertSchemaCoverage()
@@ -64,7 +65,7 @@ enum Persistence {
 
     /// 无迁移计划的旧路径：仅作为版本化计划识别不了真机遗留库时的兜底。
     private static func openStoreAutoMigrate() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV5.models)
+        let schema = Schema(AssistantSchemaV7.models)
         let config = ModelConfiguration(schema: schema)
         return try StartupMetrics.measure("openStore(autoMigrate)") {
             try ModelContainer(for: schema, configurations: config)
@@ -92,7 +93,7 @@ enum Persistence {
     /// 删模型会让旧库升级后静默丢表。DEBUG 下断言，发布构建不增开销。
     private static func assertSchemaCoverage() {
         let v1 = Set(AssistantSchemaV1.models.map { String(describing: $0) })
-        let current = Set(AssistantSchemaV5.models.map { String(describing: $0) })
+        let current = Set(AssistantSchemaV7.models.map { String(describing: $0) })
         let missing = v1.subtracting(current)
         assert(missing.isEmpty, "V1 模型从当前版本消失，旧库升级会丢数据：\(missing.sorted())")
     }
@@ -208,8 +209,8 @@ enum AssistantSchemaV4: VersionedSchema {
     }
 }
 
-/// Schema V5：当前版本。V5 相对 V4 纯加法（新增饮水与饮品记录 WaterIntakeRecord），
-/// 走 lightweight 迁移即可。已发布版本 V4 清单不可再改；后续再有加法请新开 V6。
+/// Schema V5：已发布版本。V5 相对 V4 纯加法（新增饮水与饮品记录 WaterIntakeRecord），
+/// 走 lightweight 迁移即可。已发布版本 V5 清单不可再改；后续再有加法请新开 V6。
 enum AssistantSchemaV5: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     static var models: [any PersistentModel.Type] {
@@ -219,22 +220,50 @@ enum AssistantSchemaV5: VersionedSchema {
     }
 }
 
+/// Schema V6：已发布版本。V6 相对 V5 纯加法（新增判别反馈 OmniboxJudgmentFeedback），
+/// 走 lightweight 迁移即可。已发布版本 V5 清单不可再改；后续再有加法请新开 V7。
+enum AssistantSchemaV6: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(6, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        AssistantSchemaV5.models + [
+            OmniboxJudgmentFeedback.self
+        ]
+    }
+}
+
+/// Schema V7：当前版本。V7 相对 V6 纯加法（新增每日健康快照 HealthDaySnapshotRecord），
+/// 走 lightweight 迁移即可。已发布版本 V6 清单不可再改；后续再有加法请新开 V8。
+enum AssistantSchemaV7: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(7, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        AssistantSchemaV6.models + [
+            HealthDaySnapshotRecord.self
+        ]
+    }
+}
+
 /// 显式版本化迁移计划。**不要再回到「打不开就删库重建」**——
 /// 旧代码首次失败即删 default.store，用户数据直接蒸发；现在失败走恢复页导出原库。
 enum AssistantMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [AssistantSchemaV1.self, AssistantSchemaV2.self, AssistantSchemaV3.self, AssistantSchemaV4.self, AssistantSchemaV5.self]
+        [
+            AssistantSchemaV1.self, AssistantSchemaV2.self, AssistantSchemaV3.self,
+            AssistantSchemaV4.self, AssistantSchemaV5.self, AssistantSchemaV6.self,
+            AssistantSchemaV7.self
+        ]
     }
 
     static var stages: [MigrationStage] {
-        // V1→V2→V3→V4→V5 全是「加字段（带默认值）+ 加模型」，系统 lightweight 迁移可完成。
+        // V1→V2→…→V7 全是「加字段（带默认值/可选）+ 加模型」，系统 lightweight 迁移可完成。
         // 若未来出现不兼容变更（删字段/改类型），在此插自定义阶段，
         // 并把目标版本的该字段改回可选或提供默认值——不要静默丢数据。
         [
             .lightweight(fromVersion: AssistantSchemaV1.self, toVersion: AssistantSchemaV2.self),
             .lightweight(fromVersion: AssistantSchemaV2.self, toVersion: AssistantSchemaV3.self),
             .lightweight(fromVersion: AssistantSchemaV3.self, toVersion: AssistantSchemaV4.self),
-            .lightweight(fromVersion: AssistantSchemaV4.self, toVersion: AssistantSchemaV5.self)
+            .lightweight(fromVersion: AssistantSchemaV4.self, toVersion: AssistantSchemaV5.self),
+            .lightweight(fromVersion: AssistantSchemaV5.self, toVersion: AssistantSchemaV6.self),
+            .lightweight(fromVersion: AssistantSchemaV6.self, toVersion: AssistantSchemaV7.self)
         ]
     }
 }
@@ -317,5 +346,39 @@ enum AppSettings {
         set {
             UserDefaults.standard.set(newValue, forKey: "daily_water_goal_ml")
         }
+    }
+
+    // MARK: - 判别层阈值覆盖（调试页「一键应用」写入；nil = 沿用内置经验值）
+
+    /// 阈值覆盖持久化。返回 nil 表示未覆盖，调用方应回退 `IntentDecisionPolicy.default`。
+    static var intentThresholdOverride: (minTop: Double, minMargin: Double)? {
+        get {
+            guard UserDefaults.standard.object(forKey: "intent_threshold_min_top") != nil,
+                  UserDefaults.standard.object(forKey: "intent_threshold_min_margin") != nil else {
+                return nil
+            }
+            return (
+                UserDefaults.standard.double(forKey: "intent_threshold_min_top"),
+                UserDefaults.standard.double(forKey: "intent_threshold_min_margin")
+            )
+        }
+        set {
+            if let newValue {
+                UserDefaults.standard.set(newValue.minTop, forKey: "intent_threshold_min_top")
+                UserDefaults.standard.set(newValue.minMargin, forKey: "intent_threshold_min_margin")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "intent_threshold_min_top")
+                UserDefaults.standard.removeObject(forKey: "intent_threshold_min_margin")
+            }
+        }
+    }
+
+    /// 投喂口判别层当前生效阈值：覆盖优先，否则内置经验值。
+    /// 与 `OmniboxIntentRouter.policy` 单点接线——改这里即全局生效。
+    static var intentDecisionPolicy: IntentDecisionPolicy {
+        if let override = intentThresholdOverride {
+            return IntentDecisionPolicy(minTopProbability: override.minTop, minMargin: override.minMargin)
+        }
+        return .default
     }
 }

@@ -33,5 +33,26 @@ struct AssistantAppShortcuts: AppShortcutsProvider {
             shortTitle: "快递上岛",
             systemImageName: "shippingbox.fill"
         )
+        AppShortcut(
+            intent: QueryBudgetIntent(),
+            phrases: [
+                "用\(.applicationName)查预算",
+                "\(.applicationName)还剩多少钱",
+                "查\(.applicationName)今日支出",
+                "\(.applicationName)安心花余额"
+            ],
+            shortTitle: "查询预算",
+            systemImageName: "yensign.circle.fill"
+        )
+        AppShortcut(
+            intent: QueryTodayTodosIntent(),
+            phrases: [
+                "查\(.applicationName)待办",
+                "用\(.applicationName)查今天要做什么",
+                "\(.applicationName)今天还有什么事"
+            ],
+            shortTitle: "今日待办",
+            systemImageName: "checklist"
+        )
     }
 }

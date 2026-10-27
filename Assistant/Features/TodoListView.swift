@@ -5,109 +5,6 @@ import SwiftUI
 import CoreLocation
 import WeatherKit
 
-/// 待办单次 O(N) 极速分类存储，避免视图每次刷新时连续发起十余次全量数组 filter
-fileprivate struct TodoClassification {
-    var active: [TodoItem] = []
-    var review: [TodoItem] = []
-    var done: [TodoItem] = []
-    var recurring: [TodoItem] = []
-    var overdue: [TodoItem] = []
-
-    var todayTodos: [TodoItem] = []
-    var generals: [TodoItem] = []
-    var works: [TodoItem] = []
-    var parcels: [TodoItem] = []
-    var returnParcels: [TodoItem] = []
-    var medications: [TodoItem] = []
-    var chargings: [TodoItem] = []
-    var houseworks: [TodoItem] = []
-    var subscriptions: [TodoItem] = []
-    var expiries: [TodoItem] = []
-    var anniversaries: [TodoItem] = []
-    var passwordTodos: [TodoItem] = []
-    var vehicleTodos: [TodoItem] = []
-    var parentingTodos: [TodoItem] = []
-    var petTodos: [TodoItem] = []
-    var others: [TodoItem] = []
-
-    var doneGenerals: [TodoItem] = []
-    var doneRecurring: [TodoItem] = []
-    var doneParcels: [TodoItem] = []
-    var doneLife: [TodoItem] = []
-    var doneAlerts: [TodoItem] = []
-
-    init(from items: [TodoItem]) {
-        let now = Date.now
-        for item in items {
-            switch item.status {
-            case .pendingReview:
-                review.append(item)
-            case .done:
-                done.append(item)
-                if item.isRecurring { doneRecurring.append(item) }
-                switch item.type {
-                case .general, .event, .travelBooking: doneGenerals.append(item)
-                case .skillLearning: doneGenerals.append(item)
-                case .parcel, .returnParcel: doneParcels.append(item)
-                case .medication, .housework, .exercise, .charging: doneLife.append(item)
-                case .subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .vehicleCare: doneAlerts.append(item)
-                default: break
-                }
-            case .active:
-                active.append(item)
-                if let due = item.dueAt, due < now {
-                    overdue.append(item)
-                }
-            }
-        }
-        // 先对所有活跃待办按“紧急性 60% + 重要性 40%”进行单次全局排序，逾期事项按截止时间升序
-        TodoPriority.sort(&active)
-        overdue.sort { ($0.dueAt ?? .now) < ($1.dueAt ?? .now) }
-
-        let cal = Calendar.current
-        let startOfToday = cal.startOfDay(for: now)
-
-        // 各活跃分组直接沿用已排好序的 active 流进行分发，天然保持正确优先级，避免 15 次冗余全量排序
-        for item in active {
-            if Self.isTodayItem(item, cal: cal, startOfToday: startOfToday) {
-                todayTodos.append(item)
-            }
-            if item.isRecurring { recurring.append(item) }
-            switch item.type {
-            case .general, .event, .travelBooking: generals.append(item)
-            case .skillLearning: generals.append(item)
-            case .work: works.append(item)
-            case .parcel: parcels.append(item)
-            case .returnParcel: returnParcels.append(item)
-            case .medication: medications.append(item)
-            case .charging: chargings.append(item)
-            case .housework, .exercise: houseworks.append(item)
-            case .subscription, .bill: subscriptions.append(item)
-            case .itemExpiry: expiries.append(item)
-            case .anniversary: anniversaries.append(item)
-            case .passwordSecurity: passwordTodos.append(item)
-            case .vehicleCare: vehicleTodos.append(item)
-            case .childVaccine, .childGrowth, .childMilestone, .childHealth: parentingTodos.append(item)
-            case .pet: petTodos.append(item)
-            case .other: others.append(item)
-            default: others.append(item)
-            }
-        }
-    }
-
-    static func isTodayItem(_ item: TodoItem, cal: Calendar, startOfToday: Date) -> Bool {
-        if let override = item.reminderOverrideAt {
-            if cal.isDateInToday(override) || override < startOfToday {
-                return true
-            }
-        }
-        if let due = item.dueAt {
-            return cal.isDateInToday(due) || due < startOfToday
-        }
-        return cal.isDateInToday(item.createdAt)
-    }
-}
-
 struct TodoListView: View {
     @Environment(\.modelContext) private var context
     /// 性能：首页只订阅未完成（活跃/待确认）事项；历史已完成事项单独限量订阅，
@@ -164,6 +61,11 @@ struct TodoListView: View {
     @State private var crossModuleSearchText: String = ""
     @State private var showOverdueTriage = false
     @AppStorage("overdue_triage_last_date") private var lastTriageDateKey = ""
+    /// 时间聚合条：当前展开的桶（逾期/今天/本周）详情弹层
+    @State private var selectedTimeBucket: TodoTimeBucketKind?
+    /// 一键整理逾期时指定的队列（取时间桶口径，与 chip 计数同源）；
+    /// nil 时回落到分类器口径（早间自动清道夫路径）
+    @State private var triageItemsOverride: [TodoItem]?
 
     /// 只订阅风格 key：壁纸预渲染完成或调参时不再重建整个待办页
     private var isCustomBackgroundActive: Bool {
@@ -221,16 +123,19 @@ struct TodoListView: View {
             classificationCache.lastComputedTime = now
             return cached
         }
-        let all = todos + recentDoneTodos
-        let source: [TodoItem]
+        // 活跃与已完成分开过滤：省掉「先合并上万条、再整体过滤」的一次全量拷贝
+        let filteredActive: [TodoItem]
+        let filteredDone: [TodoItem]
         if query.isEmpty {
-            source = all
+            filteredActive = todos
+            filteredDone = recentDoneTodos
         } else {
-            source = all.filter { matchesSearch($0, query: query) }
+            filteredActive = todos.filter { matchesSearch($0, query: query) }
+            filteredDone = recentDoneTodos.filter { matchesSearch($0, query: query) }
         }
         let classifyBegin = CFAbsoluteTimeGetCurrent()
-        let result = TodoClassification(from: source)
-        StartupMetrics.markOnce("todoList.classify", "n=\(source.count) cost=\(Int((CFAbsoluteTimeGetCurrent() - classifyBegin) * 1000))ms")
+        let result = TodoClassification(active: filteredActive, done: filteredDone)
+        StartupMetrics.markOnce("todoList.classify", "n=\(todos.count + recentDoneTodos.count) cost=\(Int((CFAbsoluteTimeGetCurrent() - classifyBegin) * 1000))ms")
         classificationCache.key = key
         classificationCache.query = query
         classificationCache.activeCount = todos.count
@@ -279,16 +184,16 @@ struct TodoListView: View {
     }
 
     private func matchesSearch(_ item: TodoItem, query: String) -> Bool {
-        let fields = [
-            item.title,
-            item.detail,
-            item.pickupCode,
-            item.courier,
-            item.station,
-            item.location,
-            item.sourceText
-        ]
-        return fields.contains { $0?.localizedCaseInsensitiveContains(query) == true }
+        // 逐字段直接比较：原写法每条待办都要分配一个 7 元素数组，
+        // 一万条待办 = 七万个临时数组，逐字输入时全程在制造垃圾
+        if item.title.localizedCaseInsensitiveContains(query) { return true }
+        if let detail = item.detail, detail.localizedCaseInsensitiveContains(query) { return true }
+        if let pickupCode = item.pickupCode, pickupCode.localizedCaseInsensitiveContains(query) { return true }
+        if let courier = item.courier, courier.localizedCaseInsensitiveContains(query) { return true }
+        if let station = item.station, station.localizedCaseInsensitiveContains(query) { return true }
+        if let location = item.location, location.localizedCaseInsensitiveContains(query) { return true }
+        if let sourceText = item.sourceText, sourceText.localizedCaseInsensitiveContains(query) { return true }
+        return false
     }
 
     private func category(for item: TodoItem) -> TodoFilterCategory {
@@ -310,6 +215,30 @@ struct TodoListView: View {
 
     /// 逾期事项：由分类器单次 O(N) 遍历统一收集，无需重复全表 filter + sort
     private var overdueTodos: [TodoItem] { classified.overdue }
+
+    /// 时间聚合三桶（逾期/今天/本周）：与详情弹层同一分桶结果，chip 计数恒等于列表长度。
+    /// 口径见 `TodoTimeAggregator`：日粒度、改期优先、完成不计。
+    private var timeBuckets: TodoTimeBuckets {
+        TodoTimeAggregator.bucket(
+            activeTodos.map {
+                TodoTimeSnapshot(
+                    id: $0.id,
+                    dueAt: $0.dueAt,
+                    reminderOverrideAt: $0.reminderOverrideAt,
+                    createdAt: $0.createdAt,
+                    isDone: false
+                )
+            }
+        )
+    }
+
+    /// 把桶内 ID 还原成待办，保持分桶排序（生效时间升序）
+    private func bucketTodoItems(for kind: TodoTimeBucketKind) -> [TodoItem] {
+        let ids = timeBuckets.ids(for: kind)
+        guard !ids.isEmpty else { return [] }
+        let byID = Dictionary(activeTodos.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byID[$0] }
+    }
 
     /// 早间逾期清道夫：每天首次进入待办页时，若有逾期事项则弹出发牌器
     private func maybePresentOverdueTriage() {
@@ -358,9 +287,8 @@ struct TodoListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HomeGreetingCard(activeCount: activeTodos.count)
-                // 万能投喂口固定入口：丢进文字/截图，自动记账、建待办、存收集箱
-                OmniboxEntryCard {
+                // 顶部快捷卡片支持左右滑动，避免欢迎信息和投喂入口同时占用首页高度。
+                HomeTopCardsCarousel(activeCount: activeTodos.count) {
                     Haptic.light()
                     router.activeSheet = .omnibox
                 }
@@ -369,6 +297,13 @@ struct TodoListView: View {
                 // 顶部固定横向分类 Tab 栏（带指示胶囊与角标）
                 filterTabBar
                     .wallpaperReadableText()
+
+                // 时间聚合条：按时间组织的逾期/今天/本周入口 + 逾期一键整理
+                // （与类型分类正交；三桶互斥，chip 计数即详情列表长度）
+                if !timeBuckets.isEmpty {
+                    timeAggregationBar
+                        .wallpaperReadableText()
+                }
 
                 // 搜索词非空时，提供一键跳往「跨模块全景搜索」入口（避免首字母拦截打断中文拼音输入）
                 if !crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -401,27 +336,62 @@ struct TodoListView: View {
 
                 // 上下滑动排序模式开启提示横幅
                 if isReordering {
-                    reorderingActiveBanner
+                    TodoReorderingBanner {
+                        AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.8)) {
+                            isReordering = false
+                        }
+                        Haptic.medium()
+                    }
                 }
 
                 // 长辈关怀大字模式顶部状态微胶囊（支持一键调整字号）
                 if seniorManager.isSeniorModeEnabled {
-                    seniorModeActiveBanner
+                    TodoSeniorModeBanner(fontScaleTitle: seniorManager.fontScale.title) {
+                        showSeniorSettings = true
+                        Haptic.light()
+                    }
                 }
 
                 // 突发气象预警或气温骤降轻巧胶囊（若有则展示，支持手动划掉关闭）
                 if let banner = weatherAlerts.currentBanner {
-                    weatherAlertBanner(banner)
+                    TodoWeatherAlertBanner(banner: banner) {
+                        weatherAlerts.dismissCurrentBanner()
+                    }
                 }
 
                 // 临近 5~7 天纪念日浪漫筹备备忘横幅（支持一键加入待办与不再提醒）
                 if let upcoming = anniversaryReminder.activeUpcoming {
-                    anniversaryPrepBanner(upcoming)
+                    TodoAnniversaryPrepBanner(
+                        upcoming: upcoming,
+                        onDismiss: {
+                            AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                anniversaryReminder.dismiss(for: upcoming)
+                                showToast("已设置本周期不再提醒该纪念日")
+                            }
+                        },
+                        onAddTodos: {
+                            AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                anniversaryReminder.addPreparationTodos(for: upcoming, in: context)
+                                showToast("已一键将准备鲜花、订蛋糕与订餐厅加入待办！🎉")
+                            }
+                        }
+                    )
                 }
 
                 // 临近节假日或出差旅游出行前购票提醒横幅（火车票提前15天、机票提前15-30天）
                 if let ticketInfo = ticketReminder.activeUpcomingTicket {
-                    travelTicketPrepBanner(ticketInfo)
+                    TodoTravelTicketPrepBanner(
+                        info: ticketInfo,
+                        onDismiss: {
+                            AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                ticketReminder.dismiss(for: ticketInfo)
+                                showToast("已设置本周期不再提醒该出行购票")
+                            }
+                        },
+                        onConfirm: {
+                            confirmingTicketInfo = ticketInfo
+                        }
+                    )
                 }
 
                 Divider()
@@ -509,7 +479,11 @@ struct TodoListView: View {
                 AddTodoSheet(initialCategory: selectedFilter)
             }
             .sheet(isPresented: $showOverdueTriage) {
-                OverdueTriageSheet(items: overdueTodos)
+                OverdueTriageSheet(items: triageItemsOverride ?? overdueTodos)
+                    .onDisappear { triageItemsOverride = nil }
+            }
+            .sheet(item: $selectedTimeBucket) { kind in
+                TodoTimeBucketSheet(kind: kind, items: bucketTodoItems(for: kind))
             }
             .onAppear {
                 maybePresentOverdueTriage()
@@ -699,379 +673,6 @@ struct TodoListView: View {
             onShowQRCode: { itemForQRCode = item },
             onShare: { itemToShare = item }
         )
-    }
-
-    // MARK: - 排序调整模式顶栏提示胶囊
-    @ViewBuilder
-    private var reorderingActiveBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.up.arrow.down.circle.fill")
-                .font(.subheadline.bold())
-                .foregroundStyle(.tint)
-
-            Text("滑动排序中：按住右侧三条杠 ≡ 即可上下拖动")
-                .font(.caption.bold())
-                .foregroundStyle(.primary)
-
-            Spacer()
-
-            Button {
-                AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.8)) {
-                    isReordering = false
-                }
-                Haptic.medium()
-            } label: {
-                Text("完成")
-                    .font(.caption2.bold())
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.accentColor))
-                    .foregroundStyle(.white)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .background(Color.accentColor.opacity(0.12))
-        .transition(.move(edge: .top).combined(with: .opacity))
-    }
-
-    // MARK: - 长辈关怀模式顶栏胶囊
-    @ViewBuilder
-    private var seniorModeActiveBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "figure.walk.motion")
-                .font(.subheadline.bold())
-                .foregroundStyle(AppColor.warning)
-
-            Text("长辈关怀大字模式")
-                .font(.caption.bold())
-                .foregroundStyle(AppColor.warning)
-
-            Text("(\(seniorManager.fontScale.title))")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
-            Spacer()
-
-            Button {
-                showSeniorSettings = true
-                Haptic.light()
-            } label: {
-                HStack(spacing: 4) {
-                    Text("调整字号")
-                    Image(systemName: "textformat.size")
-                }
-                .font(.caption2.bold())
-                .padding(.horizontal, 9)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(AppColor.softFill(AppColor.warning, opacity: 0.18)))
-                .foregroundStyle(AppColor.warning)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .background(AppColor.softFill(AppColor.warning, opacity: 0.08))
-    }
-
-    // MARK: - 气象预警轻量胶囊卡片
-
-    @ViewBuilder
-    private func weatherAlertBanner(_ banner: WeatherAlertService.AlertBanner) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: banner.icon)
-                .font(.subheadline.bold())
-                .foregroundStyle(banner.color)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(banner.title)
-                    .font(.caption.bold())
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(banner.detail)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            Button {
-                weatherAlerts.dismissCurrentBanner()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2.bold())
-                    .foregroundStyle(.secondary)
-                    .padding(5)
-                    .background(Circle().fill(Color(.secondarySystemFill)))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(banner.color.opacity(0.12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(banner.color.opacity(0.32), lineWidth: 1)
-                )
-        )
-        .padding(.horizontal)
-    }
-
-    // MARK: - 临近纪念日筹备卡片（鲜花/蛋糕/餐厅一键加入与不再提醒）
-
-    @ViewBuilder
-    private func anniversaryPrepBanner(_ upcoming: UpcomingAnniversaryInfo) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                HStack(spacing: 8) {
-                    Image(systemName: "gift.fill")
-                        .font(.title3)
-                        .foregroundStyle(.pink)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text("临近纪念日筹备")
-                                .font(.subheadline.bold())
-                                .foregroundStyle(.primary)
-
-                            Text(upcoming.daysUntil == 0 ? "就在今天!" : "还有 \(upcoming.daysUntil) 天")
-                                .font(.caption2.bold())
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.pink.opacity(0.18)))
-                                .foregroundStyle(.pink)
-                        }
-
-                        Text("「\(upcoming.title)」即将到来，提前备好惊喜让浪漫不留遗憾。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                // 不再提醒按钮（点击后本年度该纪念日不再重复弹出）
-                Button {
-                    AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        anniversaryReminder.dismiss(for: upcoming)
-                        showToast("已设置本周期不再提醒该纪念日")
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "bell.slash")
-                            .font(.caption2)
-                        Text("不再提醒")
-                            .font(.caption2)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color(.tertiarySystemFill)))
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-
-            // 鲜花、蛋糕、餐厅三合一筹备推荐
-            HStack(spacing: 6) {
-                Label("💐 备鲜花", systemImage: "sparkles")
-                    .font(.caption2.bold())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.pink.opacity(0.08)))
-                    .foregroundStyle(.pink)
-
-                Label("🎂 订蛋糕", systemImage: "sparkles")
-                    .font(.caption2.bold())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.08)))
-                    .foregroundStyle(.orange)
-
-                Label("🍽️ 订餐厅", systemImage: "sparkles")
-                    .font(.caption2.bold())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.purple.opacity(0.08)))
-                    .foregroundStyle(.purple)
-
-                Spacer()
-            }
-
-            // 一键加入待办事项
-            Button {
-                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    anniversaryReminder.addPreparationTodos(for: upcoming, in: context)
-                    showToast("已一键将准备鲜花、订蛋糕与订餐厅加入待办！🎉")
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus.circle.fill")
-                    Text("一键将鲜花/蛋糕/餐厅加入待办")
-                }
-                .font(.subheadline.bold())
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
-                .background(
-                    LinearGradient(
-                        colors: [Color.pink, Color(red: 0.95, green: 0.35, blue: 0.55)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .shadow(color: Color.pink.opacity(0.25), radius: 4, y: 2)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.pink.opacity(0.25), lineWidth: 1)
-        )
-        .padding(.horizontal)
-        .padding(.vertical, 4)
-        .transition(.move(edge: .top).combined(with: .opacity))
-    }
-
-    // MARK: - 节假日与出差旅行出行前购票备忘卡片（火车票提前15天、机票提前15-30天）
-
-    @ViewBuilder
-    private func travelTicketPrepBanner(_ info: UpcomingTravelTicketInfo) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                HStack(spacing: 8) {
-                    Image(systemName: "ticket.fill")
-                        .font(.title3)
-                        .foregroundStyle(.indigo)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(info.title + (info.isHoliday ? "出行购票提醒" : "购票提醒"))
-                                .font(.subheadline.bold())
-                                .foregroundStyle(.primary)
-
-                            Text(info.stageBadgeText)
-                                .font(.caption2.bold())
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.indigo.opacity(0.18)))
-                                .foregroundStyle(.indigo)
-                        }
-
-                        Text("出行日期 \(info.departureFormatted) · \(info.recommendationDescription)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Spacer()
-
-                // 不再提醒按钮
-                Button {
-                    AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        ticketReminder.dismiss(for: info)
-                        showToast("已设置本周期不再提醒该出行购票")
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "bell.slash")
-                            .font(.caption2)
-                        Text("不再提醒")
-                            .font(.caption2)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color(.tertiarySystemFill)))
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-
-            // 火车票、文博景区与机票三大关键时间节点胶囊
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    Label("🚄 火车票起售：\(info.trainSaleFormatted) (提前15天)", systemImage: "train.side.front.car")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.blue.opacity(0.08)))
-                        .foregroundStyle(.blue)
-
-                    Label("🏛️ 场馆景区预约：\(info.scenicBookingFormatted) (提前7天)", systemImage: "building.columns.fill")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.purple.opacity(0.08)))
-                        .foregroundStyle(.purple)
-
-                    Label("✈️ 机票黄金预订：提前15-30天", systemImage: "airplane")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.teal.opacity(0.08)))
-                        .foregroundStyle(.teal)
-                }
-            }
-
-            // 目的地文博场馆放票规则指南提示
-            if let guide = info.destinationGuide {
-                HStack(alignment: .top, spacing: 4) {
-                    Image(systemName: "sparkles")
-                        .font(.caption2)
-                        .foregroundStyle(.purple)
-                    Text(guide)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-                .padding(.horizontal, 4)
-            }
-
-            // 用户确认式加入待办事项
-            Button {
-                confirmingTicketInfo = info
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.badge.questionmark.fill")
-                    Text("查看并确认新增待办 (3项推荐)")
-                }
-                .font(.subheadline.bold())
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
-                .background(
-                    LinearGradient(
-                        colors: [Color.indigo, Color.blue],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .shadow(color: Color.indigo.opacity(0.25), radius: 4, y: 2)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.indigo.opacity(0.25), lineWidth: 1)
-        )
-        .padding(.horizontal)
-        .padding(.vertical, 4)
-        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     private func showToast(_ msg: String) {
@@ -1515,6 +1116,73 @@ struct TodoListView: View {
     }
 
     // MARK: - 页面与顶部 Tab 栏组件
+
+    /// 时间聚合条：逾期 / 今天 / 本周三个互斥入口 + 逾期一键整理。
+    /// chip 计数由 `TodoTimeAggregator` 单源给出，点开的详情列表就是同一分桶结果——
+    /// 不存在「角标 3、点进去 5 条」的口径漂移。
+    private var timeAggregationBar: some View {
+        let buckets = timeBuckets
+        return HStack(spacing: 8) {
+            ForEach(TodoTimeBucketKind.allCases) { kind in
+                let count = buckets.count(for: kind)
+                if count > 0 {
+                    Button {
+                        Haptic.selection()
+                        selectedTimeBucket = kind
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: kind.systemImage)
+                                .font(.caption2.bold())
+                            Text(kind.title)
+                                .font(.caption.bold())
+                            Text("\(count)")
+                                .font(.caption2.bold().monospacedDigit())
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(timeBucketTint(kind).opacity(0.18)))
+                                .foregroundStyle(timeBucketTint(kind))
+                        }
+                        .foregroundStyle(timeBucketTint(kind))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(timeBucketTint(kind).opacity(0.10), in: Capsule())
+                        .overlay(
+                            Capsule().strokeBorder(timeBucketTint(kind).opacity(0.25), lineWidth: 0.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            if buckets.count(for: .overdue) > 0 {
+                Button {
+                    Haptic.medium()
+                    triageItemsOverride = bucketTodoItems(for: .overdue)
+                    showOverdueTriage = true
+                } label: {
+                    Label("整理", systemImage: "wand.and.stars")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Color.orange.opacity(0.15)))
+                        .foregroundStyle(.orange)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+    }
+
+    private func timeBucketTint(_ kind: TodoTimeBucketKind) -> Color {
+        switch kind {
+        case .overdue: return .red
+        case .today: return .blue
+        case .thisWeek: return .indigo
+        }
+    }
 
     @ViewBuilder
     private var filterTabBar: some View {

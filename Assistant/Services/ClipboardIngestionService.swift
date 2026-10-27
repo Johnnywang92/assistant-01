@@ -54,9 +54,58 @@ final class ClipboardIngestionService: ObservableObject {
     /// 自动投喂开关（默认开）：检测到新内容时直接进入投喂口并自动拆解
     static let autoIngestKey = "clipboard_auto_ingest_enabled"
     private static let handledKey = "clipboard_last_handled_change_count"
+    /// 用户拒绝过的剪贴板内容指纹（SHA-256，无明文）。同一条内容不再反复唤起投喂。
+    private static let rejectedKeysKey = "clipboard_rejected_content_keys"
 
     var autoIngestEnabled: Bool {
         UserDefaults.standard.object(forKey: Self.autoIngestKey) as? Bool ?? true
+    }
+
+    /// 拒绝记忆：被用户拒绝过的内容不再唤起（见 `ClipboardRejectionMemory`）
+    private var rejectionMemory: ClipboardRejectionMemory {
+        get {
+            ClipboardRejectionMemory(keys: UserDefaults.standard.stringArray(forKey: Self.rejectedKeysKey) ?? [])
+        }
+        set {
+            UserDefaults.standard.set(newValue.all, forKey: Self.rejectedKeysKey)
+        }
+    }
+
+    /// 该载荷是否已被用户拒绝过（内容指纹精确匹配）
+    func isContentRejected(_ payload: OmniboxPayload) -> Bool {
+        let key = Self.contentKey(of: payload)
+        return !key.isEmpty && rejectionMemory.isRejected(key)
+    }
+
+    /// 记住「这条内容不需要」，下次同样的剪贴板内容不再唤起
+    func markContentRejected(_ payload: OmniboxPayload) {
+        markContentKeyRejected(Self.contentKey(of: payload))
+    }
+
+    /// 按已算好的内容指纹记入拒绝名单（调用方已持有指纹时免去重复哈希）
+    func markContentKeyRejected(_ key: String) {
+        guard !key.isEmpty else { return }
+        var memory = rejectionMemory
+        memory.markRejected(key)
+        rejectionMemory = memory
+    }
+
+    /// 提示条「忽略」：记下内容指纹并标记该 changeCount 已处理。
+    /// 会读取一次剪贴板内容以计算指纹——用户刚显式拒绝，这一读是「记住不再打扰」的必要代价。
+    func markRejectedAndHandled(_ changeCount: Int) {
+        if let payload = resolvePayload() {
+            markContentRejected(payload)
+        }
+        markHandled(changeCount)
+    }
+
+    static func contentKey(of payload: OmniboxPayload) -> String {
+        switch payload {
+        case .text(let t), .audioTranscript(let t):
+            return ClipboardRejectionMemory.contentKey(forText: t)
+        case .image(let data):
+            return ClipboardRejectionMemory.contentKey(forImageData: data)
+        }
     }
 
     private init() {}
@@ -77,6 +126,17 @@ final class ClipboardIngestionService: ObservableObject {
             // 仅链接、颜色等，暂无对应填写流程
             kind = .unsupported
         }
+
+        // 拒绝记忆：被用户拒绝过的内容（按内容指纹）不再提示。
+        // 仅当拒绝名单非空时才读内容做比对——零拒绝历史的用户保持零读取设计不变。
+        // 这一次读取是「记住这个内容不需要」的必要代价，命中即静默跳过。
+        if kind != .unsupported, !rejectionMemory.all.isEmpty, let payload = resolvePayload() {
+            if isContentRejected(payload) {
+                markHandled(changeCount)
+                return
+            }
+        }
+
         suggestion = Suggestion(kind: kind, changeCount: changeCount)
         scheduleBannerAutoDismiss(for: changeCount)
     }
@@ -88,7 +148,8 @@ final class ClipboardIngestionService: ObservableObject {
         bannerDismissTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 8_000_000_000)
             if !Task.isCancelled, suggestion?.changeCount == changeCount {
-                markHandled(changeCount)
+                // 超时未处理 = 用户看过但不要，与点 X 忽略同等对待：记入拒绝记忆
+                markRejectedAndHandled(changeCount)
             }
         }
     }

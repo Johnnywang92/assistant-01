@@ -326,6 +326,7 @@ struct OverdueTriageSheet: View {
                 Haptic.warning()
             } else {
                 item.status = .done
+                LifeEventTodoLink.syncTask(for: item, in: context)
                 TodoNotificationManager.shared.cancelNotification(for: item.id)
                 Haptic.warning()
             }

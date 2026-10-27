@@ -217,6 +217,7 @@ struct ParcelGlanceView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .widgetContainerBackground()
         .widgetURL(URL(string: "assistant://expenses"))
+        .modifier(GlanceAccessoryModifier(entry: entry))
     }
 
     @ViewBuilder
@@ -271,7 +272,7 @@ struct ParcelGlanceView: View {
     }
 }
 
-/// 锁屏 accessory 家族视图（圆形 / 矩形 / 行内）
+/// 锁屏与表盘 accessory 家族视图（圆形 / 矩形 / 行内）
 struct GlanceAccessoryModifier: ViewModifier {
     let entry: GlanceEntry
 
@@ -280,26 +281,38 @@ struct GlanceAccessoryModifier: ViewModifier {
     func body(content: Content) -> some View {
         switch family {
         case .accessoryCircular:
-            if entry.mode == .practice {
+            switch entry.mode {
+            case .practice:
                 practiceCircular
-            } else {
+            case .spending:
+                spendingCircular
+            case .parcels:
                 parcelCircular
             }
         case .accessoryRectangular:
-            if entry.mode == .practice {
+            switch entry.mode {
+            case .practice:
                 practiceRectangular
-            } else {
+            case .spending:
+                spendingRectangular
+            case .parcels:
                 parcelRectangular
             }
         case .accessoryInline:
-            if entry.mode == .practice {
+            switch entry.mode {
+            case .practice:
                 Text(practiceInlineText)
                     .widgetURL(URL(string: "assistant://skills"))
-            } else if let code = entry.snapshot.parcels.first?.pickupCode {
-                Text("📦 待取 · \(code)")
-                    .widgetURL(URL(string: "assistant://todos"))
-            } else {
-                Text("暂无待取快递")
+            case .spending:
+                Text(spendingInlineText)
+                    .widgetURL(URL(string: "assistant://expenses"))
+            case .parcels:
+                if let code = entry.snapshot.parcels.first?.pickupCode {
+                    Text("📦 待取 · \(code)")
+                        .widgetURL(URL(string: "assistant://todos"))
+                } else {
+                    Text("暂无待取快递")
+                }
             }
         default:
             // 桌面尺寸（small/medium…）保留原内容，不套锁屏视图
@@ -347,7 +360,54 @@ struct GlanceAccessoryModifier: ViewModifier {
         return practice.isPracticedToday ? "🎯 已打卡 · 连续 \(practice.streakDays) 天" : "🎯 今日练习待完成"
     }
 
-    // MARK: - 快递 / 支出模式
+    // MARK: - 支出模式
+
+    private var spendingCircular: some View {
+        let amount = entry.snapshot.todayExpense
+        let formatted = amount >= 1000 ? String(format: "%.1fk", amount / 1000.0) : String(format: "%.0f", amount)
+        return ZStack {
+            AccessoryWidgetBackground()
+            VStack(spacing: 0) {
+                Image(systemName: "yensign")
+                    .font(.caption2.bold())
+                Text(formatted)
+                    .font(.system(.subheadline, design: .rounded).bold())
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+            }
+        }
+        .widgetURL(URL(string: "assistant://expenses"))
+    }
+
+    private var spendingRectangular: some View {
+        let amount = entry.snapshot.todayExpense
+        let text = amount.truncatingRemainder(dividingBy: 1) == 0
+            ? String(format: "%.0f", amount)
+            : String(format: "%.1f", amount)
+        return VStack(alignment: .leading, spacing: 2) {
+            Label("今日支出", systemImage: "yensign.circle")
+                .font(.caption2.bold())
+                .foregroundStyle(.secondary)
+            Text("¥\(text)")
+                .font(.headline.monospaced().bold())
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text("放宽心，慢慢花")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .widgetURL(URL(string: "assistant://expenses"))
+    }
+
+    private var spendingInlineText: String {
+        let amount = entry.snapshot.todayExpense
+        let text = amount.truncatingRemainder(dividingBy: 1) == 0
+            ? String(format: "%.0f", amount)
+            : String(format: "%.1f", amount)
+        return "¥\(text) · 今日支出"
+    }
+
+    // MARK: - 快递模式
 
     private var parcelCircular: some View {
         ZStack {
@@ -371,8 +431,9 @@ struct GlanceAccessoryModifier: ViewModifier {
                     .font(.headline.monospaced())
                     .foregroundStyle(.orange)
             } else {
-                Text("今日支出 ¥\(String(format: "%.0f", entry.snapshot.todayExpense))")
+                Text("暂无取件码")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .widgetURL(URL(string: "assistant://todos"))

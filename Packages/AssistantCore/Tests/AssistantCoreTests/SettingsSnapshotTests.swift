@@ -150,6 +150,25 @@ final class SettingsSnapshotTests: XCTestCase {
         XCTAssertEqual(AssistantSettingsKeys.languagePreference, "app_language_preference")
     }
 
+    /// 纪律测试：用户明确表达过的偏好必须登记进白名单，否则换机还原会丢设置。
+    /// 新增偏好键时把键名加进下面的清单——这行就是「已登记」的收据。
+    func testWhitelistRegistersKnownUserPreferences() {
+        let required: [String] = [
+            "intent_threshold_min_top", "intent_threshold_min_margin",  // 判别阈值校准覆盖
+            "daily_water_goal_ml",                                      // 每日纯水目标
+            "all_tab_grouping_mode",                                    // 待办分组
+            "day_timeline_wake_minutes", "day_timeline_off_minutes",    // 作息
+            "learnedPlacesEnabled",                                     // 常用地点感知
+            "safe_to_spend_rhythm_mode",                                // 安心花节奏
+            "voice_memo_auto_transcribe", "voice_use_llm_engine",       // 语音偏好
+            "omnibox_auto_dismiss_seconds", "omnibox_clipboard_auto_dismiss_seconds" // 投喂口行为
+        ]
+        let all = Set(AssistantSettingsKeys.allKeys)
+        for key in required {
+            XCTAssertTrue(all.contains(key), "用户偏好键未登记进备份白名单: \(key)")
+        }
+    }
+
     func testWhitelistKeysAreNonEmptyAndPrefixed() {
         for key in AssistantSettingsKeys.allKeys {
             XCTAssertFalse(key.isEmpty)

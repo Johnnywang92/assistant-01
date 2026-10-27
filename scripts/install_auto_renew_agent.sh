@@ -32,8 +32,32 @@ case "${1:-}" in
     fi
     if [[ -f "$ROOT/build/.last_renew_timestamp" ]]; then
       LAST_TS=$(cat "$ROOT/build/.last_renew_timestamp")
-      echo "上次续签时间：$(date -r "$LAST_TS" '+%Y-%m-%d %H:%M:%S')"
-      echo "当前到期时间：$(date -r $((LAST_TS + 7 * 86400)) '+%Y-%m-%d %H:%M:%S')"
+      echo "上次执行时间：$(date -r "$LAST_TS" '+%Y-%m-%d %H:%M:%S')"
+    fi
+    EXP_TS=0
+    if [[ -f "$ROOT/build/Build/Products/Release-iphoneos/Assistant.app/embedded.mobileprovision" ]]; then
+      EXP_TS=$(python3 -c "
+import plistlib, sys
+try:
+    with open('$ROOT/build/Build/Products/Release-iphoneos/Assistant.app/embedded.mobileprovision', 'rb') as f:
+        content = f.read()
+    s = content.find(b'<?xml')
+    e = content.find(b'</plist>') + 8
+    if s != -1 and e != -1:
+        data = plistlib.loads(content[s:e])
+        print(int(data['ExpirationDate'].timestamp()))
+        sys.exit(0)
+except Exception:
+    pass
+sys.exit(1)
+" 2>/dev/null || echo 0)
+    elif [[ -f "$ROOT/build/.profile_expiration_timestamp" ]]; then
+      EXP_TS=$(cat "$ROOT/build/.profile_expiration_timestamp" 2>/dev/null || echo 0)
+    fi
+    if [[ "$EXP_TS" -gt 0 ]]; then
+      NOW_TS=$(date +%s)
+      REMAINING_HOURS=$(( (EXP_TS - NOW_TS) / 3600 ))
+      echo "证书实际到期：$(date -r "$EXP_TS" '+%Y-%m-%d %H:%M:%S') (剩余约 ${REMAINING_HOURS} 小时)"
     fi
     echo "\n=== 最近日志 ($LOG_PATH) ==="
     tail -n 20 "$LOG_PATH" 2>/dev/null || echo "暂无日志"

@@ -47,6 +47,26 @@ extension DataMigrationService {
         guard strategy != .overwrite || package.metadata.schemaVersion >= 2 else {
             throw MigrationCryptoError.incompleteLegacyBackup
         }
+        // 附件预检：必须在清库之前完成。
+        // 旧版导出可能静默丢过语音音频，带着这种缺口进还原流程，
+        // 结果是「记录在、音频没了」的残缺数据——用户却以为还原成功了。
+        let packageAttachmentExpectations = (package.voiceMemos ?? []).map { memo in
+            BackupRestoreGuard.AttachmentExpectation(
+                ownerTitle: memo.title,
+                kind: .voiceMemoAudio,
+                fileName: memo.audioFileName.isEmpty ? nil : memo.audioFileName,
+                hasData: memo.audioData?.isEmpty == false
+            )
+        }
+        var missingAttachmentLabels: [String] = []
+        if case .incomplete(let missing) = BackupRestoreGuard.auditAttachments(packageAttachmentExpectations) {
+            missingAttachmentLabels = BackupRestoreGuard.describeMissingAttachments(missing)
+            // 覆盖还原会清空现有数据：包里已知有缺口时不做破坏性操作，
+            // 否则用户会先丢掉现有数据、再发现备份本身不完整。
+            if strategy == .overwrite {
+                throw MigrationCryptoError.missingAttachment(missingAttachmentLabels.joined(separator: "、"))
+            }
+        }
         // 覆盖数据库前先验证备份负载与设备密钥，避免可预见的错误在删除后才暴露。
         var encryptedPasswords: [UUID: String] = [:]
         for password in package.passwords {
@@ -94,6 +114,8 @@ extension DataMigrationService {
             try context.delete(model: OmniboxTransaction.self)
             try context.delete(model: FoodIntakeRecord.self)
             try context.delete(model: WaterIntakeRecord.self)
+            try context.delete(model: OmniboxJudgmentFeedback.self)
+            try context.delete(model: HealthDaySnapshotRecord.self)
         }
 
         var details: [String] = []
@@ -126,6 +148,7 @@ extension DataMigrationService {
                 skillStageIndex: t.skillStageIndex ?? 0,
                 isSkillPractice: t.isSkillPractice ?? false,
                 skillPracticeMinutes: t.skillPracticeMinutes ?? 0,
+                lifeEventTaskID: t.lifeEventTaskID,
                 calendarItemIdentifier: t.calendarItemIdentifier,
                 arrivalReminderAt: t.arrivalReminderAt,
                 arrivalTransportRaw: t.arrivalTransportRaw
@@ -720,6 +743,8 @@ extension DataMigrationService {
             item.id = p.id
             item.statusRaw = p.statusRaw
             item.createdAt = p.createdAt
+            item.aiDecisionSummary = p.aiDecisionSummary
+            item.aiDecisionAt = p.aiDecisionAt
             context.insert(item)
             restoredEventProjects += 1
         }
@@ -749,6 +774,10 @@ extension DataMigrationService {
             item.statusRaw = t.statusRaw
             item.ownerName = t.ownerName
             item.createdAt = t.createdAt
+            item.answersJSON = t.answersJSON
+            item.aiDecisionSummary = t.aiDecisionSummary
+            item.aiActionItemsJSON = t.aiActionItemsJSON
+            item.aiConsultedAt = t.aiConsultedAt
             context.insert(item)
             restoredEventTasks += 1
         }
@@ -882,20 +911,100 @@ extension DataMigrationService {
             totalRestored += restoredWater
         }
 
-        // 20. 偏好设置（仅覆盖策略：合并策略只搬数据，不改本机行为）。
+        // 20. 判别反馈语料（备份格式 V3 新增）。丢了阈值校准就得从零攒——优先级等同用户数据。
+        let existingFeedbackIDs = Set(try context.fetch(FetchDescriptor<OmniboxJudgmentFeedback>()).map(\.id))
+        var restoredFeedback = 0
+        for f in package.judgmentFeedbacks ?? [] {
+            if strategy == .merge && existingFeedbackIDs.contains(f.id) { continue }
+            let record = JudgmentFeedback(
+                id: f.id,
+                inputText: f.inputText,
+                labelRaw: f.labelRaw,
+                verdict: JudgmentFeedback.Verdict(rawValue: f.verdictRaw) ?? .up,
+                topProbability: f.topProbability,
+                margin: f.margin,
+                runnerUpLabelRaw: f.runnerUpLabelRaw,
+                correctedLabelRaw: f.correctedLabelRaw,
+                createdAt: f.createdAt
+            )
+            context.insert(OmniboxJudgmentFeedback(record))
+            restoredFeedback += 1
+        }
+        if restoredFeedback > 0 || package.judgmentFeedbacks != nil {
+            details.append("判别反馈: \(restoredFeedback) 条")
+            totalRestored += restoredFeedback
+        }
+
+        // 21. 每日健康快照（备份格式 V4 新增）。HealthKit 不可回溯，趋势数据丢了补不回来。
+        let existingHealthIDs = Set(try context.fetch(FetchDescriptor<HealthDaySnapshotRecord>()).map(\.id))
+        var restoredHealth = 0
+        for h in package.healthSnapshots ?? [] {
+            if strategy == .merge && existingHealthIDs.contains(h.id) { continue }
+            let record = HealthDaySnapshotRecord(day: h.day)
+            record.id = h.id
+            record.stepCount = h.stepCount
+            record.activeEnergy = h.activeEnergy
+            record.restingEnergy = h.restingEnergy
+            record.dietaryWater = h.dietaryWater
+            record.sleepHours = h.sleepHours
+            record.sleepREM = h.sleepREM
+            record.sleepDeep = h.sleepDeep
+            record.heartRate = h.heartRate
+            record.restingHeartRate = h.restingHeartRate
+            record.heartRateVariability = h.heartRateVariability
+            record.bloodOxygen = h.bloodOxygen
+            record.bodyTemperature = h.bodyTemperature
+            record.walkingSpeed = h.walkingSpeed
+            record.respiratoryRate = h.respiratoryRate
+            record.workoutMinutes = h.workoutMinutes
+            record.workoutCount = h.workoutCount
+            record.updatedAt = h.updatedAt
+            context.insert(record)
+            restoredHealth += 1
+        }
+        if restoredHealth > 0 || package.healthSnapshots != nil {
+            details.append("健康快照: \(restoredHealth) 天")
+            totalRestored += restoredHealth
+        }
+
+        // 22. 偏好设置（仅覆盖策略：合并策略只搬数据，不改本机行为）。
         // 放在 context.save() 之后：UserDefaults 无法随 context.rollback() 回滚，
         // 必须等数据库落库成功再动设置，避免「库回滚了、偏好却已写盘」的不一致。
         try context.save()
 
         // 事务成功落库后，清理未被引用的沙盒孤儿证件照与语音文件（避免先删文件导致回滚丢失）
         if strategy == .overwrite {
-            let finalDocs = (try? context.fetch(FetchDescriptor<IDDocumentItem>())) ?? []
-            let validPhotoNames = Set(finalDocs.flatMap { [$0.frontImageFileName, $0.backImageFileName].compactMap { $0 } })
-            IDPhotoStorage.pruneUnreferenced(keeping: validPhotoNames)
+            // 引用集查询失败时**绝不清理**：旧实现用 `try?` 读引用集，
+            // 读失败会得到空集合，再拿空集合去「保留」，等于删光用户所有证件照与语音。
+            let fetchedDocs = try? context.fetch(FetchDescriptor<IDDocumentItem>())
+            let validPhotoNames = Set(
+                (fetchedDocs ?? []).flatMap { [$0.frontImageFileName, $0.backImageFileName].compactMap { $0 } }
+            )
+            switch BackupRestoreGuard.pruneDecision(
+                referenceLookupSucceeded: fetchedDocs != nil,
+                referencedFileNames: validPhotoNames
+            ) {
+            case .prune(let keeping):
+                IDPhotoStorage.pruneUnreferenced(keeping: keeping)
+            case .skipped:
+                break
+            }
 
-            let finalMemos = (try? context.fetch(FetchDescriptor<VoiceMemo>())) ?? []
-            let validAudioNames = Set(finalMemos.map(\.audioFileName))
-            VoiceMemoStorage.pruneUnreferenced(keeping: validAudioNames)
+            let fetchedMemos = try? context.fetch(FetchDescriptor<VoiceMemo>())
+            let validAudioNames = Set((fetchedMemos ?? []).map(\.audioFileName))
+            switch BackupRestoreGuard.pruneDecision(
+                referenceLookupSucceeded: fetchedMemos != nil,
+                referencedFileNames: validAudioNames
+            ) {
+            case .prune(let keeping):
+                VoiceMemoStorage.pruneUnreferenced(keeping: keeping)
+            case .skipped:
+                break
+            }
+        }
+
+        if !missingAttachmentLabels.isEmpty {
+            details.append("附件缺失（备份内本就没有这部分文件）: \(missingAttachmentLabels.joined(separator: "、"))")
         }
 
         if strategy == .overwrite, let settings = package.settings {

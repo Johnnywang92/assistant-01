@@ -174,6 +174,28 @@ public enum ExpenseNaturalLanguageParser {
 
     /// 解析一句话记账文本，例如："中午吃麦当劳花了 38 块"、"一兰拉面 1200日元"、"星巴克 $6.5"
     public static func parse(_ text: String, defaultCurrency: ExpenseCurrency = .cny) -> ExpenseParseResult? {
+        parseSingle(text, defaultCurrency: defaultCurrency)
+    }
+
+    /// 解析一句话**多笔**记账文本，例如："咖啡10.9元，午餐22元，公交1元" → 3 笔。
+    /// 单笔文本返回单元素数组；完全无法识别时返回空数组。
+    /// 拆分逻辑在 AssistantCore.MultiExpenseSegmenter（拆错即静默记错账，有单元测试兜底）。
+    public static func parseMulti(_ text: String, defaultCurrency: ExpenseCurrency = .cny) -> [ExpenseParseResult] {
+        guard let segments = MultiExpenseSegmenter.split(text), segments.count >= 2 else {
+            return parseSingle(text, defaultCurrency: defaultCurrency).map { [$0] } ?? []
+        }
+        let sharedDate = extractDate(from: normalizeSpeechText(text))
+        return segments.compactMap { segment in
+            guard var result = parseSingle(segment, defaultCurrency: defaultCurrency) else { return nil }
+            // 段内无日期词时继承整句日期（"昨天咖啡10.9元，午餐22元" 两笔都算昨天）
+            if !Self.containsDateKeyword(segment) {
+                result.date = sharedDate
+            }
+            return result
+        }
+    }
+
+    private static func parseSingle(_ text: String, defaultCurrency: ExpenseCurrency = .cny) -> ExpenseParseResult? {
         let explicitCurrency = ExpenseCurrency.detectExplicitCurrency(in: text)
         let trimmed = normalizeSpeechText(text)
         guard !trimmed.isEmpty else { return nil }
@@ -291,6 +313,13 @@ public enum ExpenseNaturalLanguageParser {
             return cal.date(byAdding: .day, value: -3, to: .now) ?? .now
         }
         return .now
+    }
+
+    /// 段内是否自带日期词（多笔拆分时决定用段内日期还是整句共享日期）
+    private static func containsDateKeyword(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return text.contains("昨天") || text.contains("寻日") || text.contains("前天") || text.contains("大前天")
+            || lower.contains("yesterday") || lower.contains("two days ago") || lower.contains("three days ago")
     }
 
     // MARK: - 标题提炼

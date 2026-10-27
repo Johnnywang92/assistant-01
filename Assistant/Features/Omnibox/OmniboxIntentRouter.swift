@@ -14,7 +14,8 @@ import Foundation
 struct OmniboxIntentRouter {
 
     /// 判别层策略：低于阈值时不猜，交给调用方澄清或落收集箱。
-    var policy: IntentDecisionPolicy = .default
+    /// 默认从 `AppSettings.intentDecisionPolicy` 取（调试页校准后一键应用的覆盖值优先）。
+    var policy: IntentDecisionPolicy = AppSettings.intentDecisionPolicy
 
     /// 判别层自身的失败（模型未就绪、logits 读不到、标签映射不成立）。
     /// 与「判别成功但置信不足」是两种不同状态，调用方需区别对待：
@@ -135,7 +136,7 @@ struct OmniboxIntentRouter {
 
     /// 构造判别提示词。
     ///
-    ///刻意保持极短：判别是「9 选 1」，模型不需要被教怎么做，只需要被告知选项。
+    ///刻意保持极短：判别是「16 选 1」，模型不需要被教怎么做，只需要被告知选项。
     /// 长提示词既拖慢推理，也会挤占分类路径本就更紧的上下文预算。
     /// 末尾的 `答案：` 让下一个 token 就是标签数字，读 logits 即可。
     static func makePrompt(for text: String, isQwen3Family: Bool = false) -> String {

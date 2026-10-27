@@ -412,6 +412,25 @@ public enum HealthMetrics {
         return HealthDaySnapshot(day: lhs.day, values: values, workoutSummary: mergedWorkout)
     }
 
+    /// 同一天重复落库时的合并语义：**新读到的指标覆盖旧值，未读到的指标保留旧值**。
+    ///
+    /// 与 `mergeSnapshot` 的求和语义不同——HealthKit 每次查询都返回全天累计值，
+    /// 重复刷新取的是同一份累计，覆盖才对（求和会把 3000 步刷两次变成 6000 步）。
+    /// 但某项指标这次查询失败/无数据时（值缺失），不能把库里已有值抹掉：
+    /// 一次网络抖动不该让趋势断档。睡眠同理取「新读到的值」而非较大值——
+    /// 新读是全窗口重算的结果，比旧值更接近真实。
+    public static func mergeForStorage(
+        previous: HealthDaySnapshot,
+        new: HealthDaySnapshot
+    ) -> HealthDaySnapshot {
+        var values = previous.values
+        for (kind, newValue) in new.values {
+            values[kind] = newValue
+        }
+        let workout = new.workoutSummary ?? previous.workoutSummary
+        return HealthDaySnapshot(day: previous.day, values: values, workoutSummary: workout)
+    }
+
     /// 计算所有目标的达成情况。缺失指标的 `actual` 为 nil，状态为 `.noData`。
     public static func progress(for snapshot: HealthDaySnapshot,
                                 goals: [HealthGoal] = HealthGoal.defaults) -> [HealthGoalProgress] {

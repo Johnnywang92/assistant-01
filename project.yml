@@ -81,6 +81,8 @@ targets:
           - CFBundleURLName: com.yifanwang.assistant01
             CFBundleURLSchemes:
               - assistant
+        LSApplicationQueriesSchemes:
+          - weixin
         UIApplicationShortcutItems:
           - UIApplicationShortcutItemType: assistant.action.voice
             UIApplicationShortcutItemTitle: 语音对话

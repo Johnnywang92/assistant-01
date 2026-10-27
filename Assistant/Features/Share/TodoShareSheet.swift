@@ -1,355 +1,16 @@
+/// 待办分享管理面板（支持选择分类、自主勾选条目、生成社交图片、防闪退相册权限校验）
+///
+/// 从 Assistant/Features/TodoShareSheet.swift 拆出（原文件 1009 行）：
+/// - 主题 → ShareCardTheme.swift
+/// - 海报卡片 → TodoShareCardView.swift
+/// - 二维码卡片与展示形式 → TodoQRCodeCardView.swift
+/// - 系统分享桥接 → ShareActivityView.swift
+/// - 分类/标题/分享文案规则 → AssistantCore.TodoShareContent（可单测）
 import AssistantCore
 import Photos
 import SwiftData
 import SwiftUI
 import UIKit
-
-/// 社交网络分享海报卡片主题
-enum ShareCardTheme: String, CaseIterable, Identifiable {
-    case cleanWhite = "极简白"
-    case midnight = "暗夜星空"
-    case obsidian = "黑曜石成就"
-    case paper = "羊皮书卷"
-
-    var id: String { rawValue }
-
-    var backgroundColor: Color {
-        switch self {
-        case .cleanWhite:
-            return Color.white
-        case .midnight:
-            return Color(red: 0.08, green: 0.09, blue: 0.12)
-        case .obsidian:
-            return Color(red: 0.05, green: 0.06, blue: 0.08)
-        case .paper:
-            return Color(red: 0.96, green: 0.94, blue: 0.90)
-        }
-    }
-
-    var textColor: Color {
-        switch self {
-        case .cleanWhite, .paper:
-            return Color(red: 0.12, green: 0.13, blue: 0.15)
-        case .midnight, .obsidian:
-            return Color.white
-        }
-    }
-
-    var secondaryTextColor: Color {
-        switch self {
-        case .cleanWhite, .paper:
-            return Color.secondary
-        case .midnight:
-            return Color(white: 0.65)
-        case .obsidian:
-            return Color(red: 0.55, green: 0.60, blue: 0.66)
-        }
-    }
-
-    var dividerColor: Color {
-        switch self {
-        case .cleanWhite:
-            return Color(.systemGray5)
-        case .midnight:
-            return Color.white.opacity(0.12)
-        case .obsidian:
-            return Color(red: 0.18, green: 0.85, blue: 0.48).opacity(0.25)
-        case .paper:
-            return Color(red: 0.85, green: 0.82, blue: 0.77)
-        }
-    }
-
-    var accentColor: Color {
-        switch self {
-        case .obsidian:
-            return Color(red: 0.18, green: 0.85, blue: 0.48)
-        default:
-            return Color.accentColor
-        }
-    }
-}
-
-/// 专为导出高清分享图设计的 SwiftUI 卡片视图（支持 3x 离屏光栅化）
-struct TodoShareCardView: View {
-    let title: String
-    let items: [TodoItem]
-    let showWatermark: Bool
-    let theme: ShareCardTheme
-    var miniQRCode: UIImage? = nil
-
-    // 双语 Slogan 定义
-    static let sloganZh = "记所想，助所行"
-    static let sloganEn = "Capture thoughts, empower actions."
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            // 1. 卡片头部：日期与总览
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(Date.now.formatted(.dateTime.year().month().day().weekday(.wide)))
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(theme.secondaryTextColor)
-
-                    Text(L10n.tr(title))
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .foregroundStyle(theme.textColor)
-                }
-
-                Spacer()
-
-                // 完成进度胶囊
-                let doneCount = items.filter { $0.status == .done }.count
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(doneCount)/\(items.count)")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(theme.accentColor)
-                    Text("完成进度")
-                        .font(.system(size: 10))
-                        .foregroundStyle(theme.secondaryTextColor)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(theme.accentColor.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-
-            Rectangle()
-                .fill(theme.dividerColor)
-                .frame(height: 1)
-
-            // 2. 清单列表条目
-            if items.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "checklist")
-                        .font(.largeTitle)
-                        .foregroundStyle(theme.secondaryTextColor.opacity(0.5))
-                    Text("请在下方列表中勾选要分享的事项")
-                        .font(.subheadline)
-                        .foregroundStyle(theme.secondaryTextColor)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 28)
-            } else {
-                let displayItems = Array(items.prefix(15))
-                VStack(alignment: .leading, spacing: 13) {
-                    ForEach(displayItems) { item in
-                        HStack(spacing: 12) {
-                            Image(systemName: item.status == .done ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 17, weight: .medium))
-                                .foregroundStyle(item.status == .done ? (theme == .obsidian ? theme.accentColor : Color.green) : Color.secondary.opacity(0.6))
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(L10n.tr(item.title))
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundStyle(item.status == .done ? theme.secondaryTextColor : theme.textColor)
-                                    .strikethrough(item.status == .done)
-
-                                if let code = item.pickupCode {
-                                    HStack(spacing: 4) {
-                                        Text("取件码：\(code)")
-                                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                        if let station = item.location ?? item.station {
-                                            Text("(\(station))")
-                                                .font(.system(size: 11))
-                                        }
-                                    }
-                                    .foregroundStyle(Color.orange)
-                                }
-                            }
-
-                            Spacer()
-                        }
-                    }
-
-                    if items.count > 15 {
-                        Text("… 更多 \(items.count - 15) 项事项")
-                            .font(.caption)
-                            .foregroundStyle(theme.secondaryTextColor)
-                            .padding(.leading, 28)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-
-            // 3. 底部 App Logo 与 Slogan 水印栏（可自由显隐）
-            if showWatermark {
-                Rectangle()
-                    .fill(theme.dividerColor)
-                    .frame(height: 1)
-                    .padding(.top, 4)
-
-                HStack(spacing: 12) {
-                    Image("AssistantAppIcon")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 38, height: 38)
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                        .shadow(color: Color.black.opacity(0.08), radius: 3, y: 1)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text("小助")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(theme.textColor)
-
-                            Text("· 个人智能生活助理")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(theme.secondaryTextColor)
-                        }
-
-                        // 双语 Slogan：记所想，助所行 / Capture thoughts, empower actions.
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(Self.sloganZh)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(theme.accentColor)
-
-                            Text(Self.sloganEn)
-                                .font(.system(size: 9.5, weight: .regular))
-                                .foregroundStyle(theme.secondaryTextColor)
-                        }
-                    }
-
-                    Spacer()
-
-                    VStack(alignment: .trailing, spacing: 3) {
-                        if let miniQRCode {
-                            Image(uiImage: miniQRCode)
-                                .interpolation(.none)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 38, height: 38)
-                                .background(Color.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
-                                )
-                        }
-
-                        Text("JohnnyBoyStudio")
-                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(theme == .obsidian ? Color(red: 0.18, green: 0.85, blue: 0.48) : theme.secondaryTextColor)
-                    }
-                }
-            }
-        }
-        .padding(22)
-        .frame(maxWidth: 350)
-        .background(theme.backgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(theme.dividerColor.opacity(0.6), lineWidth: 0.8)
-        )
-        .shadow(color: Color.black.opacity(0.06), radius: 14, y: 5)
-    }
-}
-
-/// 分享展示形式
-enum ShareFormatMode: String, CaseIterable, Identifiable {
-    case qrCode = "面对面二维码"
-    case poster = "海报长图卡片"
-
-    var id: String { rawValue }
-}
-
-/// 专为面对面扫码设计的二维码分享卡片
-struct TodoQRCodeCardView: View {
-    let title: String
-    let items: [TodoItem]
-    let qrImage: UIImage?
-
-    var body: some View {
-        VStack(spacing: 14) {
-            // 顶部 App 标志与标语
-            HStack(spacing: 10) {
-                Image("AssistantAppIcon")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 38, height: 38)
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .shadow(color: Color.black.opacity(0.08), radius: 3, y: 1)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text("小助 · 面对面扫码导入")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Color.primary)
-                    }
-
-                    Text("记所想，助所行 · Capture thoughts, empower actions.")
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(Color.secondary)
-                }
-
-                Spacer()
-            }
-
-            Rectangle()
-                .fill(Color(.systemGray5))
-                .frame(height: 1)
-
-            // 清单标题与条目统计
-            VStack(spacing: 4) {
-                Text(L10n.tr(title))
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Color.primary)
-
-                Text("已打包 \(items.count) 项待办事宜，扫码一键同步至手机")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.secondary)
-            }
-
-            // 高清二维码
-            if let qrImage {
-                Image(uiImage: qrImage)
-                    .interpolation(.none)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 210, height: 210)
-                    .padding(12)
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(Color.black.opacity(0.08), lineWidth: 1)
-                    )
-                    .shadow(color: Color.black.opacity(0.06), radius: 8, y: 3)
-            } else {
-                VStack(spacing: 8) {
-                    ProgressView()
-                    Text("请在下方勾选待办生成二维码")
-                        .font(.caption)
-                        .foregroundStyle(Color.secondary)
-                }
-                .frame(width: 210, height: 210)
-            }
-
-            // 引导提示胶囊
-            HStack(spacing: 6) {
-                Image(systemName: "qrcode.viewfinder")
-                    .font(.caption.bold())
-                    .foregroundStyle(Color.accentColor)
-                Text("其他用户打开小助扫一扫，或使用系统相机直接扫描")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(Color.secondary)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Color.accentColor.opacity(0.08))
-            .clipShape(Capsule())
-        }
-        .padding(20)
-        .frame(maxWidth: 340)
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(Color(.systemGray5), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.06), radius: 14, y: 5)
-    }
-}
 
 /// 待办分享管理面板（支持选择分类、自主勾选条目、生成社交图片、防闪退相册权限校验）
 struct TodoShareSheet: View {
@@ -389,37 +50,50 @@ struct TodoShareSheet: View {
 
     // MARK: - 候选数据源过滤
 
+    /// 候选过滤：规则在 `AssistantCore.TodoShareContent`（可单测），
+    /// 这里只负责把 SwiftData 模型映射成 Core 的纯值快照。
     private static func filterItems(allTodos: [TodoItem], category: TodoFilterCategory) -> [TodoItem] {
-        switch category {
+        let shareCategory = category.shareCategory
+        switch shareCategory {
         case .all:
             return allTodos
         case .general:
-            return allTodos.filter { item in
-                let cal = Calendar.current
-                if let override = item.reminderOverrideAt {
-                    if cal.isDateInToday(override) || override < cal.startOfDay(for: .now) { return true }
-                }
-                if let due = item.dueAt {
-                    return cal.isDateInToday(due) || due < cal.startOfDay(for: .now)
-                }
-                return cal.isDateInToday(item.createdAt)
+            let now = Date.now
+            let cal = Calendar.current
+            return allTodos.filter {
+                TodoShareContent.isTodayItem(
+                    dueAt: $0.dueAt,
+                    reminderOverrideAt: $0.reminderOverrideAt,
+                    createdAt: $0.createdAt,
+                    now: now,
+                    calendar: cal
+                )
             }
-        case .work:
-            return allTodos.filter { $0.type == .work }
         case .recurring:
             return allTodos.filter { $0.isRecurring }
-        case .parcel:
-            return allTodos.filter { [.parcel, .returnParcel].contains($0.type) }
-        case .life:
-            return allTodos.filter { [.medication, .housework, .charging, .hydration].contains($0.type) }
-        case .alert:
-            return allTodos.filter { [.subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .data, .vehicleCare].contains($0.type) }
-        case .parenting:
-            return allTodos.filter { [.childVaccine, .childGrowth, .childMilestone, .childHealth].contains($0.type) }
-        case .pet:
-            return allTodos.filter { $0.type == .pet }
-        case .other:
-            return allTodos.filter { $0.type == .other }
+        default:
+            let groups = TodoShareContent.groups(for: shareCategory)
+            return allTodos.filter { item in
+                guard let group = shareGroup(for: item.type) else { return false }
+                return groups.contains(group)
+            }
+        }
+    }
+
+    /// 模型映射：`TodoType` → 分享类型分组。
+    /// 「哪些类型算哪一组」的规则在 Core，这里只做一对一映射，
+    /// 避免同一份分类清单写两遍然后各自漂移。
+    private static func shareGroup(for type: TodoType) -> TodoShareTypeGroup? {
+        switch type {
+        case .work: return .work
+        case .parcel: return .parcel
+        case .returnParcel: return .returnParcel
+        case .medication, .housework, .charging, .hydration: return .life
+        case .subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .data, .vehicleCare: return .alert
+        case .childVaccine, .childGrowth, .childMilestone, .childHealth: return .parenting
+        case .pet: return .pet
+        case .other: return .other
+        default: return nil
         }
     }
 
@@ -433,30 +107,9 @@ struct TodoShareSheet: View {
         candidateItems.filter { selectedItemIds.contains($0.id) }
     }
 
-    /// 动态卡片标题
+    /// 动态卡片标题：文案规则在 Core，这里做本地化
     private var dynamicCardTitle: String {
-        switch selectedCategory {
-        case .all:
-            return L10n.tr("我的生活清单")
-        case .general:
-            return L10n.tr("日常待办清单")
-        case .work:
-            return L10n.tr("工作待办清单")
-        case .recurring:
-            return L10n.tr("周期待办清单")
-        case .parcel:
-            return L10n.tr("快递与退货清单")
-        case .life:
-            return L10n.tr("生活作息备忘")
-        case .alert:
-            return L10n.tr("重要提醒与预警")
-        case .parenting:
-            return L10n.tr("亲子育儿清单")
-        case .pet:
-            return L10n.tr("宠物照护")
-        case .other:
-            return L10n.tr("其它清单")
-        }
+        L10n.tr(TodoShareContent.title(for: selectedCategory.shareCategory))
     }
 
     /// 面对面扫码高清二维码
@@ -978,32 +631,47 @@ struct TodoShareSheet: View {
 
     // MARK: - 场景 1：朋友 1 对 1 文本生成
 
+    /// 好友分享文案：拼装规则在 `AssistantCore.TodoShareTextBuilder`（可单测），
+    /// 这里只负责取模型快照与导入链接。
     private func generateFriendShareText() -> String {
         let items = itemsForCard
         guard !items.isEmpty else { return "【小助清单】暂无选中的事项" }
-        var text = "【小助清单】\(dynamicCardTitle)\n"
-        for (i, item) in items.enumerated() {
-            let status = item.status == .done ? "✅" : "⏳"
-            let code = item.pickupCode != nil ? " (取件码: \(item.pickupCode!))" : ""
-            text += "\(i + 1). \(status) \(item.title)\(code)\n"
-        }
         let importURL = QRCodeService.encodePayload(title: dynamicCardTitle, todos: items)
-        text += "\n📲 复制本条内容或轻点链接导入小助 App：\n\(importURL)\n\n—— 记所想，助所行 (Capture thoughts, empower actions.)"
-        return text
+        return TodoShareTextBuilder.friendShareText(
+            title: dynamicCardTitle,
+            items: items.map {
+                TodoShareItem(
+                    id: $0.id,
+                    title: $0.title,
+                    pickupCode: $0.pickupCode,
+                    isDone: $0.status == .done,
+                    isRecurring: $0.isRecurring,
+                    dueAt: $0.dueAt,
+                    reminderOverrideAt: $0.reminderOverrideAt,
+                    createdAt: $0.createdAt
+                )
+            },
+            importURL: importURL
+        )
     }
 }
 
-/// 系统 UIActivityViewController 桥接封装
-struct ShareActivityView: UIViewControllerRepresentable {
-    let activityItems: [Any]
-
-    init(activityItems: [Any]) {
-        self.activityItems = activityItems
+/// 筛选分类 → 分享分类的一一映射。
+/// 两套枚举的 case 名完全对齐，但 rawValue 不同（界面文案 vs 稳定标识），
+/// 所以显式映射一次，避免用 rawValue 互转那种「改文案就崩」的隐式耦合。
+extension TodoFilterCategory {
+    var shareCategory: TodoShareCategory {
+        switch self {
+        case .all: return .all
+        case .general: return .general
+        case .work: return .work
+        case .recurring: return .recurring
+        case .parcel: return .parcel
+        case .life: return .life
+        case .alert: return .alert
+        case .parenting: return .parenting
+        case .pet: return .pet
+        case .other: return .other
+        }
     }
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

@@ -224,6 +224,19 @@ final class HealthKitService: ObservableObject {
             snapshot = HealthMetrics.mergeSnapshot(existing, newSnapshot)
         }
 
+        // 当日快照落库：睡眠/健康分数趋势的唯一数据源。
+        // 幂等 upsert（mergeForStorage：新读覆盖、未读保留），空快照不建记录。
+        if let current = snapshot, current.readState == .hasData {
+            let saved = HealthDaySnapshotRecord.upsert(
+                day: startOfDay,
+                snapshot: current,
+                in: Persistence.shared.mainContext
+            )
+            if !saved {
+                errors.append("健康快照落库失败（数据库写入未成功）")
+            }
+        }
+
         // 异步更新 14 天基线并推断愉悦指数
         let baseline = await fetchBaseline()
         if let current = snapshot {

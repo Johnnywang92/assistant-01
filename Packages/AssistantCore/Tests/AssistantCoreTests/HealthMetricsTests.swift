@@ -136,6 +136,44 @@ final class HealthMetricsTests: XCTestCase {
         XCTAssertEqual(merged.value(for: .dietaryWater)?.value, 800)
     }
 
+    // MARK: - 存储合并（同日重复落库）
+
+    /// 每次 HealthKit 查询都返回全天累计值，重复刷新应覆盖而非求和。
+    func testMergeForStorageOverwritesInsteadOfSumming() {
+        let previous = HealthDaySnapshot(day: day, values: [.stepCount: value(.stepCount, 3000)])
+        let new = HealthDaySnapshot(day: day, values: [.stepCount: value(.stepCount, 6000)])
+        let merged = HealthMetrics.mergeForStorage(previous: previous, new: new)
+        XCTAssertEqual(merged.value(for: .stepCount)?.value, 6000, "全天累计重读应覆盖，求和会虚增")
+    }
+
+    /// 某项指标这次查询失败/无数据时，不能抹掉库里已有值。
+    func testMergeForStorageKeepsPreviousWhenNewMissingKind() {
+        let previous = HealthDaySnapshot(day: day, values: [
+            .stepCount: value(.stepCount, 3000),
+            .sleep: value(.sleep, 7.5)
+        ])
+        let new = HealthDaySnapshot(day: day, values: [.stepCount: value(.stepCount, 6000)])
+        let merged = HealthMetrics.mergeForStorage(previous: previous, new: new)
+        XCTAssertEqual(merged.value(for: .sleep)?.value, 7.5, "睡眠查询失败时保留旧值，趋势不断档")
+        XCTAssertEqual(merged.value(for: .stepCount)?.value, 6000)
+    }
+
+    /// 新读到的睡眠是全窗口重算结果，直接覆盖（不取 max）。
+    func testMergeForStorageTakesNewSleep() {
+        let previous = HealthDaySnapshot(day: day, values: [.sleep: value(.sleep, 7.5)])
+        let new = HealthDaySnapshot(day: day, values: [.sleep: value(.sleep, 6.0)])
+        let merged = HealthMetrics.mergeForStorage(previous: previous, new: new)
+        XCTAssertEqual(merged.value(for: .sleep)?.value, 6.0)
+    }
+
+    func testMergeForStorageWorkoutSummaryFallback() {
+        let summary = WorkoutRecordSummary(count: 2, totalDurationMinutes: 45)
+        let previous = HealthDaySnapshot(day: day, values: [:], workoutSummary: summary)
+        let new = HealthDaySnapshot(day: day, values: [.stepCount: value(.stepCount, 100)])
+        let merged = HealthMetrics.mergeForStorage(previous: previous, new: new)
+        XCTAssertEqual(merged.workoutSummary, summary, "新读无健身记录时保留旧摘要")
+    }
+
     // MARK: - 目标与待办的关联
 
     func testEachMetricMapsToRelatedTodoType() {

@@ -267,6 +267,7 @@ struct CompletedHistoryRow: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                     item.status = .active
                 }
+                LifeEventTodoLink.syncTask(for: item, in: context)
                 try? context.save()
             } label: {
                 Image(systemName: "checkmark.circle.fill")
@@ -353,6 +354,7 @@ struct CompletedHistoryRow: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                     item.status = .active
                 }
+                LifeEventTodoLink.syncTask(for: item, in: context)
                 try? context.save()
             } label: {
                 Text("恢复")

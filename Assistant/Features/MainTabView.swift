@@ -47,7 +47,7 @@ struct MainTabView: View {
                             clipboard.markHandled(suggestion.changeCount)
                             router.activeSheet = .omnibox
                         },
-                        onDismiss: { clipboard.markHandled(suggestion.changeCount) }
+                        onDismiss: { clipboard.markRejectedAndHandled(suggestion.changeCount) }
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
@@ -176,6 +176,11 @@ struct MainTabView: View {
         guard let payload = clipboard.resolvePayload() else {
             // 用户拒绝粘贴授权或内容为空：保留提示条，引导手动路径
             showClipboardReadError = true
+            return
+        }
+        // 拒绝记忆：同一条内容被用户拒绝过一次就不再唤起万能投喂
+        if clipboard.isContentRejected(payload) {
+            clipboard.markHandled(suggestion.changeCount)
             return
         }
         router.omniboxPrefill = payload

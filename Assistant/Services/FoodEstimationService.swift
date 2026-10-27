@@ -35,21 +35,47 @@ final class FoodEstimationService: ObservableObject {
 
     private init() {}
 
+    /// 从历史记录聚合用户常吃偏好与近期饮食先验
+    static func buildHistoryPrior(from records: [FoodIntakeRecord]) -> FoodHistoryPrior {
+        var counts: [String: Int] = [:]
+        var recentIDs = Set<String>()
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: .now) ?? .now
+
+        for record in records {
+            if let ids = record.foodID?.components(separatedBy: "+") {
+                for rawID in ids {
+                    let clean = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !clean.isEmpty else { continue }
+                    counts[clean, default: 0] += 1
+                    if record.date >= sevenDaysAgo {
+                        recentIDs.insert(clean)
+                    }
+                }
+            }
+        }
+        return FoodHistoryPrior(frequentItemCounts: counts, recentItemIDs: recentIDs)
+    }
+
     /// 对一张食物照片做完整估算。
     ///
     /// - Parameters:
     ///   - image: 食物照片。
     ///   - userHint: 用户补充描述（如「这是麻辣香锅」）。可空。
+    ///   - mealDate: 用餐时间（用于时段先验加权）。默认当前时间。
+    ///   - history: 用户饮食偏好与常吃菜品先验。
     /// - Returns: 估算结果。识别不出来时返回 nil，且 `needsManualSelection` 为 true。
     @discardableResult
-    func estimateCalories(for image: UIImage, userHint: String? = nil) async -> FoodCalorieEstimate? {
+    func estimateCalories(for image: UIImage,
+                          userHint: String? = nil,
+                          mealDate: Date = .now,
+                          history: FoodHistoryPrior? = nil) async -> FoodCalorieEstimate? {
         isEstimating = true
         statusMessage = nil
         needsManualSelection = false
         defer { isEstimating = false }
 
-        // 第一步：Vision 全图 + 多区域分区识别（支持托盘/桌面多菜组合）
-        let visionCandidates = await vision.recognize(in: image)
+        // 第一步：Vision 全图 + 多区域分区识别（支持托盘/桌面多菜组合 + 时段先验与用户偏好重排序）
+        let visionCandidates = await vision.recognize(in: image, mealDate: mealDate, history: history)
         candidates = visionCandidates
         let trimmedHint = userHint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let multiDishBase = FoodCalorieEstimator.estimateMeal(

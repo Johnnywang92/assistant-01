@@ -110,6 +110,10 @@ public final class TodoNotificationManager {
         if item.isRecurring {
             bodySnippets.append("[\(item.recurrenceSummaryText)]")
         }
+        if WeChatCommunicationHelper.isWeChatCommunication(title: item.title, detail: item.detail) {
+            let kind = WeChatCommunicationHelper.communicationKind(title: item.title, detail: item.detail)
+            bodySnippets.append("💬 \(kind.buttonTitle)")
+        }
 
         if !showSensitiveDetails {
             content.body = L10n.tr("有一项待办已到提醒时间，请解锁后查看。")

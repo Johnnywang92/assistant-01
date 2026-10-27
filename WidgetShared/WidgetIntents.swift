@@ -13,6 +13,8 @@ public protocol WidgetBridgeAppHook: AnyObject {
     func handleQuickAddExpense(text: String) async -> String?
     func handleQuickAddTodo(text: String) async -> String?
     func handleQueryParcels() async -> String
+    func handleQueryBudget() async -> String
+    func handleQueryTodayTodos() async -> String
 }
 
 public enum WidgetBridge {
@@ -332,7 +334,75 @@ public struct QueryParcelsIntent: AppIntent {
             let reply = await hook.handleQueryParcels()
             return .result(dialog: IntentDialog(stringLiteral: reply))
         }
-        return .result(dialog: "请先打开小助，再重试取件码上岛")
+        let snapshot = WidgetSnapshotStore.load()
+        if snapshot.parcels.isEmpty {
+            return .result(dialog: "目前没有待取的快递")
+        }
+        let codes = snapshot.parcels.prefix(5).compactMap { parcel -> String? in
+            guard let code = parcel.pickupCode, !code.isEmpty else { return nil }
+            if let st = parcel.stationName, !st.isEmpty {
+                return "\(st) \(code)"
+            }
+            return code
+        }
+        let reply = "待取快递 \(snapshot.parcels.count) 件：" + codes.joined(separator: "、")
+        return .result(dialog: IntentDialog(stringLiteral: reply))
+    }
+}
+
+// MARK: - 查询今日预算与安心花额度（Siri / Apple Watch 抬腕即查）
+
+public struct QueryBudgetIntent: AppIntent {
+    public static let title: LocalizedStringResource = "查询预算与支出"
+
+    public static let openAppWhenRun: Bool = false
+
+    public static let description = IntentDescription("播报今日已支出金额与安心花剩余额度，支持 Apple Watch 与 Siri 免开 App 抬腕即查")
+
+    public init() {}
+
+    @MainActor
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
+        if let hook = WidgetBridge.appHook {
+            let reply = await hook.handleQueryBudget()
+            return .result(dialog: IntentDialog(stringLiteral: reply))
+        }
+        let snapshot = WidgetSnapshotStore.load()
+        let amount = snapshot.todayExpense
+        let amountText = String(format: amount.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", amount)
+        let reply = "今日已累计支出 \(amountText) 元。放宽心，慢慢花。"
+        return .result(dialog: IntentDialog(stringLiteral: reply))
+    }
+}
+
+// MARK: - 查询今日待办（Siri / Apple Watch 抬腕即查）
+
+public struct QueryTodayTodosIntent: AppIntent {
+    public static let title: LocalizedStringResource = "查询今日待办"
+
+    public static let openAppWhenRun: Bool = false
+
+    public static let description = IntentDescription("播报今日最紧急的待办事项，支持 Apple Watch 与 Siri 免开 App 抬腕即查")
+
+    public init() {}
+
+    @MainActor
+    public func perform() async throws -> some IntentResult & ProvidesDialog {
+        if let hook = WidgetBridge.appHook {
+            let reply = await hook.handleQueryTodayTodos()
+            return .result(dialog: IntentDialog(stringLiteral: reply))
+        }
+        let snapshot = WidgetSnapshotStore.load()
+        if snapshot.topTodos.isEmpty {
+            return .result(dialog: "今日待办已全部清空，好好休息吧！")
+        }
+        let topCount = min(3, snapshot.topTodos.count)
+        let titles = snapshot.topTodos.prefix(topCount).map(\.title).joined(separator: "、")
+        var reply = "今日待办共有 \(snapshot.topTodos.count) 项。优先处理：\(titles)"
+        if snapshot.topTodos.count > topCount {
+            reply += " 等"
+        }
+        return .result(dialog: IntentDialog(stringLiteral: reply))
     }
 }
 

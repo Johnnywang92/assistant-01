@@ -106,7 +106,27 @@ struct HomeGreetingCard: View {
     }
 }
 
-/// 首页固定入口卡：万能投喂口（文字 / 小票截图丢进来，自动记账、建待办、存收集箱）
+/// 首页顶部卡片分页：欢迎信息与万能投喂口可以左右滑动，减少固定入口对待办列表的占用。
+struct HomeTopCardsCarousel: View {
+    let activeCount: Int
+    let onOpenOmnibox: () -> Void
+
+    var body: some View {
+        TabView {
+            HomeGreetingCard(activeCount: activeCount)
+                .tag(0)
+
+            OmniboxEntryCard(onOpen: onOpenOmnibox)
+                .tag(1)
+        }
+        .tabViewStyle(.page(indexDisplayMode: .automatic))
+        .frame(height: 100)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L10n.tr("首页快捷卡片，可左右滑动"))
+    }
+}
+
+/// 首页入口卡：万能投喂口（文字 / 小票截图丢进来，自动记账、建待办、存收集箱）
 struct OmniboxEntryCard: View {
     var onOpen: () -> Void
 

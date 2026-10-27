@@ -44,6 +44,8 @@ extension DataMigrationService {
         let omniboxTransactions = try context.fetch(FetchDescriptor<OmniboxTransaction>())
         let foodIntakeRecords = try context.fetch(FetchDescriptor<FoodIntakeRecord>())
         let waterIntakeRecords = try context.fetch(FetchDescriptor<WaterIntakeRecord>())
+        let judgmentFeedbacks = try context.fetch(FetchDescriptor<OmniboxJudgmentFeedback>())
+        let healthSnapshots = try context.fetch(FetchDescriptor<HealthDaySnapshotRecord>())
 
         let todoDTOs = todos.map {
             TodoDTO(
@@ -64,6 +66,7 @@ extension DataMigrationService {
                 skillStageIndex: $0.skillStageIndex,
                 isSkillPractice: $0.isSkillPractice,
                 skillPracticeMinutes: $0.skillPracticeMinutes,
+                lifeEventTaskID: $0.lifeEventTaskID,
                 calendarItemIdentifier: $0.calendarItemIdentifier,
                 arrivalReminderAt: $0.arrivalReminderAt,
                 arrivalTransportRaw: $0.arrivalTransportRaw,
@@ -202,8 +205,36 @@ extension DataMigrationService {
             )
         }
 
-        let vehicleDTOs = vehicles.map { v in
-            VehicleDTO(id: v.id, name: v.name, plateNumber: v.plateNumber, powerTypeRaw: v.powerTypeRaw,
+        // 附件完整性核对（导出侧第一道关卡）。
+        // 证件照片与语音音频存在沙盒文件里，读不到就会静默变成 nil——
+        // 旧实现照常写进备份包并报告成功，用户拿到一份「成功」的备份，
+        // 还原后才发现证件没有照片、语音点不开。这里改成**读不到就取消备份**：
+        // 宁可不备份，也不产出一份会骗人的备份。
+        var attachmentExpectations: [BackupRestoreGuard.AttachmentExpectation] = []
+        for (doc, dto) in zip(documents, documentDTOs) {
+            attachmentExpectations.append(.init(
+                ownerTitle: doc.title, kind: .idPhotoFront,
+                fileName: doc.frontImageFileName, hasData: dto.frontImageData != nil
+            ))
+            attachmentExpectations.append(.init(
+                ownerTitle: doc.title, kind: .idPhotoBack,
+                fileName: doc.backImageFileName, hasData: dto.backImageData != nil
+            ))
+        }
+        for (memo, dto) in zip(voiceMemos, voiceMemoDTOs) {
+            attachmentExpectations.append(.init(
+                ownerTitle: memo.title, kind: .voiceMemoAudio,
+                fileName: memo.audioFileName.isEmpty ? nil : memo.audioFileName,
+                hasData: dto.audioData?.isEmpty == false
+            ))
+        }
+        if case .incomplete(let missing) = BackupRestoreGuard.auditAttachments(attachmentExpectations) {
+            throw MigrationCryptoError.missingAttachment(
+                BackupRestoreGuard.describeMissingAttachments(missing).joined(separator: "、")
+            )
+        }
+
+        let vehicleDTOs = vehicles.map { v in            VehicleDTO(id: v.id, name: v.name, plateNumber: v.plateNumber, powerTypeRaw: v.powerTypeRaw,
                        energyCycleDays: v.energyCycleDays, lastEnergyRefillDate: v.lastEnergyRefillDate,
                        preferredEnergyHour: v.preferredEnergyHour, preferredEnergyMinute: v.preferredEnergyMinute,
                        maintenanceIntervalMonths: v.maintenanceIntervalMonths, lastMaintenanceDate: v.lastMaintenanceDate,
@@ -334,7 +365,8 @@ extension DataMigrationService {
         let lifeEventProjectDTOs = lifeEventProjects.sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }.map { p in
             LifeEventProjectDTO(
                 id: p.id, title: p.title, templateRaw: p.templateRaw, targetDate: p.targetDate,
-                location: p.location, budgetLimit: p.budgetLimit, statusRaw: p.statusRaw, createdAt: p.createdAt
+                location: p.location, budgetLimit: p.budgetLimit, statusRaw: p.statusRaw, createdAt: p.createdAt,
+                aiDecisionSummary: p.aiDecisionSummary, aiDecisionAt: p.aiDecisionAt
             )
         }
 
@@ -349,7 +381,9 @@ extension DataMigrationService {
             LifeEventTaskDTO(
                 id: t.id, projectID: t.projectID, stageID: t.stageID, title: t.title,
                 detail: t.detail, dueDate: t.dueDate, statusRaw: t.statusRaw,
-                ownerName: t.ownerName, createdAt: t.createdAt
+                ownerName: t.ownerName, createdAt: t.createdAt,
+                answersJSON: t.answersJSON, aiDecisionSummary: t.aiDecisionSummary,
+                aiActionItemsJSON: t.aiActionItemsJSON, aiConsultedAt: t.aiConsultedAt
             )
         }
 
@@ -405,8 +439,35 @@ extension DataMigrationService {
             )
         }
 
+        let judgmentFeedbackDTOs = judgmentFeedbacks
+            .sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
+            .map { f in
+                JudgmentFeedbackDTO(
+                    id: f.id, createdAt: f.createdAt, inputText: f.inputText,
+                    labelRaw: f.labelRaw, verdictRaw: f.verdictRaw,
+                    topProbability: f.topProbability, margin: f.margin,
+                    runnerUpLabelRaw: f.runnerUpLabelRaw, correctedLabelRaw: f.correctedLabelRaw
+                )
+            }
+
+        let healthSnapshotDTOs = healthSnapshots
+            .sorted { ($0.day, $0.id.uuidString) < ($1.day, $1.id.uuidString) }
+            .map { h in
+                HealthDaySnapshotRecordDTO(
+                    id: h.id, day: h.day,
+                    stepCount: h.stepCount, activeEnergy: h.activeEnergy,
+                    restingEnergy: h.restingEnergy, dietaryWater: h.dietaryWater,
+                    sleepHours: h.sleepHours, sleepREM: h.sleepREM, sleepDeep: h.sleepDeep,
+                    heartRate: h.heartRate, restingHeartRate: h.restingHeartRate,
+                    heartRateVariability: h.heartRateVariability, bloodOxygen: h.bloodOxygen,
+                    bodyTemperature: h.bodyTemperature, walkingSpeed: h.walkingSpeed,
+                    respiratoryRate: h.respiratoryRate, workoutMinutes: h.workoutMinutes,
+                    workoutCount: h.workoutCount, updatedAt: h.updatedAt
+                )
+            }
+
         let metadata = BackupPackage.Metadata(
-            schemaVersion: 2,
+            schemaVersion: 4,
             appVersion: "0.1.0",
             exportedAt: Date.now,
             deviceModel: UIDevice.current.model
@@ -452,6 +513,8 @@ extension DataMigrationService {
             omniboxTransactions: omniboxTransactionDTOs,
             foodIntakeRecords: foodIntakeDTOs,
             waterIntakeRecords: waterIntakeDTOs,
+            judgmentFeedbacks: judgmentFeedbackDTOs,
+            healthSnapshots: healthSnapshotDTOs,
             settings: collectSettingsSnapshot()
         )
     }
@@ -495,6 +558,9 @@ extension DataMigrationService {
         try BackupEnvelopeCrypto.validatePin(cleanPin)
 
         let package = try buildBackupPackage()
+        // 导出后校验：与还原前校验同一套规则（ID 唯一、外键不悬挂、附件可解码）。
+        // 导出侧也要拦——否则「坏备份 + 好加密」只会产出一个到还原时才发现的雷。
+        try validate(package: package)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let packageData = try encoder.encode(package)

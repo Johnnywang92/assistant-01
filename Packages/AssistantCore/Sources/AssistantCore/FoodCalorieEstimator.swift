@@ -340,115 +340,115 @@ public enum FoodCatalog {
         FoodItem(id: "rice", name: "米饭", nameEn: "Steamed Rice", caloriesPer100g: 116, category: .staple,
                  visionIdentifiers: ["rice"], aliases: ["米饭", "白饭", "白米饭", "大米饭", "rice", "steamed rice"]),
         FoodItem(id: "fried_rice", name: "炒饭", nameEn: "Fried Rice", caloriesPer100g: 180, category: .staple,
-                 visionIdentifiers: [], aliases: ["炒饭", "蛋炒饭", "扬州炒饭", "酱油炒饭", "牛肉炒饭", "fried rice"]),
+                 visionIdentifiers: ["fried_rice", "pilaf"], aliases: ["炒饭", "蛋炒饭", "扬州炒饭", "酱油炒饭", "牛肉炒饭", "fried rice"]),
         FoodItem(id: "noodles", name: "面条", nameEn: "Noodles", caloriesPer100g: 110, category: .staple,
-                 visionIdentifiers: ["noodle", "ramen", "pasta", "spaghetti"], aliases: ["面条", "拉面", "汤面", "拌面", "牛肉面", "刀削面", "面", "noodles", "ramen", "pasta"]),
+                 visionIdentifiers: ["noodle", "ramen", "pasta", "spaghetti", "carbonara"], aliases: ["面条", "拉面", "汤面", "拌面", "牛肉面", "刀削面", "面", "noodles", "ramen", "pasta"]),
         FoodItem(id: "steamed_bun", name: "包子/生煎/小笼", nameEn: "Steamed Stuffed Bun", caloriesPer100g: 230, category: .staple,
-                 visionIdentifiers: [], aliases: ["包子", "肉包", "菜包", "生煎包", "小笼包", "生煎", "灌汤包", "叉烧包", "水煎包", "baozi", "bun"]),
+                 visionIdentifiers: ["bun", "steamed_bun", "baozi", "dim_sum", "roll", "dumpling"], aliases: ["包子", "肉包", "菜包", "生煎包", "小笼包", "生煎", "灌汤包", "叉烧包", "水煎包", "baozi", "bun"]),
         FoodItem(id: "mantou", name: "馒头/花卷", nameEn: "Steamed Bread", caloriesPer100g: 210, category: .staple,
-                 visionIdentifiers: [], aliases: ["馒头", "花卷", "白馒头", "刀切馒头", "窝窝头", "杂粮馒头", "mantou"]),
+                 visionIdentifiers: ["bun", "steamed_bun", "bread_roll", "roll"], aliases: ["馒头", "花卷", "白馒头", "刀切馒头", "窝窝头", "杂粮馒头", "mantou"]),
         FoodItem(id: "youtiao", name: "油条/油饼", nameEn: "Fried Dough Stick", caloriesPer100g: 380, category: .staple,
-                 visionIdentifiers: [], aliases: ["油条", "油饼", "炸油条", "麻花", "youtiao"]),
+                 visionIdentifiers: ["fritter", "churro", "doughnut", "cruller"], aliases: ["油条", "油饼", "炸油条", "麻花", "youtiao"]),
         FoodItem(id: "pancake_roll", name: "煎饼果子/手抓饼", nameEn: "Pancake Roll", caloriesPer100g: 240, category: .staple,
-                 visionIdentifiers: [], aliases: ["煎饼果子", "手抓饼", "鸡蛋灌饼", "葱油饼", "煎饼", "卷饼", "肉卷", "jianbing"]),
+                 visionIdentifiers: ["crepe", "burrito", "wrap", "pancake", "tortilla"], aliases: ["煎饼果子", "手抓饼", "鸡蛋灌饼", "葱油饼", "煎饼", "卷饼", "肉卷", "jianbing"]),
         FoodItem(id: "roujiamo", name: "肉夹馍", nameEn: "Roujiamo", caloriesPer100g: 260, category: .staple,
-                 visionIdentifiers: [], aliases: ["肉夹馍", "陕西肉夹馍", "腊汁肉夹馍", "白吉馍", "roujiamo"]),
+                 visionIdentifiers: ["sandwich", "burger", "slider"], aliases: ["肉夹馍", "陕西肉夹馍", "腊汁肉夹馍", "白吉馍", "roujiamo"]),
         FoodItem(id: "rice_noodles", name: "米粉/米线/螺蛳粉", nameEn: "Rice Noodles", caloriesPer100g: 120, category: .staple,
-                 visionIdentifiers: [], aliases: ["米粉", "米线", "螺蛳粉", "酸辣粉", "桂林米粉", "过桥米线", "牛肉粉", "河粉", "炒河粉", "rice noodles"]),
+                 visionIdentifiers: ["noodle", "vermicelli", "ramen"], aliases: ["米粉", "米线", "螺蛳粉", "酸辣粉", "桂林米粉", "过桥米线", "牛肉粉", "河粉", "炒河粉", "rice noodles"]),
         FoodItem(id: "zhajiangmian", name: "炸酱面/热干面", nameEn: "Noodles with Paste", caloriesPer100g: 200, category: .staple,
-                 visionIdentifiers: [], aliases: ["炸酱面", "热干面", "油泼面", "葱油拌面", "担担面", "武汉热干面", "zhajiangmian"]),
+                 visionIdentifiers: ["noodle", "spaghetti", "pasta", "ramen"], aliases: ["炸酱面", "热干面", "油泼面", "葱油拌面", "担担面", "武汉热干面", "zhajiangmian"]),
         FoodItem(id: "dumpling", name: "饺子/馄饨", nameEn: "Dumplings", caloriesPer100g: 240, category: .staple,
-                 visionIdentifiers: ["dumpling", "wonton", "pierogi"], aliases: ["饺子", "水饺", "煎饺", "馄饨", "抄手", "云吞", "dumpling", "wonton"]),
+                 visionIdentifiers: ["dumpling", "wonton", "pierogi", "potsticker", "dim_sum"], aliases: ["饺子", "水饺", "煎饺", "馄饨", "抄手", "云吞", "dumpling", "wonton"]),
         FoodItem(id: "congee", name: "粥/稀饭", nameEn: "Congee", caloriesPer100g: 50, category: .staple,
-                 visionIdentifiers: ["oatmeal", "porridge"], aliases: ["粥", "白粥", "稀饭", "皮蛋瘦肉粥", "小米粥", "八宝粥", "南瓜粥", "congee", "porridge"]),
+                 visionIdentifiers: ["oatmeal", "porridge", "gruel", "broth"], aliases: ["粥", "白粥", "稀饭", "皮蛋瘦肉粥", "小米粥", "八宝粥", "南瓜粥", "congee", "porridge"]),
         FoodItem(id: "sushi", name: "寿司", nameEn: "Sushi", caloriesPer100g: 150, category: .staple,
                  visionIdentifiers: ["sushi"], aliases: ["寿司", "手握寿司", "军舰寿司", "加州卷", "sushi"]),
         FoodItem(id: "bread", name: "面包/吐司", nameEn: "Bread", caloriesPer100g: 280, category: .staple,
-                 visionIdentifiers: ["bread", "toast", "white_bread"], aliases: ["面包", "吐司", "全麦面包", "法棍", "欧包", "bread", "toast"]),
+                 visionIdentifiers: ["bread", "toast", "white_bread", "baguette"], aliases: ["面包", "吐司", "全麦面包", "法棍", "欧包", "bread", "toast"]),
         FoodItem(id: "breakfast_cereal", name: "麦片/燕麦", nameEn: "Cereal", caloriesPer100g: 380, category: .staple,
                  visionIdentifiers: ["oatmeal", "cereal"], aliases: ["麦片", "燕麦", "燕麦片", "cereal", "oatmeal"]),
         FoodItem(id: "changfen", name: "肠粉", nameEn: "Rice Noodle Roll", caloriesPer100g: 110, category: .staple,
-                 visionIdentifiers: [], aliases: ["肠粉", "广东肠粉", "鸡蛋肠粉", "肉沫肠粉", "虾仁肠粉", "changfen"]),
+                 visionIdentifiers: ["dim_sum", "noodle"], aliases: ["肠粉", "广东肠粉", "鸡蛋肠粉", "肉沫肠粉", "虾仁肠粉", "changfen"]),
         FoodItem(id: "shaomai", name: "烧麦", nameEn: "Shaomai", caloriesPer100g: 220, category: .staple,
-                 visionIdentifiers: [], aliases: ["烧麦", "烧卖", "糯米烧麦", "广式烧卖", "shaomai", "shumai"]),
+                 visionIdentifiers: ["dim_sum", "dumpling", "shaomai"], aliases: ["烧麦", "烧卖", "糯米烧麦", "广式烧卖", "shaomai", "shumai"]),
         FoodItem(id: "zongzi", name: "粽子", nameEn: "Zongzi", caloriesPer100g: 200, category: .staple,
-                 visionIdentifiers: [], aliases: ["粽子", "肉粽", "甜粽", "蛋黄肉粽", "豆沙粽", "zongzi"]),
+                 visionIdentifiers: ["tamale", "dumpling"], aliases: ["粽子", "肉粽", "甜粽", "蛋黄肉粽", "豆沙粽", "zongzi"]),
         FoodItem(id: "niangao", name: "年糕/汤圆", nameEn: "Rice Cake & Tangyuan", caloriesPer100g: 180, category: .staple,
-                 visionIdentifiers: [], aliases: ["年糕", "炒年糕", "汤圆", "元宵", "糍粑", "rice cake", "tangyuan"]),
+                 visionIdentifiers: ["rice_cake", "mochi", "dumpling"], aliases: ["年糕", "炒年糕", "汤圆", "元宵", "糍粑", "rice cake", "tangyuan"]),
         FoodItem(id: "corn_sweetpotato", name: "玉米/红薯/紫薯", nameEn: "Corn & Sweet Potato", caloriesPer100g: 105, category: .staple,
-                 visionIdentifiers: [], aliases: ["玉米", "煮玉米", "红薯", "烤红薯", "紫薯", "南瓜", "蒸南瓜", "corn", "sweet potato"]),
+                 visionIdentifiers: ["corn", "sweet_potato", "yam"], aliases: ["玉米", "煮玉米", "红薯", "烤红薯", "紫薯", "南瓜", "蒸南瓜", "corn", "sweet potato"]),
         FoodItem(id: "chinese_fastfood", name: "中式快餐/便当", nameEn: "Chinese Fast Food", caloriesPer100g: 170, category: .staple,
-                 visionIdentifiers: [], aliases: ["盖浇饭", "炒面", "炒粉", "盒饭", "套餐", "中式快餐", "快餐", "便当"]),
+                 visionIdentifiers: ["fast_food", "platter", "tray"], aliases: ["盖浇饭", "炒面", "炒粉", "盒饭", "套餐", "中式快餐", "快餐", "便当"]),
 
         // MARK: - 荤菜与家常热菜 (Meat)
         FoodItem(id: "stir_fry_meat", name: "辣椒炒肉/家常小炒", nameEn: "Stir-fried Meat & Peppers", caloriesPer100g: 165, category: .meat,
-                 visionIdentifiers: ["stir_fry", "curry"],
+                 visionIdentifiers: ["stir_fry", "curry", "wok"],
                  aliases: ["辣椒炒肉", "小炒肉", "农家小炒肉", "青椒炒肉", "家常小炒", "家常炒菜", "肉片炒菜", "红烧肉块", "啤酒鸭", "黄焖鸡", "红烧鸡块", "宫保鸡丁", "鱼香肉丝", "回锅肉", "荤素小炒", "炒菜", "炒肉", "stir fry", "stir_fry"]),
         FoodItem(id: "braised_meat", name: "红烧肉/红烧排骨", nameEn: "Braised Pork & Ribs", caloriesPer100g: 245, category: .meat,
-                 visionIdentifiers: [],
+                 visionIdentifiers: ["meat", "pork", "beef", "pot_roast", "stew"],
                  aliases: ["红烧肉", "红烧排骨", "卤肉", "梅菜扣肉", "红烧牛肉", "红烧鸭", "braised pork"]),
         FoodItem(id: "sweet_sour_pork", name: "糖醋里脊/锅包肉", nameEn: "Sweet & Sour Pork", caloriesPer100g: 260, category: .meat,
-                 visionIdentifiers: [], aliases: ["糖醋里脊", "锅包肉", "咕咾肉", "糖醋排骨", "菠萝咕咾肉", "sweet sour pork"]),
+                 visionIdentifiers: ["sweet_and_sour", "meat", "pork", "tempura"], aliases: ["糖醋里脊", "锅包肉", "咕咾肉", "糖醋排骨", "菠萝咕咾肉", "sweet sour pork"]),
         FoodItem(id: "boiled_pork_fish", name: "水煮肉片/水煮鱼/毛血旺", nameEn: "Boiled Meat & Fish in Chili", caloriesPer100g: 210, category: .meat,
-                 visionIdentifiers: [], aliases: ["水煮肉片", "水煮鱼", "毛血旺", "水煮牛肉", "川味水煮", "boiled meat"]),
+                 visionIdentifiers: ["chili"], aliases: ["水煮肉片", "水煮鱼", "毛血旺", "水煮牛肉", "川味水煮", "boiled meat"]),
         FoodItem(id: "suancai_fish", name: "酸菜鱼/烤鱼", nameEn: "Fish with Sauerkraut", caloriesPer100g: 120, category: .meat,
-                 visionIdentifiers: [], aliases: ["酸菜鱼", "烤鱼", "剁椒鱼头", "沸腾鱼", "清蒸鲈鱼", "suancai fish"]),
+                 visionIdentifiers: ["fish"], aliases: ["酸菜鱼", "烤鱼", "剁椒鱼头", "沸腾鱼", "清蒸鲈鱼", "suancai fish"]),
         FoodItem(id: "roast_duck", name: "烤鸭/卤鸭", nameEn: "Roast & Braised Duck", caloriesPer100g: 240, category: .meat,
-                 visionIdentifiers: [], aliases: ["烤鸭", "北京烤鸭", "卤鸭", "南京盐水鸭", "烧鸭", "roast duck"]),
+                 visionIdentifiers: ["duck", "poultry", "roast"], aliases: ["烤鸭", "北京烤鸭", "卤鸭", "南京盐水鸭", "烧鸭", "roast duck"]),
         FoodItem(id: "steak", name: "牛排", nameEn: "Steak", caloriesPer100g: 250, category: .meat,
                  visionIdentifiers: ["steak", "meat", "beef"], aliases: ["牛排", "煎牛排", "steak"]),
         FoodItem(id: "fried_chicken", name: "炸鸡/鸡排", nameEn: "Fried Chicken", caloriesPer100g: 280, category: .meat,
                  visionIdentifiers: ["fried_chicken", "chicken", "tempura"], aliases: ["炸鸡", "鸡排", "辣子鸡", "鸡米花", "原味鸡", "炸鸡翅", "fried chicken"]),
         FoodItem(id: "chicken_breast", name: "鸡胸肉/白切鸡", nameEn: "Chicken", caloriesPer100g: 165, category: .meat,
-                 visionIdentifiers: ["grilled_chicken", "chicken"], aliases: ["鸡胸肉", "鸡肉", "白切鸡", "口水鸡", "鸡腿", "白斩鸡", "chicken breast", "chicken"]),
+                 visionIdentifiers: ["grilled_chicken", "chicken", "poultry"], aliases: ["鸡胸肉", "鸡肉", "白切鸡", "口水鸡", "鸡腿", "白斩鸡", "chicken breast", "chicken"]),
         FoodItem(id: "beef", name: "牛肉/酱牛肉", nameEn: "Beef", caloriesPer100g: 190, category: .meat,
                  visionIdentifiers: ["meat", "beef", "meatball"], aliases: ["牛肉", "卤牛肉", "酱牛肉", "小炒牛肉", "黑椒牛肉粒", "beef"]),
         FoodItem(id: "pork", name: "猪肉/叉烧", nameEn: "Pork", caloriesPer100g: 210, category: .meat,
                  visionIdentifiers: ["meat", "pork", "ham", "bacon", "sausage"], aliases: ["猪肉", "叉烧", "香肠", "培根", "烤肠", "pork"]),
         FoodItem(id: "lamb", name: "羊肉/羊肉串", nameEn: "Lamb & Mutton", caloriesPer100g: 200, category: .meat,
-                 visionIdentifiers: [], aliases: ["羊肉", "烤羊肉串", "羊肉汤", "手抓羊肉", "葱爆羊肉", "lamb", "mutton"]),
+                 visionIdentifiers: ["lamb", "mutton", "kebab"], aliases: ["羊肉", "烤羊肉串", "羊肉汤", "手抓羊肉", "葱爆羊肉", "lamb", "mutton"]),
         FoodItem(id: "shrimp", name: "虾/白灼虾/小龙虾", nameEn: "Shrimp & Prawns", caloriesPer100g: 100, category: .meat,
-                 visionIdentifiers: ["shellfish", "shellfish_prepared", "crab", "lobster"], aliases: ["虾", "大虾", "白灼虾", "油焖大虾", "小龙虾", "麻辣小龙虾", "虾仁", "shrimp", "prawn"]),
+                 visionIdentifiers: ["shellfish", "shellfish_prepared", "crab", "lobster", "shrimp", "prawn"], aliases: ["虾", "大虾", "白灼虾", "油焖大虾", "小龙虾", "麻辣小龙虾", "虾仁", "shrimp", "prawn"]),
         FoodItem(id: "fish", name: "鱼肉/海鲜", nameEn: "Fish & Seafood", caloriesPer100g: 130, category: .meat,
-                 visionIdentifiers: ["fish", "seafood", "oyster", "clam"], aliases: ["鱼", "海鲜", "清蒸鱼", "红烧鱼", "三文鱼", "鳕鱼", "fish", "seafood"]),
+                 visionIdentifiers: ["fish", "seafood", "oyster", "clam", "salmon"], aliases: ["鱼", "海鲜", "清蒸鱼", "红烧鱼", "三文鱼", "鳕鱼", "fish", "seafood"]),
         FoodItem(id: "curry_chicken_beef", name: "咖喱鸡/咖喱牛肉", nameEn: "Curry", caloriesPer100g: 160, category: .meat,
-                 visionIdentifiers: [], aliases: ["咖喱鸡", "咖喱牛肉", "咖喱饭", "日式咖喱", "curry"]),
+                 visionIdentifiers: ["curry"], aliases: ["咖喱鸡", "咖喱牛肉", "咖喱饭", "日式咖喱", "curry"]),
         FoodItem(id: "fried_pork_cutlet", name: "炸猪排", nameEn: "Fried Pork Cutlet", caloriesPer100g: 300, category: .meat,
-                 visionIdentifiers: [], aliases: ["炸猪排", "猪排", "日式猪排", "天妇罗", "tonkatsu"]),
+                 visionIdentifiers: ["cutlet", "schnitzel", "tonkatsu", "tempura"], aliases: ["炸猪排", "猪排", "日式猪排", "天妇罗", "tonkatsu"]),
         FoodItem(id: "pig_trotter", name: "卤猪蹄/猪手", nameEn: "Braised Pig Trotter", caloriesPer100g: 260, category: .meat,
-                 visionIdentifiers: [], aliases: ["猪蹄", "卤猪蹄", "猪手", "红烧猪蹄", "猪脚姜", "pig trotter"]),
+                 visionIdentifiers: ["pork"], aliases: ["猪蹄", "卤猪蹄", "猪手", "红烧猪蹄", "猪脚姜", "pig trotter"]),
 
         // MARK: - 素菜、豆制品与菌菇 (Veggie)
         FoodItem(id: "vegetable_dish", name: "素菜/炒青菜", nameEn: "Vegetable Dish", caloriesPer100g: 75, category: .veggie,
                  visionIdentifiers: ["vegetable", "broccoli", "tomato", "potato", "eggplant", "pepper_veggie", "bell_pepper", "jalapeno", "green_beans", "bean", "asparagus", "cabbage", "carrot", "cucumber", "lettuce", "onion", "pea", "pumpkin", "spinach"],
                  aliases: ["青菜", "炒青菜", "蔬菜", "素菜", "炒时蔬", "四季豆", "豆角", "干煸豆角", "红烧茄子", "vegetable"]),
         FoodItem(id: "stir_fry_cabbage", name: "手撕包菜/干锅花菜", nameEn: "Stir-fried Cabbage & Cauliflower", caloriesPer100g: 80, category: .veggie,
-                 visionIdentifiers: [], aliases: ["手撕包菜", "干锅花菜", "炒花菜", "大头菜", "圆白菜", "包菜", "fried cabbage"]),
+                 visionIdentifiers: ["cabbage", "cauliflower"], aliases: ["手撕包菜", "干锅花菜", "炒花菜", "大头菜", "圆白菜", "包菜", "fried cabbage"]),
         FoodItem(id: "sour_potato_shreds", name: "酸辣土豆丝/地三鲜", nameEn: "Shredded Potato & Eggplant", caloriesPer100g: 120, category: .veggie,
-                 visionIdentifiers: [], aliases: ["酸辣土豆丝", "土豆丝", "地三鲜", "红烧土豆", "土豆片", "shredded potato"]),
+                 visionIdentifiers: ["potato"], aliases: ["酸辣土豆丝", "土豆丝", "地三鲜", "红烧土豆", "土豆片", "shredded potato"]),
         FoodItem(id: "garlic_greens", name: "蒜蓉空心菜/绿叶青菜", nameEn: "Garlic Greens", caloriesPer100g: 60, category: .veggie,
-                 visionIdentifiers: [], aliases: ["蒜蓉空心菜", "空心菜", "生菜", "白灼生菜", "菜心", "广东菜心", "油麦菜", "菠菜", "油菜", "garlic greens"]),
+                 visionIdentifiers: ["spinach", "greens"], aliases: ["蒜蓉空心菜", "空心菜", "生菜", "白灼生菜", "菜心", "广东菜心", "油麦菜", "菠菜", "油菜", "garlic greens"]),
         FoodItem(id: "mapo_tofu", name: "麻婆豆腐/家常豆腐", nameEn: "Mapo Tofu", caloriesPer100g: 130, category: .veggie,
-                 visionIdentifiers: [], aliases: ["麻婆豆腐", "家常豆腐", "肉沫豆腐", "麻辣豆腐", "mapo tofu"]),
+                 visionIdentifiers: ["tofu"], aliases: ["麻婆豆腐", "家常豆腐", "肉沫豆腐", "麻辣豆腐", "mapo tofu"]),
         FoodItem(id: "tofu", name: "豆制品/豆干", nameEn: "Tofu", caloriesPer100g: 80, category: .veggie,
-                 visionIdentifiers: [], aliases: ["豆腐", "豆干", "腐竹", "豆皮", "千张", "tofu"]),
+                 visionIdentifiers: ["tofu", "bean_curd"], aliases: ["豆腐", "豆干", "腐竹", "豆皮", "千张", "tofu"]),
         FoodItem(id: "egg", name: "西红柿炒鸡蛋/荷包蛋", nameEn: "Egg Dish", caloriesPer100g: 155, category: .veggie,
-                 visionIdentifiers: ["egg", "fried_egg", "scrambled_eggs", "omelet"], aliases: ["鸡蛋", "煎蛋", "炒蛋", "番茄炒蛋", "西红柿炒鸡蛋", "荷包蛋", "卤蛋", "茶叶蛋", "水煮蛋", "蛋", "egg"]),
+                 visionIdentifiers: ["egg", "fried_egg", "scrambled_eggs", "omelet", "poached_egg"], aliases: ["鸡蛋", "煎蛋", "炒蛋", "番茄炒蛋", "西红柿炒鸡蛋", "荷包蛋", "卤蛋", "茶叶蛋", "水煮蛋", "蛋", "egg"]),
         FoodItem(id: "steamed_egg_custard", name: "水蒸蛋/鸡蛋羹", nameEn: "Steamed Egg Custard", caloriesPer100g: 70, category: .veggie,
-                 visionIdentifiers: [], aliases: ["水蒸蛋", "鸡蛋羹", "蒸蛋", "炖蛋", "蒸水蛋", "steamed egg"]),
+                 visionIdentifiers: ["custard", "pudding"], aliases: ["水蒸蛋", "鸡蛋羹", "蒸蛋", "炖蛋", "蒸水蛋", "steamed egg"]),
         FoodItem(id: "mushroom_dish", name: "炒菌菇/香菇油菜", nameEn: "Mushroom Dish", caloriesPer100g: 70, category: .veggie,
-                 visionIdentifiers: [], aliases: ["炒菌菇", "菌菇", "香菇油菜", "杏鲍菇", "金针菇", "蘑菇", "mushroom dish"]),
+                 visionIdentifiers: ["mushroom", "fungus"], aliases: ["炒菌菇", "菌菇", "香菇油菜", "杏鲍菇", "金针菇", "蘑菇", "mushroom dish"]),
         FoodItem(id: "cold_cucumber_fungus", name: "拍黄瓜/凉拌木耳", nameEn: "Cold Cucumber & Fungus", caloriesPer100g: 50, category: .veggie,
-                 visionIdentifiers: [], aliases: ["拍黄瓜", "黄瓜", "凉拌木耳", "木耳", "凉拌腐竹", "皮蛋豆腐", "cold cucumber"]),
+                 visionIdentifiers: ["cucumber"], aliases: ["拍黄瓜", "黄瓜", "凉拌木耳", "木耳", "凉拌腐竹", "皮蛋豆腐", "cold cucumber"]),
         FoodItem(id: "seaweed_dish", name: "凉拌海带丝/凉菜", nameEn: "Seaweed & Cold Dish", caloriesPer100g: 55, category: .veggie,
                  visionIdentifiers: ["seaweed", "pickle"],
                  aliases: ["凉拌海带丝", "海带丝", "海带", "凉拌菜", "凉菜", "小菜", "泡菜", "seaweed"]),
         FoodItem(id: "salad", name: "蔬菜沙拉/轻食", nameEn: "Salad", caloriesPer100g: 90, category: .veggie,
-                 visionIdentifiers: ["salad", "vegetable", "guacamole", "hummus"], aliases: ["沙拉", "蔬菜沙拉", "轻食沙拉", "轻食", "salad"]),
+                 visionIdentifiers: ["salad", "guacamole", "hummus"], aliases: ["沙拉", "蔬菜沙拉", "轻食沙拉", "轻食", "salad"]),
 
         // MARK: - 汤品与羹类 (Soup)
         FoodItem(id: "soup", name: "汤品/例汤", nameEn: "Soup", caloriesPer100g: 35, category: .soup,
-                 visionIdentifiers: ["soup"], aliases: ["汤", "例汤", "高汤", "清汤", "罗宋汤", "soup"]),
+                 visionIdentifiers: ["soup", "broth", "consomme"], aliases: ["汤", "例汤", "高汤", "清汤", "罗宋汤", "soup"]),
         FoodItem(id: "tomato_egg_soup", name: "番茄蛋花汤/紫菜蛋汤", nameEn: "Tomato Egg Soup", caloriesPer100g: 35, category: .soup,
                  visionIdentifiers: [], aliases: ["番茄蛋花汤", "西红柿鸡蛋汤", "紫菜蛋花汤", "蛋花汤", "紫菜汤", "tomato egg soup"]),
         FoodItem(id: "pork_ribs_soup", name: "排骨汤/老鸭汤/鸡汤", nameEn: "Pork Rib & Chicken Soup", caloriesPer100g: 65, category: .soup,
@@ -456,17 +456,17 @@ public enum FoodCatalog {
 
         // MARK: - 特色小吃、快餐与烧烤 (Snack)
         FoodItem(id: "hotpot", name: "火锅/麻辣烫", nameEn: "Hot Pot", caloriesPer100g: 150, category: .snack,
-                 visionIdentifiers: ["hotpot"], aliases: ["火锅", "麻辣烫", "冒菜", "麻辣香锅", "hotpot"]),
+                 visionIdentifiers: ["hotpot", "hot_pot", "stew", "fondue"], aliases: ["火锅", "麻辣烫", "冒菜", "麻辣香锅", "hotpot"]),
         FoodItem(id: "barbecue", name: "烧烤/烤串", nameEn: "Barbecue", caloriesPer100g: 260, category: .snack,
-                 visionIdentifiers: ["grill"], aliases: ["烧烤", "烤串", "烤肉", "串串", "barbecue", "bbq"]),
+                 visionIdentifiers: ["grill", "barbecue", "kebab", "skewer"], aliases: ["烧烤", "烤串", "烤肉", "串串", "barbecue", "bbq"]),
         FoodItem(id: "braised_duck_neck", name: "卤鸭脖/鸡爪", nameEn: "Braised Duck Neck & Claw", caloriesPer100g: 220, category: .snack,
-                 visionIdentifiers: [], aliases: ["鸭脖", "卤鸭脖", "周黑鸭", "绝味", "鸡爪", "卤鸡爪", "鸭锁骨", "鸭翅", "duck neck"]),
+                 visionIdentifiers: ["duck", "poultry", "meat"], aliases: ["鸭脖", "卤鸭脖", "周黑鸭", "绝味", "鸡爪", "卤鸡爪", "鸭锁骨", "鸭翅", "duck neck"]),
         FoodItem(id: "oden", name: "关东煮/串串", nameEn: "Oden", caloriesPer100g: 80, category: .snack,
-                 visionIdentifiers: [], aliases: ["关东煮", "便利店关东煮", "罗森关东煮", "oden"]),
+                 visionIdentifiers: ["oden"], aliases: ["关东煮", "便利店关东煮", "罗森关东煮", "oden"]),
         FoodItem(id: "stinky_tofu", name: "臭豆腐", nameEn: "Stinky Tofu", caloriesPer100g: 210, category: .snack,
-                 visionIdentifiers: [], aliases: ["臭豆腐", "长沙臭豆腐", "炸臭豆腐", "stinky tofu"]),
+                 visionIdentifiers: ["tofu"], aliases: ["臭豆腐", "长沙臭豆腐", "炸臭豆腐", "stinky tofu"]),
         FoodItem(id: "roasted_cold_noodles", name: "烤冷面/章鱼小丸子", nameEn: "Roasted Cold Noodles & Takoyaki", caloriesPer100g: 230, category: .snack,
-                 visionIdentifiers: [], aliases: ["烤冷面", "章鱼小丸子", "章鱼烧", "炸串", "takoyaki"]),
+                 visionIdentifiers: ["crepe", "noodle"], aliases: ["烤冷面", "章鱼小丸子", "章鱼烧", "炸串", "takoyaki"]),
         FoodItem(id: "pizza", name: "披萨", nameEn: "Pizza", caloriesPer100g: 265, category: .snack,
                  visionIdentifiers: ["pizza"], aliases: ["披萨", "比萨", "pizza"]),
         FoodItem(id: "hamburger", name: "汉堡", nameEn: "Hamburger", caloriesPer100g: 250, category: .snack,
@@ -514,7 +514,7 @@ public enum FoodCatalog {
         FoodItem(id: "cola", name: "可乐/含糖汽水", nameEn: "Cola", caloriesPer100g: 42, category: .drink,
                  visionIdentifiers: ["cola", "soda"], aliases: ["可乐", "汽水", "雪碧", "芬达", "cola"]),
         FoodItem(id: "sugar_free_cola", name: "无糖可乐/气泡水", nameEn: "Zero Calorie Soda", caloriesPer100g: 1, category: .drink,
-                 visionIdentifiers: [], aliases: ["无糖可乐", "零度可乐", "元气森林", "气泡水", "无糖汽水", "diet cola", "zero cola"]),
+                 visionIdentifiers: ["soda"], aliases: ["无糖可乐", "零度可乐", "元气森林", "气泡水", "无糖汽水", "diet cola", "zero cola"]),
         FoodItem(id: "juice", name: "鲜榨果汁", nameEn: "Juice", caloriesPer100g: 45, category: .drink,
                  visionIdentifiers: ["juice", "juicer"], aliases: ["果汁", "橙汁", "苹果汁", "juice"]),
         FoodItem(id: "coconut_water", name: "椰子水/椰青", nameEn: "Coconut Water", caloriesPer100g: 20, category: .drink,
@@ -524,17 +524,17 @@ public enum FoodCatalog {
         FoodItem(id: "fruit", name: "水果拼盘", nameEn: "Fruit Platter", caloriesPer100g: 55, category: .drink,
                  visionIdentifiers: ["fruit", "apple", "banana", "orange", "grapefruit", "pineapple", "citrus_fruit", "passionfruit", "starfruit", "strawberry", "blueberry", "raspberry", "blackberry", "cherry", "grape", "melon", "peach", "pear", "plum", "kiwi", "avocado", "lemon", "lime", "mango"], aliases: ["水果", "水果拼盘", "草莓", "蓝莓", "葡萄", "桃子", "梨", "fruit"]),
         FoodItem(id: "apple", name: "苹果", nameEn: "Apple", caloriesPer100g: 52, category: .drink,
-                 visionIdentifiers: [], aliases: ["苹果", "红富士", "青苹果", "apple"]),
+                 visionIdentifiers: ["apple"], aliases: ["苹果", "红富士", "青苹果", "apple"]),
         FoodItem(id: "banana", name: "香蕉", nameEn: "Banana", caloriesPer100g: 89, category: .drink,
-                 visionIdentifiers: [], aliases: ["香蕉", "banana"]),
+                 visionIdentifiers: ["banana"], aliases: ["香蕉", "banana"]),
         FoodItem(id: "watermelon", name: "西瓜", nameEn: "Watermelon", caloriesPer100g: 30, category: .drink,
-                 visionIdentifiers: [], aliases: ["西瓜", "切块西瓜", "watermelon"]),
+                 visionIdentifiers: ["watermelon", "melon"], aliases: ["西瓜", "切块西瓜", "watermelon"]),
         FoodItem(id: "orange_citrus", name: "橙子/柑橘/柚子", nameEn: "Orange & Citrus", caloriesPer100g: 45, category: .drink,
-                 visionIdentifiers: [], aliases: ["橙子", "橘子", "柑橘", "柚子", "砂糖橘", "orange", "citrus"]),
+                 visionIdentifiers: ["orange", "citrus", "tangerine"], aliases: ["橙子", "橘子", "柑橘", "柚子", "砂糖橘", "orange", "citrus"]),
         FoodItem(id: "durian_mango", name: "榴莲/芒果", nameEn: "Durian & Mango", caloriesPer100g: 130, category: .drink,
-                 visionIdentifiers: [], aliases: ["榴莲", "芒果", "金枕榴莲", "台农芒果", "durian", "mango"]),
+                 visionIdentifiers: ["mango", "durian"], aliases: ["榴莲", "芒果", "金枕榴莲", "台农芒果", "durian", "mango"]),
         FoodItem(id: "avocado", name: "牛油果", nameEn: "Avocado", caloriesPer100g: 160, category: .drink,
-                 visionIdentifiers: [], aliases: ["牛油果", "鳄梨", "avocado"])
+                 visionIdentifiers: ["avocado", "guacamole"], aliases: ["牛油果", "鳄梨", "avocado"])
     ]
 
     public static let items: [FoodItem] = baseItems.map { food in
@@ -665,6 +665,111 @@ public enum FoodCatalog {
             }
         }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// MARK: - 用餐时段先验
+
+/// 用餐时段。用于基于时间上下文动态加权分类候选。
+public enum MealTimePeriod: String, CaseIterable, Sendable {
+    case breakfast    // 早餐 05:00 - 10:30
+    case lunch        // 午餐 10:30 - 14:30
+    case afternoonTea // 下午茶 14:30 - 17:00
+    case dinner       // 晚餐 17:00 - 21:30
+    case lateNight    // 夜宵 21:30 - 05:00
+
+    public static func from(date: Date, calendar: Calendar = .current) -> MealTimePeriod {
+        let hour = calendar.component(.hour, from: date)
+        let minute = calendar.component(.minute, from: date)
+        let timeMinutes = hour * 60 + minute
+
+        switch timeMinutes {
+        case 5 * 60 ..< 10 * 60 + 30:
+            return .breakfast
+        case 10 * 60 + 30 ..< 14 * 60 + 30:
+            return .lunch
+        case 14 * 60 + 30 ..< 17 * 60:
+            return .afternoonTea
+        case 17 * 60 ..< 21 * 60 + 30:
+            return .dinner
+        default:
+            return .lateNight
+        }
+    }
+
+    /// 对食物项的时段先验调节乘数 (0.5 ~ 1.4)
+    public func priorMultiplier(for item: FoodItem) -> Double {
+        let isBreakfastStaple = item.id == "steamed_bun" || item.id == "mantou" || item.id == "youtiao" ||
+            item.id == "pancake_roll" || item.id == "congee" || item.id == "breakfast_cereal" ||
+            item.id == "bread" || item.id == "soy_milk" || item.id == "pure_milk" || item.id == "egg"
+        let isHeavyDish = item.id == "hotpot" || item.id == "barbecue" || item.id == "boiled_pork_fish" ||
+            item.id == "suancai_fish" || item.id == "roast_duck" || item.id == "pig_trotter"
+
+        switch self {
+        case .breakfast:
+            if isBreakfastStaple { return 1.35 }
+            if item.id == "coffee" || item.id == "latte" { return 1.25 }
+            if isHeavyDish { return 0.55 }
+            if item.category == .snack && item.id != "sandwich" { return 0.65 }
+            return 0.95
+
+        case .lunch:
+            if item.category == .staple || item.category == .meat || item.category == .veggie {
+                return isBreakfastStaple && item.id != "steamed_bun" ? 0.75 : 1.15
+            }
+            if item.id == "coffee" || item.id == "latte" { return 1.10 }
+            return 1.0
+
+        case .afternoonTea:
+            if item.category == .drink || item.category == .dessert { return 1.35 }
+            if item.id == "salad" || item.id == "fruit" { return 1.25 }
+            if item.category == .meat || item.category == .staple { return 0.75 }
+            return 0.9
+
+        case .dinner:
+            if item.category == .meat || item.category == .veggie || item.category == .soup { return 1.20 }
+            if item.category == .staple && !isBreakfastStaple { return 1.15 }
+            if isBreakfastStaple { return 0.65 }
+            if item.id == "hotpot" || item.id == "barbecue" { return 1.25 }
+            return 1.0
+
+        case .lateNight:
+            if item.id == "barbecue" || item.id == "fried_chicken" || item.id == "oden" ||
+                item.id == "braised_duck_neck" || item.id == "roasted_cold_noodles" || item.id == "alcohol" ||
+                item.id == "noodles" || item.id == "rice_noodles" {
+                return 1.35
+            }
+            if isBreakfastStaple { return 0.50 }
+            return 0.9
+        }
+    }
+}
+
+// MARK: - 用户历史饮食先验
+
+/// 用户历史饮食习惯与偏好先验。
+public struct FoodHistoryPrior: Sendable {
+    /// 常用食物 ID 及食用次数统计
+    public let frequentItemCounts: [String: Int]
+    /// 最近（如 7 天内）吃过的食物 ID
+    public let recentItemIDs: Set<String>
+
+    public init(frequentItemCounts: [String: Int] = [:], recentItemIDs: Set<String> = []) {
+        self.frequentItemCounts = frequentItemCounts
+        self.recentItemIDs = recentItemIDs
+    }
+
+    /// 历史加权乘数 (1.0 ~ 1.3)
+    public func multiplier(for itemID: String) -> Double {
+        var mult = 1.0
+        if let count = frequentItemCounts[itemID], count > 0 {
+            // 频次越高，给与适度先验加成，最多 +20%
+            mult += min(0.20, Double(count) * 0.04)
+        }
+        if recentItemIDs.contains(itemID) {
+            mult += 0.05
+        }
+        return mult
     }
 }
 
@@ -1002,15 +1107,19 @@ public enum FoodCalorieEstimator {
         return min(max(ratio, 0), 1)
     }
 
-    /// 由 Vision 分类结果构造候选列表。
+    /// 由 Vision 分类结果构造候选列表，并可结合用餐时段先验与用户历史画像动态重排序。
     ///
     /// - Parameters:
     ///   - classifications: `(标识符, 置信度)` 列表，按置信度降序。
     ///   - limit: 最多返回几个候选。
+    ///   - mealTime: 用餐时段（早餐/午餐/下午茶/晚餐/夜宵），用于动态调整置信度。
+    ///   - history: 用户历史偏好与高频食用先验。
     /// - Returns: 候选列表。识别不到任何食物时返回**空数组**——
     ///   此时调用方应让用户手动选择，**不要**随便挑一个充数。
     public static func candidates(from classifications: [(identifier: String, confidence: Double)],
-                                  limit: Int = 5) -> [FoodCandidate] {
+                                  limit: Int = 5,
+                                  mealTime: MealTimePeriod? = nil,
+                                  history: FoodHistoryPrior? = nil) -> [FoodCandidate] {
         var results: [FoodCandidate] = []
         var seen = Set<String>()
 
@@ -1020,8 +1129,13 @@ public enum FoodCalorieEstimator {
                 // 同一个食物只保留最高置信度的一次命中
                 if seen.contains(food.id) { continue }
                 seen.insert(food.id)
+
+                let timeMult = mealTime?.priorMultiplier(for: food) ?? 1.0
+                let histMult = history?.multiplier(for: food.id) ?? 1.0
+                let adjustedConfidence = min(0.98, classification.confidence * timeMult * histMult)
+
                 results.append(FoodCandidate(food: food,
-                                              confidence: classification.confidence,
+                                              confidence: adjustedConfidence,
                                               matchedIdentifier: key))
             }
         }
@@ -1056,7 +1170,7 @@ public enum FoodCalorieEstimator {
 
     /// 针对中式托盘餐/多菜套餐的整餐热量估算：
     /// 自动把识别到的「主食（如米饭）+ 热菜（如辣椒炒肉/家常小炒）+ 凉菜/配菜（如凉拌海带丝）」组合并累加热量，
-    /// 避免只算一碗白米饭而漏掉配菜热量。
+    /// 避免只算一碗白米饭而漏掉配菜，或热菜置信度高时漏算米饭主食。
     public static func estimateMeal(from candidates: [FoodCandidate],
                                     detectedDishes: [FoodCandidate] = [],
                                     portion: FoodPortion = .regular,
@@ -1094,30 +1208,33 @@ public enum FoodCalorieEstimator {
 
         // 2. 退化到从候选列表中智能组合「主食 + 配菜」
         guard let best = candidates.first else { return nil }
-        guard best.food.isStaple else {
-            return FoodCalorieEstimate(
-                food: best.food,
-                portion: portion,
-                confidence: best.confidence,
-                consumedRatio: clampedRatio
-            )
+
+        // 若最佳候选不是主食，但在候选中检出了主食（如白米饭置信度 ≥ 0.15），则同时保留该主食与配菜
+        let bestStaple = candidates.first { $0.food.isStaple && $0.confidence >= 0.15 }
+        let hasStirFry = candidates.contains { $0.food.id == "stir_fry_meat" && $0.confidence >= 0.10 }
+
+        var mealCandidates: [FoodCandidate] = []
+        if let staple = bestStaple {
+            mealCandidates.append(staple)
+            if best.food.id != staple.food.id {
+                mealCandidates.append(best)
+            }
+        } else {
+            mealCandidates.append(best)
         }
 
-        let hasStirFry = candidates.contains { $0.food.id == "stir_fry_meat" && $0.confidence >= 0.10 }
-        var mealCandidates: [FoodCandidate] = [best]
-
-        for candidate in candidates.dropFirst() {
-            // 主食只取置信度最高的一种（避免米饭 + 面条同时误加）
+        for candidate in candidates {
+            guard !mealCandidates.contains(where: { $0.food.id == candidate.food.id }) else { continue }
+            // 主食只保留 1 种
             if candidate.food.isStaple { continue }
-            // 当已有辣椒炒肉/家常小炒时，其中的辣椒/配菜常同时触发 vegetable_dish 或 salad，避免重复计入两份炒菜
+            // 辣椒炒肉互斥去重
             if hasStirFry && (candidate.food.id == "vegetable_dish" || candidate.food.id == "salad") {
                 continue
             }
-            // 汤品在深色酱汁盘或圆碗边缘易产生低置信度误报（~0.12），需更高置信度才自动并入整餐
+            // 汤品反光低置信度防误判
             if candidate.food.id == "soup" && candidate.confidence < 0.25 {
                 continue
             }
-            // 凉拌海带丝等特征明确的配菜允许较低阈值（≥0.07），普通配菜需 ≥0.12
             let threshold = candidate.food.id == "seaweed_dish" ? 0.07 : 0.12
             if candidate.confidence >= threshold {
                 mealCandidates.append(candidate)
@@ -1125,16 +1242,18 @@ public enum FoodCalorieEstimator {
             if mealCandidates.count >= 4 { break }
         }
 
-        if mealCandidates.count == 1 {
+        if mealCandidates.count == 1, let only = mealCandidates.first {
             return FoodCalorieEstimate(
-                food: best.food,
+                food: only.food,
                 portion: portion,
-                confidence: best.confidence,
+                confidence: only.confidence,
                 consumedRatio: clampedRatio
             )
         }
 
-        let dishes = mealCandidates.map {
+        // 排序：主食排在最前，其余按顺序排列
+        let sortedMealCandidates = mealCandidates.filter(\.food.isStaple) + mealCandidates.filter { !$0.food.isStaple }
+        let dishes = sortedMealCandidates.map {
             FoodDishEstimate(
                 food: $0.food,
                 portion: portion,

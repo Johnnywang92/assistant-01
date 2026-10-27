@@ -1,8 +1,10 @@
+import AssistantCore
+import ImageIO
 import PhotosUI
 import SwiftData
 import SwiftUI
 import UIKit
-import ImageIO
+import UserNotifications
 
 /// 极简物品收纳备忘（解决“我的东西放哪了”翻箱倒柜的痛点）
 struct ItemStorageVaultView: View {
@@ -22,6 +24,9 @@ struct ItemStorageVaultView: View {
     @State private var showingAddMedicineSheet: Bool = false
     @State private var medicineToEdit: MedicineItem? = nil
     @State private var medicinePrefillSource: MedicineItem? = nil
+    @State private var reminderTarget: ReminderMedicineTarget? = nil
+    @State private var selectedSymptom: MedicineSymptomFilter = .all
+    @State private var actionFeedbackToast: String? = nil
 
     private let roomAreas = ["全部", "玄关", "主卧", "次卧", "客厅", "书房", "阳台", "储物间", "厨房"]
 
@@ -154,12 +159,13 @@ struct ItemStorageVaultView: View {
     /// 当前筛选/搜索下的药品，按有效截止日升序（最易过期的排最前，无有效期排最后）
     private var filteredMedicines: [MedicineItem] {
         let areaMatched = selectedArea == "全部" ? medicines : medicines.filter { $0.roomArea == selectedArea }
+        let symptomMatched = selectedSymptom == .all ? areaMatched : areaMatched.filter { selectedSymptom.matches($0) }
         let matched: [MedicineItem]
         if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            matched = areaMatched
+            matched = symptomMatched
         } else {
             let q = searchText.lowercased()
-            matched = areaMatched.filter {
+            matched = symptomMatched.filter {
                 $0.name.lowercased().contains(q) ||
                 $0.storageLocation.lowercased().contains(q) ||
                 ($0.usageMethod?.lowercased().contains(q) ?? false) ||
@@ -175,6 +181,20 @@ struct ItemStorageVaultView: View {
             case (nil, _): return false
             case (_, nil): return true
             case let (a?, b?): return a < b
+            }
+        }
+    }
+
+    private func showFeedback(_ text: String) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            actionFeedbackToast = text
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.8))
+            if actionFeedbackToast == text {
+                withAnimation {
+                    actionFeedbackToast = nil
+                }
             }
         }
     }
@@ -223,47 +243,72 @@ struct ItemStorageVaultView: View {
     /// 左滑“再买一批”可快速录入同种药的新批次（带不同有效期）。
     @ViewBuilder
     private func batchRow(_ med: MedicineItem, showsChevron: Bool) -> some View {
-        MedicineItemRow(medicine: med, showsChevron: showsChevron)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                medicineToEdit = med
+        MedicineItemRow(
+            medicine: med,
+            showsChevron: showsChevron,
+            onTakeDose: (!med.isDisposed && !med.isExpired) ? {
+                let msg = MedicineStockHelper.takeOneDose(medicine: med, context: context)
+                showFeedback("\(med.name)：\(msg)")
+            } : nil
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            medicineToEdit = med
+            Haptic.light()
+        }
+        .swipeActions(edge: .leading) {
+            if !med.isDisposed && !med.isExpired {
+                Button {
+                    let msg = MedicineStockHelper.takeOneDose(medicine: med, context: context)
+                    showFeedback("\(med.name)：\(msg)")
+                } label: {
+                    Label("吃1次", systemImage: "checkmark.circle.fill")
+                }
+                .tint(.teal)
+            }
+            Button {
+                medicinePrefillSource = med
+                showingAddMedicineSheet = true
                 Haptic.light()
+            } label: {
+                Label("再买一批", systemImage: "plus.circle")
             }
-            .swipeActions(edge: .leading) {
-                Button {
-                    medicinePrefillSource = med
-                    showingAddMedicineSheet = true
-                    Haptic.light()
-                } label: {
-                    Label("再买一批", systemImage: "plus.circle")
-                }
-                .tint(.green)
-                Button {
-                    medicineToEdit = med
-                    Haptic.light()
-                } label: {
-                    Label("编辑", systemImage: "pencil")
-                }
-                .tint(.indigo)
+            .tint(.green)
+            Button {
+                let draft = MedicineUsageDraft.parse(from: med.usageMethod ?? "")
+                reminderTarget = ReminderMedicineTarget(medicine: med, usageDraft: draft)
+                Haptic.light()
+            } label: {
+                Label("用药提醒", systemImage: "bell.badge.fill")
             }
-            .swipeActions(edge: .trailing) {
-                Button(role: .destructive) {
-                    Haptic.warning()
-                    context.delete(med)
-                    try? context.save()
-                } label: {
-                    Label("删除", systemImage: "trash")
-                }
-                Button {
+            .tint(.orange)
+        }
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                Haptic.warning()
+                context.delete(med)
+                try? context.save()
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+            Button {
+                if !med.isDisposed && (med.isExpired || med.isExpiringSoon) {
+                    _ = MedicineStockHelper.disposeAndCreateRestockTodo(medicines: [med], context: context)
+                    showFeedback("已标记处理「\(med.name)」并加入买药待办")
+                } else {
                     med.isDisposed.toggle()
                     med.updatedAt = .now
                     try? context.save()
                     Haptic.light()
-                } label: {
-                    Label(med.isDisposed ? "恢复" : "标记处理", systemImage: med.isDisposed ? "arrow.uturn.backward" : "checkmark")
                 }
-                .tint(med.isDisposed ? .blue : .green)
+            } label: {
+                Label(
+                    med.isDisposed ? "恢复" : ((med.isExpired || med.isExpiringSoon) ? "处理并补货" : "标记处理"),
+                    systemImage: med.isDisposed ? "arrow.uturn.backward" : "checkmark"
+                )
             }
+            .tint(med.isDisposed ? .blue : .green)
+        }
     }
 
     var body: some View {
@@ -416,20 +461,104 @@ struct ItemStorageVaultView: View {
 
             // 4. 药品与健康储备（重点跟踪有效期与用药方法）
             Section {
-                if !attentionMedicines.isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                        Text("\(attentionMedicines.count) 种药品已过期或临近有效期，注意及时更换处理")
-                            .font(.caption)
-                            .foregroundStyle(.red)
+                if let toast = actionFeedbackToast {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(.green)
+                        Text(toast)
+                            .font(.caption.bold())
+                            .foregroundStyle(.primary)
                         Spacer()
                     }
                     .padding(.vertical, 2)
                 }
 
+                if !medicines.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "stethoscope")
+                                .font(.caption2)
+                                .foregroundStyle(.green)
+                            Text("按症状快速找药")
+                                .font(.caption.bold())
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if selectedSymptom != .all {
+                                Button("重置筛选") {
+                                    selectedSymptom = .all
+                                    Haptic.light()
+                                }
+                                .font(.caption2)
+                            }
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(MedicineSymptomFilter.allCases) { symptom in
+                                    let isSelected = selectedSymptom == symptom
+                                    let matchCount = symptom == .all
+                                        ? medicines.filter { !$0.isDisposed }.count
+                                        : medicines.filter { !$0.isDisposed && symptom.matches($0) }.count
+                                    Button {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                            selectedSymptom = (selectedSymptom == symptom && symptom != .all) ? .all : symptom
+                                        }
+                                        Haptic.selection()
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: symptom.icon)
+                                                .font(.caption2)
+                                            Text(symptom.rawValue)
+                                                .font(.caption.weight(isSelected ? .bold : .regular))
+                                            if matchCount > 0 {
+                                                Text("\(matchCount)")
+                                                    .font(.caption2.bold())
+                                            }
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 5)
+                                        .background(
+                                            Capsule().fill(isSelected ? Color.green : Color(.secondarySystemFill))
+                                        )
+                                        .foregroundStyle(isSelected ? .white : .primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                if !attentionMedicines.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                            Text("\(attentionMedicines.count) 种药品已过期或临近有效期，注意及时更换处理")
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                            Spacer()
+                        }
+                        Button {
+                            let targetNames = attentionMedicines.map(\.name).joined(separator: "、")
+                            let count = MedicineStockHelper.disposeAndCreateRestockTodo(
+                                medicines: attentionMedicines,
+                                context: context
+                            )
+                            showFeedback("已清理 \(count) 种过期/临期药（\(targetNames)），并生成补充买药待办")
+                        } label: {
+                            Label("一键标记已清理并加入买药待办", systemImage: "cart.fill.badge.plus")
+                                .font(.caption.bold())
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.red)
+                    }
+                    .padding(.vertical, 2)
+                }
+
                 if groupedMedicines.isEmpty {
-                    Text(medicines.isEmpty ? "暂无常备药，可点击右上角 + 添加并记录有效期与用法；同种药多次购买可逐批录入不同保质期" : "当前筛选下暂无药品")
+                    Text(medicines.isEmpty ? "暂无常备药，可点击右上角 + 添加并记录有效期与用法；同种药多次购买可逐批录入不同保质期" : "当前「\(selectedSymptom.rawValue)」筛选下暂无常备药")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
@@ -491,6 +620,9 @@ struct ItemStorageVaultView: View {
         }
         .sheet(item: $medicineToEdit) { med in
             MedicineEditorSheet(medicine: med)
+        }
+        .sheet(item: $reminderTarget) { target in
+            AddMedicationReminderPopupSheet(medicine: target.medicine, usageDraft: target.usageDraft)
         }
         .sheet(isPresented: Binding(
             get: { previewImageData != nil },
@@ -652,6 +784,9 @@ struct AddOrEditStoredItemSheet: View {
     @State private var notes: String = ""
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
+    @State private var showingCamera: Bool = false
+    @State private var isRecognizingItemOCR: Bool = false
+    @State private var ocrItemHint: String? = nil
     @State private var purchasePriceString: String = ""
     @State private var purchaseDate: Date = .now
     @State private var isSecondHand: Bool = false
@@ -783,8 +918,8 @@ struct AddOrEditStoredItemSheet: View {
                     }
                 }
 
-                // 3. 现场实拍照片（开箱开柜即认出）
-                Section("收纳实景照片（选填）") {
+                // 3. 现场实拍照片（开箱开柜即认出，支持文字标签自动识别）
+                Section("收纳实景照片与智能识物（选填）") {
                     if let data = selectedImageData, let uiImage = UIImage(data: data) {
                         HStack {
                             Spacer()
@@ -797,6 +932,7 @@ struct AddOrEditStoredItemSheet: View {
                                     Button {
                                         selectedImageData = nil
                                         selectedPhotoItem = nil
+                                        ocrItemHint = nil
                                     } label: {
                                         Image(systemName: "xmark.circle.fill")
                                             .font(.title2)
@@ -808,22 +944,58 @@ struct AddOrEditStoredItemSheet: View {
                         }
                     }
 
-                    PhotosPicker(
-                        selection: $selectedPhotoItem,
-                        matching: .images,
-                        photoLibrary: .shared()
-                    ) {
-                        HStack {
-                            Image(systemName: "camera.fill")
+                    if isRecognizingItemOCR {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("正在识别物品标签/包装文字…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if let hint = ocrItemHint {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles")
                                 .foregroundStyle(.indigo)
-                            Text(selectedImageData == nil ? "拍照或从相册添加收纳柜照片" : "更换收纳照片")
+                            Text(hint)
+                                .font(.caption)
+                                .foregroundStyle(.indigo)
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        Button {
+                            showingCamera = true
+                            Haptic.light()
+                        } label: {
+                            Label("直接拍照识物", systemImage: "camera.fill")
+                                .font(.subheadline.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(Color.indigo.opacity(0.12)))
+                                .foregroundStyle(.indigo)
+                        }
+                        .buttonStyle(.plain)
+
+                        PhotosPicker(
+                            selection: $selectedPhotoItem,
+                            matching: .images,
+                            photoLibrary: .shared()
+                        ) {
+                            Label(selectedImageData == nil ? "从相册选图" : "更换照片", systemImage: "photo.on.rectangle")
+                                .font(.subheadline.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(Color(.tertiarySystemFill)))
                                 .foregroundStyle(.primary)
                         }
+                        .buttonStyle(.plain)
                     }
                     .onChange(of: selectedPhotoItem) { _, newItem in
                         Task {
                             if let data = try? await newItem?.loadTransferable(type: Data.self) {
                                 selectedImageData = data
+                                if let img = UIImage(data: data) {
+                                    await recognizeStoredItemText(from: img)
+                                }
                             }
                         }
                     }
@@ -932,6 +1104,35 @@ struct AddOrEditStoredItemSheet: View {
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+            .sheet(isPresented: $showingCamera) {
+                VaultCameraPicker { captured in
+                    selectedImageData = captured.jpegData(compressionQuality: 0.78)
+                    Task {
+                        await recognizeStoredItemText(from: captured)
+                    }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func recognizeStoredItemText(from image: UIImage) async {
+        isRecognizingItemOCR = true
+        defer { isRecognizingItemOCR = false }
+        guard let text = try? await OCRService.shared.recognizeText(from: image) else { return }
+        let lines = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.count >= 2 && $0.count <= 24 }
+        guard let firstMeaningful = lines.first(where: { line in
+            !line.allSatisfy({ $0.isNumber || $0.isPunctuation })
+        }) else { return }
+
+        if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            name = firstMeaningful
+            ocrItemHint = "已自动填入物品名称：「\(firstMeaningful)」"
+            Haptic.success()
+        } else {
+            ocrItemHint = "识别到标签：「\(firstMeaningful)」"
         }
     }
 
@@ -1020,10 +1221,21 @@ enum RowThumbnailCache {
     }
 }
 
-/// 常备药批次行：突出展示有效期状态，兼顾用法、购买批次与存放位置
+/// 常备药批次行：突出展示有效期状态，兼顾用法、购买批次与存放位置，并提供一键服药打卡与扣减余量
 private struct MedicineItemRow: View {
     let medicine: MedicineItem
     var showsChevron: Bool = true
+    var onTakeDose: (() -> Void)? = nil
+    @Query private var medPlans: [MedicationPlan]
+
+    private var linkedPlan: MedicationPlan? {
+        medPlans.first { $0.medName == medicine.name && $0.isEnabled }
+    }
+
+    private var takenRecentlyToday: Bool {
+        guard let last = linkedPlan?.lastTakenAt else { return false }
+        return Calendar.current.isDateInToday(last) && Date().timeIntervalSince(last) < 3 * 3600
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -1056,6 +1268,17 @@ private struct MedicineItemRow: View {
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color.green.opacity(0.14)))
                         .foregroundStyle(.green)
+                    if let plan = linkedPlan {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bell.badge.fill")
+                            Text("每日\(plan.dailyTimePoints.count)次提醒")
+                        }
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.orange.opacity(0.14)))
+                        .foregroundStyle(.orange)
+                    }
                     if medicine.isDisposed {
                         Text("已处理")
                             .font(.caption2.bold())
@@ -1089,11 +1312,33 @@ private struct MedicineItemRow: View {
             }
 
             Spacer(minLength: 0)
-            if showsChevron {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(Color(.tertiaryLabel))
-                    .padding(.top, 4)
+
+            VStack(alignment: .trailing, spacing: 8) {
+                if let onTakeDose {
+                    Button {
+                        onTakeDose()
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: takenRecentlyToday ? "checkmark.circle.fill" : "pills.fill")
+                                .font(.caption2)
+                            Text(takenRecentlyToday ? "已服" : "吃1次")
+                                .font(.caption2.bold())
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule().fill(takenRecentlyToday ? Color.green.opacity(0.18) : Color.teal.opacity(0.14))
+                        )
+                        .foregroundStyle(takenRecentlyToday ? .green : .teal)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(Color(.tertiaryLabel))
+                }
             }
         }
         .padding(.vertical, 4)
@@ -1233,7 +1478,7 @@ private struct MedicineGroupHeader: View {
     }
 }
 
-/// 新建/编辑常备药：重点记录有效期（含开封后期限）与用药方法等信息
+/// 新建/编辑常备药：手滑动选择用法用量、丰富常用药预设、有效期智能管理与自动弹出服药提醒
 struct MedicineEditorSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -1243,11 +1488,12 @@ struct MedicineEditorSheet: View {
     @State private var name: String = ""
     @State private var category: MedicineCategory = .otc
     @State private var indications: String = ""
-    @State private var usageMethod: String = ""
+    @State private var usageDraft: MedicineUsageDraft = MedicineUsageDraft()
+    @State private var showCustomUsageText: Bool = false
     @State private var remainingQuantity: String = ""
     @State private var precautions: String = ""
     @State private var roomArea: String = "储物间"
-    @State private var storageLocation: String = ""
+    @State private var storageLocation: String = "家庭药箱"
     @State private var hasPurchaseDate: Bool = false
     @State private var purchaseDate: Date = .now
     @State private var hasExpiry: Bool = true
@@ -1258,10 +1504,54 @@ struct MedicineEditorSheet: View {
     @State private var isDisposed: Bool = false
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
+    @State private var showingMedicineCamera: Bool = false
+    @State private var isRecognizingMedicineOCR: Bool = false
+    @State private var ocrBannerText: String? = nil
+
+    // 提醒弹窗联动
+    @State private var enablePostAddReminder: Bool = true
+    @State private var newlySavedMedicine: MedicineItem? = nil
+    @State private var showingReminderPopup: Bool = false
 
     private let roomAreas = ["玄关", "主卧", "次卧", "客厅", "书房", "储物间", "阳台", "厨房", "卫生间"]
     private let afterOpenDayOptions = [7, 14, 28, 30, 60, 90, 180]
-    private let commonMedicineSuggestions = ["布洛芬", "对乙酰氨基酚", "肠胃药", "感冒药", "创可贴", "眼药水", "维生素C", "钙片"]
+
+    private let frequencyChoices: [FrequencyChoice] = [
+        FrequencyChoice(title: "一日 1 次", count: 1, special: ""),
+        FrequencyChoice(title: "一日 2 次", count: 2, special: ""),
+        FrequencyChoice(title: "一日 3 次", count: 3, special: ""),
+        FrequencyChoice(title: "一日 4 次", count: 4, special: ""),
+        FrequencyChoice(title: "每晚睡前", count: 1, special: "每晚睡前"),
+        FrequencyChoice(title: "晨起空腹", count: 1, special: "晨起空腹"),
+        FrequencyChoice(title: "每隔 8 小时", count: 3, special: "每隔8小时"),
+        FrequencyChoice(title: "每隔 12 小时", count: 2, special: "每隔12小时"),
+        FrequencyChoice(title: "必要时/按需", count: 0, special: "必要时/按需")
+    ]
+
+    private let amountPresets: [Double] = [0.5, 1, 1.5, 2, 3, 4, 5, 10]
+    private let unitPresets = ["片", "粒", "颗", "袋", "支", "毫升", "滴", "包", "丸", "贴", "喷", "勺"]
+    private let mealRelationPresets: [MedicationMealRelation] = [
+        .afterMeal(minutes: 30),
+        .afterMeal(minutes: 15),
+        .withMeal,
+        .beforeMeal(minutes: 30),
+        .bedtime,
+        .unrestricted
+    ]
+    private let routePresets = ["口服", "温水冲服", "舌下含服", "外用涂抹", "滴眼", "滴鼻", "喷雾吸入"]
+
+    private let commonLocations = [
+        (area: "储物间", location: "家庭药箱"),
+        (area: "客厅", location: "电视柜抽屉"),
+        (area: "主卧", location: "床头柜"),
+        (area: "厨房", location: "冰箱冷藏室"),
+        (area: "玄关", location: "随身包"),
+        (area: "书房", location: "办公桌抽屉"),
+        (area: "卫生间", location: "洗漱台镜柜")
+    ]
+
+    private let quantityChips = ["整盒", "半盒", "剩 10 片", "剩 5 片", "1 支", "1 瓶", "余量不多"]
+    private let precautionChips = ["避免空腹", "胃溃疡慎用", "服药忌酒", "服后易嗜睡", "避光冷藏", "青霉素过敏禁用", "开封后28天用完", "与其他药间隔2小时"]
 
     init(medicine: MedicineItem?, prefillFrom: MedicineItem? = nil) {
         self.medicine = medicine
@@ -1269,7 +1559,8 @@ struct MedicineEditorSheet: View {
             self._name = State(initialValue: m.name)
             self._category = State(initialValue: m.category)
             self._indications = State(initialValue: m.indications ?? "")
-            self._usageMethod = State(initialValue: m.usageMethod ?? "")
+            let draft = MedicineUsageDraft.parse(from: m.usageMethod ?? "")
+            self._usageDraft = State(initialValue: draft)
             self._remainingQuantity = State(initialValue: m.remainingQuantity ?? "")
             self._precautions = State(initialValue: m.precautions ?? "")
             self._roomArea = State(initialValue: m.roomArea)
@@ -1283,38 +1574,114 @@ struct MedicineEditorSheet: View {
             self._afterOpenDaysChoice = State(initialValue: m.afterOpenValidDays)
             self._isDisposed = State(initialValue: m.isDisposed)
             self._selectedImageData = State(initialValue: m.imageData)
+            self._enablePostAddReminder = State(initialValue: false)
         } else if let src = prefillFrom {
-            // “再买一批”：沿用同种药的名称/类别/用途/用法/存放位置，但有效期与购买日重新填写
             self._name = State(initialValue: src.name)
             self._category = State(initialValue: src.category)
             self._indications = State(initialValue: src.indications ?? "")
-            self._usageMethod = State(initialValue: src.usageMethod ?? "")
+            let draft = MedicineUsageDraft.parse(from: src.usageMethod ?? "")
+            self._usageDraft = State(initialValue: draft)
             self._precautions = State(initialValue: src.precautions ?? "")
             self._roomArea = State(initialValue: src.roomArea)
             self._storageLocation = State(initialValue: src.storageLocation)
             self._hasPurchaseDate = State(initialValue: true)
             self._purchaseDate = State(initialValue: .now)
+            self._enablePostAddReminder = State(initialValue: true)
+        } else {
+            self._enablePostAddReminder = State(initialValue: true)
         }
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                // MARK: - 顶部一键拍药盒/说明书智能填入
+                Section {
+                    HStack(spacing: 10) {
+                        Button {
+                            showingMedicineCamera = true
+                            Haptic.light()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "camera.viewfinder")
+                                    .font(.body.bold())
+                                Text("拍药盒智能填入")
+                                    .font(.subheadline.bold())
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.green))
+                            .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+
+                        PhotosPicker(
+                            selection: $selectedPhotoItem,
+                            matching: .images,
+                            photoLibrary: .shared()
+                        ) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "photo.badge.magnifyingglass")
+                                    .font(.body.bold())
+                                Text("从相册识药")
+                                    .font(.subheadline.bold())
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.green.opacity(0.14)))
+                            .foregroundStyle(.green)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.vertical, 2)
+
+                    if isRecognizingMedicineOCR {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("正在识别药盒名称、一日几次用法与有效期…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if let banner = ocrBannerText {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "sparkles")
+                                .foregroundStyle(.green)
+                            Text(banner)
+                                .font(.caption.bold())
+                                .foregroundStyle(.green)
+                        }
+                    }
+                } header: {
+                    Text("智能识药（免手输）")
+                } footer: {
+                    Text("对准药盒正面或说明书拍照，自动识别药名、一日几次用量及保质期。")
+                }
+
+                // MARK: - 药品名称与常用药预设
                 Section("药品名称") {
                     TextField("例如：布洛芬、维生素C、眼药水", text: $name)
+
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(commonMedicineSuggestions, id: \.self) { s in
+                        HStack(spacing: 8) {
+                            ForEach(commonMedicinePresets) { preset in
                                 Button {
-                                    name = s
-                                    Haptic.light()
+                                    applyPreset(preset)
+                                    Haptic.selection()
                                 } label: {
-                                    Text(s)
-                                        .font(.caption)
-                                        .padding(.horizontal, 9)
-                                        .padding(.vertical, 4)
-                                        .background(Color(.tertiarySystemFill))
-                                        .clipShape(Capsule())
+                                    HStack(spacing: 4) {
+                                        Image(systemName: preset.category.icon)
+                                            .font(.caption2)
+                                        Text(preset.name)
+                                            .font(.caption)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(name == preset.name ? Color.green.opacity(0.18) : Color(.tertiarySystemFill))
+                                    .overlay(
+                                        Capsule().stroke(name == preset.name ? Color.green : Color.clear, lineWidth: 1)
+                                    )
+                                    .foregroundStyle(name == preset.name ? Color.green : Color.primary)
+                                    .clipShape(Capsule())
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -1323,32 +1690,312 @@ struct MedicineEditorSheet: View {
                     }
                 }
 
+                // MARK: - 类别与用途
                 Section("分类与用途") {
                     Picker("类别", selection: $category) {
                         ForEach(MedicineCategory.allCases, id: \.self) { c in
                             Label(c.rawValue, systemImage: c.icon).tag(c)
                         }
                     }
-                    TextField("用途/主治（如：退烧止痛）", text: $indications)
+                    TextField("用途/主治（如：退烧止痛、抗过敏）", text: $indications)
                 }
 
-                Section(footer: Text("用药方法与注意事项会展示在详情页，方便急用时确认怎么吃、吃多少、谁能用。")) {
-                    TextField("用药方法（如：每日3次，饭后各1片）", text: $usageMethod, axis: .vertical)
-                        .lineLimit(2...4)
-                    TextField("剩余数量（如：约8片、半盒、1支）", text: $remainingQuantity)
-                    TextField("注意事项/禁忌（如：司机忌服、避光冷藏）", text: $precautions, axis: .vertical)
-                        .lineLimit(2...4)
+                // MARK: - 用药方法（滑动点选）
+                Section {
+                    // 1. 每日频次滑动选择
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("每日频次")
+                            .font(.subheadline.bold())
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(frequencyChoices) { choice in
+                                    let isSelected = usageDraft.matchesFrequency(choice)
+                                    Button {
+                                        usageDraft.applyFrequency(choice)
+                                        Haptic.selection()
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            if isSelected {
+                                                Image(systemName: "checkmark")
+                                                    .font(.caption2.bold())
+                                            }
+                                            Text(choice.title)
+                                                .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 7)
+                                        .background(Capsule().fill(isSelected ? Color.green : Color(.tertiarySystemFill)))
+                                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+
+                    // 2. 每次剂量与单位
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("每次用量")
+                                .font(.subheadline.bold())
+                            Spacer()
+                            Text("每次 \(usageDraft.formattedAmount) \(usageDraft.dosageUnit)")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.green)
+                        }
+
+                        // 剂量数值胶囊
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(amountPresets, id: \.self) { amt in
+                                    let isSelected = abs(usageDraft.dosageAmount - amt) < 0.001
+                                    Button {
+                                        usageDraft.dosageAmount = amt
+                                        Haptic.selection()
+                                    } label: {
+                                        Text(amt == amt.rounded() ? String(Int(amt)) : String(format: "%g", amt))
+                                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(Capsule().fill(isSelected ? Color.green.opacity(0.18) : Color(.tertiarySystemFill)))
+                                            .overlay(Capsule().stroke(isSelected ? Color.green : Color.clear, lineWidth: 1.5))
+                                            .foregroundStyle(isSelected ? Color.green : Color.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+
+                        Stepper("数值精确微调: \(usageDraft.formattedAmount)", value: $usageDraft.dosageAmount, in: 0.5...30, step: 0.5)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Divider().padding(.vertical, 2)
+
+                        Text("剂量单位")
+                            .font(.caption.bold())
+                            .foregroundStyle(.secondary)
+
+                        // 剂量单位胶囊
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(unitPresets, id: \.self) { unit in
+                                    let isSelected = usageDraft.dosageUnit == unit
+                                    Button {
+                                        usageDraft.dosageUnit = unit
+                                        Haptic.selection()
+                                    } label: {
+                                        Text(unit)
+                                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                                            .padding(.horizontal, 11)
+                                            .padding(.vertical, 6)
+                                            .background(Capsule().fill(isSelected ? Color.green : Color(.tertiarySystemFill)))
+                                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+
+                    // 3. 服药时机/时效关系
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("服药时机（防伤胃与吸收）")
+                            .font(.subheadline.bold())
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(mealRelationPresets, id: \.self) { rel in
+                                    let isSelected = usageDraft.mealRelation == rel
+                                    Button {
+                                        usageDraft.mealRelation = rel
+                                        Haptic.selection()
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: rel.iconName)
+                                                .font(.caption)
+                                            Text(rel.displayName)
+                                                .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                                        }
+                                        .padding(.horizontal, 11)
+                                        .padding(.vertical, 6)
+                                        .background(Capsule().fill(isSelected ? Color.blue : Color(.tertiarySystemFill)))
+                                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+
+                    // 4. 给药途径
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("给药途径")
+                            .font(.subheadline.bold())
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(routePresets, id: \.self) { r in
+                                    let isSelected = usageDraft.route == r
+                                    Button {
+                                        usageDraft.route = r
+                                        Haptic.selection()
+                                    } label: {
+                                        Text(r)
+                                            .font(.subheadline.weight(isSelected ? .semibold : .regular))
+                                            .padding(.horizontal, 11)
+                                            .padding(.vertical, 6)
+                                            .background(Capsule().fill(isSelected ? Color.indigo : Color(.tertiarySystemFill)))
+                                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+
+                    // 5. 实时生成的标准用法预览
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundStyle(.green)
+                            Text("用法预览")
+                                .font(.caption.bold())
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button {
+                                showCustomUsageText.toggle()
+                                Haptic.light()
+                            } label: {
+                                Label(showCustomUsageText ? "收起补充" : "补充微调", systemImage: showCustomUsageText ? "chevron.up" : "square.and.pencil")
+                                    .font(.caption2)
+                            }
+                        }
+
+                        Text(usageDraft.formattedUsage)
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.primary)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.green.opacity(0.08))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                                    )
+                            )
+
+                        if showCustomUsageText {
+                            TextField("补充说明（如：发热超过38.5℃时服用）", text: $usageDraft.customNote)
+                                .font(.subheadline)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
+                } header: {
+                    Text("用药方法（滑动点选）")
+                } footer: {
+                    Text("手滑点选频次、剂量与时机，系统将自动生成规范用药指令，并联动用于定时提醒排期。")
                 }
 
+                // MARK: - 剩余数量与注意事项
+                Section("库存与注意事项") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("剩余数量（如：约8片、半盒、1支）", text: $remainingQuantity)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(quantityChips, id: \.self) { chip in
+                                    Button {
+                                        remainingQuantity = chip
+                                        Haptic.light()
+                                    } label: {
+                                        Text(chip)
+                                            .font(.caption)
+                                            .padding(.horizontal, 9)
+                                            .padding(.vertical, 4)
+                                            .background(remainingQuantity == chip ? Color.green.opacity(0.18) : Color(.tertiarySystemFill))
+                                            .foregroundStyle(remainingQuantity == chip ? Color.green : Color.primary)
+                                            .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextField("注意事项/禁忌（如：司机忌服、避光冷藏）", text: $precautions, axis: .vertical)
+                            .lineLimit(2...3)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(precautionChips, id: \.self) { chip in
+                                    Button {
+                                        if precautions.isEmpty {
+                                            precautions = chip
+                                        } else if !precautions.contains(chip) {
+                                            precautions += "，" + chip
+                                        }
+                                        Haptic.light()
+                                    } label: {
+                                        Text("+ \(chip)")
+                                            .font(.caption)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(Color(.tertiarySystemFill))
+                                            .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                }
+
+                // MARK: - 存放位置
                 Section("存放位置") {
                     Picker("所在房间/区域", selection: $roomArea) {
                         ForEach(roomAreas, id: \.self) { area in
                             Text(L10n.tr(area)).tag(area)
                         }
                     }
-                    TextField("详细位置（如：客厅药箱第二层、冰箱冷藏门）", text: $storageLocation)
+                    TextField("详细位置（如：家庭药箱第二层、电视柜抽屉）", text: $storageLocation)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(commonLocations, id: \.location) { loc in
+                                Button {
+                                    roomArea = loc.area
+                                    storageLocation = loc.location
+                                    Haptic.light()
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "mappin.and.ellipse")
+                                            .font(.caption2)
+                                        Text("\(loc.area) · \(loc.location)")
+                                            .font(.caption)
+                                    }
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 5)
+                                    .background(storageLocation == loc.location ? Color.green.opacity(0.18) : Color(.tertiarySystemFill))
+                                    .overlay(
+                                        Capsule().stroke(storageLocation == loc.location ? Color.green : Color.clear, lineWidth: 1)
+                                    )
+                                    .foregroundStyle(storageLocation == loc.location ? Color.green : Color.primary)
+                                    .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
                 }
 
+                // MARK: - 有效期
                 Section {
                     Toggle("记录购买/获得日期", isOn: $hasPurchaseDate)
                     if hasPurchaseDate {
@@ -1357,6 +2004,22 @@ struct MedicineEditorSheet: View {
                     Toggle("设置有效期", isOn: $hasExpiry)
                     if hasExpiry {
                         DatePicker("包装到期日", selection: $expiryDate, displayedComponents: .date)
+                        HStack(spacing: 8) {
+                            Text("快速顺延：")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            ForEach([1, 2, 3], id: \.self) { yrs in
+                                Button("+\(yrs) 年") {
+                                    if let newDate = Calendar.current.date(byAdding: .year, value: yrs, to: .now) {
+                                        expiryDate = newDate
+                                        Haptic.light()
+                                    }
+                                }
+                                .font(.caption.bold())
+                                .buttonStyle(.bordered)
+                                .tint(.green)
+                            }
+                        }
                     }
                     Toggle("已开封", isOn: $isOpened)
                     if isOpened {
@@ -1371,9 +2034,10 @@ struct MedicineEditorSheet: View {
                 } header: {
                     Text("有效期（防过期重点）")
                 } footer: {
-                    Text("开封后使用期通常比包装有效期更短（如眼药水开封后约 28 天），系统会取两者较早者作为实际到期日。同种药多次购买会按“最先到期优先”分组排列，方便先进先出。")
+                    Text("开封后使用期通常比包装有效期更短（如眼药水开封后约 28 天），系统会取两者较早者作为实际到期日。同种药多次购买会按“最先到期优先”分组排列。")
                 }
 
+                // MARK: - 药盒照片
                 Section("药盒/说明书照片（选填）") {
                     if let data = selectedImageData, let uiImage = UIImage(data: data) {
                         HStack {
@@ -1413,7 +2077,23 @@ struct MedicineEditorSheet: View {
                         Task {
                             if let data = try? await newItem?.loadTransferable(type: Data.self) {
                                 selectedImageData = data
+                                if let uiImage = UIImage(data: data) {
+                                    await recognizeMedicineBox(from: uiImage)
+                                }
                             }
+                        }
+                    }
+                }
+
+                // MARK: - 提醒联动设置
+                Section {
+                    Toggle(isOn: $enablePostAddReminder) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("保存后弹出设置服药提醒")
+                                .font(.body)
+                            Text("系统将根据「\(usageDraft.frequencyCount > 0 ? "一日\(usageDraft.frequencyCount)次" : "用药频次")」自动适配每日提醒时刻")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -1438,6 +2118,94 @@ struct MedicineEditorSheet: View {
                                   || storageLocation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+            .sheet(isPresented: $showingMedicineCamera) {
+                VaultCameraPicker { captured in
+                    selectedImageData = captured.jpegData(compressionQuality: 0.78)
+                    Task {
+                        await recognizeMedicineBox(from: captured)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingReminderPopup) {
+                if let item = newlySavedMedicine {
+                    AddMedicationReminderPopupSheet(
+                        medicine: item,
+                        usageDraft: usageDraft,
+                        onComplete: {
+                            dismiss()
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func recognizeMedicineBox(from image: UIImage) async {
+        isRecognizingMedicineOCR = true
+        defer { isRecognizingMedicineOCR = false }
+
+        guard let text = try? await OCRService.shared.recognizeText(from: image),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            ocrBannerText = "未能从照片中识别出清晰文字，可点击下方预设或滑动选择"
+            return
+        }
+
+        let parsed = MedicineBoxOCRParser.parse(from: text)
+        guard parsed.hasAnyField else {
+            ocrBannerText = "已附加照片，可点选常用药标签或手滑设置用法"
+            return
+        }
+
+        if let preset = parsed.matchedPreset {
+            applyPreset(preset)
+        }
+        if let n = parsed.name, !n.isEmpty {
+            name = n
+        }
+        if let c = parsed.category {
+            category = c
+        }
+        if let ind = parsed.indications, !ind.isEmpty {
+            indications = ind
+        }
+        if let u = parsed.usageDraft {
+            usageDraft = u
+        }
+        if let qty = parsed.remainingQuantity, !qty.isEmpty {
+            remainingQuantity = qty
+        }
+        if let prec = parsed.precautions, !prec.isEmpty, precautions.isEmpty {
+            precautions = prec
+        }
+        if let exp = parsed.expiryDate {
+            hasExpiry = true
+            expiryDate = exp
+        }
+        if let openDays = parsed.afterOpenDays {
+            afterOpenDaysChoice = openDays
+        }
+
+        ocrBannerText = "已智能识别填入：\(parsed.summaryText)"
+        Haptic.success()
+    }
+
+    private func applyPreset(_ preset: CommonMedicinePreset) {
+        name = preset.name
+        category = preset.category
+        indications = preset.indications
+        usageDraft.frequencyCount = preset.frequencyCount
+        usageDraft.frequencySpecial = preset.frequencySpecial
+        usageDraft.dosageAmount = preset.dosageAmount
+        usageDraft.dosageUnit = preset.dosageUnit
+        usageDraft.mealRelation = preset.mealRelation
+        usageDraft.route = preset.route
+        precautions = preset.precautions
+        roomArea = preset.recommendedArea
+        storageLocation = preset.recommendedLocation
+        if let days = preset.afterOpenDays {
+            isOpened = true
+            afterOpenDaysChoice = days
         }
     }
 
@@ -1453,12 +2221,14 @@ struct MedicineEditorSheet: View {
         let resolvedPurchaseDate = hasPurchaseDate ? purchaseDate : nil
         let resolvedOpenedDate = isOpened ? openedDate : nil
         let resolvedAfterOpenDays = isOpened ? afterOpenDaysChoice : nil
+        let resolvedUsage = usageDraft.formattedUsage
 
+        let targetItem: MedicineItem
         if let existing = medicine {
             existing.name = trimmedName
             existing.category = category
             existing.indications = nilIfEmpty(indications)
-            existing.usageMethod = nilIfEmpty(usageMethod)
+            existing.usageMethod = nilIfEmpty(resolvedUsage)
             existing.remainingQuantity = nilIfEmpty(remainingQuantity)
             existing.precautions = nilIfEmpty(precautions)
             existing.roomArea = roomArea
@@ -1471,12 +2241,13 @@ struct MedicineEditorSheet: View {
             existing.isDisposed = isDisposed
             existing.imageData = selectedImageData
             existing.updatedAt = .now
+            targetItem = existing
         } else {
             let item = MedicineItem(
                 name: trimmedName,
                 category: category,
                 indications: nilIfEmpty(indications),
-                usageMethod: nilIfEmpty(usageMethod),
+                usageMethod: nilIfEmpty(resolvedUsage),
                 storageLocation: trimmedLocation,
                 roomArea: roomArea,
                 purchaseDate: resolvedPurchaseDate,
@@ -1490,10 +2261,17 @@ struct MedicineEditorSheet: View {
                 isDisposed: false
             )
             context.insert(item)
+            targetItem = item
         }
 
         try? context.save()
         Haptic.success()
-        dismiss()
+
+        if enablePostAddReminder {
+            newlySavedMedicine = targetItem
+            showingReminderPopup = true
+        } else {
+            dismiss()
+        }
     }
 }

@@ -2,6 +2,7 @@ import Combine
 import CryptoKit
 import Foundation
 import SwiftUI
+import AssistantCore
 
 /// 端侧可选大模型规格预设（支持升级切换至 Qwen3 系列）
 public enum LLMModelPreset: String, CaseIterable, Identifiable, Sendable {
@@ -55,7 +56,7 @@ public enum LLMModelPreset: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .qwen3_1_7b: return L10n.tr("约 1.11 GB")
         case .qwen3_4b: return L10n.tr("约 2.50 GB")
-        case .qwen2_5_1_5b: return L10n.tr("约 986 MB")
+        case .qwen2_5_1_5b: return L10n.tr("约 1.12 GB")
         }
     }
 
@@ -77,13 +78,19 @@ public enum LLMModelPreset: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// 预期字节大小（用于下载进度预估）
+    /// 已核验的发布产物清单（发布方给出的权威指纹）。
+    ///
+    /// 清单本体在 `AssistantCore.ModelReleaseCatalog`——放在 Core 是为了让
+    /// 「哈希抄错一位」这种事故能在 `swift test` 阶段被拦下，
+    /// 而不是等到所有用户都下载失败才暴露。
+    public var publishedReleases: [ModelReleaseIntegrity] {
+        guard let entry = ModelReleaseCatalog.entry(id: rawValue) else { return [] }
+        return [entry.integrity]
+    }
+
+    /// 预期字节大小（取已核验发布产物的精确体积，不再用估算值）
     public var expectedSizeApproxBytes: Int64 {
-        switch self {
-        case .qwen3_1_7b: return 1_110_000_000
-        case .qwen3_4b: return 2_500_000_000
-        case .qwen2_5_1_5b: return 986_000_000
-        }
+        publishedReleases.first?.byteSize ?? 0
     }
 
     /// 校验时的最小合法字节数
@@ -217,6 +224,9 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
 
     // 状态发布
     @Published public var validationStatus: LLMModelValidationStatus = .noModelFile
+    /// 已核验的发布版本标识（如 `unsloth/Qwen3-1.7B-GGUF@1e3f4948`）。
+    /// 为 nil 表示「尚未核验」或「无发布背书」，UI 不得据此宣称已就绪。
+    @Published public var verifiedReleaseVersion: String?
     /// 兼容旧调用方的语义并收紧为「完整性校验通过」：修复校验完成前误报就绪的缺陷
     public var isModelDownloaded: Bool { validationStatus == .validated }
     @Published public var isDownloading: Bool = false
@@ -278,25 +288,6 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         checkModelStatus()
     }
 
-    /// 快速同步校验本地 GGUF 模型文件头与体积是否有效（毫秒级，不阻塞主线程）
-    public var hasValidLocalGGUFFile: Bool {
-        let url = localModelURL
-        let minSize = selectedPreset.minValidSizeBytes
-        guard FileManager.default.fileExists(atPath: url.path),
-              let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value,
-              size >= min(minSize, 300_000_000),
-              let handle = try? FileHandle(forReadingFrom: url) else {
-            return false
-        }
-        defer { try? handle.close() }
-        guard let header = try? handle.read(upToCount: 8),
-              header.count == 8,
-              String(data: header.prefix(4), encoding: .ascii) == "GGUF" else {
-            return false
-        }
-        return true
-    }
-
     /// 检查本地模型是否存在，并异步进行完整性校验；校验通过前状态保持「校验中」
     public func checkModelStatus() {
         validationGeneration += 1
@@ -329,8 +320,9 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
 
         let expectedDigest = UserDefaults.standard.string(forKey: validatedDigestKey)
         let minSize = selectedPreset.minValidSizeBytes
+        let releases = selectedPreset.publishedReleases
         Task.detached(priority: .utility) {
-            let result = Result { try Self.validateModel(at: url, minSizeBytes: minSize) }
+            let result = Result { try Self.validateModel(at: url, minSizeBytes: minSize, releases: releases) }
             await MainActor.run {
                 guard generation == self.validationGeneration else { return }
                 switch result {
@@ -342,10 +334,12 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
                     UserDefaults.standard.set(validated.digest, forKey: self.validatedDigestKey)
                     self.downloadedBytes = validated.size
                     self.totalBytes = validated.size
+                    self.verifiedReleaseVersion = Self.releaseVersionText(validated.verdict)
                     self.errorMessage = nil
                     self.validationStatus = .validated
                     self.clearResumeData()
                 case .failure(let error):
+                    self.verifiedReleaseVersion = nil
                     self.markValidationFailed(L10n.choose("模型文件无效：\(error.localizedDescription)", "Invalid model file: \(error.localizedDescription)"))
                 }
             }
@@ -373,8 +367,9 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         }
 
         validationStatus = .validating
+        let releases = selectedPreset.publishedReleases
         let result = await Task.detached(priority: .utility) {
-            Result { try Self.validateModel(at: url, minSizeBytes: minSize) }
+            Result { try Self.validateModel(at: url, minSizeBytes: minSize, releases: releases) }
         }.value
 
         guard generation == validationGeneration else { return isModelDownloaded }
@@ -390,17 +385,34 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
             UserDefaults.standard.set(validated.digest, forKey: validatedDigestKey)
             downloadedBytes = validated.size
             totalBytes = validated.size
+            verifiedReleaseVersion = Self.releaseVersionText(validated.verdict)
             errorMessage = nil
             validationStatus = .validated
             clearResumeData()
             return true
         case .failure(let error):
+            verifiedReleaseVersion = nil
             markValidationFailed(L10n.choose("模型文件无效：\(error.localizedDescription)", "Invalid model file: \(error.localizedDescription)"))
             return false
         }
     }
 
-    nonisolated private static func validateModel(at url: URL, minSizeBytes: Int64 = 300_000_000) throws -> (size: Int64, digest: String) {
+    /// 把校验结论翻译成「已核验的发布版本」文案。
+    /// 无发布背书时返回 nil——**不能**编一个版本号出来。
+    nonisolated private static func releaseVersionText(_ verdict: ModelIntegrityVerdict) -> String? {
+        if case .matched(let release) = verdict { return release.releaseVersion }
+        return nil
+    }
+
+    /// 校验本地模型文件：体积下限 → GGUF 头 → 版本 → SHA-256 → 发布指纹比对。
+    ///
+    /// 最后一层是与**发布方指纹**比对，不是「和自己比一遍」——
+    /// 后者只能发现「文件在下载后被改过」，发现不了「下载来的本来就是别的东西」。
+    nonisolated private static func validateModel(
+        at url: URL,
+        minSizeBytes: Int64 = 300_000_000,
+        releases: [ModelReleaseIntegrity] = []
+    ) throws -> (size: Int64, digest: String, verdict: ModelIntegrityVerdict) {
         let size = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
         guard size >= minSizeBytes else { throw ModelValidationError.invalidSize }
         let handle = try FileHandle(forReadingFrom: url)
@@ -418,16 +430,51 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         while let chunk = try handle.read(upToCount: 1024 * 1024), !chunk.isEmpty {
             hasher.update(data: chunk)
         }
-        return (size, hasher.finalize().map { String(format: "%02x", $0) }.joined())
+        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        let verdict = ModelIntegrityEvaluator.evaluate(
+            actualSize: size,
+            actualDigest: digest,
+            releases: releases
+        )
+        switch verdict {
+        case .matched, .noPublishedRelease:
+            return (size, digest, verdict)
+        case .sizeMismatch(let expected, let actual):
+            throw ModelValidationError.sizeMismatch(expected: expected, actual: actual)
+        case .digestMismatch(let expected, let actual):
+            throw ModelValidationError.digestMismatch(expected: expected, actual: actual)
+        }
     }
 
     private enum ModelValidationError: LocalizedError {
-        case invalidSize, invalidHeader, invalidVersion
+        case invalidSize
+        case invalidHeader
+        case invalidVersion
+        /// 体积与发布版本不符：典型是下载没下完
+        case sizeMismatch(expected: [Int64], actual: Int64)
+        /// 体积对得上但内容对不上：典型是下载损坏或拿到了别的文件
+        case digestMismatch(expected: [String], actual: String)
+
         var errorDescription: String? {
             switch self {
-            case .invalidSize: L10n.tr("文件体积与预期模型不符。")
-            case .invalidHeader: L10n.tr("文件不是支持的 GGUF 格式。")
-            case .invalidVersion: L10n.tr("GGUF 文件格式版本不支持。")
+            case .invalidSize:
+                return L10n.tr("文件体积与预期模型不符。")
+            case .invalidHeader:
+                return L10n.tr("文件不是支持的 GGUF 格式。")
+            case .invalidVersion:
+                return L10n.tr("GGUF 文件格式版本不支持。")
+            case .sizeMismatch(let expected, let actual):
+                let expectedText = expected.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) }.joined(separator: " / ")
+                let actualText = ByteCountFormatter.string(fromByteCount: actual, countStyle: .file)
+                return L10n.choose(
+                    "文件不完整（应为 \(expectedText)，实际 \(actualText)），请重新下载。",
+                    "File is incomplete (expected \(expectedText), got \(actualText)). Please download again."
+                )
+            case .digestMismatch:
+                return L10n.choose(
+                    "文件校验值与发布版本不一致，可能下载损坏或获取到了其他文件，请重新下载或改用其他节点。",
+                    "File checksum does not match the published release. The download may be corrupted or from a different file. Please re-download or switch source."
+                )
             }
         }
     }
@@ -550,6 +597,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         }
         try? FileManager.default.removeItem(at: localModelURL)
         UserDefaults.standard.removeObject(forKey: validatedDigestKey)
+        verifiedReleaseVersion = nil
         checkModelStatus()
         Haptic.warning()
     }
@@ -565,7 +613,12 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         let candidate = modelsDirectory.appendingPathComponent(UUID().uuidString + ".gguf")
         defer { try? FileManager.default.removeItem(at: candidate) }
         try FileManager.default.copyItem(at: sourceURL, to: candidate)
-        let validated = try Self.validateModel(at: candidate)
+        // 先校验再替换：校验不通过时抛错，旧模型原封不动留在磁盘上
+        let validated = try Self.validateModel(
+            at: candidate,
+            minSizeBytes: selectedPreset.minValidSizeBytes,
+            releases: selectedPreset.publishedReleases
+        )
         let oldModel = modelsDirectory.appendingPathComponent(UUID().uuidString + ".previous")
         let hadOldModel = FileManager.default.fileExists(atPath: localModelURL.path)
         if hadOldModel { try FileManager.default.moveItem(at: localModelURL, to: oldModel) }
@@ -577,6 +630,7 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
             if hadOldModel { try? FileManager.default.moveItem(at: oldModel, to: localModelURL) }
             throw error
         }
+        verifiedReleaseVersion = Self.releaseVersionText(validated.verdict)
         self.errorMessage = nil
         checkModelStatus()
         Haptic.success()
@@ -662,15 +716,20 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
             return
         }
         Task { @MainActor in
-            let minSize = (self.downloadingPreset ?? self.selectedPreset).minValidSizeBytes
+            let preset = self.downloadingPreset ?? self.selectedPreset
+            let minSize = preset.minValidSizeBytes
+            let releases = preset.publishedReleases
             let result = await Task.detached(priority: .utility) {
-                Result { try Self.validateModel(at: candidateURL, minSizeBytes: minSize) }
+                Result { try Self.validateModel(at: candidateURL, minSizeBytes: minSize, releases: releases) }
             }.value
             self.completeDownloadedModel(candidateURL: candidateURL, validation: result)
         }
     }
 
-    private func completeDownloadedModel(candidateURL: URL, validation: Result<(size: Int64, digest: String), Error>) {
+    private func completeDownloadedModel(
+        candidateURL: URL,
+        validation: Result<(size: Int64, digest: String, verdict: ModelIntegrityVerdict), Error>
+    ) {
         defer { try? FileManager.default.removeItem(at: candidateURL) }
         isDownloading = false
         do {
@@ -686,11 +745,13 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
             }
             if hadOldModel { try? FileManager.default.removeItem(at: oldModel) }
             UserDefaults.standard.set(validated.digest, forKey: validatedDigestKey)
+            verifiedReleaseVersion = Self.releaseVersionText(validated.verdict)
             clearResumeData()
             errorMessage = nil
             checkModelStatus()
             Haptic.success()
         } catch {
+            verifiedReleaseVersion = nil
             errorMessage = "模型校验失败：\(error.localizedDescription)"
             markValidationFailed(L10n.choose("模型文件无效：\(error.localizedDescription)", "Invalid model file: \(error.localizedDescription)"))
             Haptic.error()

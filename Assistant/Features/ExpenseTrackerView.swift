@@ -176,6 +176,29 @@ struct ExpenseTrackerView: View {
         summary.currentMonthCategoryBreakdown
     }
 
+    /// 近 6 个月消费趋势（O(N) 归集，纯函数在 AssistantCore.TrendAnalytics）
+    private var expenseTrend: TrendAnalytics.ExpenseTrend {
+        TrendAnalytics.expenseTrend(
+            entries: records.map {
+                TrendAnalytics.ExpenseEntry(
+                    date: $0.date,
+                    amount: $0.amount,
+                    isIncome: $0.isIncome,
+                    categoryRaw: $0.categoryRaw
+                )
+            },
+            monthCount: 6
+        )
+    }
+
+    /// 本月支出指纹：新增 / 编辑 / 删除账目都会改变它。
+    /// 用它触发预算提醒复算——只盯 `records.count` 的话，改金额不会重新判定超支。
+    private var monthlySpendFingerprint: Double {
+        records
+            .filter { !$0.isIncome && calendar.isDate($0.date, equalTo: .now, toGranularity: .month) }
+            .reduce(0) { $0 + $1.amount }
+    }
+
     private func categoryColor(_ cat: ExpenseCategory) -> Color {
         switch cat {
         case .food: return .orange
@@ -340,6 +363,11 @@ struct ExpenseTrackerView: View {
                     }
                     .padding(.vertical, 4)
                 }
+
+                // 1.5 消费趋势（近 6 个月柱状图 + 环比与类别变化）
+                ExpenseTrendCard(trend: expenseTrend)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                    .listRowBackground(Color.clear)
 
                 // 2. 一句话极速记账输入栏
                 Section {
@@ -539,6 +567,13 @@ struct ExpenseTrackerView: View {
             .task {
                 ExpenseCalorieService.reconcileOrphans(context: context)
                 ExpenseWaterService.reconcileOrphans(context: context)
+                // 进入记账页先复算一次预算告警：上次超支提醒可能是在别的入口触发的，
+                // 这里保证状态与当前账本一致（跨月自动重置也在这里生效）
+                BudgetAlertService.shared.evaluateAndNotify(records: records)
+            }
+            // 账目变动（新增 / 编辑 / 删除）后实时复算预算告警
+            .onChange(of: monthlySpendFingerprint) { _, _ in
+                BudgetAlertService.shared.evaluateAndNotify(records: records)
             }
             .sheet(isPresented: $showingReceiptScanner) {
                 ReceiptScannerView { result, rawText, receiptData in
@@ -616,7 +651,17 @@ struct ExpenseTrackerView: View {
         let text = quickInputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        if let result = ExpenseNaturalLanguageParser.parse(text, defaultCurrency: preferredCurrency) {
+        let results = ExpenseNaturalLanguageParser.parseMulti(text, defaultCurrency: preferredCurrency)
+        guard !results.isEmpty else {
+            Haptic.warning()
+            showFeedback("未能识别出金额，请写明金额（如：吃午饭 25 元）")
+            return
+        }
+
+        var totalExpense = 0.0
+        var titles: [String] = []
+        var savedRecords: [ExpenseRecord] = []
+        for result in results {
             let record = ExpenseRecord(
                 amount: result.amount,
                 isIncome: result.isIncome,
@@ -631,15 +676,20 @@ struct ExpenseTrackerView: View {
             record.splitCount = max(result.splitCount, 1)
             record.splitParticipants = result.splitParticipants
             context.insert(record)
-            try? context.save()
-            ExpenseCalorieService.handleSaved(record, propose: true, context: context)
+            savedRecords.append(record)
+            if !result.isIncome { totalExpense += result.amount }
+            titles.append(result.title)
+            ExpenseCalorieService.handleSaved(record, propose: results.count == 1, context: context)
             ExpenseWaterService.handleSaved(record, context: context)
-            Haptic.success()
-            quickInputText = ""
+        }
+        try? context.save()
+        Haptic.success()
+        quickInputText = ""
 
+        if results.count == 1, let result = results.first {
             let amountStr = String(format: "%.2f", result.amount)
             let foreignSuffix: String = {
-                guard let badge = record.formattedForeignBadge else { return "" }
+                guard let badge = savedRecords.first?.formattedForeignBadge else { return "" }
                 return " · 原币 \(badge)"
             }()
             let desc = result.isIncome
@@ -647,8 +697,8 @@ struct ExpenseTrackerView: View {
                 : "已记入 ¥\(amountStr)（\(result.category.rawValue)\(foreignSuffix)）"
             showFeedback(desc)
         } else {
-            Haptic.warning()
-            showFeedback("未能识别出金额，请写明金额（如：吃午饭 25 元）")
+            let totalStr = String(format: "%.2f", totalExpense)
+            showFeedback("已记入 \(results.count) 笔 · 合计 ¥\(totalStr)（\(titles.joined(separator: " / "))）")
         }
     }
 

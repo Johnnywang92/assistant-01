@@ -115,14 +115,28 @@ struct VoiceIntentProcessor {
             trimmed.contains("今天开销") || trimmed.contains("昨天开销") || trimmed.contains("本月支出") ||
             lower.contains("how much did i spend") || lower.contains("my expenses") ||
             (isQuestionTone && hasExpenseKeyword) {
+            // 趋势/日程/跨周期问句（上周、上月、近N天…）旧应答只会答“今天/本月”，
+            // 交给查询引擎 + TrendAnalytics 作答；今天/昨天/本周保留原有明细口径
+            if let insight = QueryInsightEngine.parse(trimmed) {
+                let isCrossPeriod: Bool = {
+                    switch insight.timeRange {
+                    case .lastWeek, .lastMonth: return true
+                    case .lastNDays, .lastNMonths: return true
+                    default: return false
+                    }
+                }()
+                if insight.kind == .trend || insight.kind == .agenda || isCrossPeriod {
+                    return LifeQueryService.answer(insight, context: context)
+                }
+            }
             return queryExpenses(query: trimmed)
         }
 
-        // 5. 意图：一句话记账（如 "中午吃麦当劳花了 38 块"、"昨天花了 69.9"、"打车 25 元"、"spent 38 on lunch"）
+        // 5. 意图：一句话记账（如 "中午吃麦当劳花了 38 块"、"昨天花了 69.9"、"打车 25 元"、"咖啡10.9元，午餐22元"）
         if !isQuestionTone,
-           let expense = ExpenseNaturalLanguageParser.parse(trimmed),
+           !ExpenseNaturalLanguageParser.parseMulti(trimmed).isEmpty,
            (trimmed.contains("花") || trimmed.contains("元") || trimmed.contains("块") || trimmed.contains("支出") || trimmed.contains("收入") || trimmed.contains("买") || trimmed.contains("付") || trimmed.contains("记账") || trimmed.contains("记一笔") || trimmed.contains("消费") || lower.contains("spent") || lower.contains("paid") || lower.contains("$") || lower.contains("usd") || lower.contains("yuan") || lower.contains("bucks") || lower.contains("dollars") || lower.contains("salary")) {
-            return recordExpense(expense, raw: trimmed)
+            return recordExpenses(ExpenseNaturalLanguageParser.parseMulti(trimmed), raw: trimmed)
         }
 
         // 6. 意图：添加新待办 / 周期提醒（如 "记一下每周五下午5点写周报"、"每天晚上8点提醒我吃钙片"）
@@ -317,6 +331,38 @@ struct VoiceIntentProcessor {
         let m = calendar.component(.month, from: date)
         let d = calendar.component(.day, from: date)
         return L10n.choose("\(m)月\(d)日", "\(m)/\(d)")
+    }
+
+    /// 一句话多笔记账：逐笔落库后汇总播报（单笔走原 recordExpense 的完整播报）。
+    private func recordExpenses(_ parsed: [ExpenseParseResult], raw: String) -> String {
+        guard !parsed.isEmpty else { return L10n.tr("未能识别出金额") }
+        if parsed.count == 1, let first = parsed.first {
+            return recordExpense(first, raw: raw)
+        }
+        var totalExpense = 0.0
+        var titles: [String] = []
+        for item in parsed {
+            let record = ExpenseRecord(
+                amount: item.amount,
+                isIncome: item.isIncome,
+                category: item.category,
+                title: item.title,
+                rawText: raw,
+                date: item.date,
+                currencyCode: item.isForeignCurrency ? item.currency.rawValue : nil,
+                foreignAmount: item.foreignAmount,
+                exchangeRateToCNY: item.exchangeRateToCNY
+            )
+            context.insert(record)
+            if !item.isIncome { totalExpense += item.amount }
+            titles.append(item.title)
+        }
+        try? context.save()
+        if L10n.isEnglish {
+            return "Recorded \(parsed.count) expenses totaling ¥\(formatAmount(totalExpense)) (\(titles.joined(separator: ", ")))."
+        } else {
+            return "已为你记入 \(parsed.count) 笔，合计 \(formatAmount(totalExpense)) 元（\(titles.joined(separator: "、"))）。"
+        }
     }
 
     private func recordExpense(_ parsed: ExpenseParseResult, raw: String) -> String {

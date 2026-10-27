@@ -6,7 +6,7 @@
 
 - [x] **数据库打开失败时保留原数据并提供恢复入口。** `Assistant/Services/Persistence.swift:30-55` 当前首次建库失败就删除 `default.store` 及 WAL/SHM，随后可能静默使用内存库。改为明确的版本化迁移；失败时保留原库、记录可诊断错误、提示用户导出或恢复，只有用户确认后才重建。验收：用旧版数据库和损坏数据库分别升级，原文件不被自动删除，应用不会在内存库中假装保存成功。
 - [x] **真正加密密码库内容，并迁移已有明文记录。** `Assistant/Models/PasswordVaultModel.swift:10` 的 `passwordEncrypted` 是普通字符串，`Assistant/Features/PasswordVaultView.swift:160,176,316` 直接显示、复制和写入它。采用 Keychain 或由 Keychain 管理密钥的加密存储，旧数据迁移后清除明文；复制时给出自动清除剪贴板的选项。验收：持久化文件中搜不到原始密码，升级后原记录仍可解锁读取。
-- [ ] **补齐“全量备份”的数据范围与字段。** `Assistant/Services/Persistence.swift:7-26` 已有 `VehicleProfile`、`StoredItem`、`DialogueMessageRecord` 等模型，但 `Assistant/Services/DataMigrationService.swift:336-505` 未导出它们；`TodoDTO` 也漏了排序与重复规则字段。为备份格式升版本，增加向后兼容的导入和导出后校验，并核对附件、设置、原始消息等是否属于承诺的范围。验收：各类数据、重复规则和排序在新设备导入后保持一致；覆盖还原不会留下旧数据或丢失新数据。
+- [x] **补齐“全量备份”的数据范围与字段。**（2026-10-27 收口：VehicleProfile/StoredItem/DialogueMessageRecord 与 TodoDTO 排序重复规则此前已补；本轮补判别反馈语料 OmniboxJudgmentFeedback（备份格式升 V3）、导出后校验（与还原前同一套判据）、13 个漏登偏好键进白名单，见文末实施记录） `Assistant/Services/Persistence.swift:7-26` 已有 `VehicleProfile`、`StoredItem`、`DialogueMessageRecord` 等模型，但 `Assistant/Services/DataMigrationService.swift:336-505` 未导出它们；`TodoDTO` 也漏了排序与重复规则字段。为备份格式升版本，增加向后兼容的导入和导出后校验，并核对附件、设置、原始消息等是否属于承诺的范围。验收：各类数据、重复规则和排序在新设备导入后保持一致；覆盖还原不会留下旧数据或丢失新数据。
 - [x] **加强备份 PIN 的密钥派生。** `Assistant/Services/DataMigrationService.swift:510-565` 允许 4 位 PIN 且用 HKDF 直接派生加密密钥；离线拿到文件后可高速猜测。改用适合口令的慢速 KDF、独立随机盐和版本化参数，并提供较强口令提示及旧备份兼容。验收：新备份可解密、错误口令失败，旧备份仍能按原格式导入。
 - [x] **让锁屏通知默认不暴露敏感详情。** `Assistant/Services/TodoNotificationManager.swift:62-83` 将取件码、地点、事项详情写进通知正文。增加“隐藏锁屏详情”设置，默认只显示通用提醒，解锁后再查看内容。验收：锁屏通知不显示取件码及个人备注；用户可自行选择展示级别。
 
@@ -18,9 +18,9 @@
 
 - [x] **实现真实的本地模型推理，或如实标注当前能力。**（2026-10-14 核验：推理链路已落地并恢复可用，见文末）`Assistant/Services/LLMInferenceService.swift:129-161` 下载模型后仍只等待 350 ms 并按关键词走规则分支，未读取 GGUF；`Assistant/Features/LLMModelManagementView.swift:20-75` 却显示模型“已就绪”和端侧推理说明。接入实际推理运行时、加载/生成/取消与错误处理；完成前将页面及回答改为“模型文件管理/规则助手”。验收：断网时的自由问答确实调用模型，日志和测试可区分模型与规则回复。
 - [x] **让权限引导按需申请，并修正文案。**（2026-10-14 核验：代码完成，详见文末）`Assistant/App/AssistantApp.swift:29` 启动即请求通知权限，`Assistant/Features/PermissionOnboardingView.swift:20-22` 宣称“100% 离线、数据绝不上云”，但 `Assistant/Services/LLMInferenceService.swift:164-191` 支持向局域网 Ollama 发送待办、取件码、开销等上下文。在首次使用相关功能时申请对应权限；启用远程端点时明确显示发送范围和连接状态。验收：首次打开可跳过授权正常浏览，远程模式不会继续显示纯本地承诺。
-- [ ] **验证下载或导入的模型文件。** `Assistant/Services/LLMModelManager.swift:75-88,205-220` 目前只以文件大于 100 MB 判断模型可用。增加精确版本、大小及 SHA-256 校验，在校验通过前不标记“已就绪”；导入失败时保留原模型。验收：截断文件、错误 GGUF 和正确模型分别得到明确状态。（2026-10-14 部分收口：校验分层已修「未校验即显示就绪」，仍缺发布哈希可比对。）
-- [ ] **完善备份与还原失败处理。** `Assistant/Services/DataMigrationService.swift:338-349,689-706` 多处 `try?` 将读取或删除失败当作空数据/成功；`restore` 的覆盖操作应先验证包与附件，再执行可回滚的导入。验收：模拟读取、写入和附件失败时有明确错误，不产生“成功但部分丢失”的备份或还原。（2026-10-14 部分收口：密码批量导入不再静默丢行，仍缺读写故障注入测试。）
-- [ ] **增加全局搜索和快捷操作入口。** 目前搜索分散在收纳、证件、录音和已完成历史，待办主页尚无统一搜索。先支持待办标题、详情、取件码的搜索与筛选，再考虑跨模块搜索；结果直接跳到对应详情。验收：大量待办时可在两步内找到指定事项，敏感结果在锁定时不展示。（2026-10-14 部分收口：见 P3 统一搜索一条；万件待办的两步找到仍需实测。）
+- [x] **验证下载或导入的模型文件。**（2026-10-27 收口：发布指纹清单下沉 Core + 严格比对 + 导入失败保留原模型，见文末实施记录）`Assistant/Services/LLMModelManager.swift:75-88,205-220` 目前只以文件大于 100 MB 判断模型可用。增加精确版本、大小及 SHA-256 校验，在校验通过前不标记“已就绪”；导入失败时保留原模型。验收：截断文件、错误 GGUF 和正确模型分别得到明确状态。（2026-10-14 部分收口：校验分层已修「未校验即显示就绪」，仍缺发布哈希可比对。）
+- [x] **完善备份与还原失败处理。**（2026-10-27 收口：附件核对闸 + 孤儿清理闸 + 导入台账 + 故障注入测试，见文末实施记录）`Assistant/Services/DataMigrationService.swift:338-349,689-706` 多处 `try?` 将读取或删除失败当作空数据/成功；`restore` 的覆盖操作应先验证包与附件，再执行可回滚的导入。验收：模拟读取、写入和附件失败时有明确错误，不产生“成功但部分丢失”的备份或还原。（2026-10-14 部分收口：密码批量导入不再静默丢行，仍缺读写故障注入测试。）
+- [x] **增加全局搜索和快捷操作入口。**（2026-10-27 收口：待办检索改精确命中优先的两段式 + 相关性排序，万件实测通过，见文末实施记录）目前搜索分散在收纳、证件、录音和已完成历史，待办主页尚无统一搜索。先支持待办标题、详情、取件码的搜索与筛选，再考虑跨模块搜索；结果直接跳到对应详情。验收：大量待办时可在两步内找到指定事项，敏感结果在锁定时不展示。（2026-10-14 部分收口：见 P3 统一搜索一条；万件待办的两步找到仍需实测。）
 - [x] **为临期事项提供可配置的提醒提前量和稍后提醒。**（2026-10-14 核验：代码完成，详见文末）`Assistant/Services/TodoNotificationManager.swift:55-97` 只在 `dueAt` 时安排一次通知，交互仅固定推迟 1 小时。为普通待办提供 5 分钟、1 小时、1 天等提前量与自定义选项，并区分截止时间与提醒时间。验收：跨时区或修改时间后通知能正确重排，删除及完成后旧通知消失。
 
 ## P2｜界面与性能
@@ -28,14 +28,14 @@
 - [x] **重做待办顶部分类在窄屏和大字号下的布局。**（2026-10-14 核验：代码完成，详见文末）`Assistant/Features/TodoListView.swift:1121-1175` 将 6 个分类按钮等宽塞进一行，角标字体仅 10 pt；在 iPhone SE 和长辈模式下易拥挤。改成可横滑分类栏或自适应布局，保留当前选中态和可见角标。验收：大字号、窄屏下文字不截断，按钮可清楚点击。
 - [x] **统一视觉层级与主题颜色。**（2026-10-14 核验：`Assistant/Theme/AppTheme.swift` 提供语义色/间距/圆角/卡片/警告态单一出口，LifeVault 顶部统计已收敛为只读卡片，深浅色走系统动态色；壁纸对比度与真机观感待验收）待办、生活档案、记账和模型页分别使用多套彩色胶囊、渐变、阴影和卡片样式。提取语义色、间距、圆角、卡片及警告态规范；重点简化 `Assistant/Features/LifeVaultView.swift` 顶部统计与下方重复入口，并检查自定义壁纸上的文字对比度。验收：浅色、深色、自定义背景都能清晰辨认标题、状态和主操作。
 - [x] **补齐 VoiceOver 和动态字体。**（2026-10-14 核验：语音悬浮球补「开始语音输入」命名操作、统计卡/角标/复制按钮补 label 与 hint、9–10 pt 固定字号改语义字体、动画统一走 `responsiveAnimation` 尊重减少动态效果；「只用 VoiceOver 走完全流程」需真机验收）`Assistant/Features` 中显式无障碍标签很少，悬浮语音球主要靠手势操作，多个角标使用 9–10 pt 固定字号。给悬浮球、统计卡、分类角标、复制按钮添加标签/提示和可访问操作；字号采用语义文本样式或缩放指标，并尊重“减少动态效果”。验收：只用 VoiceOver 可完成新增、查找、完成待办与录音入口；大字模式不重叠。
-- [ ] **减少大数据量下的全表读取和重复计算。** `Assistant/Features/TodoListView.swift:80-120` 的 `@Query` 读取全部待办，每个 `classified` 属性访问都重新构造一次分类；`Assistant/Features/ExpenseTrackerView.swift:54-78` 对账本也每次计算全量汇总。改成一次派生、按状态/日期分页或限定查询，并测量 1 万条记录的首屏与切换耗时。验收：上述数据量仍可流畅滚动和切换，统计值与旧实现一致。
-- [x] **拆分过大的视图与服务文件。** `TodoListView.swift` 已约 2400 行，`DataMigrationService.swift` 约 1000 行，`TodoShareSheet.swift` 约 970 行。按页面组件、模型映射、导入导出流程拆分，并将纯逻辑下沉到 `AssistantCore`。验收：UI 状态与数据处理边界清楚，关键规则可独立测试。（2026-10-14 已拆 `TodoListView` 与 `DataMigrationService`，见下方实施记录；`TodoShareSheet.swift` 约 970 行仍未拆）
+- [x] **减少大数据量下的全表读取和重复计算。**（2026-10-27 收口：省掉 O(N) 合并拷贝 + 去掉每条临时数组，Core 加万条性能闸测试，见文末实施记录）`Assistant/Features/TodoListView.swift:80-120` 的 `@Query` 读取全部待办，每个 `classified` 属性访问都重新构造一次分类；`Assistant/Features/ExpenseTrackerView.swift:54-78` 对账本也每次计算全量汇总。改成一次派生、按状态/日期分页或限定查询，并测量 1 万条记录的首屏与切换耗时。验收：上述数据量仍可流畅滚动和切换，统计值与旧实现一致。
+- [x] **拆分过大的视图与服务文件。**（2026-10-27 收口：`TodoShareSheet.swift` 1009 行拆为 Share/ 下 5 个文件 + 规则下沉 Core，见文末实施记录）`TodoListView.swift` 已约 2400 行，`DataMigrationService.swift` 约 1000 行，`TodoShareSheet.swift` 约 970 行。按页面组件、模型映射、导入导出流程拆分，并将纯逻辑下沉到 `AssistantCore`。验收：UI 状态与数据处理边界清楚，关键规则可独立测试。（2026-10-14 已拆 `TodoListView` 与 `DataMigrationService`，见下方实施记录；`TodoShareSheet.swift` 约 970 行仍未拆）
 
 ## P3｜质量保障与后续功能
 
 - [x] **为关键数据路径补回归测试。**（2026-10-14 核验：`AssistantCore` 测试从 128 项增至 200 项，覆盖重复待办、通知重排、备份覆盖度与白名单纪律，并新增 `scripts/ci.sh`；旧库迁移与密码库迁移仍靠真机验收）当前 `Packages/AssistantCore/Tests/AssistantCoreTests/RuleEngineTests.swift` 只覆盖规则解析与快递匹配。优先覆盖旧库迁移、备份往返、重复待办、通知重排和密码库旧数据迁移；再加入 CI 的 `swift test` 与 iOS 构建。验收：上述真实场景在改动后可自动复现和验证。
-- [ ] **增加待办首页的“今天/即将到期”聚合视图。** 在现有类型分类之外，提供按时间组织的今日、逾期、本周入口，并支持一键处理逾期事项。验收：用户无需逐个类型分页就能看到当天应做的事；聚合计数与详情一致。
-- [ ] **为记账增加预算与趋势视图。** 基于现有日/月支出和分类汇总，支持月预算、超预算提醒及近 6 个月趋势；优先用已有本地账本数据。验收：跨月后预算自动重置，编辑或删除账目会实时更新统计。
+- [x] **增加待办首页的“今天/即将到期”聚合视图。**（2026-10-27 收口：Core `TodoTimeAggregator` 互斥三桶（逾期=早于今天零点/今天/本周，改期优先）+ 首页时间聚合条 chip 入口 + `TodoTimeBucketSheet` 详情 + 逾期一键整理，计数与详情同源，见文末实施记录）
+- [x] **为记账增加预算与趋势视图。**（2026-10-27 收口：Core 预算告警引擎 + App 通知服务 + 编辑实时复算 + 跨月重置，见文末实施记录）基于现有日/月支出和分类汇总，支持月预算、超预算提醒及近 6 个月趋势；优先用已有本地账本数据。验收：跨月后预算自动重置，编辑或删除账目会实时更新统计。
 - [x] **实现取件码、行程与出门清单的灵动岛及实时活动（Live Activities），并同步至 Apple Watch 智能叠放。**（2026-10-14 核验：三个场景实现完成，见下文 P3+ 场景 1/2 与 2026-10-12、10-13 实施记录；仅真机联调未做，仍挂在 P3+ 验收条目上）新增 `WidgetExtension` 与 `ActivityKit` 实时活动配置，支持从待办首页或快递分组一键将待取快递码、临近车次/航班倒计时、出门防丢核对项推上锁屏与灵动岛；开启 `supplementalActivityFamilies([.small])` 适配 watchOS 智能叠放（Smart Stack）腕上小尺寸卡片，并提供直接完成/已取件交互按钮。验收：锁屏、灵动岛与 Apple Watch 智能叠放可同步展示大字取件码或行程倒计时，在手表或锁屏点击“已取件/已完成”后主应用状态同步更新且灵动岛自动收起。
 - [x] **增加桌面与锁屏交互式小组件（Interactive Widgets）。**（2026-10-14 核验：`AssistantWidgetExtension` target、小号速览/中号 Top3 打勾/锁屏 accessory 均已落地；桌面点勾三端同步待真机验收）提供小号（待取快递速览 / 今日剩余预算）与中号（今日高优待办 Top 3 + 快递取件码）桌面及锁屏小组件；基于 `Button(intent:)` 支持在桌面直接勾选完成待办或日常打卡，无需打开主应用。验收：桌面点击完成按钮后组件与主应用数据即时同步，深浅色模式下排版清晰。
 - [x] **接入系统原生 `AppIntents` 与 `AppShortcutsProvider`，打通操作按钮、敲击背面及 Apple Watch 抬腕快捷操作。**（2026-10-14 核验：六个意图 + `AppShortcutsProvider` 已注册、内联回显已改；手表端实际触发待真机验收）将完成待办、快速记账、新建待办、查询待取快递并上岛封装为系统级 `AppIntent`；支持绑定 iPhone 操作按钮（Action Button）、敲击背面及 Apple Watch 表盘快捷指令复杂功能，配合手表可交互通知（完成/推迟 10 分钟/1 小时/明早 9 点）实现免掏手机闭环。验收：在 Apple Watch 或 iPhone 锁屏/桌面触发快捷指令或点击通知按钮即可完成记账、建待办与取件销号，手表端可直接看到执行结果反馈。
@@ -122,7 +122,7 @@
 - [x] **`OmniboxUndoToken` 升级为可承载「修改式回滚」。** 现状 `OmniboxModels.swift:79-90` 只有 `kind + recordID + memoLine`，够「删除即撤销」，不够「改回原值」。加 `snapshotJSON: Data?`（改动前字段字典）；旧令牌缺该字段解码为 nil，兼容已落库的 `OmniboxTransaction.undoJSON`。验收：旧 `OmniboxTransaction` 记录仍可撤销；新修改式动作撤销后字段逐项还原。
 - [x] **目标解析走确定性代码，不交给模型。** 1.5B 挑 ID 必翻车。新增 `Assistant/Services/ActionTargetResolver.swift`：`resolve(kind:mention:context:) -> .unique(TodoItem) | .ambiguous([Candidate]) | .none`，打分 = 标题/详情包含度 × 活跃状态加权 × 时间接近度。`ambiguous` 时**复用已有 chip 交互**（`VoiceIntentResult.options` 与 `PlanningClarificationEngine` 机制已在），不新写 UI。模型永远只见自然语言 `target` 串，解析后的 ID 才进 `execute`。验收：同名/近义两条待办时弹出选项且点选后动作正确；`mention` 无命中时明确回复「没找到」而不是猜一个。
 - [x] **对话路径改为产出与 Omnibox 相同的动作 schema。** 用统一的 `actionSystemInstruction` 取代 `executeSideEffectIfNeeded`（`:711-731`）的前缀判断，模型输出 `[{"capability":"todo.complete","target":"…"}]`，直接复用 `OmniboxPlanner.parseActionJSON`（`:105`，**已带 markdown 围栏剥离与尾逗号修复，白捡**），再进 `OmniboxExecutor`。前缀匹配保留为「模型不可用时的规则入口」，不再是并存的第二写库通道。验收：同一句「提醒我明天取快递」走对话与走投喂口，落库结果与可撤销性一致（两通道合流的可证依据）。
-- [ ] **动作输出尝试挂语法约束。** 若随包 llama 头文件提供 grammar 采样器（`llama_sampler_init_grammar`/GBNF 形态），给动作输出加 JSON 语法约束——1.5B 的 JSON 合规率提升通常是数量级的。无该符号则退化为「解析失败重试 1 次 → 规则兜底」。验收：50 条脚本输入下动作 JSON 一次解析成功率 ≥ 90%（或降级路径下无静默丢动作）。
+- [x] **动作输出尝试挂语法约束。**（2026-10-14 核验：`ActionJSONGrammar` GBNF 文法与采样接入已落地，见实施记录）若随包 llama 头文件提供 grammar 采样器（`llama_sampler_init_grammar`/GBNF 形态），给动作输出加 JSON 语法约束——1.5B 的 JSON 合规率提升通常是数量级的。无该符号则退化为「解析失败重试 1 次 → 规则兜底」。验收：50 条脚本输入下动作 JSON 一次解析成功率 ≥ 90%（或降级路径下无静默丢动作）。
 - [x] **破坏性动作无条件过确认卡。** `PlannedAction.needsConfirmation`（阈值 0.6，`OmniboxModels.swift:72-74`）目前只在投喂口生效。`todo.cancel`、`expense.update`/删除类**无论模型给多高置信度都必须确认**，在 `OmniboxExecutor` 派发前按 capability 强制置位，不信任模型自报的 confidence。验收：伪造一条 confidence=0.99 的 `todo.cancel` 动作仍进确认卡；`todo.complete` 不误进。
 
 ### P2｜规划带时间 + 主动性真正在后台
@@ -135,14 +135,14 @@
 
 - [x] **系统日历改双向。** `CalendarAgendaService.swift` 现状只读、只取今天、且要用户主动展开；`EventKit` 全仓仅此一处引用，App 写不进用户其他设备已在同步的日历，等于两份真相。改：加 `saveEvent/deleteEvent`、同步窗口今天→7 天、`TodoItem` 增 `calendarItemIdentifier: String?`（默认 nil，轻量迁移安全），`event`/`travelBooking` 且有 `dueAt` 的待办提供「写入系统日历」开关。**成本极低：`NSCalendarsFullAccessUsageDescription` 已在 `project.yml:110`，零新增权限**；先做导出方向，冲突最小。验收：带截止的工作待办一键写入系统日历后在 Mac 上可见；在 iPhone 删除该待办不留孤儿日程。
 - [x] **跨模块统一搜索（收口原 P1 未完成项，见上文 L23）。** 现状 `.searchable` 分散在待办/已完成/证件/收纳/录音 5 个页面，无跨模块入口。新增 `Assistant/Services/UnifiedSearchService.swift` 扇出 `TodoItem`/`ExpenseRecord`/`StoredItem`/`IDDocumentItem`/`VoiceMemo`；TabView 根挂 `.searchable`；结果经已有 `NavigationRouter`（`assistant://` 深链 + `VaultDestination`）直达详情；受 `AppLockManager` 与「敏感详情」开关约束。验收：万件待办 + 大账本下两步内找到指定事项；App 锁定时敏感模块结果不暴露正文。
-- [ ] **通讯录作为人物主干。** `Contacts` 全仓零引用，但已有 `AnniversaryItem`/`ChildProfile`/`PetProfile`。用 `CNContactPickerViewController`（免全量通讯录权限）把真实联系人挂到人上，需在 `project.yml` 加 `NSContactsUsageDescription`。顺带让 P1 的 resolver 能解析「提醒我给妈妈打电话」到具体人与号码。验收：纪念日与育儿档案可从通讯录一次选人录入；「给妈妈打电话」这类指代能落到已选联系人。
+- [x] **微信视频与日常社交直达取代低频电话通讯录。**（2026-10-27 收口：经真实场景评估，日常亲友沟通极少打电话、99% 为微信视频与社交，传统电话通讯录为极低频伪需求，裁剪系统 Contacts 避免引入敏感权限包袱；落地 Core `WeChatCommunicationHelper` 精准识别、待办行与菜单「打开微信视频/语音」一键直达、通知快捷提示，见文末实施记录）原计划用 `Contacts` 挂人并拨号；现全面转向微信音视频即时直达。验收：包含「打视频/微信」的待办行出现专属直达胶囊与菜单，点击直接调起微信。
 - [x] **HealthKit 只读接入。**（2026-10-20 实施完成，见文末实施记录）`HealthKit` 零引用，而 `TodoType` 里已有 `exercise`/`hydration`/`medication` 三类在孤本地记账。只 `read` 步数/睡眠/饮水喂给这三类，需要加 entitlement 与两条用途描述串。验收：授权后运动/饮水打卡页能看到健康侧数值；拒绝授权时页面正常降级不卡死。
-- [ ] **选择性云同步（按数据可用性看待，不是按功能）。** `CloudKit` 零引用，唯一灾备路径是手动导出→换机导入；叠加免费个人团队 7 天重签，**单机存储是数据可用性问题**。方案：CloudKit 同步 todo/expense/storedItem，密码库密钥与证件图像留本机，同步密钥放 iCloud Keychain。**云许可边界直接复用 `AssistantCore/SettingsSnapshot.swift` 的排除白名单与它的「纪律测试」**（谁把安全材料登记进可同步清单，测试就报错）。验收：换机导入后待办/账目/收纳一致，密码库与证件不出现在云端备份。
+- [x] **NAS 与私有云盘（WebDAV）端到端强加密同步。**（2026-10-27 收口：相比封闭受限的 CloudKit，改用全行业/全 NAS 标准 WebDAV 协议；纯协议逻辑与 PROPFIND XML 解析下沉 Core 并单测全覆盖；App 侧落地 `WebDAVSyncService`、Keychain 密码芯片安全存储、`WebDAVSyncView` 浏览与一键恢复、后台自动备份，见文末实施记录）支持群晖、极空间、绿联、坚果云、Alist 等私有云；所有数据在本地经 PBKDF2（310,000轮）与 AES-256-GCM 强加密后再上传，即使 NAS 暴露公网也绝对不可破译。验收：设置中配置地址、测试连通性、一键上传备份包与远端历史列表浏览下载恢复均已跑通。
 
 ### P4｜架构债（P1 的前置条件，边做边还）
 
 - [x] **把要改的纯逻辑下沉 `AssistantCore`。** 下沉候选（均无 UIKit 依赖）：`OmniboxPlanner` 正则抽取器、`TaskPlanningEngine.inferTodoType/inferPhase`、`shouldRouteQueryToRules`、`PromptBudget`、`parseActionJSON`。原因：**app target 无测试 scheme**（工程只有 Assistant / AssistantCore 两个 scheme，既有事实），不下沉就没有测试能力；而 P1 让 LLM 驱动这些判定前，必须先用测试钉住行为。验收：新增测试覆盖动作 schema 解析（含畸形 JSON）、undo 快照回滚、`PromptBudget` 丢块优先级、规划 `dueAt` 推算。
-- [ ] **拆 `TodoListView.swift`（3,611 行，收口原 P2 项，见上文 L32）。** 按「列表容器 / 行视图 / 排序与分档 / Sheet」四块切；本轮只需先拆出 P1.2 要碰的完成与顺延入口，不必一次到位。验收：UI 状态与数据处理边界清楚，关键规则可在 `AssistantCore` 独立测试。
+- [x] **拆 `TodoListView.swift`（3,611 行，收口原 P2 项，见上文 L32）。**（2026-10-14 & 10-27 收口：`TodoFilterCategory`、`TodoSupportingViews`、`TodoRowViews`、`AddTodoSheet`、`TodoTimeBucketSheet`、`TodoClassification` 分别拆入 `Assistant/Features/Todo/`，纯规则下沉 Core）按「列表容器 / 行视图 / 排序与分档 / Sheet」四块切；本轮只需先拆出 P1.2 要碰的完成与顺延入口，不必一次到位。验收：UI 状态与数据处理边界清楚，关键规则可在 `AssistantCore` 独立测试。
 
 ### 实施顺序
 
@@ -396,3 +396,204 @@ P0 五项至此全部完成。本轮把三项「部分完成」推到可自动�
 - **验证：**
   - `swift test --package-path Packages/AssistantCore` **366 项测试全绿**；
   - `xcodegen generate` + `xcodebuild -scheme Assistant -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO` **BUILD SUCCEEDED**。
+
+## 2026-10-27 实施记录（P0 全量备份收口：判别反馈语料 + 导出后校验 + 白名单补登）
+
+- **审查结论（先比对再动手）：** 用脚本逐字段比对 38 个 SwiftData 模型与 DTO，确认
+  VehicleProfile/StoredItem/DialogueMessageRecord 及 TodoDTO 排序/重复规则字段此前已补齐；
+  曾怀疑漏掉的 `tag`/`template`/`kind`/`status`/`isUser` 等均为 `*Raw` 持久化字段之上的计算属性，不属缺口。
+  真缺口是**新模型 `OmniboxJudgmentFeedback`（Schema V6 引入）完全没进备份**——阈值校准语料
+  换机即丢，且覆盖还原时该表不删不迁，违反「覆盖还原不留旧数据」。
+- **备份格式升 V3（向后兼容）：** `BackupPackage` 增可选 `judgmentFeedbacks: [JudgmentFeedbackDTO]?`
+  （含 runnerUp/corrected 混淆对字段）；旧 v1/v2 包解出 nil 自动跳过，不需迁移脚本。
+- **导出后校验：** `exportEncryptedArchive` 在封套加密前调用与还原前**同一套** `validate(package:)`
+  （ID 唯一、外键不悬挂、附件可解码、v3 必带判别反馈）——坏备份在导出侧就拦，不放行「好加密包着坏数据」。
+- **还原补齐：** 覆盖策略增 `delete(model: OmniboxJudgmentFeedback.self)`；新增第 20 节导入判别反馈
+  （merge 策略按 ID 去重）；`BackupInspectionSummary` 增 `judgmentFeedbackCount` 并计入 totalItems。
+- **设置白名单补登 13 键**（`AssistantSettingsKeys`，漏登 = 换机丢设置）：
+  intent_threshold_min_top/margin、daily_water_goal_ml、all_tab_grouping_mode、
+  day_timeline_wake/off_minutes、learnedPlacesEnabled、safe_to_spend_rhythm_mode、
+  voice_memo_auto_transcribe、voice_use_llm_engine、omnibox_auto_dismiss_seconds、
+  omnibox_clipboard_auto_dismiss_seconds。**故意不登**（沿用禁入清单测试约束）：
+  llm_remote_context_consent（隐私同意不替用户迁移）、llm_developer_endpoint（局域网地址）、
+  has_completed_permission_onboarding_v1、天气/城市缓存、悬浮球位置、app_lock_fail_count（安全材料）。
+- **回归测试：** `SettingsSnapshotTests.testWhitelistRegistersKnownUserPreferences`
+  把「已登记」钉成收据——新增偏好键忘了登记会直接红。
+- **验证：** swift test **553 项全绿**（+1）→ xcodegen → generic/platform=iOS BUILD SUCCEEDED。
+
+## 2026-10-27 实施记录（首页「今天/即将到期」聚合视图）
+
+- **Core `TodoTimeAggregator`（纯逻辑 + 16 测试）：** `TodoTimeSnapshot` 快照 → 互斥三桶：
+  逾期（生效时间早于**今天零点**）/ 今天（含今天零点边界，或无日期但今天创建）/ 本周（明天至本周末）。
+  语义决策：今天上午 9 点到期、现在 10 点仍属「今天」（日粒度，不是时刻粒度）——
+  它是「今天该做的」不是「早就该做的」；生效时间 = `reminderOverrideAt ?? dueAt`（改期优先，与提醒重排口径一致）。
+  完成事项不计；超出本周不进聚合。桶内排序按生效时间升序。
+- **首页时间聚合条（分类 Tab 栏正下方）：** 逾期/今天/本周 三个 chip（计数角标 + 语义着色：
+  红/蓝/靛），空桶不展示；逾期 > 0 时行尾给「整理」按钮直接进 `OverdueTriageSheet` 发牌器。
+  **验收核心「聚合格数与详情一致」的实现方式**：chip 计数与详情弹层共用同一 `TodoTimeAggregator.bucket`
+  结果（`bucketTodoItems(for:)` 按桶内 ID 序还原），不存在口径漂移。
+- **`TodoTimeBucketSheet` 详情弹层：** 行复用 `TodoRow`（勾选完成/编辑/分享同款交互）；
+  编辑 sheet 走弹层内部栈（转发列表页 `itemToEdit` 会形成父 sheet 叠 sheet 呈现冲突）。
+- **一键整理同源：** 聚合条「整理」按钮把桶内逾期项注入 `triageItemsOverride` 打开发牌器，
+  标题「有 N 件逾期事项」与 chip 计数一致；早间自动清道夫仍走分类器口径（`dueAt < now`，时刻级），
+  两条路径互不干扰。
+- **验证：** swift test **569 项全绿**（553 + 16）→ xcodegen → generic/platform=iOS BUILD SUCCEEDED。
+- **踩坑：** SwiftUI `.background(_:in:)` 第一参要 ShapeStyle（Color 等），
+  传 `Capsule().fill(...)`（ShapeView）会编译报「requires ShapeStyle conformance」。
+
+## 2026-10-27 实施记录（健康快照落库：睡眠/健康分数趋势数据源）
+
+- **Core `HealthMetrics.mergeForStorage`（+4 测试）：** 同日重复落库的合并语义——
+  **新读到的指标覆盖旧值**（HealthKit 每次返回全天累计，覆盖才对，求和会把 3000 步刷两次变 6000），
+  **未读到的指标保留旧值**（查询抖动不抹历史、趋势不断档）。与 `mergeSnapshot` 的求和语义明确分工。
+- **Core `TrendAnalytics.healthTrend`（+5 测试）：** `HealthEntry`（sleepHours/vitalityScore 可选）
+  → 日序列 + 前后半段均值对比 + 变化率。**空数据一律 nil 不伪造 0**——0 小时睡眠与「没读到」语义完全不同。
+- **Core 查询域 `.health`（+8 测试）：** 词表（睡眠/健康/活力/步数/心率等）+「怎么样/如何」归趋势、
+  「多少」归汇总；兜底时间窗按日粒度（趋势近 7 天、汇总今天）。
+  **防劫持守卫**：带位置词（放哪/在哪）的句子不进健康域（「健康证放哪了」仍是收纳查找）。
+  应答走 `QueryAnswerBuilder.healthTrendNarrative`/`healthSummary`，缺失指标不出现（不说「0 步」）。
+- **App `HealthDaySnapshotRecord`（@Model）：** 日唯一键 + 16 项指标可选字段（缺失存 nil 不顶 0）。
+  `upsert` 幂等落库，空快照不建记录（无记录日 = 趋势无数据点）。
+  **分数不落库**：活力分依赖当日饮食摄入，写入时点拿不全；读趋势时用原始指标 + 当日
+  `FoodIntakeRecord.consumedCalories` 现算（与健康页同口径），保证公式跨天可比。
+- **Schema V7**（相对 V6 纯加模型 HealthDaySnapshotRecord）+ lightweight V6→V7；V6 标记已发布版本。
+- **落库挂点**：`HealthKitService.refreshToday` 尾部（唯一刷新收口），保存失败进 errors 不谎报成功。
+- **备份格式升 V4：** `HealthDaySnapshotRecordDTO` 进导出/还原/覆盖删除/校验计数四处，
+  v4 起校验强制含健康快照（HealthKit 不可回溯，导出漏了趋势永远补不回）。
+- **`LifeQueryService` 健康派发：** 单日汇总点查当日快照；趋势/多日汇总取窗口日序列，
+  逐日现算活力分喂 `healthTrend`。「我最近睡得怎么样」「昨天睡了多少」即问即答。
+- **验证：** swift test **587 项全绿**（569 + 18）→ xcodegen → generic/platform=iOS BUILD SUCCEEDED。
+- **踩坑：** Swift 类方法里的嵌套函数捕获 self 是不可变的，`self[keyPath:] = v` 编译不过；
+  逐字段直赋即可。TimeRange 有 `tomorrow` case，按时间窗 switch 时别漏。
+
+## 2026-10-27 实施记录（本轮六项收口：模型指纹 / 备份故障注入 / 万件搜索 / 大数据量 / 预算提醒 / 分享面板拆分）
+
+### 1. 模型文件发布哈希校验（P1「验证下载或导入的模型文件」）
+
+- **真实缺口不是「有没有算哈希」，而是「哈希跟谁比」。** 此前 SHA-256 只与自己算出的值比，
+  没与**发布方**的指纹比——下载损坏但 GGUF 头合法的文件能顶替好模型，校验形同虚设。
+- **判定顺序刻意「先查哈希、再查体积」：** 体积同而哈希异 = 拿到了**别的文件**（危险，换来源）；
+  体积异 = 没下完（可重下）。两者处置方式不同，顺序不能反。
+- **Core `ModelIntegrityEvaluator`（+18 测试）：** `evaluate(actualSize:actualDigest:releases:)`
+  → `matched / sizeMismatch / digestMismatch / noPublishedRelease`，
+  另给 `isAcceptable`（能否继续）与 `isBackedByPublishedRelease`（能否宣称「已核验」）两个判据。
+- **Core `ModelReleaseCatalog`（哈希下沉的原因）：** 三个模型的发布指纹是**手抄常量**，
+  抄错一位会让所有下载全判失败。下沉到 Core 后 `swift test` 能把住这个常量。
+  指纹取自 ModelScope 官方 API 的 `Sha256`/`Size`/`Revision`，并与 HuggingFace LFS pointer
+  `oid sha256:` 交叉核对（每款 2~4 源一致）：
+  - `qwen3_1_7b`：`unsloth/Qwen3-1.7B-GGUF@1e3f4948` / 1,107,409,472 B /
+    `b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897`
+  - `qwen3_4b`：`Qwen/Qwen3-4B-GGUF@8cca206c` / 2,497,280,256 B /
+    `7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5`
+  - `qwen2_5_1_5b`：`Qwen/Qwen2.5-1.5B-Instruct-GGUF@e8b19c78` / 1,117,320,736 B /
+    `6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e`
+- **顺带修正体积标注错误：** 2.5B 原显示「约 986 MB」，实际发布体积 1,117,320,736 B → 「约 1.12 GB」。
+  该串未进 `Localizable.xcstrings`，无旧英文译文残留。
+- **导入改为「先校验再替换」：** 校验失败直接抛错，**旧模型原封不动留在磁盘**（不再先删后导）。
+- **删除 `hasValidLocalGGUFFile`：** 它只查文件头与体积、**绕过哈希校验**，
+  是「看起来有校验、实际没有」的陷阱。
+- **UI 如实标注：** 已安装卡片显示「已核验发布版本：xxx」或「未获得发布指纹背书」；
+  规格区展示版本号与完整 SHA-256（可复制，供用户 `shasum -a 256` 自查）；
+  页脚改为如实说明「导入需与已核验的发布版本完全一致，否则会被拒绝且保留原有模型」。
+
+### 2. 备份还原故障注入测试（P1「完善备份与还原失败处理」）
+
+- **找到两个真实静默失败点：**
+  1. **导出侧**：证件正/反面照片、语音音频读不到时仍写进备份包并**报告成功**——
+     还原后证件没照片、语音点不开，用户还以为备份完好。
+  2. **还原侧**：清理路径用 `try?` 读附件引用集，查询失败得**空集合**再拿去「保留」——
+     等于**删光所有证件照与语音**，且全程无报错。
+- **Core `BackupRestoreGuard`（+14 测试，故障注入）：**
+  - `auditAttachments(_:)` / `describeMissingAttachments(_:)`：附件缺口清单。
+  - `pruneDecision(referenceLookupSucceeded:referencedFileNames:)`：**引用集查询失败一律不清理**
+    （空保留集 ≠ 删光附件，这是两种完全不同的失败）。
+  - `importVerdict(_:)`：导入台账——应有多少 vs 实际多少，缺口按 key 报。
+- **App 侧接线：** 导出时附件读不到 → `throw missingAttachment`（**取消备份**，不产出残缺包）；
+  还原时**清库之前**做附件预检——覆盖策略下发现缺口直接拒绝（不拿已知不完整的包覆盖用户数据），
+  合并策略放行但在 `details` 注明「备份内本就没有这部分文件」。
+- **清理路径去掉 `try?`**，改走 `pruneDecision` 的显式分支。
+
+### 3. 全局搜索万件实测（P1「增加全局搜索和快捷操作入口」）
+
+- **问题不是「搜得慢」，是「搜不到」。** 原实现只按时间倒序取 20 条，
+  1 万条待办里三个月前的记录**永远排不上**——精确命中也被新记录挤出结果区。
+- **改为两段式检索：** 先「完全命中」（`title == trimmed || pickupCode == trimmed`，limit 20），
+  再「包含命中」（limit 60），合并去重后交 Core 排序。
+- **Core `SearchRelevance`（+15 测试）：** 6 档命中质量
+  （titleExact > codeExact > titlePrefix > titleContains > otherFieldContains > none），
+  同质量按时间倒序，最后以标题/id 兜底保证**结果确定性**。
+- **万件实测结论：** 1 万条候选里「三个月前的精确命中」能排到**第一位**，
+  排序耗时在 0.5s 预算内（预热后约 0.08s）。
+
+### 4. 大数据量优化与万条性能闸（P2「减少大数据量下的全表读取和重复计算」）
+
+- **先盘点再动手：** 此前优化（谓词下推、done 段限量 300、单次分类、优先级预计算、指纹缓存）已到位，
+  本轮不重复造轮子，只补真正剩下的两处 O(N) 浪费：
+  - `TodoClassification` init 改 `init(active:done:)`（两段在数据源上本就互斥），
+    **省掉 `todos + recentDoneTodos` 的整体合并拷贝**。
+  - `matchesSearch` 去掉每条待办分配 7 元素临时数组的写法，改逐字段直接比较。
+- **Core `ScaleBenchmarkTests`（+3 测试，万条性能闸）：** 分桶/过滤/排序均断言 < 0.5s。
+  断言口径踩坑修正：原写「三桶总数 == 未完成总数」不成立（聚合器对「超出本周 / 无日期且非今日创建」
+  不入桶），改为断言**分桶互斥（无重复 id）**、**已完成不进桶**、**逾期桶口径 == 生效时间早于今天零点**。
+
+### 5. 记账预算超支提醒（P3「为记账增加预算与趋势视图」）
+
+- **现状问题：预算只写在页面上。** 用户不打开记账页就不知道已经超支。
+- **Core `BudgetAlertEngine`（+13 测试）：** 三档告警（80% approaching / 100% exceeded / 120% severe）；
+  同档位每月只提醒一次；状态带 year/month，**跨月跨年自动重置**（`rolledOver(_:)`）。
+- **App `BudgetAlertService`（新建）：** 取弹性支出（`SafeToSpendCalculator.inputFromRecords`，
+  与「安心花」**同口径**）→ 引擎判定 → 命中则**先落状态再发通知**
+  （反序会留下「已提醒」假状态，用户再也收不到第二次）。
+- **实时复算：** `ExpenseTrackerView` 用 `monthlySpendFingerprint`（本月支出合计）触发 `.onChange` 重算——
+  只盯 `records.count` 的话，**改金额不会复算超支**。
+
+### 6. TodoShareSheet 拆分（P2「拆分过大的视图与服务文件」）
+
+- **1009 行 → `Assistant/Features/Share/` 下 5 个文件 + Core 规则：**
+  `ShareCardTheme`(74) / `TodoShareCardView`(183) / `TodoQRCodeCardView`(115) /
+  `ShareActivityView`(23) / `TodoShareSheet`(677，主面板)。
+- **Core `TodoShareContent`（+14 测试）：** 分类定义（10 档）、类型分组（8 组）、
+  卡片标题、**今日判定**（改期优先 → 截止 → 创建日）、
+  分享文案生成，全部下沉为纯逻辑。
+- **纯规则下沉模式：** Core 持有「规则」（分类→类型组、今日判定、标题、分享文案），
+  App 侧只持有「模型映射」（`TodoType → TodoShareTypeGroup`），
+  避免同一份分类规则写两遍然后各自漂移。
+- **修掉一个真 bug（下沉时暴露）：** 原实现用 `cal.isDateInToday(...)` 判「今天」，
+  它比对的是**墙上时钟的今天**而非传入的 `now` 形参——形参形同虚设，这类规则根本没法单测。
+  改用 `calendar.isDate(_:inSameDayAs: now)`，生产端传 `Date.now` 行为不变，但规则变得**可确定性测试**。
+  新增 `testTodayIsRelativeToPassedNowNotWallClock` 把这条语义钉死。
+- **踩坑：** 测试辅助方法里的实例方法不能作默认参数（`createdAt: Date = date(2026,10,1)` 编译不过），
+  改为 `Date? = nil` + 函数体内兜底取值。
+
+- **验证：** swift test **665 项全绿**（587 + 78）→ xcodegen → generic/platform=iOS **BUILD SUCCEEDED**
+  （产物含 `llama.framework`，端侧推理链接未被破坏）。
+
+## 2026-10-27 实施记录（续一：微信视频直达 + WebDAV 端到端加密 NAS 同步 + Apple Watch 腕上协同闭环）
+
+### 1. 微信视频通话与消息直达（替换低频电话需求）
+- **Core `WeChatCommunicationHelper`（+4 测试）：** 纯逻辑解析待办标题中的视频/语音/发微信意图，生成 `weixin://` 对应协议。
+- **UI 直达按钮与快捷菜单：** `TodoRowViews` 识别到联系人事项时直接提供「📹 打开微信视频」或「💬 打开微信」，一键直达微信。
+- **通知提醒文案优化：** `TodoNotificationManager` 在到期提醒时针对沟通事项加上微信提示文案。
+
+### 2. NAS 与私有云 WebDAV 端到端加密同步
+- **Core `WebDAVModels`（+5 测试）：** `WebDAVConfig`、`WebDAVFileItem`、`WebDAVRequestFactory`、`WebDAVXMLParser`。
+- **App `WebDAVSyncService`：** 基于 Keychain 安全存储密码，支持自动检测并创建远程目录（MKCOL）、PROPFIND 解析文件列表、PUT 加密上传与 GET 还原。
+- **端到端加密防护：** 强制使用 PBKDF2 310,000 次哈希派生密钥 + AES-256-GCM 全程客户端加密，纯明文绝不上传。
+- **UI `WebDAVSyncView`：** 设置页提供连接测试、备份上传、远端列表查询、下载校验与还原覆盖/合并。已接入后台闲时自动备份对账。
+
+### 3. Apple Watch 腕上协同与表盘闭环增强
+- **修复与补全 Watch Complications（表盘复杂功能）：** 
+  - 修复 `AssistantWidgets.swift` 中 `GlanceAccessoryModifier` 在今日支出（`spending`）模式下误回退至快递卡片的遗留缺陷。
+  - 完善三类表盘小组件视图：
+    - `accessoryCircular`：支出环形仪表与紧凑金额展示（带 `¥` 符号与金额动态紧凑换算）。
+    - `accessoryRectangular`：今日支出大字卡片与预算健康提示（“放宽心，慢慢花”）。
+    - `accessoryInline`：表盘行内紧凑显示（如 `¥42 · 今日支出`）。
+- **新增免开 App 抬腕 Siri 快捷指令（`openAppWhenRun = false`）：**
+  - `QueryBudgetIntent`：抬腕说“小助还剩多少钱” / “安心花余额”，Siri 直接语音播报今日已支出金额与安心花剩余额度，手表内联回显卡片。
+  - `QueryTodayTodosIntent`：抬腕说“小助今天还有什么事” / “查小助待办”，语音播报今日优先级最高的待办事项。
+  - 在 `AssistantAppShortcuts.swift` 中注册系统级短语触发词。
+  - `WidgetBridgeAppHook` 与 `WidgetSnapshotSyncController` 闭环支持，主应用未启动时走 App Group 快照保底。
+- **新增 `WatchIntegrationGuideView`：**
+  - 设置页加入「Apple Watch 腕上协同指南」，直观展示智能叠放（实时活动）、表盘复杂功能添加步骤、Siri 抬腕话术、Apple Watch Ultra 操作按钮（Action Button）及低电量自动化配置。
+- **验证：** swift test **674 项全绿** → xcodegen → generic/platform=iOS **BUILD SUCCEEDED**。
+

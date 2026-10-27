@@ -81,6 +81,7 @@ struct TodoRow: View {
                         TodoNotificationManager.shared.scheduleNotification(for: item)
                         isAnimatingCompletion = false
                     }
+                    LifeEventTodoLink.syncTask(for: item, in: context)
                     try? context.save()
                 }
             } label: {
@@ -293,6 +294,34 @@ struct TodoRow: View {
                             .lineLimit(2)
                             .lineSpacing(3)
                     }
+
+                    if !isEffectivelyDone && WeChatCommunicationHelper.isWeChatCommunication(title: item.title, detail: item.detail) {
+                        let kind = WeChatCommunicationHelper.communicationKind(title: item.title, detail: item.detail)
+                        Button {
+                            if let url = URL(string: WeChatCommunicationHelper.weChatURLScheme) {
+                                UIApplication.shared.open(url)
+                                Haptic.light()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: kind.iconName)
+                                Text(kind.buttonTitle)
+                            }
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3.5)
+                            .background(
+                                Capsule().fill(Color.green.opacity(0.12))
+                            )
+                            .overlay(
+                                Capsule().strokeBorder(Color.green.opacity(0.3), lineWidth: 0.8)
+                            )
+                            .foregroundStyle(Color.green)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(kind.buttonTitle)
+                        .accessibilityHint("直接拉起微信应用")
+                    }
                 }
 
                 HStack(spacing: 8) {
@@ -374,6 +403,16 @@ struct TodoRow: View {
                         started = LiveActivityService.startPickupActivity(for: [item])
                     }
                     if started { Haptic.success() } else { Haptic.warning() }
+                }
+            }
+
+            if item.status == .active && WeChatCommunicationHelper.isWeChatCommunication(title: item.title, detail: item.detail) {
+                let kind = WeChatCommunicationHelper.communicationKind(title: item.title, detail: item.detail)
+                Button(kind.buttonTitle, systemImage: kind.iconName) {
+                    if let url = URL(string: WeChatCommunicationHelper.weChatURLScheme) {
+                        UIApplication.shared.open(url)
+                        Haptic.light()
+                    }
                 }
             }
 
