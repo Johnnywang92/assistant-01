@@ -382,9 +382,9 @@ struct DayTimelineView: View {
                     .foregroundStyle(.secondary)
             }
             .padding(14)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                     .stroke(Color.primary.opacity(0.07), lineWidth: 0.5)
             }
             .contentShape(Rectangle())
@@ -454,9 +454,9 @@ struct DayTimelineView: View {
             }
         }
         .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .stroke(Color.primary.opacity(0.07), lineWidth: 0.5)
         }
         .padding(.horizontal, 16)
@@ -481,11 +481,11 @@ struct DayTimelineView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                             .fill(Color.green.opacity(0.14))
                     )
                     .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                             .strokeBorder(Color.green.opacity(0.35), style: StrokeStyle(lineWidth: 0.8, dash: [4, 3]))
                     }
                     .foregroundStyle(.primary)
@@ -546,9 +546,9 @@ struct DayTimelineView: View {
                         ForEach(freeSlots) { slot in
                             let y = minutesToY(slot.start)
                             let slotHeight = max(24, minutesToY(slot.end) - y - 2)
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                 .strokeBorder(Color.green.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                                .background(Color.green.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .background(Color.green.opacity(0.05), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                                 .overlay {
                                     Text(freeSlotLabel(slot))
                                         .font(.caption2.weight(.medium))
@@ -632,9 +632,9 @@ struct DayTimelineView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .topLeading)
-        .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                 .strokeBorder(color.opacity(0.35), lineWidth: 0.8)
         }
         .foregroundStyle(color)

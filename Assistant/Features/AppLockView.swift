@@ -26,7 +26,7 @@ struct AppLockScreen: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 72, height: 72)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
                         .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
 
                     Text(assistantName.isEmpty ? "小助" : assistantName)

@@ -114,7 +114,7 @@ private struct LifeEventProjectCard: View {
                 .font(.title3)
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(project.title).font(.headline).lineLimit(1)
@@ -225,7 +225,7 @@ struct LifeEventProjectEditSheet: View {
                             .font(.title2)
                             .foregroundStyle(.white)
                             .frame(width: 44, height: 44)
-                            .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                         VStack(alignment: .leading, spacing: 3) {
                             Text(mode.template.displayName)
                                 .font(.headline)

@@ -83,7 +83,7 @@ struct VoiceMemoShareCardView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 34, height: 34)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("小助")
@@ -106,9 +106,9 @@ struct VoiceMemoShareCardView: View {
         .padding(22)
         .frame(maxWidth: 350, alignment: .leading)
         .background(theme.backgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous)
                 .strokeBorder(theme.dividerColor.opacity(0.6), lineWidth: 0.8)
         )
         .shadow(color: Color.black.opacity(0.06), radius: 14, y: 5)
@@ -119,7 +119,7 @@ struct VoiceMemoShareCardView: View {
         switch item.kind {
         case .heading:
             HStack(alignment: .center, spacing: 8) {
-                RoundedRectangle(cornerRadius: 2)
+                RoundedRectangle(cornerRadius: AppRadius.hairline)
                     .fill(theme.accentColor)
                     .frame(width: 3, height: 16)
                 Text(item.text)
@@ -154,7 +154,7 @@ struct VoiceMemoShareCardView: View {
             }
         case .quote:
             HStack(alignment: .top, spacing: 8) {
-                RoundedRectangle(cornerRadius: 1)
+                RoundedRectangle(cornerRadius: AppRadius.hairline)
                     .fill(theme.secondaryTextColor.opacity(0.6))
                     .frame(width: 2)
                 Text(item.text)
@@ -179,7 +179,7 @@ struct VoiceMemoShareCardView: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
             .background(theme.accentColor.opacity(0.10))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
         }
     }
 
@@ -195,7 +195,7 @@ struct VoiceMemoShareCardView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 120)
                     .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
             } else {
                 // 图片文件丢了：明确写出来，不留一个空白框让人以为卡片坏了
                 Label("图片已丢失", systemImage: "exclamationmark.triangle.fill")
@@ -326,7 +326,7 @@ struct VoiceMemoShareSheet: View {
             }
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
     }
 
     private func themeSwatch(_ option: ShareCardTheme) -> some View {
@@ -336,11 +336,11 @@ struct VoiceMemoShareSheet: View {
             Haptic.selection()
         } label: {
             VStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                     .fill(option.backgroundColor)
                     .frame(width: 54, height: 54)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                             .strokeBorder(
                                 isSelected ? Color.red : Color(.separator),
                                 lineWidth: isSelected ? 2 : 0.8
@@ -378,7 +378,7 @@ struct VoiceMemoShareSheet: View {
                 isOn: $includeAudio
             )
         }
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
     }
 
     private func toggleRow(title: String, isOn: Binding<Bool>) -> some View {
@@ -411,7 +411,7 @@ struct VoiceMemoShareSheet: View {
             }
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
     }
 
     private func shareTarget(_ title: String, systemImage: String, tint: Color) -> some View {
@@ -420,7 +420,7 @@ struct VoiceMemoShareSheet: View {
                 .font(.system(size: 17))
                 .foregroundStyle(tint)
                 .frame(width: 42, height: 42)
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -440,7 +440,7 @@ struct VoiceMemoShareSheet: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
@@ -451,7 +451,7 @@ struct VoiceMemoShareSheet: View {
                         .font(.headline)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
-                        .background(Color.red, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(Color.red, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                         .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)

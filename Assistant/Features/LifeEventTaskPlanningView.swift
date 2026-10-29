@@ -520,7 +520,7 @@ private struct QuestionCard: View {
                 .font(.subheadline)
                 .textFieldStyle(.plain)
                 .padding(8)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.chip))
         }
         .padding(.vertical, 4)
     }

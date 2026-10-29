@@ -60,7 +60,7 @@ struct HomeGreetingCard: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .task { await loadWeather() }
@@ -156,7 +156,7 @@ struct OmniboxEntryCard: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .contentShape(Rectangle())

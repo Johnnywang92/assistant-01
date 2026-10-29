@@ -176,9 +176,9 @@ public struct HealthShareCardView: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(cardFill)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .strokeBorder(ink.opacity(0.06), lineWidth: 0.8)
             )
 
@@ -279,7 +279,7 @@ public struct HealthShareCardView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 34, height: 34)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                         .shadow(color: Color.black.opacity(0.12), radius: 3, y: 1)
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -330,9 +330,9 @@ public struct HealthShareCardView: View {
                 endPoint: .bottomTrailing
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous)
                 .strokeBorder(vitalityTint.opacity(0.22), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.12), radius: 16, y: 6)
@@ -367,9 +367,9 @@ public struct HealthShareCardView: View {
         .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tint.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .strokeBorder(tint.opacity(0.3), lineWidth: 0.8)
         )
     }
@@ -411,9 +411,9 @@ public struct HealthShareCardView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(cardFill)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .strokeBorder(ink.opacity(0.06), lineWidth: 0.8)
         )
     }
@@ -535,7 +535,7 @@ public struct HealthShareSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                             .background(Color(red: 0.2, green: 0.85, blue: 0.55))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                         }
 
                         Button {
@@ -549,7 +549,7 @@ public struct HealthShareSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Color(.secondarySystemGroupedBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }

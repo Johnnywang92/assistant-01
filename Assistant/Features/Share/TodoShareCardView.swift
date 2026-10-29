@@ -47,7 +47,7 @@ struct TodoShareCardView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(theme.accentColor.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
             }
 
             Rectangle()
@@ -120,7 +120,7 @@ struct TodoShareCardView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 38, height: 38)
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                         .shadow(color: Color.black.opacity(0.08), radius: 3, y: 1)
 
                     VStack(alignment: .leading, spacing: 3) {
@@ -156,9 +156,9 @@ struct TodoShareCardView: View {
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 38, height: 38)
                                 .background(Color.white)
-                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                                         .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
                                 )
                         }
@@ -173,9 +173,9 @@ struct TodoShareCardView: View {
         .padding(22)
         .frame(maxWidth: 350)
         .background(theme.backgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous)
                 .strokeBorder(theme.dividerColor.opacity(0.6), lineWidth: 0.8)
         )
         .shadow(color: Color.black.opacity(0.06), radius: 14, y: 5)

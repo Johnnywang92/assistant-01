@@ -241,10 +241,10 @@ struct HabitAndMedicationView: View {
         }
         .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                 .fill(color.opacity(0.08))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                         .stroke(color.opacity(0.25), lineWidth: 1)
                 )
         )

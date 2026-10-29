@@ -231,9 +231,9 @@ struct ClipboardSuggestionBanner: View {
             }
         }
         .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .strokeBorder(Color.purple.opacity(0.25), lineWidth: 1)
         )
         .padding(.horizontal, 16)

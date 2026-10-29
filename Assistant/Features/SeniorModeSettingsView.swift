@@ -95,7 +95,7 @@ struct SeniorModeSettingsView: View {
                     }
                     .padding(12)
                     .background(Color(.secondarySystemGroupedBackground))
-                    .cornerRadius(12)
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.card))
 
                     // 样例 B: 快递取件码
                     HStack(alignment: .top, spacing: 12) {
@@ -123,7 +123,7 @@ struct SeniorModeSettingsView: View {
                     }
                     .padding(12)
                     .background(Color(.secondarySystemGroupedBackground))
-                    .cornerRadius(12)
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.card))
 
                     if seniorManager.isVoiceBroadcastEnabled {
                         Button {
@@ -139,7 +139,7 @@ struct SeniorModeSettingsView: View {
                             }
                             .padding(10)
                             .background(Color.orange.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }

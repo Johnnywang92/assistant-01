@@ -48,7 +48,13 @@ enum AppSpacing {
     static let xl: CGFloat = 20
 }
 
+/// 圆角标尺，按用途从细到粗排列。视图里不要再写字面量，
+/// 需要新档位时先改这里，避免同一角色在不同页面差 1–2pt。
 enum AppRadius {
+    /// 细线、进度条、分割条
+    static let hairline: CGFloat = 2
+    /// 内嵌小块、标签底
+    static let badge: CGFloat = 4
     /// 小徽标/内嵌小圆角
     static let small: CGFloat = 6
     /// 胶囊形小按钮
@@ -59,6 +65,12 @@ enum AppRadius {
     static let card: CGFloat = 12
     /// 横幅类大卡片
     static let banner: CGFloat = 14
+    /// 大图标容器、中等面板
+    static let large: CGFloat = 16
+    /// 弹层、扫描框等大面板
+    static let panel: CGFloat = 20
+    /// 分享卡片、主视觉卡
+    static let hero: CGFloat = 24
 }
 
 // MARK: - 卡片与警告态样式

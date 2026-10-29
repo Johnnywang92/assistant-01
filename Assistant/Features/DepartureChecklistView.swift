@@ -485,10 +485,10 @@ struct DepartureChecklistView: View {
             }
             .padding(10)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .fill(color.opacity(0.08))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                             .stroke(color.opacity(0.2), lineWidth: 1)
                     )
             )
@@ -597,10 +597,10 @@ struct DepartureChecklistView: View {
         }
         .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                 .fill(Color.purple.opacity(0.08))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                         .stroke(Color.purple.opacity(0.2), lineWidth: 1)
                 )
         )
@@ -645,10 +645,10 @@ struct DepartureChecklistView: View {
             )
             .foregroundStyle(isChecked.wrappedValue ? .white : (isRainWarning ? .teal : .primary))
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .stroke(isRainWarning && !isChecked.wrappedValue ? Color.teal.opacity(0.8) : Color.clear, lineWidth: 1.5)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
         }
         .buttonStyle(.plain)
     }

@@ -88,9 +88,9 @@ struct ReportShareCardView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(themeColor.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                             .strokeBorder(themeColor.opacity(0.3), lineWidth: 0.8)
                     )
             }
@@ -113,7 +113,7 @@ struct ReportShareCardView: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.white.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
 
             // 3. 核心 4 大成果网格 (2x2)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
@@ -187,7 +187,7 @@ struct ReportShareCardView: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(Color.white.opacity(0.05))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                         }
                     }
                 }
@@ -204,7 +204,7 @@ struct ReportShareCardView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 34, height: 34)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                         .shadow(color: Color.black.opacity(0.2), radius: 3, y: 1)
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -251,9 +251,9 @@ struct ReportShareCardView: View {
                 endPoint: .bottomTrailing
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous)
                 .strokeBorder(themeColor.opacity(0.25), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.35), radius: 18, y: 8)
@@ -283,9 +283,9 @@ struct ReportShareCardView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.8)
         )
     }
@@ -337,7 +337,7 @@ struct ReportShareSheet: View {
                                     endPoint: .bottom
                                 )
                             )
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                         }
 
                         Button {
@@ -351,7 +351,7 @@ struct ReportShareSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Color(.secondarySystemGroupedBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }

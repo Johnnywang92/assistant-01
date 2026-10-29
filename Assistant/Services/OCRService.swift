@@ -1435,7 +1435,7 @@ public struct TravelTicketPickupConfigView: View {
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
                     .background(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                             .fill(Color.blue.gradient)
                     )
 
@@ -1498,7 +1498,7 @@ public struct TravelTicketPickupConfigView: View {
                                 .font(.subheadline)
                         }
                         .padding(8)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
@@ -1528,7 +1528,7 @@ public struct TravelTicketPickupConfigView: View {
                                 .font(.subheadline)
                         }
                         .padding(8)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                     }
                 }
             }

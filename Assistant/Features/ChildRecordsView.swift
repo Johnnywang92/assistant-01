@@ -125,7 +125,7 @@ struct ChildRecordsView: View {
             }
             content()
         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemGroupedBackground)))
+            .background(RoundedRectangle(cornerRadius: AppRadius.card).fill(Color(.secondarySystemGroupedBackground)))
     }
 
     private func metric(_ name: String, _ value: String?) -> some View {

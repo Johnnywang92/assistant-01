@@ -657,7 +657,7 @@ struct FoodPhotoCalorieView: View {
                     .padding(.vertical, 4)
                     .padding(.horizontal, 8)
                     .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                             .fill(Color.secondary.opacity(0.07))
                     )
                 }
@@ -873,9 +873,9 @@ struct FoodPhotoCalorieView: View {
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: 44, height: 44)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                         } else {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                                 .fill(AppColor.surface)
                                 .frame(width: 44, height: 44)
                                 .overlay {
@@ -1863,7 +1863,7 @@ private struct DrinkStatBadge: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .background(AppColor.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
     }
 }
 

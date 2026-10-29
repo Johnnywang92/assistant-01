@@ -50,7 +50,7 @@ struct ExpenseTrendCard: View {
                         width: .automatic
                     )
                     .foregroundStyle(isCurrent ? AppColor.danger : AppColor.danger.opacity(0.42))
-                    .cornerRadius(4)
+                    .cornerRadius(AppRadius.badge)
                 }
             }
             .chartXAxis {
@@ -242,6 +242,6 @@ struct DietTrendCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color.secondary.opacity(0.08)))
     }
 }

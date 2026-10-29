@@ -119,10 +119,10 @@ struct TodoWeatherAlertBanner: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: AppRadius.card)
                 .fill(banner.color.opacity(0.12))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: AppRadius.card)
                         .strokeBorder(banner.color.opacity(0.32), lineWidth: 1)
                 )
         )
@@ -189,21 +189,21 @@ struct TodoAnniversaryPrepBanner: View {
                     .font(.caption2.bold())
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.pink.opacity(0.08)))
+                    .background(RoundedRectangle(cornerRadius: AppRadius.small).fill(Color.pink.opacity(0.08)))
                     .foregroundStyle(.pink)
 
                 Label("🎂 订蛋糕", systemImage: "sparkles")
                     .font(.caption2.bold())
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.orange.opacity(0.08)))
+                    .background(RoundedRectangle(cornerRadius: AppRadius.small).fill(Color.orange.opacity(0.08)))
                     .foregroundStyle(.orange)
 
                 Label("🍽️ 订餐厅", systemImage: "sparkles")
                     .font(.caption2.bold())
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.purple.opacity(0.08)))
+                    .background(RoundedRectangle(cornerRadius: AppRadius.small).fill(Color.purple.opacity(0.08)))
                     .foregroundStyle(.purple)
 
                 Spacer()
@@ -227,18 +227,18 @@ struct TodoAnniversaryPrepBanner: View {
                         endPoint: .trailing
                     )
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                 .shadow(color: Color.pink.opacity(0.25), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .strokeBorder(Color.pink.opacity(0.25), lineWidth: 1)
         )
         .padding(.horizontal)
@@ -307,21 +307,21 @@ struct TodoTravelTicketPrepBanner: View {
                         .font(.caption2.bold())
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.blue.opacity(0.08)))
+                        .background(RoundedRectangle(cornerRadius: AppRadius.small).fill(Color.blue.opacity(0.08)))
                         .foregroundStyle(.blue)
 
                     Label("🏛️ 场馆景区预约：\(info.scenicBookingFormatted) (提前7天)", systemImage: "building.columns.fill")
                         .font(.caption2.bold())
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.purple.opacity(0.08)))
+                        .background(RoundedRectangle(cornerRadius: AppRadius.small).fill(Color.purple.opacity(0.08)))
                         .foregroundStyle(.purple)
 
                     Label("✈️ 机票黄金预订：提前15-30天", systemImage: "airplane")
                         .font(.caption2.bold())
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.teal.opacity(0.08)))
+                        .background(RoundedRectangle(cornerRadius: AppRadius.small).fill(Color.teal.opacity(0.08)))
                         .foregroundStyle(.teal)
                 }
             }
@@ -357,18 +357,18 @@ struct TodoTravelTicketPrepBanner: View {
                         endPoint: .trailing
                     )
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                 .shadow(color: Color.indigo.opacity(0.25), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .strokeBorder(Color.indigo.opacity(0.25), lineWidth: 1)
         )
         .padding(.horizontal)

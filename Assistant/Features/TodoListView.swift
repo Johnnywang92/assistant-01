@@ -327,7 +327,7 @@ struct TodoListView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 4)
                     }
@@ -1224,7 +1224,7 @@ struct TodoListView: View {
                             .padding(.horizontal, 12)
                             .frame(minHeight: 44)
                             .background {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                     .fill(isSelected ? Color.accentColor : Color(.secondarySystemBackground))
                                     .shadow(color: isSelected ? Color.accentColor.opacity(0.22) : .clear, radius: 4, y: 2)
                             }
@@ -1241,7 +1241,7 @@ struct TodoListView: View {
                         Image(systemName: "slider.horizontal.3")
                             .font(.subheadline.bold())
                             .frame(width: 44, height: 44)
-                            .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemBackground)))
+                            .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(Color(.secondarySystemBackground)))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("定制首页分类")

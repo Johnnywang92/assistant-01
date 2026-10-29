@@ -176,7 +176,7 @@ struct VoiceDialogueView: View {
                                         }
                                     }
                                     .padding(12)
-                                    .background(RoundedRectangle(cornerRadius: 16).fill(Color(UIColor.secondarySystemGroupedBackground)))
+                                    .background(RoundedRectangle(cornerRadius: AppRadius.large).fill(Color(UIColor.secondarySystemGroupedBackground)))
                                     Spacer()
                                 }
                                 .id("llm-streaming-bubble")
@@ -513,7 +513,7 @@ struct VoiceDialogueView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 18).fill(Color(.secondarySystemGroupedBackground)))
+                .background(RoundedRectangle(cornerRadius: AppRadius.panel).fill(Color(.secondarySystemGroupedBackground)))
 
             // 发送按钮
             Button {
@@ -828,7 +828,7 @@ struct DialogueBubble: View {
                         .font(.body)
                         .multilineTextAlignment(.leading)
                         .padding(12)
-                        .background(RoundedRectangle(cornerRadius: 16).fill(.tint))
+                        .background(RoundedRectangle(cornerRadius: AppRadius.large).fill(.tint))
                         .foregroundStyle(.white)
 
                     Text(message.timestamp, format: .dateTime.hour().minute())
@@ -881,11 +881,11 @@ struct DialogueBubble: View {
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
                                     .background(
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                                             .fill(opt.isPrimary ? Color.accentColor.opacity(0.14) : (opt.actionType == .cancelSettings ? Color.secondary.opacity(0.1) : Color(.systemBackground)))
                                     )
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                                             .stroke(opt.isPrimary ? Color.accentColor.opacity(0.4) : Color.primary.opacity(0.08), lineWidth: 0.8)
                                     )
                                     .foregroundStyle(opt.isPrimary ? Color.accentColor : (opt.actionType == .cancelSettings ? Color.secondary : Color.primary))
@@ -897,7 +897,7 @@ struct DialogueBubble: View {
                     }
                 }
                 .padding(12)
-                .background(RoundedRectangle(cornerRadius: 16).fill(Color(UIColor.secondarySystemGroupedBackground)))
+                .background(RoundedRectangle(cornerRadius: AppRadius.large).fill(Color(UIColor.secondarySystemGroupedBackground)))
                 .foregroundStyle(.primary)
 
                 Text(message.timestamp, format: .dateTime.hour().minute())
@@ -1047,7 +1047,7 @@ struct PlanningTaskCardView: View {
                     }
                     .padding(8)
                     .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                             .fill(subtask.isSelected ? Color.accentColor.opacity(0.06) : Color(.systemBackground))
                     )
                 }
@@ -1064,7 +1064,7 @@ struct PlanningTaskCardView: View {
                 }
                 .padding(.vertical, 6)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                         .fill(Color.green.opacity(0.12))
                 )
             } else {
@@ -1080,7 +1080,7 @@ struct PlanningTaskCardView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                                 .fill(selectedCount > 0 ? Color.accentColor : Color.secondary.opacity(0.3))
                         )
                         .foregroundStyle(.white)
@@ -1095,7 +1095,7 @@ struct PlanningTaskCardView: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 8)
                             .background(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                                     .fill(Color(.tertiarySystemFill))
                             )
                             .foregroundStyle(.secondary)
@@ -1105,10 +1105,10 @@ struct PlanningTaskCardView: View {
         }
         .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(Color(.systemBackground))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                         .stroke(Color.primary.opacity(0.08), lineWidth: 0.8)
                 )
         )
@@ -1163,7 +1163,7 @@ struct SkillPlanCardView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 5)
                     .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                             .fill(stage.index == 0 ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.05))
                     )
                     .foregroundStyle(stage.index == 0 ? Color.accentColor : Color.secondary)
@@ -1234,11 +1234,11 @@ struct SkillPlanCardView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(Color(UIColor.tertiarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .stroke(Color.accentColor.opacity(0.25), lineWidth: 0.8)
         )
     }

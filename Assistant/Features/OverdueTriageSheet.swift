@@ -125,9 +125,9 @@ struct OverdueTriageSheet: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
         }
         .overlay(alignment: .topLeading) {

@@ -70,9 +70,9 @@ public struct HydrationShareCardView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(Color.cyan.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                         .strokeBorder(Color.cyan.opacity(0.3), lineWidth: 0.8)
                 )
             }
@@ -104,9 +104,9 @@ public struct HydrationShareCardView: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.white.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.8)
                 )
 
@@ -134,9 +134,9 @@ public struct HydrationShareCardView: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.white.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.8)
                 )
             }
@@ -170,7 +170,7 @@ public struct HydrationShareCardView: View {
                                     .foregroundStyle(Color.cyan)
                                     .frame(width: 24, height: 24)
                                     .background(Color.cyan.opacity(0.18))
-                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
 
                                 VStack(alignment: .leading, spacing: 1) {
                                     HStack(spacing: 4) {
@@ -217,7 +217,7 @@ public struct HydrationShareCardView: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(Color.white.opacity(0.04))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                         }
                     }
                 }
@@ -234,7 +234,7 @@ public struct HydrationShareCardView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 34, height: 34)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                         .shadow(color: Color.black.opacity(0.2), radius: 3, y: 1)
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -285,9 +285,9 @@ public struct HydrationShareCardView: View {
                 endPoint: .bottomTrailing
             )
         )
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous)
                 .strokeBorder(Color.cyan.opacity(0.25), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.35), radius: 18, y: 8)
@@ -349,7 +349,7 @@ public struct HydrationShareSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                             .background(Color.cyan)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                         }
 
                         Button {
@@ -363,7 +363,7 @@ public struct HydrationShareSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Color(.secondarySystemGroupedBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }

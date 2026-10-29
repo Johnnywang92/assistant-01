@@ -61,7 +61,7 @@ struct ReceiptScannerView: View {
                                         .resizable()
                                         .scaledToFill()
                                         .frame(width: 70, height: 92)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
                                         .overlay(alignment: .topTrailing) {
                                             Button {
                                                 guard images.indices.contains(index) else { return }

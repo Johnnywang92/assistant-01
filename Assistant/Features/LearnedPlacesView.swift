@@ -92,7 +92,7 @@ struct LearnedPlacesView: View {
                             }
                             .font(.caption.bold())
                             .padding(8)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+                            .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color.orange.opacity(0.12)))
                             .foregroundStyle(Color.orange)
                         }
                         .buttonStyle(.plain)
@@ -116,7 +116,7 @@ struct LearnedPlacesView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .padding(.horizontal, 12)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor))
+                        .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color.accentColor))
                         .foregroundStyle(.white)
                     }
                     .disabled(isSampling || !isLocationAuthorized || !learnedPlacesEnabled)
@@ -141,7 +141,7 @@ struct LearnedPlacesView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 7)
                             .padding(.horizontal, 10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(0.12)))
+                            .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color.purple.opacity(0.12)))
                             .foregroundStyle(.purple)
                         }
                         .disabled(isRefreshingPlaces || !learnedPlacesEnabled)

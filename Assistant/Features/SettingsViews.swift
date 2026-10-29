@@ -160,9 +160,9 @@ struct SettingsView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .frame(width: 42, height: 42)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                     .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
                             )
                             .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
@@ -272,7 +272,7 @@ struct SettingsView: View {
                     } label: {
                         HStack(spacing: 12) {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                     .fill(PermissionManager.shared.areAllCorePermissionsReady ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
                                     .frame(width: 36, height: 36)
 
@@ -369,7 +369,7 @@ struct SettingsView: View {
                     } label: {
                         HStack(spacing: 12) {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                     .fill(seniorManager.isSeniorModeEnabled ? Color.orange.opacity(0.2) : Color.orange.opacity(0.12))
                                     .frame(width: 36, height: 36)
 
@@ -538,7 +538,7 @@ struct SettingsView: View {
                     } label: {
                         HStack(spacing: 12) {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                     .fill(Color.blue.opacity(0.14))
                                     .frame(width: 36, height: 36)
 
@@ -864,7 +864,7 @@ struct SetupGuideView: View {
                                 .padding(.vertical, 7)
                                 .frame(maxWidth: .infinity)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                                         .fill(copiedKeyword == k ? Color.green.opacity(0.15) : Color(.tertiarySystemFill))
                                 )
                                 .foregroundStyle(copiedKeyword == k ? Color.green : Color.primary)

@@ -201,7 +201,7 @@ struct TodoShareSheet: View {
                             }
                         }
                         .padding(16)
-                        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemGroupedBackground)))
+                        .background(RoundedRectangle(cornerRadius: AppRadius.large).fill(Color(.secondarySystemGroupedBackground)))
                         .padding(.horizontal)
                     } else {
                         // 二维码使用说明卡片
@@ -221,7 +221,7 @@ struct TodoShareSheet: View {
                             Spacer()
                         }
                         .padding(14)
-                        .background(RoundedRectangle(cornerRadius: 14).fill(Color(.secondarySystemGroupedBackground)))
+                        .background(RoundedRectangle(cornerRadius: AppRadius.banner).fill(Color(.secondarySystemGroupedBackground)))
                         .padding(.horizontal)
                     }
 
@@ -241,7 +241,7 @@ struct TodoShareSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                                 .background(itemsForCard.isEmpty ? Color.gray : Color.accentColor)
-                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                             }
                             .disabled(itemsForCard.isEmpty)
 
@@ -257,7 +257,7 @@ struct TodoShareSheet: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
                                     .background(Color(.secondarySystemGroupedBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(itemsForCard.isEmpty)
@@ -273,7 +273,7 @@ struct TodoShareSheet: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 12)
                                     .background(Color(.secondarySystemGroupedBackground))
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(itemsForCard.isEmpty)
@@ -293,7 +293,7 @@ struct TodoShareSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
                                 .background(Color.accentColor.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                             }
                             .disabled(itemsForCard.isEmpty)
 
@@ -311,7 +311,7 @@ struct TodoShareSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
                                 .background(itemsForCard.isEmpty ? Color.gray : Color.accentColor)
-                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                             }
                             .disabled(itemsForCard.isEmpty)
 
@@ -326,7 +326,7 @@ struct TodoShareSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
                                 .background(Color(.secondarySystemGroupedBackground))
-                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                             }
                             .buttonStyle(.plain)
                             .disabled(itemsForCard.isEmpty)
@@ -345,7 +345,7 @@ struct TodoShareSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 12)
                                 .background(Color.accentColor.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                             }
                             .disabled(itemsForCard.isEmpty)
                         }
@@ -424,7 +424,7 @@ struct TodoShareSheet: View {
                     .padding(.vertical, 7)
                     .padding(.horizontal, 10)
                     .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                             .fill(isSelected ? Color.accentColor : Color(.secondarySystemBackground))
                     )
                     .foregroundStyle(isSelected ? Color.white : Color.primary)
@@ -526,7 +526,7 @@ struct TodoShareSheet: View {
                             .padding(.vertical, 8)
                             .padding(.horizontal, 10)
                             .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                     .fill(isSelected ? Color.accentColor.opacity(0.08) : Color.clear)
                             )
                         }
@@ -536,7 +536,7 @@ struct TodoShareSheet: View {
             }
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(.secondarySystemGroupedBackground)))
+        .background(RoundedRectangle(cornerRadius: AppRadius.large).fill(Color(.secondarySystemGroupedBackground)))
         .padding(.horizontal)
     }
 

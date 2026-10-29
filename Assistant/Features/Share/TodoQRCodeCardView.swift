@@ -30,7 +30,7 @@ struct TodoQRCodeCardView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 38, height: 38)
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                     .shadow(color: Color.black.opacity(0.08), radius: 3, y: 1)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -72,9 +72,9 @@ struct TodoQRCodeCardView: View {
                     .frame(width: 210, height: 210)
                     .padding(12)
                     .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                             .stroke(Color.black.opacity(0.08), lineWidth: 1)
                     )
                     .shadow(color: Color.black.opacity(0.06), radius: 8, y: 3)
@@ -105,9 +105,9 @@ struct TodoQRCodeCardView: View {
         .padding(20)
         .frame(maxWidth: 340)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous)
                 .strokeBorder(Color(.systemGray5), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.06), radius: 14, y: 5)

@@ -703,16 +703,16 @@ private struct StoredItemRow: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 52, height: 52)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                 .stroke(Color.black.opacity(0.08), lineWidth: 0.8)
                         )
                 }
                 .buttonStyle(.plain)
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                         .fill(Color.indigo.opacity(0.12))
                         .frame(width: 52, height: 52)
                     Image(systemName: "archivebox.fill")
@@ -950,7 +950,7 @@ struct AddOrEditStoredItemSheet: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(maxHeight: 180)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                                 .overlay(alignment: .topTrailing) {
                                     Button {
                                         selectedImageData = nil
@@ -993,7 +993,7 @@ struct AddOrEditStoredItemSheet: View {
                                 .font(.subheadline.bold())
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(Color.indigo.opacity(0.12)))
+                                .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(Color.indigo.opacity(0.12)))
                                 .foregroundStyle(.indigo)
                         }
                         .buttonStyle(.plain)
@@ -1007,7 +1007,7 @@ struct AddOrEditStoredItemSheet: View {
                                 .font(.subheadline.bold())
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
-                                .background(RoundedRectangle(cornerRadius: 10).fill(Color(.tertiarySystemFill)))
+                                .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(Color(.tertiarySystemFill)))
                                 .foregroundStyle(.primary)
                         }
                         .buttonStyle(.plain)
@@ -1270,7 +1270,7 @@ private struct MedicineItemRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .fill(Color.green.opacity(0.12))
                     .frame(width: 52, height: 52)
                 if let data = medicine.imageData,
@@ -1279,7 +1279,7 @@ private struct MedicineItemRow: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 52, height: 52)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                 } else {
                     Image(systemName: medicine.category.icon)
                         .font(.title3)
@@ -1486,7 +1486,7 @@ private struct MedicineGroupHeader: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                     .fill(Color.green.opacity(0.12))
                     .frame(width: 52, height: 52)
                 if let rep = group.representative, let data = rep.imageData,
@@ -1495,7 +1495,7 @@ private struct MedicineGroupHeader: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 52, height: 52)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                 } else {
                     Image(systemName: group.category.icon)
                         .font(.title3)
@@ -1679,7 +1679,7 @@ struct MedicineEditorSheet: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
-                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.green))
+                            .background(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous).fill(Color.green))
                             .foregroundStyle(.white)
                         }
                         .buttonStyle(.plain)
@@ -1697,7 +1697,7 @@ struct MedicineEditorSheet: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
-                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.green.opacity(0.14)))
+                            .background(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous).fill(Color.green.opacity(0.14)))
                             .foregroundStyle(.green)
                         }
                         .buttonStyle(.plain)
@@ -1950,10 +1950,10 @@ struct MedicineEditorSheet: View {
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                     .fill(Color.green.opacity(0.08))
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                             .stroke(Color.green.opacity(0.2), lineWidth: 1)
                                     )
                             )
@@ -2115,7 +2115,7 @@ struct MedicineEditorSheet: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(maxHeight: 180)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                                 .overlay(alignment: .topTrailing) {
                                     Button {
                                         selectedImageData = nil

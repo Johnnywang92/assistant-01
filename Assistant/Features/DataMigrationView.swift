@@ -73,7 +73,7 @@ struct DataMigrationView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(.secondarySystemGroupedBackground)))
+                        .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color(.secondarySystemGroupedBackground)))
                     }
                 }
                 .padding(.vertical, 4)
@@ -391,7 +391,7 @@ struct DataMigrationView: View {
             }
             .padding(28)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.panel, style: .continuous)
                     .fill(Color(.secondarySystemBackground))
             )
             .padding(.horizontal, 20)
@@ -641,7 +641,7 @@ struct UnlockBackupPinSheet: View {
                             }
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.yellow.opacity(0.12)))
+                            .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color.yellow.opacity(0.12)))
                         }
 
                         Text("请输入在原设备导出迁移数据时所设置的 PIN 码以完成解锁。")

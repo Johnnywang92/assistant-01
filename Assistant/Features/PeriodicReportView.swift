@@ -508,11 +508,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         )
     }
@@ -548,11 +548,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
         )
     }
@@ -568,7 +568,7 @@ struct PeriodicReportView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
     }
 
     private func metricGridItem(title: String, value: String, unit: String, icon: String, color: Color) -> some View {
@@ -641,11 +641,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.purple.opacity(0.18), lineWidth: 1)
         )
     }
@@ -687,7 +687,7 @@ struct PeriodicReportView: View {
                     }
                     .padding(10)
                     .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                             .fill(suggestionColor(suggestion.tone).opacity(0.08))
                     )
                 }
@@ -695,11 +695,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
         )
     }
@@ -770,11 +770,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         )
     }
@@ -848,11 +848,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         )
     }
@@ -909,11 +909,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         )
     }
@@ -996,11 +996,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.green.opacity(0.18), lineWidth: 1)
         )
     }
@@ -1081,7 +1081,7 @@ struct PeriodicReportView: View {
                     }
                 }
                 .padding(10)
-                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.medium))
             }
 
             // 调养建议
@@ -1100,11 +1100,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(levelColor.opacity(0.18), lineWidth: 1)
         )
     }
@@ -1162,11 +1162,11 @@ struct PeriodicReportView: View {
                 }
                 .padding(16)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                         .fill(Color(.secondarySystemGroupedBackground))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                         .strokeBorder(Color.blue.opacity(0.18), lineWidth: 1)
                 )
             }
@@ -1207,7 +1207,7 @@ struct PeriodicReportView: View {
                 ForEach(Array(trend.points.enumerated()), id: \.offset) { index, point in
                     let isCurrent = index == values.count - 1
                     VStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 3)
+                        RoundedRectangle(cornerRadius: AppRadius.hairline)
                             .fill(
                                 LinearGradient(
                                     colors: isCurrent
@@ -1451,11 +1451,11 @@ struct PeriodicReportView: View {
                 }
                 .padding(16)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                         .fill(Color(.secondarySystemGroupedBackground))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                         .strokeBorder(Color.green.opacity(0.18), lineWidth: 1)
                 )
             }
@@ -1496,11 +1496,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.indigo.opacity(0.16), lineWidth: 1)
         )
     }
@@ -1518,7 +1518,7 @@ struct PeriodicReportView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
-        .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
     }
 
     // MARK: - 物品日均持有成本榜卡片（月报/年报）
@@ -1617,15 +1617,15 @@ struct PeriodicReportView: View {
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10).fill(Color.teal.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(Color.teal.opacity(0.08)))
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.orange.opacity(0.16), lineWidth: 1)
         )
     }
@@ -1666,7 +1666,7 @@ struct PeriodicReportView: View {
                         endPoint: .trailing
                     )
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -1683,7 +1683,7 @@ struct PeriodicReportView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
                     .background(Color.accentColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
@@ -1699,7 +1699,7 @@ struct PeriodicReportView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
                     .background(Color(.tertiarySystemFill))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -1719,11 +1719,11 @@ struct PeriodicReportView: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         )
     }

@@ -119,8 +119,8 @@ struct EditTodoSheet: View {
                                     .frame(width: 68, height: 68)
                                     .padding(4)
                                     .background(Color.white)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
+                                    .overlay(RoundedRectangle(cornerRadius: AppRadius.chip).stroke(Color.secondary.opacity(0.2)))
                             } else if let payload = qrCodePayload, let genImg = QRCodeService.generateQRCode(from: payload, targetSize: 200) {
                                 Image(uiImage: genImg)
                                     .interpolation(.none)
@@ -129,13 +129,13 @@ struct EditTodoSheet: View {
                                     .frame(width: 68, height: 68)
                                     .padding(4)
                                     .background(Color.white)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
                             } else if let attachData = attachmentImageData, let uiImg = UIImage(data: attachData) {
                                 Image(uiImage: uiImg)
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: 68, height: 68)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
                             }
 
                             VStack(alignment: .leading, spacing: 6) {
@@ -702,7 +702,7 @@ struct TodoQRCodeQuickSheet: View {
                                         .frame(width: 250, height: 250)
                                         .padding(14)
                                         .background(Color.white)
-                                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
                                         .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                                 } else if let payload = qrCodePayload,
                                           let generatedImage = QRCodeService.generateQRCode(from: payload, targetSize: 520) {
@@ -713,7 +713,7 @@ struct TodoQRCodeQuickSheet: View {
                                         .frame(width: 250, height: 250)
                                         .padding(14)
                                         .background(Color.white)
-                                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
                                         .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                                 }
 
@@ -751,7 +751,7 @@ struct TodoQRCodeQuickSheet: View {
                                 .resizable()
                                 .scaledToFit()
                                 .frame(maxWidth: .infinity)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                         }
 
                         // 底部附加信息（活动时间段、票种、实名信息等）
@@ -770,11 +770,11 @@ struct TodoQRCodeQuickSheet: View {
                     }
                     .padding(20)
                     .background(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.panel, style: .continuous)
                             .fill(Color(.secondarySystemGroupedBackground))
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.panel, style: .continuous)
                             .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                     )
                     .padding(.horizontal)

@@ -311,7 +311,7 @@ struct AddPasswordSheet: View {
                                 }
                                 .padding(10)
                                 .background(Color(.secondarySystemBackground))
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                             }
                         }
                     }
@@ -413,7 +413,7 @@ struct StandaloneGeneratorSheet: View {
                         }
                         .padding(12)
                         .background(Color.indigo.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
 
                         // 密码安全指标
                         HStack(spacing: 12) {

@@ -94,7 +94,7 @@ struct ChildManagementView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
     }
@@ -136,7 +136,7 @@ struct ChildManagementView: View {
         }
         .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .padding(.vertical, 12)
@@ -233,7 +233,7 @@ struct ChildManagementView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.red.opacity(0.08)))
+                .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color.red.opacity(0.08)))
             }
 
             Divider()
@@ -278,7 +278,7 @@ struct ChildManagementView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
     }

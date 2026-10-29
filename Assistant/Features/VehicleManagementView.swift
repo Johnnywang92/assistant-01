@@ -128,7 +128,7 @@ private struct VehicleCardView: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(
-                                RoundedRectangle(cornerRadius: 4)
+                                RoundedRectangle(cornerRadius: AppRadius.badge)
                                     .fill(vehicle.powerType == .electric ? Color.green.opacity(0.18) : Color.blue.opacity(0.15))
                             )
                             .foregroundStyle(vehicle.powerType == .electric ? Color.green : Color.blue)
@@ -181,7 +181,7 @@ private struct VehicleCardView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .background(Color.accentColor.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
                 }
                 .buttonStyle(.plain)
 
@@ -195,7 +195,7 @@ private struct VehicleCardView: View {
                         .padding(.vertical, 8)
                         .background(Color.orange.opacity(0.12))
                         .foregroundStyle(.orange)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
                 }
                 .buttonStyle(.plain)
 
@@ -209,7 +209,7 @@ private struct VehicleCardView: View {
                         .padding(.vertical, 8)
                         .background(Color.secondary.opacity(0.12))
                         .foregroundStyle(.secondary)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
                 }
                 .buttonStyle(.plain)
             }
@@ -257,7 +257,7 @@ private struct VehicleCardView: View {
         }
         .padding(10)
         .background(Color(.tertiarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium))
     }
 
     // 保养状态卡片
@@ -299,7 +299,7 @@ private struct VehicleCardView: View {
         }
         .padding(10)
         .background(Color(.tertiarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium))
     }
 
     // 车险到期卡片
@@ -335,7 +335,7 @@ private struct VehicleCardView: View {
         }
         .padding(10)
         .background(Color(.tertiarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium))
     }
 
     // 车辆年检卡片
@@ -371,7 +371,7 @@ private struct VehicleCardView: View {
         }
         .padding(10)
         .background(Color(.tertiarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium))
     }
 }
 

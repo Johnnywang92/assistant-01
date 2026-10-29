@@ -45,7 +45,7 @@ struct AppBackgroundSettingsView: View {
                             }
                             .padding(8)
                             .background(Color(.secondarySystemGroupedBackground).opacity(0.88))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
 
                             // 仿真记账卡片
                             HStack {
@@ -62,9 +62,9 @@ struct AppBackgroundSettingsView: View {
                         .padding(14)
                     }
                     .frame(height: 140)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                             .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
                     )
                     .shadow(color: .black.opacity(0.1), radius: 8, y: 3)
@@ -116,7 +116,7 @@ struct AppBackgroundSettingsView: View {
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
                                     .frame(width: 32, height: 32)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.small))
                             }
                         }
                     }
@@ -227,11 +227,11 @@ private struct ThemeOptionCard: View {
             }
             .padding(10)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                     .fill(isSelected ? Color.tintColorOrAccent.opacity(0.12) : Color(.secondarySystemGroupedBackground))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                     .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 1.8)
             )
         }

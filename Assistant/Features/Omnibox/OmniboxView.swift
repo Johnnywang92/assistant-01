@@ -307,7 +307,7 @@ struct OmniboxView: View {
                 }
             }
             .padding(8)
-            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
 
             if !attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -317,7 +317,7 @@ struct OmniboxView: View {
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: 64, height: 64)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                                 .overlay(alignment: .topTrailing) {
                                     Button {
                                         if let pickerItem = attachment.pickerItem {
@@ -403,7 +403,7 @@ struct OmniboxView: View {
             .disabled(!canSubmit)
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
         .simultaneousGesture(
             TapGesture().onEnded {
                 if isClipboardAutoTriggered {
@@ -482,7 +482,7 @@ struct OmniboxView: View {
         .foregroundStyle(.secondary)
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
     }
 
     private var planningCard: some View {
@@ -494,7 +494,7 @@ struct OmniboxView: View {
             Spacer()
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
         .simultaneousGesture(
             TapGesture().onEnded {
                 if isClipboardAutoTriggered {
@@ -601,7 +601,7 @@ struct OmniboxView: View {
             .disabled(selectedCount == 0)
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
         .simultaneousGesture(
             TapGesture().onEnded {
                 if isClipboardAutoTriggered {
@@ -794,14 +794,14 @@ struct OmniboxView: View {
                         }
                         .padding(.horizontal, 7)
                         .padding(.vertical, 6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     }
 
                     TextField(L10n.tr("金额"), text: expenseAmountBinding(action, currency: selectedCurrency))
                         .keyboardType(.decimalPad)
                         .frame(width: 84)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
 
                     if selectedCurrency != .cny {
                         Text("≈ ¥\(action.wrappedValue.params["amount"] ?? "0.00")")
@@ -830,13 +830,13 @@ struct OmniboxView: View {
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     }
                 }
                 TextField(L10n.tr("事项名"), text: textBinding(action, key: "title"))
                     .font(.subheadline)
                     .padding(6)
-                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                 DatePicker("", selection: dateBinding(action, key: "dateISO"), displayedComponents: [.date, .hourAndMinute])
                     .labelsHidden()
                     .font(.caption)
@@ -844,7 +844,7 @@ struct OmniboxView: View {
                 TextField(L10n.tr("待办标题"), text: textBinding(action, key: "title"))
                     .font(.subheadline)
                     .padding(6)
-                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                 DatePicker("", selection: dueDateBinding(action), displayedComponents: [.date, .hourAndMinute])
                     .labelsHidden()
                     .font(.caption)
@@ -852,27 +852,27 @@ struct OmniboxView: View {
                 TextField(L10n.tr("原待办（匹配目标）"), text: textBinding(action, key: "target"))
                     .font(.subheadline)
                     .padding(6)
-                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                 TextField(L10n.tr("修改后标题（可选）"), text: textBinding(action, key: "newTitle"))
                     .font(.subheadline)
                     .padding(6)
-                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
             case .todoComplete, .todoCancel:
                 TextField(L10n.tr("待办事项目标"), text: textBinding(action, key: "target"))
                     .font(.subheadline)
                     .padding(6)
-                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
             case .reminderSnooze:
                 HStack(spacing: 8) {
                     TextField(L10n.tr("提醒事项"), text: textBinding(action, key: "target"))
                         .font(.subheadline)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     TextField(L10n.tr("顺延时长"), text: textBinding(action, key: "duration"))
                         .font(.caption)
                         .frame(width: 80)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                 }
             case .expenseUpdate:
                 HStack(spacing: 8) {
@@ -880,23 +880,23 @@ struct OmniboxView: View {
                         .keyboardType(.decimalPad)
                         .frame(width: 90)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     TextField(L10n.tr("账目匹配目标"), text: textBinding(action, key: "target"))
                         .font(.subheadline)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                 }
             case .queryLookup:
                 TextField(L10n.tr("查询关键词"), text: textBinding(action, key: "target"))
                     .font(.subheadline)
                     .padding(6)
-                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
             case .memoInbox:
                 TextField(L10n.tr("备忘内容"), text: textBinding(action, key: "memo"), axis: .vertical)
                     .font(.subheadline)
                     .lineLimit(2...4)
                     .padding(6)
-                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
             case .foodRecord:
                 HStack(spacing: 8) {
                     if let base64 = action.wrappedValue.params["imageDataBase64"],
@@ -906,17 +906,17 @@ struct OmniboxView: View {
                             .resizable()
                             .scaledToFill()
                             .frame(width: 32, height: 32)
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
                     }
                     TextField(L10n.tr("食物名称"), text: textBinding(action, key: "foodName"))
                         .font(.subheadline)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     TextField(L10n.tr("千卡"), text: numericBinding(action, key: "calories"))
                         .keyboardType(.numberPad)
                         .frame(width: 70)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     Menu {
                         ForEach(["早餐", "午餐", "晚餐", "加餐"], id: \.self) { slot in
                             Button(slot) {
@@ -936,7 +936,7 @@ struct OmniboxView: View {
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     }
                 }
                 DatePicker("", selection: dateBinding(action, key: "dateISO"), displayedComponents: [.date, .hourAndMinute])
@@ -947,12 +947,12 @@ struct OmniboxView: View {
                     TextField(L10n.tr("饮品名称"), text: textBinding(action, key: "customName"))
                         .font(.subheadline)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     TextField(L10n.tr("毫升"), text: numericBinding(action, key: "volumeML"))
                         .keyboardType(.numberPad)
                         .frame(width: 70)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     Menu {
                         ForEach(["白开水", "黑咖啡", "拿铁", "纯茶", "牛奶", "奶茶", "含糖饮料", "苏打水"], id: \.self) { bev in
                             Button(bev) {
@@ -972,7 +972,7 @@ struct OmniboxView: View {
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     }
                 }
             case .storageRecord:
@@ -981,7 +981,7 @@ struct OmniboxView: View {
                         TextField(L10n.tr("物品名称"), text: textBinding(action, key: "name"))
                             .font(.subheadline)
                             .padding(6)
-                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                         Menu {
                             ForEach(["主卧", "次卧", "客厅", "书房", "玄关", "厨房", "阳台", "储物间"], id: \.self) { room in
                                 Button(room) {
@@ -1002,20 +1002,20 @@ struct OmniboxView: View {
                             .font(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 6)
-                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                         }
                     }
                     TextField(L10n.tr("详细存放位置（如抽屉、顶层收纳盒）"), text: textBinding(action, key: "location"))
                         .font(.subheadline)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                 }
             case .habitLog:
                 HStack(spacing: 8) {
                     TextField(L10n.tr("打卡目标（如晨跑、降压药）"), text: textBinding(action, key: "target"))
                         .font(.subheadline)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     Menu {
                         Button("习惯打卡") {
                             action.wrappedValue.params["kind"] = "habit"
@@ -1038,7 +1038,7 @@ struct OmniboxView: View {
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     }
                 }
             case .anniversaryCreate:
@@ -1046,7 +1046,7 @@ struct OmniboxView: View {
                     TextField(L10n.tr("名称（如结婚纪念日、妈妈生日）"), text: textBinding(action, key: "title"))
                         .font(.subheadline)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     Menu {
                         ForEach(["纪念日", "生日", "倒数日", "订阅续费", "保质期"], id: \.self) { cat in
                             Button(cat) {
@@ -1065,7 +1065,7 @@ struct OmniboxView: View {
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     }
                 }
             case .departureAdd:
@@ -1073,7 +1073,7 @@ struct OmniboxView: View {
                     TextField(L10n.tr("随身物品（如雨伞、工卡）"), text: textBinding(action, key: "title"))
                         .font(.subheadline)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     Menu {
                         ForEach(["工作通勤", "运动健身", "出差旅行", "带娃出行", "遛狗随行", "雨雪出行"], id: \.self) { sc in
                             Button(sc) {
@@ -1092,7 +1092,7 @@ struct OmniboxView: View {
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                     }
                 }
             case .lifeRecord:
@@ -1101,7 +1101,7 @@ struct OmniboxView: View {
                         TextField(L10n.tr("事项名称"), text: textBinding(action, key: "title"))
                             .font(.subheadline)
                             .padding(6)
-                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                         Menu {
                             ForEach([
                                 ("pet", "宠物"), ("vehicle", "爱车"), ("child", "育儿"),
@@ -1133,23 +1133,23 @@ struct OmniboxView: View {
                             .font(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 6)
-                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                         }
                     }
                     TextField(L10n.tr("详情或数值（如完成驱虫、当前里程、练习45分钟）"), text: textBinding(action, key: "detail"))
                         .font(.subheadline)
                         .padding(6)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                 }
             }
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(lowConfidence ? Color.orange.opacity(0.05) : Color(.tertiarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .strokeBorder(lowConfidence ? Color.orange.opacity(0.4) : Color.clear, lineWidth: 1)
         )
         .opacity(action.isSelected.wrappedValue ? 1 : 0.55)
@@ -1436,7 +1436,7 @@ struct OmniboxView: View {
                     }
                 }
                 .padding(10)
-                .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Color.purple.opacity(0.06), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
             }
 
             ForEach(outcomes) { outcome in
@@ -1454,7 +1454,7 @@ struct OmniboxView: View {
                     Spacer()
                 }
                 .padding(10)
-                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
             }
 
             // 趋势问句 → 一键跳趋势图表页（缺口 6：趋势问句路由到趋势查询）
@@ -1527,7 +1527,7 @@ struct OmniboxView: View {
             }
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
         .simultaneousGesture(
             TapGesture().onEnded {
                 if isClipboardAutoTriggered {
@@ -1730,7 +1730,7 @@ struct OmniboxView: View {
         VStack(spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                         .fill(Color.purple.opacity(0.15))
                         .frame(width: 44, height: 44)
                     Image(systemName: "doc.on.clipboard.fill")
@@ -1809,12 +1809,12 @@ struct OmniboxView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
                 .shadow(color: Color.purple.opacity(0.12), radius: 8, x: 0, y: 3)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .strokeBorder(Color.purple.opacity(0.35), lineWidth: 1.5)
         )
         .contentShape(Rectangle())

@@ -51,7 +51,7 @@ struct TodoImportPreviewSheet: View {
                     }
                     .padding()
                     .background(Color(.secondarySystemGroupedBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                     .padding(.horizontal)
                     .padding(.top, 12)
 
@@ -127,7 +127,7 @@ struct TodoImportPreviewSheet: View {
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 3)
                                         .background(Color.orange.opacity(0.12))
-                                        .cornerRadius(6)
+                                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small))
                                     }
 
                                     if let detail = item.d, !detail.isEmpty {
@@ -174,7 +174,7 @@ struct TodoImportPreviewSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(selectedItemIndices.isEmpty ? Color.gray.opacity(0.6) : Color.accentColor)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                     }
                     .disabled(selectedItemIndices.isEmpty || isImporting)
                     .padding(.horizontal)
@@ -201,7 +201,7 @@ struct TodoImportPreviewSheet: View {
             .padding(.vertical, 2)
             .background(Color.accentColor.opacity(0.12))
             .foregroundStyle(Color.accentColor)
-            .cornerRadius(4)
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.badge))
     }
 
     private func importSelectedItems() {

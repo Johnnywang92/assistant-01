@@ -73,7 +73,7 @@ public struct ExpenseShareCardView: View {
                         .foregroundStyle(Color(red: 0.18, green: 0.16, blue: 0.14))
                         .frame(width: 36, height: 36)
                         .background(Color(red: 0.90, green: 0.87, blue: 0.82))
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(record.title)
@@ -109,14 +109,14 @@ public struct ExpenseShareCardView: View {
                     }
                     .padding(8)
                     .background(Color(red: 0.92, green: 0.89, blue: 0.84))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                 }
             }
             .padding(12)
             .background(Color.white.opacity(0.8))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                     .strokeBorder(Color(red: 0.88, green: 0.85, blue: 0.80), lineWidth: 0.8)
             )
 
@@ -150,7 +150,7 @@ public struct ExpenseShareCardView: View {
                 }
                 .padding(10)
                 .background(Color.white.opacity(0.6))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
             }
 
             // 4. 底部品牌栏 (App 图标 + JohnnyBoyStudio)
@@ -164,7 +164,7 @@ public struct ExpenseShareCardView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 34, height: 34)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                         .shadow(color: Color.black.opacity(0.12), radius: 3, y: 1)
 
                     VStack(alignment: .leading, spacing: 1.5) {
@@ -201,9 +201,9 @@ public struct ExpenseShareCardView: View {
         // 窄屏时允许卡片收缩，分享卡片仍保留 350pt 的最大宽度。
         .frame(maxWidth: 350)
         .background(Color(red: 0.97, green: 0.96, blue: 0.94))
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous)
                 .strokeBorder(Color(red: 0.88, green: 0.85, blue: 0.80), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.12), radius: 14, y: 6)
@@ -248,7 +248,7 @@ public struct ExpenseCardShareSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                             .background(Color(red: 0.25, green: 0.22, blue: 0.20))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                         }
 
                         Button {
@@ -262,7 +262,7 @@ public struct ExpenseCardShareSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .background(Color(.secondarySystemGroupedBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }

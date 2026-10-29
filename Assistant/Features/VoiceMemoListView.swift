@@ -304,7 +304,7 @@ struct VoiceMemoRecorderSheet: View {
             } label: {
                 ZStack {
                     Circle().strokeBorder(Color.red.opacity(0.35), lineWidth: 4).frame(width: 84, height: 84)
-                    RoundedRectangle(cornerRadius: 8).fill(Color.red).frame(width: 34, height: 34)
+                    RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color.red).frame(width: 34, height: 34)
                 }
             }
             .disabled(!audio.isRecording)

@@ -300,7 +300,7 @@ struct VoiceMemoDetailView: View {
                     switch block.kind {
                     case .heading:
                         HStack(alignment: .center, spacing: 8) {
-                            RoundedRectangle(cornerRadius: 2).fill(Color.red).frame(width: 3, height: 15)
+                            RoundedRectangle(cornerRadius: AppRadius.hairline).fill(Color.red).frame(width: 3, height: 15)
                             Text(block.text).font(.headline)
                         }
                     case .bullet:
@@ -316,7 +316,7 @@ struct VoiceMemoDetailView: View {
                         }
                     case .quote:
                         HStack(alignment: .top, spacing: 8) {
-                            RoundedRectangle(cornerRadius: 1).fill(Color.secondary.opacity(0.5)).frame(width: 2)
+                            RoundedRectangle(cornerRadius: AppRadius.hairline).fill(Color.secondary.opacity(0.5)).frame(width: 2)
                             Text(block.text).font(.callout).foregroundStyle(.secondary).italic()
                         }
                     case .image:

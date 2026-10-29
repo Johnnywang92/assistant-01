@@ -414,7 +414,7 @@ struct ExpenseTrackerView: View {
                                 GeometryReader { geo in
                                     HStack(spacing: 2) {
                                         ForEach(currentMonthCategoryBreakdown, id: \.category) { item in
-                                            RoundedRectangle(cornerRadius: 3)
+                                            RoundedRectangle(cornerRadius: AppRadius.hairline)
                                                 .fill(categoryColor(item.category))
                                                 .frame(width: max((geo.size.width - CGFloat(currentMonthCategoryBreakdown.count - 1) * 2) * CGFloat(item.ratio), 4))
                                         }
@@ -1680,7 +1680,7 @@ struct AddOrEditExpenseSheet: View {
                             }
                             .padding(.horizontal, 8)
                             .padding(.vertical, 5)
-                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
                         }
 
                         TextField("0.00", text: $amountString)
@@ -1710,7 +1710,7 @@ struct AddOrEditExpenseSheet: View {
                                     .multilineTextAlignment(.trailing)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 6))
+                                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.small))
                                     .frame(minWidth: 68, idealWidth: 96, maxWidth: 96)
                                 Text("CNY")
                                     .font(.caption)
@@ -1811,7 +1811,7 @@ struct AddOrEditExpenseSheet: View {
                         if let data = receiptImageData, let image = UIImage(data: data) {
                             HStack {
                                 Image(uiImage: image).resizable().scaledToFill()
-                                    .frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
                                 Text("已附上小票，分享时可选择发送").font(.subheadline).foregroundStyle(.secondary)
                                 Spacer()
                                 Button("移除", role: .destructive) { receiptImageData = nil; selectedReceiptItem = nil }

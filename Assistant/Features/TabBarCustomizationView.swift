@@ -40,7 +40,7 @@ struct TabBarCustomizationView: View {
                     .padding(.vertical, 10)
                     .padding(.horizontal, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                             .fill(Color(.secondarySystemGroupedBackground))
                             .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
                     )
@@ -166,7 +166,7 @@ struct TabBarCustomizationView: View {
                 .font(.body.bold())
                 .foregroundStyle(Color.white)
                 .frame(width: 32, height: 32)
-                .background(RoundedRectangle(cornerRadius: 8).fill(colorForTab(tab)))
+                .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(colorForTab(tab)))
 
             // 名称与副标题
             VStack(alignment: .leading, spacing: 2) {
@@ -248,7 +248,7 @@ struct TabBarCustomizationView: View {
                 .font(.body.bold())
                 .foregroundStyle(Color.white)
                 .frame(width: 32, height: 32)
-                .background(RoundedRectangle(cornerRadius: 8).fill(colorForTab(tab).opacity(0.8)))
+                .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(colorForTab(tab).opacity(0.8)))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(tab.title)

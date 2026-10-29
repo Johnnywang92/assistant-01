@@ -120,7 +120,7 @@ struct VoiceMemoBlockEditorView: View {
             }
         }
         .padding(12)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
     }
 
     private var isPlaying: Bool {
@@ -154,7 +154,7 @@ struct VoiceMemoBlockEditorView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
     }
 
     @ViewBuilder
@@ -186,7 +186,7 @@ struct VoiceMemoBlockEditorView: View {
                         .foregroundStyle(block.isSeekable ? Color.red : Color.secondary)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.badge, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -195,7 +195,7 @@ struct VoiceMemoBlockEditorView: View {
                 switch block.kind {
                 case .heading:
                     HStack(alignment: .center, spacing: 8) {
-                        RoundedRectangle(cornerRadius: 2)
+                        RoundedRectangle(cornerRadius: AppRadius.hairline)
                             .fill(Color.red)
                             .frame(width: 3, height: 17)
                         Text(block.text)
@@ -218,7 +218,7 @@ struct VoiceMemoBlockEditorView: View {
                     }
                 case .quote:
                     HStack(alignment: .top, spacing: 8) {
-                        RoundedRectangle(cornerRadius: 1)
+                        RoundedRectangle(cornerRadius: AppRadius.hairline)
                             .fill(Color.secondary.opacity(0.5))
                             .frame(width: 2)
                         Text(block.text)
@@ -257,7 +257,7 @@ struct VoiceMemoBlockEditorView: View {
                 .frame(minHeight: 60)
                 .scrollContentBackground(.hidden)
                 .padding(6)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
             HStack {
                 Button("取消") {
                     editingBlockID = nil
@@ -273,7 +273,7 @@ struct VoiceMemoBlockEditorView: View {
             .buttonStyle(.borderless)
         }
         .padding(10)
-        .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
     }
 
     /// 图片块。
@@ -286,7 +286,7 @@ struct VoiceMemoBlockEditorView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
             } else {
                 // 图片文件丢了：明确告知，不留空白框
                 Label("图片已丢失", systemImage: "exclamationmark.triangle.fill")
@@ -331,7 +331,7 @@ struct VoiceMemoBlockEditorView: View {
             Spacer()
         }
         .padding(10)
-        .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { select(block) }
     }
@@ -349,7 +349,7 @@ struct VoiceMemoBlockEditorView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
     }
 
     // MARK: - 底部样式栏
@@ -375,7 +375,7 @@ struct VoiceMemoBlockEditorView: View {
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(Color.red, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .background(Color.red, in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                         .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)
@@ -399,7 +399,7 @@ struct VoiceMemoBlockEditorView: View {
                 .padding(.vertical, 5)
                 .background(
                     isSelected ? Color.red : Color(.tertiarySystemFill),
-                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                 )
                 .foregroundStyle(isSelected ? .white : .primary)
         }
@@ -414,7 +414,7 @@ struct VoiceMemoBlockEditorView: View {
             Image(systemName: systemName)
                 .font(.system(size: 15, weight: .medium))
                 .frame(width: 30, height: 30)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                 .foregroundStyle(.primary)
         }
         .buttonStyle(.plain)
@@ -749,7 +749,7 @@ struct VoiceMemoClipPickerSheet: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.red, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .background(Color.red, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)

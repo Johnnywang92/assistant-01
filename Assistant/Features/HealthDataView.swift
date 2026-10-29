@@ -769,7 +769,7 @@ struct HealthDataView: View {
                     Spacer()
                 }
                 .padding(AppSpacing.sm)
-                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+                .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.medium))
             }
         }
         .padding(AppSpacing.md)
@@ -1059,7 +1059,7 @@ struct HealthDataView: View {
         }
         .padding(AppSpacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color(.tertiarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.medium))
     }
 
     // MARK: - 与本地打卡待办的关联

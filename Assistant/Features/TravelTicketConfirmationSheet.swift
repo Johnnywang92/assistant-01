@@ -153,7 +153,7 @@ struct TravelTicketConfirmationSheet: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .padding(.horizontal)
@@ -191,11 +191,11 @@ struct TravelTicketConfirmationSheet: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(Color.orange.opacity(0.08))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .strokeBorder(Color.orange.opacity(0.25), lineWidth: 1)
         )
         .padding(.horizontal)
@@ -224,11 +224,11 @@ struct TravelTicketConfirmationSheet: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(Color.purple.opacity(0.08))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .strokeBorder(Color.purple.opacity(0.2), lineWidth: 1)
         )
         .padding(.horizontal)
@@ -337,11 +337,11 @@ struct TravelTicketConfirmationSheet: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .strokeBorder(
                     item.wrappedValue.isSelected ? Color.indigo.opacity(0.4) : Color.clear,
                     lineWidth: 1.5
@@ -457,7 +457,7 @@ struct TravelTicketConfirmationSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(Color(.tertiarySystemFill))
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
@@ -479,7 +479,7 @@ struct TravelTicketConfirmationSheet: View {
                             endPoint: .trailing
                         )
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                     .shadow(color: selectedCount > 0 ? Color.indigo.opacity(0.3) : Color.clear, radius: 4, y: 2)
                 }
                 .buttonStyle(.plain)

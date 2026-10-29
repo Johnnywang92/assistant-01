@@ -168,7 +168,7 @@ struct PermissionOnboardingView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fill)
                 .frame(width: 68, height: 68)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous))
                 .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
 
             VStack(spacing: 4) {
@@ -205,7 +205,7 @@ struct PermissionOnboardingView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .fill(Color(UIColor.secondarySystemGroupedBackground))
         )
         .padding(.horizontal, 16)
@@ -226,7 +226,7 @@ struct PermissionOnboardingView: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(Color.green))
+                    .background(RoundedRectangle(cornerRadius: AppRadius.banner).fill(Color.green))
                     .foregroundStyle(.white)
                 }
             } else {
@@ -248,7 +248,7 @@ struct PermissionOnboardingView: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(Color.accentColor))
+                    .background(RoundedRectangle(cornerRadius: AppRadius.banner).fill(Color.accentColor))
                     .foregroundStyle(.white)
                 }
                 .disabled(pm.isRequestingAll)
@@ -286,7 +286,7 @@ struct PermissionOnboardingView: View {
     ) -> some View {
         HStack(alignment: .top, spacing: 14) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                     .fill(color.opacity(0.12))
                     .frame(width: 44, height: 44)
 
@@ -358,11 +358,11 @@ struct PermissionOnboardingView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .fill(Color(UIColor.secondarySystemGroupedBackground))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.large, style: .continuous)
                 .stroke(state.isReady ? Color.green.opacity(0.3) : Color.primary.opacity(0.06), lineWidth: 1)
         )
     }

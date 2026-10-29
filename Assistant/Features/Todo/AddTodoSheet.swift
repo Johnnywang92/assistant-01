@@ -523,7 +523,7 @@ struct AddTodoSheet: View {
                     PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                         HStack(spacing: 10) {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                                     .fill(Color.blue.opacity(0.14))
                                     .frame(width: 36, height: 36)
                                 if isRecognizingImage {
@@ -583,8 +583,8 @@ struct AddTodoSheet: View {
                                         .frame(width: 64, height: 64)
                                         .padding(4)
                                         .background(Color.white)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.2)))
+                                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
+                                        .overlay(RoundedRectangle(cornerRadius: AppRadius.chip).stroke(Color.secondary.opacity(0.2)))
                                 } else if let payload = qrCodePayload, let genImg = QRCodeService.generateQRCode(from: payload, targetSize: 200) {
                                     Image(uiImage: genImg)
                                         .interpolation(.none)
@@ -593,13 +593,13 @@ struct AddTodoSheet: View {
                                         .frame(width: 64, height: 64)
                                         .padding(4)
                                         .background(Color.white)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
                                 } else if let attachData = attachmentImageData, let uiImg = UIImage(data: attachData) {
                                     Image(uiImage: uiImg)
                                         .resizable()
                                         .scaledToFill()
                                         .frame(width: 64, height: 64)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
                                 }
 
                                 VStack(alignment: .leading, spacing: 5) {

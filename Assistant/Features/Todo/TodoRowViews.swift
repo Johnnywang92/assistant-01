@@ -119,7 +119,7 @@ struct TodoRow: View {
                             .padding(.horizontal, seniorManager.isSeniorModeEnabled ? 10 : 8)
                             .padding(.vertical, seniorManager.isSeniorModeEnabled ? 5 : 3)
                             .background(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                                     .fill(isEffectivelyDone ? Color.secondary.opacity(0.12) : AppColor.softFill(AppColor.warning, opacity: 0.15))
                             )
 
@@ -164,7 +164,7 @@ struct TodoRow: View {
                 } else if item.type == .returnParcel {
                     HStack(spacing: 8) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                                 .fill(Color.indigo.opacity(isEffectivelyDone ? 0.08 : 0.16))
                                 .frame(width: seniorManager.isSeniorModeEnabled ? 28 : 24, height: seniorManager.isSeniorModeEnabled ? 28 : 24)
                             Image(systemName: "arrow.uturn.backward.circle.fill")
@@ -208,7 +208,7 @@ struct TodoRow: View {
                                 .foregroundStyle(isEffectivelyDone ? .secondary : .primary)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(RoundedRectangle(cornerRadius: 4).fill(Color(.secondarySystemFill)))
+                                .background(RoundedRectangle(cornerRadius: AppRadius.badge).fill(Color(.secondarySystemFill)))
 
                             Button {
                                 UIPasteboard.general.string = code
@@ -245,7 +245,7 @@ struct TodoRow: View {
                 } else {
                     HStack(alignment: .top, spacing: 8) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
                                 .fill(typeColor.opacity(isEffectivelyDone ? 0.08 : 0.16))
                                 .frame(width: seniorManager.isSeniorModeEnabled ? 28 : 24, height: seniorManager.isSeniorModeEnabled ? 28 : 24)
                             Image(systemName: item.type.icon)
@@ -369,11 +369,11 @@ struct TodoRow: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(isHighlighted ? Color.orange.opacity(0.20) : .clear)
                 .overlay {
                     if isHighlighted {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                             .stroke(Color.orange.opacity(0.75), lineWidth: 2)
                     }
                 }
@@ -526,7 +526,7 @@ struct TodoRow: View {
                         .foregroundStyle(.blue)
                         .frame(width: seniorManager.isSeniorModeEnabled ? 38 : 30, height: seniorManager.isSeniorModeEnabled ? 38 : 30)
                         .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                                 .fill(Color.blue.opacity(0.12))
                         )
                 }

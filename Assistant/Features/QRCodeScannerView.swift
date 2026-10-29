@@ -122,7 +122,7 @@ struct QRCodeScannerView: View {
 
                     ZStack {
                         // 四角取景框
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.panel, style: .continuous)
                             .stroke(Color.white.opacity(0.85), lineWidth: 3)
                             .frame(width: 260, height: 260)
 

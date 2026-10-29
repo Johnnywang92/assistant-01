@@ -105,7 +105,7 @@ struct PetManagementView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
     }
@@ -147,7 +147,7 @@ struct PetManagementView: View {
         }
         .frame(maxWidth: .infinity)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
         .padding(.vertical, 12)
@@ -283,7 +283,7 @@ struct PetManagementView: View {
         }
         .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
                 .fill(Color(.secondarySystemGroupedBackground))
         )
     }

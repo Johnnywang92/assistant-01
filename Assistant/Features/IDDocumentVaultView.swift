@@ -262,7 +262,7 @@ struct IDDocumentCard: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color(.tertiarySystemGroupedBackground)))
+                .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color(.tertiarySystemGroupedBackground)))
             }
 
             // 照片双格预览槽位
@@ -295,11 +295,11 @@ struct IDPhotoThumbnailSlotView: View {
     var body: some View {
         VStack(spacing: 4) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                     .fill(Color(.secondarySystemGroupedBackground))
                     .frame(height: 70)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
                             .stroke(Color.secondary.opacity(0.2), lineWidth: 0.5)
                     )
 
@@ -309,7 +309,7 @@ struct IDPhotoThumbnailSlotView: View {
                         .aspectRatio(contentMode: .fill)
                         .frame(height: 70)
                         .clipped()
-                        .cornerRadius(8)
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
                         .transition(.opacity)
                 } else {
                     VStack(spacing: 3) {
@@ -404,7 +404,7 @@ struct IDDocumentDetailView: View {
                             Image(uiImage: front)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .cornerRadius(10)
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium))
                                 .onTapGesture { previewImage = front }
 
                             HStack {
@@ -430,7 +430,7 @@ struct IDDocumentDetailView: View {
                             Image(uiImage: back)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .cornerRadius(10)
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium))
                                 .onTapGesture { previewImage = back }
 
                             HStack {
@@ -708,7 +708,7 @@ struct AddIDDocumentSheet: View {
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
                                     .frame(maxHeight: 180)
-                                    .cornerRadius(8)
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
 
                                 Button {
                                     frontImage = nil
@@ -748,7 +748,7 @@ struct AddIDDocumentSheet: View {
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
                                     .frame(maxHeight: 180)
-                                    .cornerRadius(8)
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
 
                                 Button {
                                     backImage = nil
@@ -842,7 +842,7 @@ struct AddIDDocumentSheet: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(20)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(.regularMaterial))
+                    .background(RoundedRectangle(cornerRadius: AppRadius.banner).fill(.regularMaterial))
                 }
             }
         }
