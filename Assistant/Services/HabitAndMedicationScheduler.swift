@@ -98,6 +98,11 @@ struct HabitAndMedicationScheduler {
                     content.title = "💊 服药提醒 · \(plan.mealRelation.shortTitle)"
                     content.body = "该吃药了：\(plan.medName)（\(plan.dosage) · \(plan.mealRelation.displayName)）"
                     content.sound = .default
+                    content.userInfo = [
+                        "type": "medication",
+                        "planId": plan.id.uuidString,
+                        "medName": plan.medName
+                    ]
 
                     var dateComponents = DateComponents()
                     dateComponents.hour = hour

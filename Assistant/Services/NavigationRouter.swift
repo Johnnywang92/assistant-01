@@ -351,6 +351,11 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
             Task { @MainActor in
                 SleepReminderScheduler.handleNotificationResponse(response)
             }
+        } else if let type = userInfo["type"] as? String, type == "medication" {
+            // 点击服药提醒通知直接定位到首页「今日服药待办」区方便快速打卡
+            Task { @MainActor in
+                NavigationRouter.shared.selectedTab = .todos
+            }
         } else if let type = userInfo["type"] as? String, type == "todo" {
             if let idString = userInfo["todoId"] as? String, let id = UUID(uuidString: idString) {
                 Task { @MainActor in NavigationRouter.shared.focusTodo(id) }

@@ -79,6 +79,15 @@ public final class TodoNotificationManager {
             cancelNotification(for: item.id)
             return
         }
+
+        // 服药待办已由 HabitAndMedicationScheduler 注册专属的「💊 服药提醒」（含剂量、餐前餐后要求），
+        // 待办条目仅作为首页今日任务供打卡与状态跟踪，不重复注册通用「待办提醒」，
+        // 彻底杜绝在同一时刻弹出「待办提醒」与「服药提醒」双重重复通知。
+        if item.type == .medication {
+            cancelNotification(for: item.id)
+            return
+        }
+
         // 重排时先移除旧的主提醒和逾期提醒，避免编辑截止时间后留下旧通知。
         cancelNotification(for: item.id)
         // 提前量与 override 的取舍、是否还值得排期，均由 Core 纯函数判定。
@@ -246,9 +255,12 @@ public final class TodoNotificationManager {
         guard let allItems = try? context.fetch(descriptor) else { return }
 
         let now = Date.now
+        // 排除服药待办：服药通知由专属的 HabitAndMedicationScheduler 按天循环排期，
+        // 此处将其排除，同时使过去残留的 todo-\(medId) 通知进入 stale 列表被自动清除。
+        let schedulableItems = allItems.filter { $0.type != .medication }
         // 筛选、排序与 15 项截断口径下沉到 Core；这里只做快照转换与回填。
-        let itemByID = Dictionary(allItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let snapshots = allItems.map {
+        let itemByID = Dictionary(schedulableItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let snapshots = schedulableItems.map {
             TodoReminderSchedule.Item(
                 id: $0.id,
                 dueAt: $0.dueAt,
