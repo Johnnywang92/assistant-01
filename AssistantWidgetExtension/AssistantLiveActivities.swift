@@ -113,33 +113,73 @@ struct PickupLockScreenView: View {
         }
     }
 
-    // MARK: Apple Watch 智能叠放：纯展示，大字取件码
+    // MARK: Apple Watch 智能叠放：对齐 watchOS 原生卡片布局（顶部状态栏 + 大字取件码铭牌 + 底部指引）
     @ViewBuilder
     private var pickupWristCard: some View {
         let next = PickupProgress.nextPending(parcels: context.attributes.parcels,
                                               completedIDs: context.state.completedIDs)
         let remaining = PickupProgress.remainingCount(parcels: context.attributes.parcels,
                                                       completedIDs: context.state.completedIDs)
-        VStack(alignment: .leading, spacing: 3) {
-            Label(context.attributes.station, systemImage: "shippingbox.fill")
-                .font(.caption2.bold())
-                .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.orange)
-                .lineLimit(1)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 4) {
+                Label(context.attributes.station, systemImage: "shippingbox.fill")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.orange)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if remaining > 0 {
+                    Text("\(remaining)件")
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.orange.opacity(isLuminanceReduced ? 0.12 : 0.22))
+                        )
+                }
+            }
 
             if let next {
-                Text(next.code)
-                    .font(.largeTitle.monospaced().bold())
-                    .minimumScaleFactor(0.4)
-                    .lineLimit(1)
-                Text(remaining > 1 ? "还剩 \(remaining) 件 · 取到就去通知点「已取件」"
-                                   : "取到就去通知点「已取件」")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(next.code)
+                        .font(.system(.title2, design: .monospaced).weight(.heavy))
+                        .foregroundStyle(.primary)
+                        .minimumScaleFactor(0.45)
+                        .lineLimit(1)
+                    if let meta = [next.courier, next.title].compactMap({ $0 }).first(where: { !$0.isEmpty }) {
+                        Text(meta)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.orange.opacity(isLuminanceReduced ? 0.08 : 0.14))
+                )
+
+                HStack(spacing: 3) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.green)
+                    Text("在通知中轻点「已取件」销号")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             } else {
-                Text("全部已取件 ✓")
-                    .font(.headline)
-                    .foregroundStyle(.green)
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                    Text("全部包裹已取齐")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.green)
+                }
+                .padding(.vertical, 4)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -285,31 +325,59 @@ struct TravelLockScreenView: View {
         }
     }
 
-    // MARK: 手表：车次 + 倒计时 + 座位/检票口，一次抬腕全看到
+    // MARK: 手表：对齐 Apple 钱包登机牌/车票叠放卡样式（顶部行程+检票口胶囊，中部倒计时，底部车厢座位）
     @ViewBuilder
     private var travelWristCard: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(context.attributes.title)
-                .font(.headline)
-                .lineLimit(1)
-            TravelCountdown(context: context)
-                .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.blue)
-            if let summary = context.attributes.ticketSummary {
-                Text(summary)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Label(context.attributes.title, systemImage: "ticket.fill")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.cyan)
                     .lineLimit(1)
+                Spacer(minLength: 4)
+                if let gate = context.attributes.gate, !gate.isEmpty {
+                    Text("检票 \(gate)")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.orange.opacity(isLuminanceReduced ? 0.12 : 0.22))
+                        )
+                }
             }
-            if let place = context.attributes.place {
-                Text(place)
+
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                TravelCountdown(context: context)
+                    .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.primary)
+                Spacer(minLength: 2)
+                Text(context.state.departureDate.formatted(date: .omitted, time: .shortened))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            if let summary = context.attributes.ticketSummary, !summary.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "chair.lounge.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.blue)
+                    Text(summary)
+                        .font(.caption2.monospaced().weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.blue.opacity(isLuminanceReduced ? 0.08 : 0.15))
+                )
+            } else if let place = context.attributes.place, !place.isEmpty {
+                Label(place, systemImage: "mappin.and.ellipse")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            if let gate = context.attributes.gate {
-                Text("检票口 \(gate)")
-                    .font(.caption2.bold())
-                    .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.orange)
                     .lineLimit(1)
             }
         }
@@ -486,45 +554,59 @@ struct DepartureLockScreenView: View {
         }
     }
 
-    // MARK: 手表：只回答「我还差什么」，打勾在 iPhone 锁屏/灵动岛做
+    // MARK: 手表：对齐 Apple 提醒事项清单卡（顶部进度胶囊 + 必带高亮圆点列表）
     @ViewBuilder
     private var departureWristCard: some View {
         let allPending = context.attributes.items.filter { !context.state.checkedIDs.contains($0.id) }
         // 必带项永远排在前面：小方屏只放得下 3 行，被折进「还有 N 项」的应该只能是次要物品
         let pending = allPending.filter(\.isEssential) + allPending.filter { !$0.isEssential }
         let totalCount = context.attributes.items.count
-        VStack(alignment: .leading, spacing: 3) {
+        let checkedCount = totalCount - allPending.count
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
-                Label("出门清点", systemImage: "checklist")
-                    .font(.caption2.bold())
+                Label(context.attributes.sceneName.isEmpty ? "出门清点" : context.attributes.sceneName, systemImage: "checklist")
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.mint)
                     .lineLimit(1)
                 Spacer(minLength: 2)
-                // 进度一目了然：抬腕先知道「带到哪了」再知道「还差什么」
-                Text("\(totalCount - allPending.count)/\(totalCount)")
-                    .font(.caption2.monospacedDigit().bold())
-                    .foregroundStyle(.secondary)
+                Text("\(checkedCount)/\(totalCount)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.mint)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1.5)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.mint.opacity(isLuminanceReduced ? 0.12 : 0.2))
+                    )
             }
             if pending.isEmpty {
-                Text("已全部带齐 ✓")
-                    .font(.headline)
-                    .foregroundStyle(.green)
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.green)
+                    Text("随身物品已带齐")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.green)
+                }
+                .padding(.vertical, 4)
             } else {
-                ForEach(Array(pending.prefix(3))) { item in
-                    HStack(spacing: 4) {
-                        // 用红色感叹号圆点替代「必带」文字胶囊：窄屏上文字标签会把标题挤截断
-                        Image(systemName: item.isEssential ? "exclamationmark.circle.fill" : "circle")
-                            .font(.system(size: 9))
-                            .foregroundStyle(item.isEssential && !isLuminanceReduced ? Color.red : Color.secondary)
-                        Text(item.title)
-                            .font(.caption2)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(pending.prefix(3))) { item in
+                        HStack(spacing: 5) {
+                            Image(systemName: item.isEssential ? "exclamationmark.circle.fill" : "circle")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(item.isEssential && !isLuminanceReduced ? Color.orange : Color.secondary)
+                            Text(item.title)
+                                .font(.caption2.weight(item.isEssential ? .semibold : .regular))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                            Spacer(minLength: 0)
+                        }
                     }
                 }
                 if pending.count > 3 {
-                    Text("还有 \(pending.count - 3) 项未带")
-                        .font(.caption2)
+                    Text("还有 \(pending.count - 3) 项待核对")
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }

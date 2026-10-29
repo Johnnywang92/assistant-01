@@ -54,6 +54,8 @@ struct WatchIntegrationGuideView: View {
                 )
             } header: {
                 Text("watchOS 11+ 智能叠放与通知")
+            } footer: {
+                Text("提示：iOS 仅在 iPhone 锁屏熄屏且 Apple Watch 佩戴解锁时将提醒推送至手表；请在 iPhone「Watch」App →「通知」→「从 iPhone 镜像提醒」中确认本应用已开启。")
             }
 
             // 2. 表盘复杂功能（Complications）

@@ -165,6 +165,9 @@ public final class AnniversaryReminderManager: ObservableObject {
             dueAt: flowerDue
         )
         context.insert(flowerTodo)
+        TodoNotificationManager.shared.scheduleNotification(for: restaurantTodo)
+        TodoNotificationManager.shared.scheduleNotification(for: cakeTodo)
+        TodoNotificationManager.shared.scheduleNotification(for: flowerTodo)
 
         try? context.save()
 

@@ -1,6 +1,6 @@
 import AssistantCore
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// 睡前提醒的调度层：把 Core 算出的 `SleepPlan` 变成系统通知/卡片状态。
 ///
@@ -88,12 +88,13 @@ final class SleepReminderScheduler: ObservableObject {
 
     // MARK: 通知分类与交互
 
-    /// 注册睡前提醒的通知分类（「推迟 20 分钟」）。启动时调用一次。
-    static func registerCategory() {
+    /// 异步注册睡前提醒的通知分类（「推迟 20 分钟」），避免冷启动并发覆盖
+    static func registerCategoryAsync() async {
         let snooze = UNNotificationAction(
             identifier: actionSnooze20M,
-            title: "推迟 20 分钟",
-            options: []
+            title: "20 分钟后",
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "clock.arrow.circlepath")
         )
         let category = UNNotificationCategory(
             identifier: categoryIdentifier,
@@ -101,10 +102,16 @@ final class SleepReminderScheduler: ObservableObject {
             intentIdentifiers: [],
             options: []
         )
-        UNUserNotificationCenter.current().getNotificationCategories { existing in
-            var updated = existing
-            updated.insert(category)
-            UNUserNotificationCenter.current().setNotificationCategories(updated)
+        let center = UNUserNotificationCenter.current()
+        var updated = await center.notificationCategories()
+        updated.insert(category)
+        center.setNotificationCategories(updated)
+    }
+
+    /// 注册睡前提醒的通知分类（「推迟 20 分钟」）。启动时调用一次。
+    static func registerCategory() {
+        Task {
+            await registerCategoryAsync()
         }
     }
 
@@ -241,8 +248,11 @@ final class SleepReminderScheduler: ObservableObject {
     private func registerNotification(plan: SleepPlan, fireAt: Date, id: String) {
         let content = UNMutableNotificationContent()
         content.title = SleepPlanCopy.headline(for: plan)
+        content.subtitle = L10n.choose("睡眠作息提醒 · 就寝准备", "Sleep Wind-Down")
         content.body = SleepPlanCopy.body(for: plan)
         content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.threadIdentifier = "sleep-bedtime"
         // 挂上「推迟 20 分钟」动作；userInfo 供 AppDelegate 路由
         content.categoryIdentifier = Self.categoryIdentifier
         content.userInfo = ["type": "sleepBedtime", "nightId": id]

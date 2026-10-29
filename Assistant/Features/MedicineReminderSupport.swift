@@ -1096,6 +1096,7 @@ enum MedicineStockHelper {
             dueAt: Calendar.current.date(byAdding: .day, value: 1, to: .now)
         )
         context.insert(todo)
+        TodoNotificationManager.shared.scheduleNotification(for: todo)
     }
 
     /// 一键停止服药提醒（保留常备药档案，停用提醒计划、撤销推送并清理未完成待办）

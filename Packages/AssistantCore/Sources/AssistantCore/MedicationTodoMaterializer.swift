@@ -14,6 +14,20 @@ public enum MedicationTodoMaterializer {
         "服药：\(medName)（\(timePoint)）"
     }
 
+    /// 判断标题是否为由服药计划物化生成的「服药：XXX（HH:mm）」格式。
+    /// 用于区分「由 HabitAndMedicationScheduler 每日循环推送托管的计划任务」与「用户手动新建的独立吃药待办」。
+    public static func isMaterializedTitle(_ title: String) -> Bool {
+        guard title.hasPrefix("服药："), title.hasSuffix("）"),
+              let openRange = title.range(of: "（", options: .backwards) else {
+            return false
+        }
+        let medPrefix = title[title.index(title.startIndex, offsetBy: 3)..<openRange.lowerBound]
+        guard !medPrefix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        let timeStr = String(title[openRange.upperBound..<title.index(before: title.endIndex)])
+        let parts = timeStr.split(separator: ":").compactMap { Int($0) }
+        return parts.count == 2 && (0...23).contains(parts[0]) && (0...59).contains(parts[1])
+    }
+
     /// 解析 "HH:mm" 为指定日期当天的具体时刻；非法时点返回 nil。
     public static func dueDate(timePoint: String, on day: Date, calendar: Calendar = .current) -> Date? {
         let parts = timePoint.split(separator: ":").compactMap { Int($0) }

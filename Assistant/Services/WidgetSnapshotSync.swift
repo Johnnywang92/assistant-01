@@ -222,8 +222,20 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
     private func quickAddTodoInDB(text: String, context: ModelContext) -> TodoItem? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let item = TodoItem(type: .general, title: trimmed)
+        let parsed = TodoNaturalLanguageParser.parse(trimmed)
+        let minOrder = TodoItem.minimumSortOrder(in: context)
+        let item = TodoItem(
+            type: parsed.type,
+            status: .active,
+            title: parsed.title.isEmpty ? trimmed : parsed.title,
+            dueAt: parsed.dueAt,
+            sourceText: trimmed,
+            sortOrder: minOrder - 1,
+            recurrenceRuleRaw: parsed.recurrenceRule == .none ? nil : parsed.recurrenceRule.rawValue,
+            recurrenceIntervalDays: parsed.customIntervalDays
+        )
         context.insert(item)
+        TodoNotificationManager.shared.scheduleNotification(for: item)
         return item
     }
 
@@ -299,6 +311,10 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         guard let item = quickAddTodoInDB(text: text, context: context) else { return nil }
         try? context.save()
         refreshSnapshot(context: context)
+        if let due = item.dueAt {
+            let dueStr = due.formatted(date: .abbreviated, time: .shortened)
+            return "已创建待办「\(item.title)」，将于 \(dueStr) 提醒你"
+        }
         return "已创建待办：\(item.title)"
     }
 

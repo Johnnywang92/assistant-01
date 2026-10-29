@@ -31,6 +31,15 @@ final class MedicationTodoMaterializerTests: XCTestCase {
         XCTAssertNotEqual(morning, evening)
     }
 
+    func testIsMaterializedTitle() {
+        XCTAssertTrue(MedicationTodoMaterializer.isMaterializedTitle("服药：布洛芬（08:00）"))
+        XCTAssertTrue(MedicationTodoMaterializer.isMaterializedTitle("服药：维生素C（20:30）"))
+        XCTAssertFalse(MedicationTodoMaterializer.isMaterializedTitle("按时吃降压药"))
+        XCTAssertFalse(MedicationTodoMaterializer.isMaterializedTitle("早晚复合维生素"))
+        XCTAssertFalse(MedicationTodoMaterializer.isMaterializedTitle("服药：布洛芬（饭后）"))
+        XCTAssertFalse(MedicationTodoMaterializer.isMaterializedTitle("服药：（08:00）"))
+    }
+
     // MARK: - 时刻解析
 
     func testDueDateParsesHourMinuteOnGivenDay() throws {

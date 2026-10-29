@@ -66,7 +66,7 @@ struct SettingsView: View {
     @AppStorage("floating_voice_norm_x") private var normX: Double = 1.0
     @AppStorage("floating_voice_norm_y") private var normY: Double = 0.68
     @AppStorage("weather_alerts_enabled") private var weatherAlertsEnabled: Bool = true
-    @AppStorage("todo_notification_show_sensitive_details") private var showSensitiveTodoNotifications: Bool = false
+    @AppStorage("todo_notification_show_sensitive_details") private var showSensitiveTodoNotifications: Bool = true
     @AppStorage("user_lifestyle_profile") private var lifestyleProfile: UserLifestyleProfile = .officeWorker
     @AppStorage("user_off_work_minutes") private var offWorkMinutes: Int = 18 * 60
     @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true

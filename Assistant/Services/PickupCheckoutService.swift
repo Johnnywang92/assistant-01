@@ -34,22 +34,25 @@ enum PickupCheckoutService {
     static func registerCategory() async {
         let takeOne = UNNotificationAction(
             identifier: actionTakeOne,
-            title: "已取件 ✓",
-            options: []
+            title: "已取件",
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "checkmark.circle.fill")
         )
         let takeAll = UNNotificationAction(
             identifier: actionTakeAll,
             title: "全部取齐",
-            options: []
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "checkmark.seal.fill")
         )
         let close = UNNotificationAction(
             identifier: actionClose,
-            title: "关闭卡片（先不销号）",
-            options: []
+            title: "收起卡片",
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "xmark.circle")
         )
         let category = UNNotificationCategory(
             identifier: categoryIdentifier,
-            // 手表上只展示前两个 action，把「关闭」排在第二：
+            // 手表上只展示前两个 action，把「收起卡片」排在第二：
             // 不想逐件销号时，抬腕就能一眼看到并点中收卡入口。
             actions: [takeOne, close, takeAll],
             intentIdentifiers: [],
@@ -113,12 +116,15 @@ enum PickupCheckoutService {
         }
         let remaining = current.steps.count
         let content = UNMutableNotificationContent()
-        content.title = "🏝️ \(first.code)"
-        content.subtitle = current.station
+        content.title = "取件码 \(first.code)"
+        content.subtitle = remaining > 1
+            ? "\(current.station) · 待取 \(remaining) 件"
+            : current.station
         content.body = remaining > 1
-            ? "共 \(remaining) 件 · 取到就点「已取件」，自动跳下一件"
-            : "取到就点「已取件」，灵动岛与手表一起收起"
+            ? "取到后轻点下方「已取件」，将自动切换至下一件包裹。"
+            : "取到后轻点下方「已取件」，即可完成销号并收起卡片。"
         content.categoryIdentifier = categoryIdentifier
+        content.relevanceScore = 0.95
         // 销号是一次安静的确认动作，不响铃；用户此时就看得到画面上的码。
         content.sound = nil
         content.threadIdentifier = "pickup-checkout"

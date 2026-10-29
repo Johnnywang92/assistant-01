@@ -47,12 +47,14 @@ final class TripArrivalService {
         let startCheck = UNNotificationAction(
             identifier: Self.actionStartCheck,
             title: L10n.tr("开始清点"),
-            options: [.foreground]
+            options: [.foreground],
+            icon: UNNotificationActionIcon(systemImageName: "checklist")
         )
         let snooze = UNNotificationAction(
             identifier: Self.actionSnooze10M,
-            title: L10n.tr("10 分钟后再提醒"),
-            options: []
+            title: L10n.tr("10 分钟后"),
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "clock.arrow.circlepath")
         )
         let category = UNNotificationCategory(
             identifier: Self.categoryIdentifier,
@@ -143,12 +145,21 @@ final class TripArrivalService {
         let content = UNMutableNotificationContent()
         content.title = L10n.tr(Self.headlineKey(for: kind))
         let showDetails = TodoNotificationManager.shared.showSensitiveDetails
-        if showDetails, !item.title.isEmpty {
-            content.body = L10n.choose("下车/落地前先看一眼座位与行李网：", "Check your seat and rack before leaving: ") + item.title
+        if showDetails {
+            let conciseTitle = item.displayConciseTitle.isEmpty ? item.title : item.displayConciseTitle
+            content.subtitle = [conciseTitle, item.displayLocationText]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: " · ")
+            content.body = L10n.choose("下车/落地前核对座位与行李架，轻点「开始清点」逐项确认。", "Check your seat and rack before leaving. Tap Start Check below.")
         } else {
+            content.subtitle = kind.displayName
             content.body = L10n.tr("到站前核对随身物品，点「开始清点」逐项确认。")
         }
         content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.relevanceScore = 0.9
+        content.threadIdentifier = "trip-arrival"
         content.categoryIdentifier = Self.categoryIdentifier
         content.userInfo = [
             "type": Self.userInfoType,

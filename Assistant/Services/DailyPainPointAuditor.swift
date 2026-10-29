@@ -337,6 +337,7 @@ struct DailyPainPointAuditor {
         if existing.isEmpty {
             let todo = TodoItem(type: type, status: .active, title: title, detail: detail, dueAt: dueAt)
             context.insert(todo)
+            TodoNotificationManager.shared.scheduleNotification(for: todo)
             insertFlag.didInsert = true
         }
     }

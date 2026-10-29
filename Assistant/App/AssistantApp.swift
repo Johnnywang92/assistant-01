@@ -98,9 +98,9 @@ struct AssistantApp: App {
                 // 密码迁移不再在冷启动主线程执行：全表拉取 + 可触发 SQLite VACUUM，
                 // 改由打开保险箱时（PasswordVaultView.onAppear）惰性地按需迁移。
                 StartupMetrics.measure("registerDynamicShortcuts") { router.registerDynamicShortcuts() }
-                TodoNotificationManager.shared.registerCategories()
+                await TodoNotificationManager.shared.registerCategoriesAsync()
                 // 睡前提醒的「推迟 20 分钟」按钮，锁屏上点一下就再眯 20 分钟
-                SleepReminderScheduler.registerCategory()
+                await SleepReminderScheduler.registerCategoryAsync()
                 // 取件销号通知的「已取件 / 全部取齐」按钮，抬腕即可点
                 await PickupCheckoutService.registerCategory()
                 // 护航/清点伴随通知的「关闭卡片」按钮，手表与 Mac 上都能一键收卡

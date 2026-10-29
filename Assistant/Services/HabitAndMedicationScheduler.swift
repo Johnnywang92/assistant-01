@@ -43,6 +43,7 @@ struct HabitAndMedicationScheduler {
                         dueAt: habit.nextDueAt
                     )
                     context.insert(todo)
+                    TodoNotificationManager.shared.scheduleNotification(for: todo)
 
                     // 联动 HomeKit 智能家居场景（例如触发扫地机打扫）
                     if let scene = habit.triggerHomeKitScene, !scene.isEmpty {
@@ -95,9 +96,17 @@ struct HabitAndMedicationScheduler {
                     let minute = parts[1]
 
                     let content = UNMutableNotificationContent()
-                    content.title = "💊 服药提醒 · \(plan.mealRelation.shortTitle)"
-                    content.body = "该吃药了：\(plan.medName)（\(plan.dosage) · \(plan.mealRelation.displayName)）"
+                    content.title = plan.medName
+                    content.subtitle = "\(timePoint) · \(plan.dosage) · \(plan.mealRelation.displayName)"
+                    if let notes = plan.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+                        content.body = notes
+                    } else {
+                        content.body = "到点服药提醒，服用后可在今日待办中打卡记录。"
+                    }
                     content.sound = .default
+                    content.interruptionLevel = .timeSensitive
+                    content.relevanceScore = 0.9
+                    content.threadIdentifier = "medication-reminders"
                     content.userInfo = [
                         "type": "medication",
                         "planId": plan.id.uuidString,

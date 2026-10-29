@@ -156,8 +156,9 @@ enum LiveActivityControlNotifications {
     static func registerCategories() async {
         let endTravel = UNNotificationAction(
             identifier: travelActionEnd,
-            title: "已出发，关闭卡片",
-            options: []
+            title: "已出发，收起卡片",
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "checkmark.circle.fill")
         )
         let travelCategory = UNNotificationCategory(
             identifier: travelCategoryIdentifier,
@@ -167,8 +168,9 @@ enum LiveActivityControlNotifications {
         )
         let checkAll = UNNotificationAction(
             identifier: departureActionCheckAll,
-            title: "全部带齐，关闭卡片",
-            options: []
+            title: "全部带齐，收起卡片",
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "checkmark.seal.fill")
         )
         let departureCategory = UNNotificationCategory(
             identifier: departureCategoryIdentifier,
@@ -187,8 +189,9 @@ enum LiveActivityControlNotifications {
         deliver(
             identifier: travelNotificationIdentifier,
             category: travelCategoryIdentifier,
-            title: "🚄 行程护航 · \(title)",
-            body: "在手表或 Mac 上点「已出发，关闭卡片」，一键收起灵动岛与手表上的护航卡",
+            title: title,
+            subtitle: "行程护航 · 实时卡片已开启",
+            body: "发车或登机后轻点下方按钮，一键收起灵动岛与手表叠放卡片。",
             userInfo: ["type": "liveActivityControl", "subtype": "travel"]
         )
     }
@@ -197,8 +200,9 @@ enum LiveActivityControlNotifications {
         deliver(
             identifier: departureNotificationIdentifier,
             category: departureCategoryIdentifier,
-            title: "🎒 出门清点 · \(sceneName)",
-            body: "在手表或 Mac 上点「全部带齐，关闭卡片」，一键确认并收起清点卡",
+            title: sceneName,
+            subtitle: "出门防丢清点 · 实时卡片已开启",
+            body: "随身物品核对完毕后轻点下方按钮，一键确认并收起清点卡。",
             userInfo: ["type": "liveActivityControl", "subtype": "departure"]
         )
     }
@@ -246,13 +250,15 @@ enum LiveActivityControlNotifications {
         reconcile()
     }
 
-    private static func deliver(identifier: String, category: String, title: String, body: String, userInfo: [String: String]) {
+    private static func deliver(identifier: String, category: String, title: String, subtitle: String, body: String, userInfo: [String: String]) {
         let content = UNMutableNotificationContent()
         content.title = title
+        content.subtitle = subtitle
         content.body = body
         content.categoryIdentifier = category
         // 伴随通知是安静的控制入口，不铃响打断
         content.sound = nil
+        content.threadIdentifier = "live-activity-control"
         content.userInfo = userInfo
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { error in

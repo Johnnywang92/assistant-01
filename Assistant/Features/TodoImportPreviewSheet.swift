@@ -226,6 +226,7 @@ struct TodoImportPreviewSheet: View {
                 dueAt: dueDate
             )
             context.insert(item)
+            TodoNotificationManager.shared.scheduleNotification(for: item)
         }
 
         try? context.save()
