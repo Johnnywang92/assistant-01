@@ -236,10 +236,25 @@ public struct VoiceMemoDTO: Codable {
     public var audioFileName: String
     public var audioData: Data?
     public var transcription: String?
+    /// 结构化笔记块（JSON）。旧版备份包为 nil，还原时用 `transcription` 重建。
+    public var blocksData: Data?
+    /// 笔记内嵌图片（文件名 + 二进制）。旧版备份包为 nil。
+    public var images: [VoiceMemoImageDTO]?
     public var summary: String?
     public var tagRaw: String
     public var isBookmarked: Bool
     public var createdAt: Date
+}
+
+/// 语音备忘笔记里的一张内嵌图片。
+public struct VoiceMemoImageDTO: Codable {
+    public var fileName: String
+    public var data: Data?
+
+    public init(fileName: String, data: Data?) {
+        self.fileName = fileName
+        self.data = data
+    }
 }
 
 public struct VehicleDTO: Codable {

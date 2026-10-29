@@ -191,6 +191,14 @@ extension DataMigrationService {
 
         let voiceMemoDTOs = voiceMemos.map { memo in
             let audioData = VoiceMemoStorage.loadData(memo.audioFileName)
+            // 笔记内嵌图片：把块里引用的图片一并带进备份包
+            let imageFileNames = memo.document.blocks.compactMap { block -> String? in
+                guard block.kind == .image, let name = block.imageFileName else { return nil }
+                return name
+            }
+            let imageDTOs = imageFileNames.map { name in
+                VoiceMemoImageDTO(fileName: name, data: VoiceMemoImageStorage.loadData(name))
+            }
             return VoiceMemoDTO(
                 id: memo.id,
                 title: memo.title,
@@ -198,6 +206,8 @@ extension DataMigrationService {
                 audioFileName: memo.audioFileName,
                 audioData: audioData,
                 transcription: memo.transcription,
+                blocksData: memo.blocksData,
+                images: imageDTOs.isEmpty ? nil : imageDTOs,
                 summary: memo.summary,
                 tagRaw: memo.tagRaw,
                 isBookmarked: memo.isBookmarked,
@@ -227,6 +237,15 @@ extension DataMigrationService {
                 fileName: memo.audioFileName.isEmpty ? nil : memo.audioFileName,
                 hasData: dto.audioData?.isEmpty == false
             ))
+            // 笔记内嵌图片同样必须真的带上——
+            // 「有文字没图」的备份和「记录在、音频没了」一样是残缺数据。
+            for image in dto.images ?? [] {
+                attachmentExpectations.append(.init(
+                    ownerTitle: memo.title, kind: .voiceMemoImage,
+                    fileName: image.fileName.isEmpty ? nil : image.fileName,
+                    hasData: image.data?.isEmpty == false
+                ))
+            }
         }
         if case .incomplete(let missing) = BackupRestoreGuard.auditAttachments(attachmentExpectations) {
             throw MigrationCryptoError.missingAttachment(

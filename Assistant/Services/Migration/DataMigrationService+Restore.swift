@@ -58,8 +58,21 @@ extension DataMigrationService {
                 hasData: memo.audioData?.isEmpty == false
             )
         }
+        // 笔记内嵌图片也要预检：包里说了有图，实际没带上，同样是残缺备份。
+        let packageImageExpectations = (package.voiceMemos ?? []).flatMap { memo in
+            (memo.images ?? []).map { image in
+                BackupRestoreGuard.AttachmentExpectation(
+                    ownerTitle: memo.title,
+                    kind: .voiceMemoImage,
+                    fileName: image.fileName.isEmpty ? nil : image.fileName,
+                    hasData: image.data?.isEmpty == false
+                )
+            }
+        }
+        var allAttachmentExpectations = packageAttachmentExpectations
+        allAttachmentExpectations.append(contentsOf: packageImageExpectations)
         var missingAttachmentLabels: [String] = []
-        if case .incomplete(let missing) = BackupRestoreGuard.auditAttachments(packageAttachmentExpectations) {
+        if case .incomplete(let missing) = BackupRestoreGuard.auditAttachments(allAttachmentExpectations) {
             missingAttachmentLabels = BackupRestoreGuard.describeMissingAttachments(missing)
             // 覆盖还原会清空现有数据：包里已知有缺口时不做破坏性操作，
             // 否则用户会先丢掉现有数据、再发现备份本身不完整。
@@ -411,6 +424,18 @@ extension DataMigrationService {
                 }
             }
 
+            // 还原笔记内嵌图片。图片写盘失败要**取消还原**，
+            // 不能留下「块里引用着图片、但文件不在」的断链状态——
+            // 那样卡片渲染时会显示「图片已丢失」，而用户以为还原成功了。
+            for image in vm.images ?? [] {
+                guard let data = image.data, !data.isEmpty else {
+                    throw MigrationCryptoError.missingAttachment(vm.title)
+                }
+                if VoiceMemoImageStorage.save(data: data, preferredName: image.fileName) == nil {
+                    throw MigrationCryptoError.missingAttachment(vm.title)
+                }
+            }
+
             let item = VoiceMemo(
                 title: vm.title,
                 duration: vm.duration,
@@ -420,6 +445,15 @@ extension DataMigrationService {
             )
             item.id = vm.id
             item.transcription = vm.transcription
+            // 旧备份包没有 blocksData，用转写全文重建结构化块——
+            // 宁可粗糙，也不能让老用户的笔记打开后是空的。
+            if let blocksData = vm.blocksData, !blocksData.isEmpty {
+                item.blocksData = blocksData
+            } else if let text = vm.transcription, !text.isEmpty {
+                item.blocksData = MemoBlockCodec.encode(
+                    MemoBlockBuilder.build(from: text, title: vm.title)
+                )
+            }
             item.summary = vm.summary
             item.isBookmarked = vm.isBookmarked
             context.insert(item)
@@ -998,6 +1032,25 @@ extension DataMigrationService {
             ) {
             case .prune(let keeping):
                 VoiceMemoStorage.pruneUnreferenced(keeping: keeping)
+            case .skipped:
+                break
+            }
+
+            // 笔记内嵌图片的孤儿清理。
+            // 同样走 `pruneDecision`：查询失败时**不清**，
+            // 否则空引用集会把所有笔记图片删光（与证件照片同一个坑）。
+            let validImageNames: Set<String> = Set((fetchedMemos ?? []).flatMap { memo in
+                memo.document.blocks.compactMap { block -> String? in
+                    guard block.kind == .image else { return nil }
+                    return block.imageFileName
+                }
+            })
+            switch BackupRestoreGuard.pruneDecision(
+                referenceLookupSucceeded: fetchedMemos != nil,
+                referencedFileNames: validImageNames
+            ) {
+            case .prune(let keeping):
+                VoiceMemoImageStorage.pruneUnreferenced(referencing: keeping)
             case .skipped:
                 break
             }

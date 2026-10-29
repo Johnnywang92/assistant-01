@@ -19,6 +19,8 @@ public enum BackupRestoreGuard {
             case idPhotoFront
             case idPhotoBack
             case voiceMemoAudio
+            /// 语音备忘笔记里内嵌的图片
+            case voiceMemoImage
         }
 
         /// 归属条目标题（用于给用户指认是哪一条丢了）
@@ -66,6 +68,7 @@ public enum BackupRestoreGuard {
             case .idPhotoFront: label = "证件「\(item.ownerTitle)」正面照片"
             case .idPhotoBack: label = "证件「\(item.ownerTitle)」背面照片"
             case .voiceMemoAudio: label = "语音「\(item.ownerTitle)」音频"
+            case .voiceMemoImage: label = "语音「\(item.ownerTitle)」笔记图片"
             }
             if seen.insert(label).inserted {
                 result.append(label)
