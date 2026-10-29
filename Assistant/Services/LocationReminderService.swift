@@ -147,7 +147,16 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
         let todoDescriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate { $0.statusRaw == activeRaw && ($0.typeRaw == parcelRaw || $0.typeRaw == returnParcelRaw) }
         )
-        let activeParcels = ((try? ctx.fetch(todoDescriptor)) ?? []).filter { !($0.pickupCode ?? "").isEmpty }
+        let parcels: [TodoItem]
+        do {
+            parcels = try ctx.fetch(todoDescriptor)
+        } catch {
+            // 查询失败不等于「没有待取包裹」：按空集走会撤光驿站围栏，用户到驿站就没提醒了。
+            // 这一轮直接放弃，保留现有围栏。
+            print("⚠️ [LocationReminder] 包裹待办查询失败，跳过本轮围栏对账: \(error.localizedDescription)")
+            return
+        }
+        let activeParcels = parcels.filter { !($0.pickupCode ?? "").isEmpty }
 
         // 2. 如果没有待取包裹，清理所有驿站相关的围栏，节省功耗与系统围栏配额
         if activeParcels.isEmpty {

@@ -163,7 +163,15 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
 
     private func completeInDB(id: UUID, context: ModelContext) {
         let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == id })
-        guard let item = (try? context.fetch(descriptor))?.first, item.status == .active else {
+        let items: [TodoItem]
+        do {
+            items = try context.fetch(descriptor)
+        } catch {
+            // 查询失败不能当成「待办不存在/已完成」：那会收起实时活动，而这条打勾指令随后也被摘除
+            print("⚠️ [WidgetSync] 完成指令查询失败，跳过该指令: \(error.localizedDescription)")
+            return
+        }
+        guard let item = items.first, item.status == .active else {
             // 已在主应用完成过：仅确保实时活动收起
             PickupActivityHelper.endActivity(for: id)
             return

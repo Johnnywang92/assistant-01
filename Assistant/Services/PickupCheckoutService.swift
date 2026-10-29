@@ -192,7 +192,15 @@ enum PickupCheckoutService {
         let before = current.steps.count
         current.steps.removeAll { step in
             let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == step.id })
-            guard let item = (try? context.fetch(descriptor))?.first else { return true }
+            let items: [TodoItem]
+            do {
+                items = try context.fetch(descriptor)
+            } catch {
+                // 查询失败不等于「待办已删」：误判会把整段销号会话判空并撤掉通知
+                print("⚠️ [PickupCheckout] 对账查询失败，保留该步骤: \(error.localizedDescription)")
+                return false
+            }
+            guard let item = items.first else { return true }
             return item.status != .active
         }
         guard current.steps.count != before else { return }
