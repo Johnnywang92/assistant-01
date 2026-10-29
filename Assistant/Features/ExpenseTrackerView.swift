@@ -261,115 +261,7 @@ struct ExpenseTrackerView: View {
         let currentSummary = summary
         NavigationStack {
             List {
-                // 0. 今日安心花动态额度（未设月预算时显示设置入口）
-                SafeToSpendCard(
-                    flexibleSpentThisMonth: currentSummary.flexibleSpentThisMonth,
-                    fixedSpentThisMonth: currentSummary.fixedSpentThisMonth,
-                    yesterdayFlexibleSpend: currentSummary.yesterdayFlexibleSpend,
-                    todayFlexibleSpend: currentSummary.todayFlexibleSpend
-                )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
-
-                // 1. 统计卡片与本月支出构成胶囊条
-                Section {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(spacing: 16) {
-                            statCard(title: "今日支出", amount: currentSummary.todayExpenses, color: AppColor.warning)
-                            statCard(title: "本月支出", amount: currentSummary.currentMonthExpenses, color: AppColor.danger)
-                            statCard(title: "本月收入", amount: currentSummary.currentMonthIncome, color: AppColor.success)
-                        }
-
-                        if !currentMonthCategoryBreakdown.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text("本月支出构成")
-                                        .font(.caption.bold())
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    if LLMModelManager.shared.isModelDownloaded {
-                                        Button {
-                                            analyzeExpensesWithAI()
-                                        } label: {
-                                            HStack(spacing: 3) {
-                                                if isAnalyzingExpenses {
-                                                    ProgressView().controlSize(.mini)
-                                                } else {
-                                                    Image(systemName: "sparkles")
-                                                        .font(.caption2)
-                                                }
-                                                Text(isAnalyzingExpenses ? "分析中..." : "AI 消费洞察")
-                                                    .font(.caption2.bold())
-                                            }
-                                            .padding(.horizontal, 7)
-                                            .padding(.vertical, 3)
-                                            .background(Capsule().fill(AppColor.softFill(AppColor.feature, opacity: 0.14)))
-                                            .foregroundStyle(AppColor.feature)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .disabled(isAnalyzingExpenses)
-                                    } else {
-                                        Text("共 \(currentMonthCategoryBreakdown.count) 类别")
-                                            .font(.caption2)
-                                            .foregroundStyle(.tertiary)
-                                    }
-                                }
-
-                                // 分类彩色多段胶囊条
-                                GeometryReader { geo in
-                                    HStack(spacing: 2) {
-                                        ForEach(currentMonthCategoryBreakdown, id: \.category) { item in
-                                            RoundedRectangle(cornerRadius: 3)
-                                                .fill(categoryColor(item.category))
-                                                .frame(width: max((geo.size.width - CGFloat(currentMonthCategoryBreakdown.count - 1) * 2) * CGFloat(item.ratio), 4))
-                                        }
-                                    }
-                                }
-                                .frame(height: 8)
-                                .clipShape(Capsule())
-
-                                // 图例标签
-                                HStack(spacing: 10) {
-                                    ForEach(currentMonthCategoryBreakdown.prefix(4), id: \.category) { item in
-                                        HStack(spacing: 4) {
-                                            Circle()
-                                                .fill(categoryColor(item.category))
-                                                .frame(width: 6, height: 6)
-                                            Text("\(L10n.tr(item.category.rawValue)) \(Int(item.ratio * 100))%")
-                                                .font(.caption2)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                }
-
-                                if let insight = aiExpenseInsight, !insight.isEmpty {
-                                    HStack(alignment: .top, spacing: 6) {
-                                        Image(systemName: "brain.head.profile")
-                                            .font(.caption)
-                                            .foregroundStyle(AppColor.feature)
-                                            .padding(.top, 2)
-                                        Text(insight)
-                                            .font(.caption)
-                                            .foregroundStyle(.primary.opacity(0.88))
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                    .padding(10)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(AppColor.softFill(AppColor.feature, opacity: 0.08)))
-                                    .padding(.top, 2)
-                                }
-                            }
-                            .padding(.top, 2)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-
-                // 1.5 消费趋势（近 6 个月柱状图 + 环比与类别变化）
-                ExpenseTrendCard(trend: expenseTrend)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
-                    .listRowBackground(Color.clear)
-
-                // 2. 一句话极速记账输入栏
+                // 0. 一句话极速记账输入栏
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
@@ -464,6 +356,114 @@ struct ExpenseTrackerView: View {
                 } header: {
                     Text("智能极速记账")
                 }
+
+                // 1. 今日安心花动态额度（未设月预算时显示设置入口）
+                SafeToSpendCard(
+                    flexibleSpentThisMonth: currentSummary.flexibleSpentThisMonth,
+                    fixedSpentThisMonth: currentSummary.fixedSpentThisMonth,
+                    yesterdayFlexibleSpend: currentSummary.yesterdayFlexibleSpend,
+                    todayFlexibleSpend: currentSummary.todayFlexibleSpend
+                )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+
+                // 2. 统计卡片与本月支出构成胶囊条
+                Section {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 16) {
+                            statCard(title: "今日支出", amount: currentSummary.todayExpenses, color: AppColor.warning)
+                            statCard(title: "本月支出", amount: currentSummary.currentMonthExpenses, color: AppColor.danger)
+                            statCard(title: "本月收入", amount: currentSummary.currentMonthIncome, color: AppColor.success)
+                        }
+
+                        if !currentMonthCategoryBreakdown.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("本月支出构成")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    if LLMModelManager.shared.isModelDownloaded {
+                                        Button {
+                                            analyzeExpensesWithAI()
+                                        } label: {
+                                            HStack(spacing: 3) {
+                                                if isAnalyzingExpenses {
+                                                    ProgressView().controlSize(.mini)
+                                                } else {
+                                                    Image(systemName: "sparkles")
+                                                        .font(.caption2)
+                                                }
+                                                Text(isAnalyzingExpenses ? "分析中..." : "AI 消费洞察")
+                                                    .font(.caption2.bold())
+                                            }
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 3)
+                                            .background(Capsule().fill(AppColor.softFill(AppColor.feature, opacity: 0.14)))
+                                            .foregroundStyle(AppColor.feature)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .disabled(isAnalyzingExpenses)
+                                    } else {
+                                        Text("共 \(currentMonthCategoryBreakdown.count) 类别")
+                                            .font(.caption2)
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                }
+
+                                // 分类彩色多段胶囊条
+                                GeometryReader { geo in
+                                    HStack(spacing: 2) {
+                                        ForEach(currentMonthCategoryBreakdown, id: \.category) { item in
+                                            RoundedRectangle(cornerRadius: 3)
+                                                .fill(categoryColor(item.category))
+                                                .frame(width: max((geo.size.width - CGFloat(currentMonthCategoryBreakdown.count - 1) * 2) * CGFloat(item.ratio), 4))
+                                        }
+                                    }
+                                }
+                                .frame(height: 8)
+                                .clipShape(Capsule())
+
+                                // 图例标签
+                                HStack(spacing: 10) {
+                                    ForEach(currentMonthCategoryBreakdown.prefix(4), id: \.category) { item in
+                                        HStack(spacing: 4) {
+                                            Circle()
+                                                .fill(categoryColor(item.category))
+                                                .frame(width: 6, height: 6)
+                                            Text("\(L10n.tr(item.category.rawValue)) \(Int(item.ratio * 100))%")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+
+                                if let insight = aiExpenseInsight, !insight.isEmpty {
+                                    HStack(alignment: .top, spacing: 6) {
+                                        Image(systemName: "brain.head.profile")
+                                            .font(.caption)
+                                            .foregroundStyle(AppColor.feature)
+                                            .padding(.top, 2)
+                                        Text(insight)
+                                            .font(.caption)
+                                            .foregroundStyle(.primary.opacity(0.88))
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    .padding(10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(AppColor.softFill(AppColor.feature, opacity: 0.08)))
+                                    .padding(.top, 2)
+                                }
+                            }
+                            .padding(.top, 2)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                // 2.5 消费趋势（近 6 个月柱状图 + 环比与类别变化）
+                ExpenseTrendCard(trend: expenseTrend)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                    .listRowBackground(Color.clear)
 
                 // 3. 消费流水列表
                 if records.isEmpty {
