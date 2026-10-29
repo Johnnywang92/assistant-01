@@ -141,9 +141,10 @@ struct PeriodicReportView: View {
                     // 6. 财务支出结构卡片
                     expensesBreakdownCard
 
-                    // 月/季/年报：周期回顾（与上期环比对比）
-                    if reportData.comparison != nil {
-                        periodReviewCard
+                    // 周/月/季/年报：趋势分析（多期走势）与变化分析（环比与结构变化）
+                    if reportData.trendSummary != nil {
+                        trendAnalysisCard
+                        changeAnalysisCard
                     }
 
                     // 月报：月预算执行概览
@@ -1108,111 +1109,357 @@ struct PeriodicReportView: View {
         )
     }
 
-    // MARK: - 周期回顾卡片（月/季/年报：与上一等长周期环比）
+    // MARK: - 趋势分析卡片（周/月/季/年报：多期走势）
 
-    private var periodReviewCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("周期回顾 · 与上期对比", systemImage: "arrow.left.arrow.right")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(.primary)
-                Spacer()
-            }
-
-            if let cmp = reportData.comparison {
-                let diff = reportData.totalExpense - cmp.prevExpense
-
-                // 支出环比
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("本期支出")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Text("¥\(String(format: "%.0f", reportData.totalExpense))")
-                            .font(.system(.title3, design: .rounded).bold())
-                        Text("\(reportData.expenseCount) 笔")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+    /// 多期走势迷你柱图 + 趋势判读。
+    private var trendAnalysisCard: some View {
+        Group {
+            if let trend = reportData.trendSummary, trend.points.count >= 2 {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Label("趋势分析", systemImage: "chart.xyaxis.line")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        trendDirectionBadge(trend.expenseTrend)
                     }
-                    Image(systemName: "arrow.right")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("上期支出")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Text("¥\(String(format: "%.0f", cmp.prevExpense))")
-                            .font(.system(.title3, design: .rounded).bold())
-                            .foregroundStyle(.secondary)
-                        Text("\(cmp.prevExpenseCount) 笔")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
+
+                    // 多期走势柱图
+                    miniTrendChart(trend: trend)
+
+                    // 趋势判读要点
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(trendInsightRows(trend).enumerated()), id: \.offset) { _, row in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: row.icon)
+                                    .font(.caption2)
+                                    .foregroundStyle(row.tint)
+                                    .frame(width: 14)
+                                Text(row.text)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer(minLength: 0)
+                            }
+                        }
                     }
-                    Spacer()
-                    if cmp.prevExpense > 0 {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(diff >= 0 ? "+¥\(String(format: "%.0f", diff))" : "-¥\(String(format: "%.0f", -diff))")
-                                .font(.system(.subheadline, design: .rounded).bold())
-                                .foregroundStyle(diff >= 0 ? Color.red : .green)
-                            Text(diff >= 0
-                                 ? "环比 +\(Int(cmp.expenseChangeRatio * 100))%"
-                                 : "环比 -\(Int(-cmp.expenseChangeRatio * 100))%")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+
+                    // 下期目标
+                    if let targets = trend.nextTargets {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Divider()
+                            Label("下期目标建议", systemImage: "target")
+                                .font(.caption.bold())
+                                .foregroundStyle(.primary)
+                            if let cap = targets.expenseCap {
+                                targetRow(icon: "arrow.down.right.circle", text: "支出上限", value: "¥\(String(format: "%.0f", cap))")
+                            }
+                            targetRow(icon: "checkmark.seal", text: "完成事项", value: "\(targets.completedTarget) 项")
+                            if let rate = targets.savingsRateTarget {
+                                targetRow(icon: "banknote", text: "储蓄率", value: "\(Int(rate * 100))%")
+                            }
                         }
                     }
                 }
-                .padding(10)
+                .padding(16)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color(.tertiarySystemGroupedBackground))
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(.secondarySystemGroupedBackground))
                 )
-
-                // 完成事项环比
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.seal")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text("完成事项：本期 \(reportData.completedTodos.count) 项 · 上期 \(cmp.prevCompletedCount) 项")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-
-                // 类别结构变化
-                if let g = cmp.growingCategory {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
-                            .font(.caption.bold())
-                            .foregroundStyle(.red)
-                        Text("增长最快：**\(g.category.rawValue)** ¥\(String(format: "%.0f", g.from)) → ¥\(String(format: "%.0f", g.to))（+¥\(String(format: "%.0f", g.to - g.from))）")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: 0)
-                    }
-                }
-                if let s = cmp.shrinkingCategory {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chart.line.downtrend.xyaxis")
-                            .font(.caption.bold())
-                            .foregroundStyle(.green)
-                        Text("降温最明显：**\(s.category.rawValue)** ¥\(String(format: "%.0f", s.from)) → ¥\(String(format: "%.0f", s.to))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: 0)
-                    }
-                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.blue.opacity(0.18), lineWidth: 1)
+                )
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.blue.opacity(0.18), lineWidth: 1)
-        )
+    }
+
+    /// 趋势方向徽章
+    private func trendDirectionBadge(_ trend: PeriodReportAnalytics.SeriesTrend) -> some View {
+        let (text, icon, tint): (String, String, Color) = {
+            switch trend.direction {
+            case .rising: return ("上升", "chart.line.uptrend.xyaxis", .red)
+            case .falling: return ("下降", "chart.line.downtrend.xyaxis", .green)
+            case .flat: return ("平稳", "equal", .secondary)
+            }
+        }()
+        return HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+            Text(text)
+                .font(.system(size: 10, weight: .bold))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(tint.opacity(0.12), in: Capsule())
+    }
+
+    /// 多期走势迷你柱图
+    private func miniTrendChart(trend: PeriodTrendSummary) -> some View {
+        let values = trend.expenseSeries
+        let maxValue = max(values.max() ?? 0, 1)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("近 \(values.count) 期支出走势")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            HStack(alignment: .bottom, spacing: 5) {
+                ForEach(Array(trend.points.enumerated()), id: \.offset) { index, point in
+                    let isCurrent = index == values.count - 1
+                    VStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(
+                                LinearGradient(
+                                    colors: isCurrent
+                                        ? [Color.accentColor.opacity(0.95), Color.accentColor.opacity(0.55)]
+                                        : [Color.accentColor.opacity(0.42), Color.accentColor.opacity(0.18)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .frame(height: max(4, CGFloat(point.expense / maxValue) * 66))
+                        Text(point.label)
+                            .font(.system(size: 8))
+                            .foregroundStyle(isCurrent ? .primary : .secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 92, alignment: .bottom)
+        }
+    }
+
+    /// 趋势判读要点行
+    private struct TrendInsightRow {
+        let icon: String
+        let text: String
+        let tint: Color
+    }
+
+    private func trendInsightRows(_ trend: PeriodTrendSummary) -> [TrendInsightRow] {
+        var rows: [TrendInsightRow] = []
+        let expenseTrend = trend.expenseTrend
+
+        if expenseTrend.streak >= 2 {
+            rows.append(TrendInsightRow(
+                icon: "chart.line.uptrend.xyaxis",
+                text: String(format: "支出已连续 %d 期上升，每期约多花 ¥%.0f", expenseTrend.streak, abs(expenseTrend.slope)),
+                tint: .red
+            ))
+        } else if expenseTrend.streak <= -2 {
+            rows.append(TrendInsightRow(
+                icon: "chart.line.downtrend.xyaxis",
+                text: String(format: "支出已连续 %d 期下降，每期约省下 ¥%.0f", abs(expenseTrend.streak), abs(expenseTrend.slope)),
+                tint: .green
+            ))
+        }
+
+        if expenseTrend.baselineAverage > 0, let deviation = expenseTrend.currentVsBaseline {
+            let direction = deviation > 0 ? "高于" : "低于"
+            rows.append(TrendInsightRow(
+                icon: "equal.circle",
+                text: String(format: "本期支出%s历史均值 %.0f%%", direction, abs(deviation * 100)),
+                tint: deviation > 0 ? .orange : .green
+            ))
+        }
+
+        if expenseTrend.volatility >= 0.6 {
+            rows.append(TrendInsightRow(
+                icon: "waveform.path.ecg",
+                text: String(format: "波动系数 %.0f%%，各期起伏偏大", expenseTrend.volatility * 100),
+                tint: .orange
+            ))
+        }
+
+        let completionTrend = trend.completionTrend
+        if completionTrend.streak >= 2 {
+            rows.append(TrendInsightRow(
+                icon: "arrow.up.circle.fill",
+                text: String(format: "完成量连续 %d 期上升，执行力在变强", completionTrend.streak),
+                tint: .green
+            ))
+        } else if completionTrend.streak <= -2 {
+            rows.append(TrendInsightRow(
+                icon: "arrow.down.circle.fill",
+                text: String(format: "完成量连续 %d 期回落，需留意节奏", abs(completionTrend.streak)),
+                tint: .orange
+            ))
+        }
+
+        if let p = trend.punctuality, let rate = p.onTimeRate {
+            rows.append(TrendInsightRow(
+                icon: "clock",
+                text: String(format: "待办准时率 %.0f%%", rate * 100),
+                tint: rate < 0.7 ? .orange : .green
+            ))
+        }
+
+        if let pattern = trend.spendingPattern, pattern.weekdayDailyAverage > 0 {
+            rows.append(TrendInsightRow(
+                icon: "calendar",
+                text: String(format: "工作日日均 ¥%.0f · 周末日均 ¥%.0f", pattern.weekdayDailyAverage, pattern.weekendDailyAverage),
+                tint: pattern.weekendDailyAverage > pattern.weekdayDailyAverage * 1.5 ? .orange : .secondary
+            ))
+        }
+
+        return rows
+    }
+
+    /// 单个类别结构变化行。
+    ///
+    /// 拆成独立函数是为了让 SwiftUI 的类型推断有界——
+    /// 三元嵌套链写在一行里会让编译器在合理时间内算不出来。
+    private func categoryChangeRow(_ change: PeriodReportAnalytics.CategoryChange) -> some View {
+        let iconName: String
+        let iconTint: Color
+        if change.isNew {
+            iconName = "plus.circle.fill"
+            iconTint = .orange
+        } else if change.isGone {
+            iconName = "minus.circle"
+            iconTint = .secondary
+        } else {
+            iconName = "circle.fill"
+            iconTint = .accentColor
+        }
+
+        let detailText: String
+        let detailTint: Color
+        if change.isNew {
+            detailText = String(format: "新增 ¥%.0f", change.current)
+            detailTint = .orange
+        } else if change.isGone {
+            detailText = "已无支出"
+            detailTint = .secondary
+        } else {
+            let deltaSign = change.delta > 0 ? "+" : ""
+            let shareSign = change.shareDelta > 0 ? "+" : ""
+            detailText = String(format: "%@¥%.0f · %@%.0fpp", deltaSign, change.delta, shareSign, change.shareDelta * 100)
+            detailTint = change.shareDelta > 0 ? .red : .green
+        }
+
+        let name = ExpenseCategory(rawValue: change.categoryRaw)?.rawValue ?? change.categoryRaw
+
+        return HStack(spacing: 8) {
+            Image(systemName: iconName)
+                .font(.caption2)
+                .foregroundStyle(iconTint)
+            Text(name)
+                .font(.caption)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 0)
+            Text(detailText)
+                .font(.caption2)
+                .foregroundStyle(detailTint)
+        }
+    }
+
+    private func targetRow(icon: String, text: String, value: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.caption.bold())
+                .foregroundStyle(.primary)
+        }
+    }
+
+    // MARK: - 变化分析卡片（周/月/季/年报：指标环比与结构变化）
+
+    private var changeAnalysisCard: some View {
+        Group {
+            if let trend = reportData.trendSummary, !trend.metricChanges.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Label("变化分析", systemImage: "arrow.left.arrow.right")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.primary)
+                        Spacer()
+                    }
+
+                    // 指标环比
+                    VStack(spacing: 8) {
+                        ForEach(trend.metricChanges, id: \.key) { change in
+                            HStack(spacing: 10) {
+                                Text(change.title)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 56, alignment: .leading)
+
+                                // 本期
+                                VStack(alignment: .trailing, spacing: 1) {
+                                    Text(String(format: "%.0f", change.current))
+                                        .font(.subheadline.bold())
+                                        .foregroundStyle(.primary)
+                                    Text("本期")
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(.tertiary)
+                                }
+
+                                Image(systemName: "arrow.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+
+                                // 上期
+                                VStack(alignment: .trailing, spacing: 1) {
+                                    Text(change.previous.map { String(format: "%.0f", $0) } ?? "—")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                    Text("上期")
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(.tertiary)
+                                }
+
+                                Spacer(minLength: 0)
+
+                                // 变化
+                                if let ratio = change.ratio {
+                                    let improved = change.verdict > 0
+                                    let worsened = change.verdict < 0
+                                    Text(String(format: "%@%.0f%%", ratio > 0 ? "+" : "", ratio * 100))
+                                        .font(.caption.bold())
+                                        .foregroundStyle(improved ? .green : (worsened ? .red : .secondary))
+                                } else {
+                                    Text("—")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                        }
+                    }
+
+                    // 类别结构变化
+                    if !trend.categoryChanges.isEmpty {
+                        Divider()
+                        Text("支出结构变化")
+                            .font(.caption.bold())
+                            .foregroundStyle(.primary)
+
+                        VStack(spacing: 7) {
+                            ForEach(trend.categoryChanges.prefix(5), id: \.categoryRaw) { change in
+                                categoryChangeRow(change)
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color(.secondarySystemGroupedBackground))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.green.opacity(0.18), lineWidth: 1)
+                )
+            }
+        }
     }
 
     // MARK: - 月预算执行卡片（月报）
@@ -1649,7 +1896,7 @@ struct PeriodicReportSettingsSheet: View {
 
                     if reportManager.isMonthlyReportEnabled {
                         DatePicker(
-                            "每月1日提醒时间",
+                            "每月最后一天提醒时间",
                             selection: $reportManager.monthlyTime,
                             displayedComponents: .hourAndMinute
                         )
@@ -1657,7 +1904,43 @@ struct PeriodicReportSettingsSheet: View {
                 } header: {
                     Text("月报设置")
                 } footer: {
-                    Text("每月 1 日盘点上月总完成成果、账单开销与月度资产沉淀。")
+                    Text("每月最后一天盘点当月总完成成果、账单开销与月度资产沉淀，并给出趋势分析。")
+                }
+
+                // 4. 季报
+                Section {
+                    Toggle("季度深度复盘季报", isOn: $reportManager.isQuarterlyReportEnabled)
+                        .tint(.orange)
+
+                    if reportManager.isQuarterlyReportEnabled {
+                        DatePicker(
+                            "季末当天提醒时间",
+                            selection: $reportManager.quarterlyTime,
+                            displayedComponents: .hourAndMinute
+                        )
+                    }
+                } header: {
+                    Text("季报设置")
+                } footer: {
+                    Text("每季度最后一天回顾本季度的目标达成、财务结构与习惯坚持情况，为下季度校准方向。")
+                }
+
+                // 5. 年报
+                Section {
+                    Toggle("年度生活全景年报", isOn: $reportManager.isYearlyReportEnabled)
+                        .tint(.pink)
+
+                    if reportManager.isYearlyReportEnabled {
+                        DatePicker(
+                            "年末当天提醒时间",
+                            selection: $reportManager.yearlyTime,
+                            displayedComponents: .hourAndMinute
+                        )
+                    }
+                } header: {
+                    Text("年报设置")
+                } footer: {
+                    Text("每年 12 月 31 日生成这一年的目标、财务与健康总览回顾。")
                 }
             }
             .navigationTitle("报告推送设置")

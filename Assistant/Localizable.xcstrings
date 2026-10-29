@@ -1,6 +1,414 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "季报" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Quarterly Report"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "季报"
+                }
+            }
+        }
+    },
+    "趋势分析" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Trend Analysis"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "趋势分析"
+                }
+            }
+        }
+    },
+    "变化分析" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Change Analysis"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "变化分析"
+                }
+            }
+        }
+    },
+    "下期目标建议" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Next Period Targets"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "下期目标建议"
+                }
+            }
+        }
+    },
+    "支出结构变化" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Spending Structure Change"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "支出结构变化"
+                }
+            }
+        }
+    },
+    "趋势与变化分析" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Trend & Change Analysis"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "趋势与变化分析"
+                }
+            }
+        }
+    },
+    "关键指标环比" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Key Metrics vs Previous Period"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "关键指标环比"
+                }
+            }
+        }
+    },
+    "消费行为模式" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Spending Behavior Pattern"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "消费行为模式"
+                }
+            }
+        }
+    },
+    "待办准时率" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "On-Time Completion Rate"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "待办准时率"
+                }
+            }
+        }
+    },
+    "季度深度复盘季报" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Quarterly Deep-Dive Report"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "季度深度复盘季报"
+                }
+            }
+        }
+    },
+    "年度生活全景年报" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Annual Life Panorama Report"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "年度生活全景年报"
+                }
+            }
+        }
+    },
+    "每季度最后一天回顾本季度的目标达成、财务结构与习惯坚持情况，为下季度校准方向。" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Review the quarter's goals, spending structure and habit consistency on the last day of each quarter."
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "每季度最后一天回顾本季度的目标达成、财务结构与习惯坚持情况，为下季度校准方向。"
+                }
+            }
+        }
+    },
+    "每年 12 月 31 日生成这一年的目标、财务与健康总览回顾。" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Generate the year's goal, spending and health overview on December 31."
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "每年 12 月 31 日生成这一年的目标、财务与健康总览回顾。"
+                }
+            }
+        }
+    },
+    "每月最后一天盘点当月总完成成果、账单开销与月度资产沉淀，并给出趋势分析。" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Review the month's results, spending and asset changes on the last day of each month, with trend analysis."
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "每月最后一天盘点当月总完成成果、账单开销与月度资产沉淀，并给出趋势分析。"
+                }
+            }
+        }
+    },
+    "季末当天提醒时间" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Reminder Time on Quarter End"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "季末当天提醒时间"
+                }
+            }
+        }
+    },
+    "年末当天提醒时间" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Reminder Time on Year End"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "年末当天提醒时间"
+                }
+            }
+        }
+    },
+    "每月最后一天提醒时间" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Reminder Time on Last Day of Month"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "每月最后一天提醒时间"
+                }
+            }
+        }
+    },
+    "季度设置" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Quarterly Report Settings"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "季度设置"
+                }
+            }
+        }
+    },
+    "年报设置" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Annual Report Settings"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "年报设置"
+                }
+            }
+        }
+    },
+    "🗓️ 季度深度复盘季报已生成" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "🗓️ Your quarterly deep-dive report is ready"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "🗓️ 季度深度复盘季报已生成"
+                }
+            }
+        }
+    },
+    "🎊 年度生活全景年报已生成" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "🎊 Your annual life panorama is ready"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "🎊 年度生活全景年报已生成"
+                }
+            }
+        }
+    },
+    "回看本季度的目标达成、财务结构与习惯坚持情况，为下季度校准方向。" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Review this quarter's goals, spending structure and habit consistency to calibrate the next quarter."
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "回看本季度的目标达成、财务结构与习惯坚持情况，为下季度校准方向。"
+                }
+            }
+        }
+    },
+    "这一年的目标、财务与健康总览回顾，值得好好读一遍。" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "A full-year review of goals, spending and health — worth reading closely."
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "这一年的目标、财务与健康总览回顾，值得好好读一遍。"
+                }
+            }
+        }
+    },
+    "近 \\(values.count) 期支出走势" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Spending over the last \\(values.count) periods"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "近 \\(values.count) 期支出走势"
+                }
+            }
+        }
+    },
     "" : {
 
     },

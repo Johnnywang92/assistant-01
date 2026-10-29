@@ -491,7 +491,7 @@ struct TodoListView: View {
             .sheet(isPresented: $showVoice) { VoiceDialogueView() }
             .sheet(isPresented: $showCompletedHistory) { CompletedTodoHistoryView() }
             .sheet(isPresented: $showPeriodicReport) {
-                PeriodicReportView(initialPeriod: .daily)
+                PeriodicReportView(initialPeriod: router.requestedReportPeriod ?? .daily)
             }
             .sheet(item: $itemToShare) { item in
                 TodoShareSheet(
@@ -539,6 +539,12 @@ struct TodoListView: View {
                     router.activeSheet = nil
                 default:
                     break
+                }
+            }
+            .onChange(of: showPeriodicReport) { _, isPresented in
+                // 报告关闭后清掉透传的周期，避免下次打开沿用上一次通知的周期
+                if !isPresented {
+                    router.requestedReportPeriod = nil
                 }
             }
             .onChange(of: router.requestedFilter) { _, filterName in

@@ -14,6 +14,20 @@ enum ReportPeriodType: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
+    /// 稳定的英文标识，用于通知 userInfo 等跨语言场景。
+    ///
+    /// `rawValue` 是中文（同时充当本地化 key），不适合当持久化标识——
+    /// 中文文案一旦改动，依赖它的 userInfo 匹配就会静默失效。
+    var identifier: String {
+        switch self {
+        case .daily: return "daily"
+        case .weekly: return "weekly"
+        case .monthly: return "monthly"
+        case .quarterly: return "quarterly"
+        case .yearly: return "yearly"
+        }
+    }
+
     var displayName: String { L10n.tr(rawValue) }
 
     var icon: String {
@@ -59,23 +73,50 @@ struct ReportSuggestion: Identifiable, Sendable {
     let icon: String   // SF Symbol
     let title: String
     let detail: String
+    /// 同色位内的排序权重（越小越靠前）。默认 10；趋势洞察类用 0 以确保不被通用建议挤掉。
+    let priority: Int
+
+    init(tone: Tone, icon: String, title: String, detail: String, priority: Int = 10) {
+        self.tone = tone
+        self.icon = icon
+        self.title = title
+        self.detail = detail
+        self.priority = priority
+    }
 }
 
-/// 长周期（月/季/年报）回顾对比数据：与紧邻的上一等长周期比较
-struct PeriodComparison: Sendable {
-    /// 单个类别的上期→本期金额变化
-    struct CategoryShift: Sendable {
-        let category: ExpenseCategory
-        let from: Double
-        let to: Double
+/// 周期报告类型 → Core 的周期粒度。
+///
+/// 报告窗口与趋势序列必须用同一套边界规则（Core 的 `ReportPeriodWindow`），
+/// 否则「本期」和「趋势里的最后一期」会落在不同区间，环比就成了拿上上周比上周。
+extension ReportPeriodType {
+    var granularity: ReportPeriodWindow.Granularity {
+        switch self {
+        case .daily: return .day
+        case .weekly: return .week
+        case .monthly: return .month
+        case .quarterly: return .quarter
+        case .yearly: return .year
+        }
     }
 
-    let prevExpense: Double          // 上期总支出
-    let prevExpenseCount: Int        // 上期记账笔数
-    let expenseChangeRatio: Double   // 支出环比（(本期-上期)/上期，负 = 下降）
-    let prevCompletedCount: Int      // 上期完成待办数
-    let growingCategory: CategoryShift?    // 增长最多的类别
-    let shrinkingCategory: CategoryShift?  // 降温最多的类别
+    /// 趋势分析回溯的周期个数。
+    ///
+    /// 周报看 8 周（近两个月）、月报看 12 个月（近一年）、
+    /// 季报看 8 个季度（近两年）、年报看 5 年。
+    /// 少于 3 期时趋势结论不可靠，Core 侧会拒绝下结论。
+    var trendHistoryCount: Int {
+        switch self {
+        case .daily: return 0
+        case .weekly: return 8
+        case .monthly: return 12
+        case .quarterly: return 8
+        case .yearly: return 5
+        }
+    }
+
+    /// 是否需要跨期趋势分析（日报只看当天，不做对比）。
+    var supportsTrendAnalysis: Bool { self != .daily }
 }
 
 /// 周期复盘聚合报告数据结构
@@ -122,8 +163,9 @@ struct PeriodicReportData: Identifiable {
     // 行动建议（基于真实数据的可执行提示，urgent > action > positive）
     let suggestions: [ReportSuggestion]
 
-    // 周期回顾：与上一等长周期的环比对比（仅月/季/年报）
-    let comparison: PeriodComparison?
+    // 趋势与变化分析（周/月/季/年报；日报无跨期对比，为 nil）
+    // 含多期序列、指标环比、类别结构变化、消费行为模式、准时率与下期目标
+    let trendSummary: PeriodTrendSummary?
 
     // 身体活力与健康评估（Apple 健康与饮食热量推测）
     let vitality: VitalityEvaluation?
@@ -260,25 +302,132 @@ struct PeriodicReportData: Identifiable {
             }
             lines.append("")
         }
-        // 周期回顾：与上一等长周期环比（月/季/年报导出）
-        if let cmp = comparison {
-            lines.append("### 🔄 周期回顾（与上期对比）")
+        // 趋势与变化分析（周/月/季/年报导出）
+        if let trend = trendSummary {
+            lines.append("## 📈 趋势与变化分析")
             lines.append("")
-            lines.append("| 指标 | 本期 | 上期 | 变化 |")
-            lines.append("| :--- | :--- | :--- | :--- |")
-            let changeText = cmp.prevExpense > 0
-                ? (cmp.expenseChangeRatio >= 0 ? "+\(Int(cmp.expenseChangeRatio * 100))%" : "-\(Int(-cmp.expenseChangeRatio * 100))%")
-                : "—"
-            lines.append("| 总支出 | ¥\(String(format: "%.2f", totalExpense))（\(expenseCount) 笔） | ¥\(String(format: "%.2f", cmp.prevExpense))（\(cmp.prevExpenseCount) 笔） | \(changeText) |")
-            lines.append("| 完成待办 | \(completedTodos.count) 项 | \(cmp.prevCompletedCount) 项 | \(completedTodos.count - cmp.prevCompletedCount >= 0 ? "+" : "")\(completedTodos.count - cmp.prevCompletedCount) 项 |")
-            if let g = cmp.growingCategory {
+
+            // 多期序列
+            if trend.points.count >= 2 {
+                lines.append("### 近 \(trend.points.count) 期走势")
                 lines.append("")
-                lines.append("- 📈 增长最快：**\(g.category.rawValue)** ¥\(String(format: "%.0f", g.from)) → ¥\(String(format: "%.0f", g.to))（+¥\(String(format: "%.0f", g.to - g.from))）")
+                lines.append("| 周期 | 支出 | 完成事项 |")
+                lines.append("| :--- | ---: | ---: |")
+                for point in trend.points {
+                    let marker = point.label == trend.points.last?.label ? "（本期）" : ""
+                    lines.append("| \(point.label)\(marker) | ¥\(String(format: "%.0f", point.expense)) | \(point.completedCount) 项 |")
+                }
+                lines.append("")
+
+                // 趋势方向判读
+                let expenseTrend = trend.expenseTrend
+                let directionText: String
+                switch expenseTrend.direction {
+                case .rising: directionText = "📈 上升"
+                case .falling: directionText = "📉 下降"
+                case .flat: directionText = "➡️ 基本持平"
+                }
+                var trendLines: [String] = []
+                trendLines.append("- 支出趋势：**\(directionText)**")
+                if expenseTrend.streak != 0 {
+                    trendLines.append(String(format: "- 连续变化：%@ %d 期", expenseTrend.streak > 0 ? "上升" : "下降", abs(expenseTrend.streak)))
+                }
+                if expenseTrend.slope != 0 {
+                    trendLines.append(String(format: "- 每期变化：约 %@¥%.0f", expenseTrend.slope > 0 ? "+" : "", expenseTrend.slope))
+                }
+                if expenseTrend.baselineAverage > 0, let deviation = expenseTrend.currentVsBaseline {
+                    trendLines.append(String(format: "- 相对历史均值：%@%.0f%%", deviation > 0 ? "+" : "", deviation * 100))
+                }
+                trendLines.append(String(format: "- 波动系数：%.0f%%", expenseTrend.volatility * 100))
+                lines.append(contentsOf: trendLines)
+                lines.append("")
             }
-            if let s = cmp.shrinkingCategory {
-                lines.append("- 📉 降温最明显：**\(s.category.rawValue)** ¥\(String(format: "%.0f", s.from)) → ¥\(String(format: "%.0f", s.to))（-¥\(String(format: "%.0f", s.from - s.to))）")
+
+            // 指标环比
+            if !trend.metricChanges.isEmpty {
+                lines.append("### 关键指标环比")
+                lines.append("")
+                lines.append("| 指标 | 本期 | 上期 | 变化 |")
+                lines.append("| :--- | ---: | ---: | :--- |")
+                for change in trend.metricChanges {
+                    let currentText = String(format: "%.0f", change.current)
+                    let previousText = change.previous.map { String(format: "%.0f", $0) } ?? "—"
+                    let deltaText: String
+                    if let ratio = change.ratio {
+                        deltaText = String(format: "%@%.0f%%", ratio > 0 ? "+" : "", ratio * 100)
+                    } else if let delta = change.delta {
+                        deltaText = String(format: "%@%.0f", delta > 0 ? "+" : "", delta)
+                    } else {
+                        deltaText = "—"
+                    }
+                    let verdictMark = change.verdict > 0 ? " ✅" : (change.verdict < 0 ? " ⚠️" : "")
+                    lines.append("| \(change.title) | \(currentText) | \(previousText) | \(deltaText)\(verdictMark) |")
+                }
+                lines.append("")
             }
-            lines.append("")
+
+            // 类别结构变化
+            if !trend.categoryChanges.isEmpty {
+                lines.append("### 支出结构变化")
+                lines.append("")
+                lines.append("| 类别 | 本期金额 | 上期金额 | 金额变化 | 占比变化 |")
+                lines.append("| :--- | ---: | ---: | ---: | ---: |")
+                for change in trend.categoryChanges.prefix(8) {
+                    let name = ExpenseCategory(rawValue: change.categoryRaw)?.rawValue ?? change.categoryRaw
+                    let shareDeltaText = String(format: "%@%.1fpp", change.shareDelta > 0 ? "+" : "", change.shareDelta * 100)
+                    lines.append("| \(name) | ¥\(String(format: "%.0f", change.current)) | ¥\(String(format: "%.0f", change.previous)) | \(String(format: "%@%.0f", change.delta > 0 ? "+" : "", change.delta)) | \(shareDeltaText) |")
+                }
+                lines.append("")
+            }
+
+            // 行为模式
+            if let pattern = trend.spendingPattern {
+                lines.append("### 消费行为模式")
+                lines.append("")
+                lines.append(String(format: "- 日均支出：¥%.0f（有效消费 %d 天 / 已过 %d 天）", pattern.dailyAverage, pattern.activeDays, pattern.elapsedDays))
+                lines.append(String(format: "- 工作日日均 ¥%.0f · 周末日均 ¥%.0f · 周末占比 %.0f%%", pattern.weekdayDailyAverage, pattern.weekendDailyAverage, pattern.weekendShare * 100))
+                if let peakWeekday = pattern.peakWeekdayIndex {
+                    let names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+                    lines.append("- 消费高峰：\(names[peakWeekday])")
+                }
+                if pattern.peakDayAmount > 0 {
+                    let dayText = pattern.peakDay.map { $0.formatted(.dateTime.month().day().locale(L10n.locale)) } ?? ""
+                    lines.append(String(format: "- 单日最高：¥%.0f（%@）", pattern.peakDayAmount, dayText))
+                }
+                if pattern.smallTicketCount > 0 {
+                    lines.append(String(format: "- 小额消费：%d 笔，合计 ¥%.0f", pattern.smallTicketCount, pattern.smallTicketTotal))
+                }
+                if pattern.noSpendDays > 0 {
+                    lines.append(String(format: "- 零支出天数：%d 天", pattern.noSpendDays))
+                }
+                lines.append("")
+            }
+
+            // 准时率
+            if let punctuality = trend.punctuality, punctuality.dueCompletedCount > 0 {
+                lines.append("### 待办准时率")
+                lines.append("")
+                let rateText = punctuality.onTimeRate.map { String(format: "%.0f%%", $0 * 100) } ?? "—"
+                lines.append("- 准时率：**\(rateText)**（\(punctuality.onTimeCount)/\(punctuality.dueCompletedCount) 项按时完成）")
+                if punctuality.averageDelayDays > 0 {
+                    lines.append(String(format: "- 逾期完成平均拖延 %.1f 天", punctuality.averageDelayDays))
+                }
+                lines.append("")
+            }
+
+            // 下期目标
+            if let targets = trend.nextTargets {
+                lines.append("### 下期目标建议")
+                lines.append("")
+                if let cap = targets.expenseCap {
+                    lines.append(String(format: "- 支出上限：**¥%.0f**", cap))
+                }
+                lines.append(String(format: "- 完成事项：**%d 项**", targets.completedTarget))
+                if let rate = targets.savingsRateTarget {
+                    lines.append(String(format: "- 储蓄率：**%.0f%%**", rate * 100))
+                }
+                lines.append("")
+            }
         }
         // 今日安心花（仅当天的日报导出）
         if let sts = safeToSpend {
@@ -394,6 +543,26 @@ final class PeriodicReportManager: ObservableObject {
         didSet { scheduleNotifications() }
     }
 
+    /// 季报是否开启（默认关闭）
+    @AppStorage("periodic_report_quarterly_enabled") var isQuarterlyReportEnabled: Bool = false {
+        didSet { scheduleNotifications() }
+    }
+
+    /// 季报提醒时间 (默认 21:00，季末当天推送)
+    @AppStorage("periodic_report_quarterly_time_interval") private var quarterlyTimeInterval: Double = 21 * 3600 {
+        didSet { scheduleNotifications() }
+    }
+
+    /// 年报是否开启（默认关闭）
+    @AppStorage("periodic_report_yearly_enabled") var isYearlyReportEnabled: Bool = false {
+        didSet { scheduleNotifications() }
+    }
+
+    /// 年报提醒时间 (默认 21:00，12 月 31 日推送)
+    @AppStorage("periodic_report_yearly_time_interval") private var yearlyTimeInterval: Double = 21 * 3600 {
+        didSet { scheduleNotifications() }
+    }
+
     // MARK: - 辅助计算属性
 
     var dailyTime: Date {
@@ -444,6 +613,38 @@ final class PeriodicReportManager: ObservableObject {
         }
     }
 
+    var quarterlyTime: Date {
+        get {
+            let cal = Calendar.current
+            let now = Date.now
+            let hours = Int(quarterlyTimeInterval) / 3600
+            let minutes = (Int(quarterlyTimeInterval) % 3600) / 60
+            return cal.date(bySettingHour: hours, minute: minutes, second: 0, of: now) ?? now
+        }
+        set {
+            let cal = Calendar.current
+            let h = cal.component(.hour, from: newValue)
+            let m = cal.component(.minute, from: newValue)
+            quarterlyTimeInterval = Double(h * 3600 + m * 60)
+        }
+    }
+
+    var yearlyTime: Date {
+        get {
+            let cal = Calendar.current
+            let now = Date.now
+            let hours = Int(yearlyTimeInterval) / 3600
+            let minutes = (Int(yearlyTimeInterval) % 3600) / 60
+            return cal.date(bySettingHour: hours, minute: minutes, second: 0, of: now) ?? now
+        }
+        set {
+            let cal = Calendar.current
+            let h = cal.component(.hour, from: newValue)
+            let m = cal.component(.minute, from: newValue)
+            yearlyTimeInterval = Double(h * 3600 + m * 60)
+        }
+    }
+
     private init() {}
 
     // MARK: - 周期数据报告计算引擎
@@ -457,23 +658,24 @@ final class PeriodicReportManager: ObservableObject {
         let allTodos = (try? context.fetch(FetchDescriptor<TodoItem>())) ?? []
 
         // 在时间跨度内完成的事项 (通过 completedAt 判定，若无则降级看由于在区间内)
+        // 区间语义为 [startDate, endDate)：endDate 是下一周期的起点，不含。
         let completedInPeriod = allTodos.filter { todo in
             guard todo.status == .done else { return false }
             if let comp = todo.completedAt {
-                return comp >= startDate && comp <= endDate
+                return comp >= startDate && comp < endDate
             }
-            return todo.createdAt >= startDate && todo.createdAt <= endDate
+            return todo.createdAt >= startDate && todo.createdAt < endDate
         }
 
         // 在时间跨度内新创建的事项
-        let createdInPeriod = allTodos.filter { $0.createdAt >= startDate && $0.createdAt <= endDate }
+        let createdInPeriod = allTodos.filter { $0.createdAt >= startDate && $0.createdAt < endDate }
 
         // 当前仍未完成的活跃事项；日报只纳入今天真正需要处理的事项，避免远期活动拉低完成率。
         let nextDayStart = cal.date(byAdding: .day, value: 1, to: startDate) ?? endDate
         let dayAfterNextStart = cal.date(byAdding: .day, value: 2, to: startDate) ?? nextDayStart
         let dueTodayTodos = allTodos.filter { todo in
             guard todo.status == .active, let due = todo.dueAt else { return false }
-            return due >= startDate && due <= endDate
+            return due >= startDate && due < endDate
         }
         let overdueTodos = allTodos.filter { todo in
             guard todo.status == .active, let due = todo.dueAt else { return false }
@@ -489,8 +691,8 @@ final class PeriodicReportManager: ObservableObject {
 
         let parcelCount = allTodos.filter { todo in
             (todo.type == .parcel || todo.type == .returnParcel) &&
-            ((todo.completedAt != nil && todo.completedAt! >= startDate && todo.completedAt! <= endDate) ||
-             (todo.createdAt >= startDate && todo.createdAt <= endDate))
+            ((todo.completedAt != nil && todo.completedAt! >= startDate && todo.completedAt! < endDate) ||
+             (todo.createdAt >= startDate && todo.createdAt < endDate))
         }.count
 
         let totalTargetCount = period == .daily
@@ -500,7 +702,7 @@ final class PeriodicReportManager: ObservableObject {
 
         // 2. 查询消费支出账单
         let allExpenses = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
-        let expensesInPeriod = allExpenses.filter { $0.date >= startDate && $0.date <= endDate }
+        let expensesInPeriod = allExpenses.filter { $0.date >= startDate && $0.date < endDate }
 
         let expenseOnly = expensesInPeriod.filter { !$0.isIncome }
         let incomeOnly = expensesInPeriod.filter { $0.isIncome }
@@ -541,7 +743,7 @@ final class PeriodicReportManager: ObservableObject {
 
         // 4.5 饮食摄入热量与 Apple 健康指标聚合（活力值评估）
         let allFoodRecords = (try? context.fetch(FetchDescriptor<FoodIntakeRecord>())) ?? []
-        let foodRecordsInPeriod = allFoodRecords.filter { $0.date >= startDate && $0.date <= endDate }
+        let foodRecordsInPeriod = allFoodRecords.filter { $0.date >= startDate && $0.date < endDate }
         let totalFoodCalories = foodRecordsInPeriod.reduce(0.0) { $0 + $1.consumedCalories }
         let foodIntakeCalories: Double? = foodRecordsInPeriod.isEmpty ? nil : totalFoodCalories
 
@@ -550,6 +752,19 @@ final class PeriodicReportManager: ObservableObject {
         let vitality: VitalityEvaluation? = (healthSnapshot != nil || foodIntakeCalories != nil)
             ? VitalityEvaluator.evaluate(snapshot: healthSnapshot, foodIntakeCalories: foodIntakeCalories)
             : nil
+
+        // 4.6 趋势与变化分析（周/月/季/年报）：回溯多期数据，交给 Core 的纯函数算趋势
+        // 必须早于智能小结与建议引擎生成——两者都要用到趋势结论。
+        let trendSummary = buildTrendSummary(
+            period: period,
+            targetDate: targetDate,
+            calendar: cal,
+            allExpenses: allExpenses,
+            allTodos: allTodos,
+            currentExpense: totalExpense,
+            currentIncome: totalIncome,
+            currentCompletionRate: completionRate
+        )
 
         // 5. 生成智能复盘总结
         let smartSummary = generateSmartSummary(
@@ -562,7 +777,8 @@ final class PeriodicReportManager: ObservableObject {
             categoryStats: categoryStats,
             parcelCount: parcelCount,
             upcomingCount: upcomingTodos.count,
-            vitality: vitality
+            vitality: vitality,
+            trendSummary: trendSummary
         )
 
         // 6. 财务深度联动：今日安心花（仅「今天」的日报）
@@ -601,63 +817,8 @@ final class PeriodicReportManager: ObservableObject {
             }
             .sorted { $0.amount > $1.amount }
 
-        // 10. 长周期回顾对比（月/季/年报：与紧邻上一等长周期比支出、完成量与类别结构）
-        var comparison: PeriodComparison? = nil
-        if period == .monthly || period == .quarterly || period == .yearly {
-            let duration = endDate.timeIntervalSince(startDate)
-            let prevEnd = startDate.addingTimeInterval(-1)
-            let prevStart = prevEnd.addingTimeInterval(-duration)
-
-            let prevExpenses = allExpenses.filter { !$0.isIncome && $0.date >= prevStart && $0.date <= prevEnd }
-            let prevTotal = prevExpenses.reduce(0.0) { $0 + $1.amount }
-
-            var prevCatMap: [ExpenseCategory: Double] = [:]
-            for exp in prevExpenses {
-                let cat = ExpenseCategory(rawValue: exp.categoryRaw) ?? .other
-                prevCatMap[cat, default: 0] += exp.amount
-            }
-            var curCatMap: [ExpenseCategory: Double] = [:]
-            for stat in categoryStats { curCatMap[stat.category] = stat.amount }
-
-            var growing: PeriodComparison.CategoryShift? = nil
-            var shrinking: PeriodComparison.CategoryShift? = nil
-            for (cat, curAmt) in curCatMap {
-                let prevAmt = prevCatMap[cat] ?? 0
-                let diff = curAmt - prevAmt
-                if diff > 0, growing == nil || diff > (growing!.to - growing!.from) {
-                    growing = .init(category: cat, from: prevAmt, to: curAmt)
-                }
-            }
-            for (cat, prevAmt) in prevCatMap {
-                let curAmt = curCatMap[cat] ?? 0
-                let diff = curAmt - prevAmt
-                if diff < 0, shrinking == nil || diff < (shrinking!.to - shrinking!.from) {
-                    shrinking = .init(category: cat, from: prevAmt, to: curAmt)
-                }
-            }
-
-            let prevCompleted = allTodos.filter { todo in
-                guard todo.status == .done else { return false }
-                if let comp = todo.completedAt { return comp >= prevStart && comp <= prevEnd }
-                return todo.createdAt >= prevStart && todo.createdAt <= prevEnd
-            }
-
-            let expenseChange = prevTotal > 0
-                ? (totalExpense - prevTotal) / prevTotal
-                : (totalExpense > 0 ? 1.0 : 0.0)
-
-            comparison = PeriodComparison(
-                prevExpense: prevTotal,
-                prevExpenseCount: prevExpenses.count,
-                expenseChangeRatio: expenseChange,
-                prevCompletedCount: prevCompleted.count,
-                growingCategory: growing,
-                shrinkingCategory: shrinking
-            )
-        }
-
         // 11. 行动建议引擎
-        let periodDays = max(1, Int((endDate.timeIntervalSince(startDate) / 86400).rounded()) + 1)
+        let periodDays = max(1, Int((endDate.timeIntervalSince(startDate) / 86400).rounded()))
         let suggestions = generateSuggestions(
             period: period,
             calendar: cal,
@@ -674,7 +835,7 @@ final class PeriodicReportManager: ObservableObject {
             habitStreakCount: habitStreakCount,
             unlinkedLargeExpenses: unlinkedLargeExpenses,
             itemCostEntries: itemCostEntries,
-            comparison: comparison,
+            trendSummary: trendSummary,
             totalExpense: totalExpense,
             totalIncome: totalIncome,
             expenseCount: expenseOnly.count,
@@ -709,19 +870,142 @@ final class PeriodicReportManager: ObservableObject {
             budgetOverview: budgetOverview,
             itemCostEntries: itemCostEntries,
             suggestions: suggestions,
-            comparison: comparison,
+            trendSummary: trendSummary,
             vitality: vitality,
             healthSnapshot: healthSnapshot
         )
     }
 
+    // MARK: - 趋势与变化分析
+
+    /// 回溯多期数据，构建趋势汇总。
+    ///
+    /// 每一期的窗口边界都来自 Core 的 `ReportPeriodWindow`，与「本期」窗口完全同源；
+    /// 因此序列最后一期就是本期，环比永远拿「紧邻的上一期」比，
+    /// 不会因为 2 月 28 天或闰年导致错位。
+    private func buildTrendSummary(
+        period: ReportPeriodType,
+        targetDate: Date,
+        calendar cal: Calendar,
+        allExpenses: [ExpenseRecord],
+        allTodos: [TodoItem],
+        currentExpense: Double,
+        currentIncome: Double,
+        currentCompletionRate: Double
+    ) -> PeriodTrendSummary? {
+        guard period.supportsTrendAnalysis else { return nil }
+        let historyCount = period.trendHistoryCount
+        guard historyCount >= 2 else { return nil }
+
+        let windows = ReportPeriodWindow.series(
+            containing: targetDate,
+            count: historyCount,
+            granularity: period.granularity,
+            calendar: cal
+        )
+
+        // 逐期汇总
+        var points: [PeriodReportAnalytics.PeriodPoint] = []
+        points.reserveCapacity(windows.count)
+
+        for window in windows {
+            let periodExpenses = allExpenses.filter { $0.date >= window.start && $0.date < window.end }
+            let expense = periodExpenses.filter { !$0.isIncome }.reduce(0.0) { $0 + $1.amount }
+            let income = periodExpenses.filter { $0.isIncome }.reduce(0.0) { $0 + $1.amount }
+
+            let completed = allTodos.filter { todo in
+                guard todo.status == .done else { return false }
+                if let comp = todo.completedAt { return comp >= window.start && comp < window.end }
+                return todo.createdAt >= window.start && todo.createdAt < window.end
+            }.count
+
+            let created = allTodos.filter { $0.createdAt >= window.start && $0.createdAt < window.end }.count
+
+            points.append(PeriodReportAnalytics.PeriodPoint(
+                label: trendPointLabel(for: window, period: period, calendar: cal),
+                start: window.start,
+                end: window.end,
+                expense: expense,
+                income: income,
+                completedCount: completed,
+                createdCount: created
+            ))
+        }
+
+        guard let currentWindow = windows.last else { return nil }
+
+        // 本期与上期的类别金额结构（用于类别占比变化）
+        func categoryAmounts(in window: ReportPeriodWindow.Window) -> [String: Double] {
+            var result: [String: Double] = [:]
+            for exp in allExpenses where !exp.isIncome && exp.date >= window.start && exp.date < window.end {
+                result[exp.categoryRaw, default: 0] += exp.amount
+            }
+            return result
+        }
+        let currentCategories = categoryAmounts(in: currentWindow)
+        let previousCategories = windows.count >= 2 ? categoryAmounts(in: windows[windows.count - 2]) : [:]
+
+        // 本期支出明细（行为模式）与完成明细（准时率）
+        let expenseSnapshots: [(date: Date, amount: Double)] = allExpenses
+            .filter { !$0.isIncome && $0.date >= currentWindow.start && $0.date < currentWindow.end }
+            .map { ($0.date, $0.amount) }
+
+        let completions: [(completedAt: Date, dueAt: Date?)] = allTodos.compactMap { todo in
+            guard todo.status == .done, let comp = todo.completedAt else { return nil }
+            guard comp >= currentWindow.start && comp < currentWindow.end else { return nil }
+            return (comp, todo.dueAt)
+        }
+
+        // 上期达成率：按上期自身的完成/应完成口径计算
+        var previousCompletionRate: Double?
+        if windows.count >= 2 {
+            let prevWindow = windows[windows.count - 2]
+            let prevCompleted = allTodos.filter { todo in
+                guard todo.status == .done else { return false }
+                if let comp = todo.completedAt { return comp >= prevWindow.start && comp < prevWindow.end }
+                return todo.createdAt >= prevWindow.start && todo.createdAt < prevWindow.end
+            }.count
+            let prevPending = allTodos.filter { todo in
+                todo.status == .active && todo.createdAt < prevWindow.end
+            }.count
+            let prevTarget = prevCompleted + prevPending
+            if prevTarget > 0 {
+                previousCompletionRate = Double(prevCompleted) / Double(prevTarget)
+            }
+        }
+
+        return PeriodTrendBuilder.build(
+            points: points,
+            currentCategoryAmounts: currentCategories,
+            previousCategoryAmounts: previousCategories,
+            expenseSnapshots: expenseSnapshots,
+            completions: completions,
+            currentIncome: currentIncome,
+            currentCompletionRate: currentCompletionRate,
+            previousCompletionRate: previousCompletionRate,
+            now: .now,
+            calendar: cal
+        )
+    }
+
     // MARK: - 日期范围与标题计算
 
+    /// 计算报告周期窗口。**边界规则统一由 Core 的 `ReportPeriodWindow` 提供**，
+    /// 保证「本期」与「趋势序列里的最后一期」落在完全相同的区间——
+    /// 否则环比就成了拿上上周比上周，且周报在不同地区设置下会跨 6 天而非 7 天。
+    ///
+    /// 返回的 `end` 为**不含**的下一周期起点，与 Core 语义一致。
     private func calculateDateRange(period: ReportPeriodType, targetDate: Date, calendar cal: Calendar) -> (Date, Date, String, String) {
+        let window = ReportPeriodWindow.window(
+            containing: targetDate,
+            granularity: period.granularity,
+            calendar: cal
+        )
+        let start = window.start
+        let end = window.end
+
         switch period {
         case .daily:
-            let start = cal.startOfDay(for: targetDate)
-            let end = cal.date(bySettingHour: 23, minute: 59, second: 59, of: start) ?? start
             let isToday = cal.isDateInToday(targetDate)
             let titlePrefix = isToday
                 ? L10n.tr("今日生活日报")
@@ -732,54 +1016,59 @@ final class PeriodicReportManager: ObservableObject {
             return (start, end, titlePrefix, sub)
 
         case .weekly:
-            let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: targetDate)
-            let start = cal.date(from: comps) ?? cal.startOfDay(for: targetDate)
-            let end = cal.date(byAdding: .day, value: 6, to: start).flatMap {
-                cal.date(bySettingHour: 23, minute: 59, second: 59, of: $0)
-            } ?? targetDate
-            let weekNumber = cal.component(.weekOfYear, from: targetDate)
-            let year = cal.component(.year, from: targetDate)
+            // 周窗口锚定周一~周日（Core 内部强制 firstWeekday = 2，不随地区设置漂移）
+            let isoCal = ReportPeriodWindow.mondayFirstCalendar(base: cal)
+            let weekNumber = isoCal.component(.weekOfYear, from: start)
+            let year = isoCal.component(.yearForWeekOfYear, from: start)
             let title = L10n.choose("\(year)年第 \(weekNumber) 周 · 复盘周报", "Week \(weekNumber), \(year) · Weekly Report")
-            let sub = "\(start.formatted(.dateTime.month().day().locale(L10n.locale))) ~ \(end.formatted(.dateTime.month().day().locale(L10n.locale)))"
+            let sub = "\(start.formatted(.dateTime.month().day().locale(L10n.locale))) ~ \(cal.date(byAdding: .day, value: -1, to: end)!.formatted(.dateTime.month().day().locale(L10n.locale)))"
             return (start, end, title, sub)
 
         case .quarterly:
-            // 季报采用自然季度：季度首月 1 日 00:00:00 至季末月最后一天 23:59:59。
             let year = cal.component(.year, from: targetDate)
             let month = cal.component(.month, from: targetDate)
             let quarter = (month - 1) / 3 + 1
             let startMonth = (quarter - 1) * 3 + 1
-            let start = cal.date(from: DateComponents(year: year, month: startMonth, day: 1)) ?? cal.startOfDay(for: targetDate)
             let endMonth = startMonth + 2
-            let endMonthFirst = cal.date(from: DateComponents(year: year, month: endMonth, day: 1)) ?? start
-            let daysInEnd = cal.range(of: .day, in: .month, for: endMonthFirst)?.count ?? 31
-            let endCandidate = cal.date(from: DateComponents(year: year, month: endMonth, day: daysInEnd)) ?? targetDate
-            let end = cal.date(bySettingHour: 23, minute: 59, second: 59, of: endCandidate) ?? targetDate
+            let daysInEnd = cal.range(of: .day, in: .month, for: cal.date(from: DateComponents(year: year, month: endMonth, day: 1)) ?? start)?.count ?? 31
             let title = L10n.choose("\(year)年第 \(quarter) 季度 · 复盘季报", "Q\(quarter) \(year) · Quarterly Report")
             let sub = "\(year)年\(startMonth)月1日 ~ \(endMonth)月\(daysInEnd)日"
             return (start, end, title, sub)
 
         case .yearly:
-            // 年报采用自然年：当年 1 月 1 日 00:00:00 至 12 月 31 日 23:59:59。
             let year = cal.component(.year, from: targetDate)
-            let start = cal.date(from: DateComponents(year: year, month: 1, day: 1)) ?? cal.startOfDay(for: targetDate)
-            let nextYear = cal.date(from: DateComponents(year: year + 1, month: 1, day: 1)) ?? targetDate
-            let end = cal.date(byAdding: .second, value: -1, to: nextYear) ?? targetDate
             let title = L10n.choose("\(year)年 · 自然年报", "\(year) · Annual Report")
             let sub = L10n.choose("\(year)年1月1日 ~ \(year)年12月31日", "Jan 1, \(year) ~ Dec 31, \(year)")
             return (start, end, title, sub)
 
         case .monthly:
-            let comps = cal.dateComponents([.year, .month], from: targetDate)
-            let start = cal.date(from: comps) ?? cal.startOfDay(for: targetDate)
-            let range = cal.range(of: .day, in: .month, for: targetDate)?.count ?? 30
-            let end = cal.date(byAdding: .day, value: range - 1, to: start).flatMap {
-                cal.date(bySettingHour: 23, minute: 59, second: 59, of: $0)
-            } ?? targetDate
             let monthName = targetDate.formatted(.dateTime.year().month().locale(L10n.locale))
+            let range = cal.range(of: .day, in: .month, for: targetDate)?.count ?? 30
             let title = L10n.choose("\(monthName) · 成果月报", "\(monthName) · Monthly Report")
             let sub = L10n.choose("\(monthName) 1日 ~ \(range)日", "\(monthName) 1 ~ \(range)")
             return (start, end, title, sub)
+        }
+    }
+
+    /// 趋势序列里某一期的展示标签（如「6/15」「2026-06」「2026 Q2」「2026」）。
+    private func trendPointLabel(
+        for window: ReportPeriodWindow.Window,
+        period: ReportPeriodType,
+        calendar cal: Calendar
+    ) -> String {
+        switch period {
+        case .daily:
+            return window.start.formatted(.dateTime.month().day().locale(L10n.locale))
+        case .weekly:
+            return window.start.formatted(.dateTime.month().day().locale(L10n.locale))
+        case .monthly:
+            return window.start.formatted(.dateTime.year().month().locale(L10n.locale))
+        case .quarterly:
+            let comps = cal.dateComponents([.year, .month], from: window.start)
+            let quarter = ((comps.month ?? 1) - 1) / 3 + 1
+            return "\(comps.year ?? 0) Q\(quarter)"
+        case .yearly:
+            return String(cal.component(.year, from: window.start))
         }
     }
 
@@ -802,7 +1091,7 @@ final class PeriodicReportManager: ObservableObject {
         habitStreakCount: Int,
         unlinkedLargeExpenses: [ExpenseRecord],
         itemCostEntries: [ItemCostReportEntry],
-        comparison: PeriodComparison?,
+        trendSummary: PeriodTrendSummary?,
         totalExpense: Double,
         totalIncome: Double,
         expenseCount: Int,
@@ -912,37 +1201,40 @@ final class PeriodicReportManager: ObservableObject {
             ))
         }
 
-        // ===== 长周期（月/季/年）回顾类建议：全部由环比真实数据驱动 =====
-        if let cmp = comparison {
-            let expenseDiff = totalExpense - cmp.prevExpense
+        // ===== 长周期（周/月/季/年）回顾类建议：全部由趋势与环比真实数据驱动 =====
+        if let trend = trendSummary {
+            let expenseDiff = totalExpense - (trend.previousExpense ?? 0)
 
             // 9a. 支出环比显著上升 → 指认增长来源类别
-            if cmp.expenseChangeRatio > 0.2, expenseDiff > 100 {
-                var detail = "本期 ¥\(String(format: "%.0f", totalExpense)) ← 上期 ¥\(String(format: "%.0f", cmp.prevExpense))。"
-                if let g = cmp.growingCategory {
-                    detail += "主要来自「\(g.category.rawValue)」：¥\(String(format: "%.0f", g.from)) → ¥\(String(format: "%.0f", g.to))（+\(String(format: "%.0f", g.to - g.from))）。先确认其中是否含一次性大额，再决定下期是否收紧该类别。"
-                } else {
-                    detail += "先回看几笔最大的开支是否必要，再决定下期节奏。"
+            if let prev = trend.previousExpense, prev > 0 {
+                let changeRatio = (totalExpense - prev) / prev
+                if changeRatio > 0.2, expenseDiff > 100 {
+                    var detail = "本期 ¥\(String(format: "%.0f", totalExpense)) ← 上期 ¥\(String(format: "%.0f", prev))。"
+                    if let growth = trend.categoryChanges.first(where: { $0.delta > 0 }) {
+                        detail += "主要来自「\(growth.categoryRaw)」：¥\(String(format: "%.0f", growth.previous)) → ¥\(String(format: "%.0f", growth.current))（+\(String(format: "%.0f", growth.delta))）。先确认其中是否含一次性大额，再决定下期是否收紧该类别。"
+                    } else {
+                        detail += "先回看几笔最大的开支是否必要，再决定下期节奏。"
+                    }
+                    suggestions.append(ReportSuggestion(
+                        tone: .urgent, icon: "chart.line.uptrend.xyaxis",
+                        title: String(format: "支出比上期增加 %d%%", Int(changeRatio * 100)),
+                        detail: detail
+                    ))
                 }
-                suggestions.append(ReportSuggestion(
-                    tone: .urgent, icon: "chart.line.uptrend.xyaxis",
-                    title: String(format: "支出比上期增加 %d%%", Int(cmp.expenseChangeRatio * 100)),
-                    detail: detail
-                ))
-            }
 
-            // 9b. 支出环比明显下降 → 肯定并提示守住
-            if cmp.expenseChangeRatio < -0.1, expenseDiff < -100 {
-                var detail = "上期 ¥\(String(format: "%.0f", cmp.prevExpense)) → 本期 ¥\(String(format: "%.0f", totalExpense))。"
-                if let s = cmp.shrinkingCategory {
-                    detail += "「\(s.category.rawValue)」降温最明显：¥\(String(format: "%.0f", s.from)) → ¥\(String(format: "%.0f", s.to))。"
+                // 9b. 支出环比明显下降 → 肯定并提示守住
+                if changeRatio < -0.1, expenseDiff < -100 {
+                    var detail = "上期 ¥\(String(format: "%.0f", prev)) → 本期 ¥\(String(format: "%.0f", totalExpense))。"
+                    if let shrink = trend.categoryChanges.first(where: { $0.delta < 0 }) {
+                        detail += "「\(shrink.categoryRaw)」降温最明显：¥\(String(format: "%.0f", shrink.previous)) → ¥\(String(format: "%.0f", shrink.current))。"
+                    }
+                    detail += "省钱不是压到最低，而是稳在能长期执行的区间。"
+                    suggestions.append(ReportSuggestion(
+                        tone: .positive, icon: "chart.line.downtrend.xyaxis",
+                        title: String(format: "支出比上期减少 ¥%.0f（-%d%%）", -expenseDiff, Int(-changeRatio * 100)),
+                        detail: detail
+                    ))
                 }
-                detail += "省钱不是压到最低，而是稳在能长期执行的区间。"
-                suggestions.append(ReportSuggestion(
-                    tone: .positive, icon: "chart.line.downtrend.xyaxis",
-                    title: String(format: "支出比上期减少 ¥%.0f（-%d%%）", -expenseDiff, Int(-cmp.expenseChangeRatio * 100)),
-                    detail: detail
-                ))
             }
 
             // 9c. 记账频次偏低 → 数据可信度提示
@@ -971,6 +1263,9 @@ final class PeriodicReportManager: ObservableObject {
                     detail: String(format: "收入 ¥%.0f < 支出 ¥%.0f。对照上面的分类构成，优先压缩非必要类别；连续两期出现就该重排预算了。", totalIncome, totalExpense)
                 ))
             }
+
+            // 9f. 多期趋势洞察：把统计结论翻译成可执行的建议
+            suggestions.append(contentsOf: trendSuggestion(from: trend))
         }
 
         // 9.5 身体活力与机能建议
@@ -999,7 +1294,190 @@ final class PeriodicReportManager: ObservableObject {
             ))
         }
 
-        return Array(suggestions.sorted { $0.tone.rawValue < $1.tone.rawValue }.prefix(6))
+        return Array(
+            suggestions
+                .enumerated()
+                .sorted { lhs, rhs in
+                    // 先按色位，再按权重，最后按原始顺序兜底——
+                    // Array.sorted 本身不保证稳定，必须显式带上原始下标，
+                    // 否则同一份数据每次渲染出的建议顺序可能不同。
+                    if lhs.element.tone.rawValue != rhs.element.tone.rawValue {
+                        return lhs.element.tone.rawValue < rhs.element.tone.rawValue
+                    }
+                    if lhs.element.priority != rhs.element.priority {
+                        return lhs.element.priority < rhs.element.priority
+                    }
+                    return lhs.offset < rhs.offset
+                }
+                .prefix(6)
+                .map(\.element)
+        )
+    }
+
+    // MARK: - 趋势洞察 → 建议文案
+
+    /// 把 Core 产出的结构化洞察翻译成用户可读的建设性建议。
+    ///
+    /// 措辞刻意给出**下一步动作**而不是只陈述事实：
+    /// 「支出连续 3 期上升」是事实，「先看最大的那一类，设定下期上限」才是建议。
+    private func trendSuggestion(from trend: PeriodTrendSummary) -> [ReportSuggestion] {
+        var result: [ReportSuggestion] = []
+
+        for insight in PeriodTrendBuilder.insights(from: trend) {
+            switch insight {
+            case .expenseSustainedRise(let periods, let delta):
+                result.append(ReportSuggestion(
+                    tone: .action, icon: "chart.line.uptrend.xyaxis",
+                    title: String(format: "支出已连续 %d 期上升", periods),
+                    detail: String(
+                        format: "每期平均多花 ¥%.0f。这不是偶然波动——先看金额最大的那一类，设定下期上限，把它压回原来的水平。",
+                        abs(delta)
+                    ),
+                    priority: 0
+                ))
+
+            case .expenseSustainedFall(let periods, let delta):
+                result.append(ReportSuggestion(
+                    tone: .positive, icon: "chart.line.downtrend.xyaxis",
+                    title: String(format: "支出已连续 %d 期下降", periods),
+                    detail: String(
+                        format: "每期平均少花 ¥%.0f。找到这期间刻意避开的那笔开销，把这个节奏固化下来——省钱靠的是可持续，不是压到最低。",
+                        abs(delta)
+                    ),
+                    priority: 1
+                ))
+
+            case .expenseVolatile(let volatility):
+                result.append(ReportSuggestion(
+                    tone: .action, icon: "waveform.path.ecg",
+                    title: "支出起伏较大，节奏不稳",
+                    detail: String(
+                        format: "各期波动系数 %.0f%%。忽高忽低通常意味着「没预算、凭感觉花」——给弹性支出设一个月度上限，比事后补救有效得多。",
+                        volatility * 100
+                    ),
+                    priority: 2
+                ))
+
+            case .completionSustainedRise(let periods):
+                result.append(ReportSuggestion(
+                    tone: .positive, icon: "arrow.up.circle.fill",
+                    title: String(format: "执行力连续 %d 期上升", periods),
+                    detail: "完成量在稳步抬升，说明当前的拆解方式是有效的。趁着手感好，把这周验证过的做法固定成模板。",
+                    priority: 1
+                ))
+
+            case .completionSustainedFall(let periods):
+                result.append(ReportSuggestion(
+                    tone: .action, icon: "arrow.down.circle.fill",
+                    title: String(format: "完成量连续 %d 期下降", periods),
+                    detail: "产出在滑坡，通常不是懒而是任务变大了或被打断得更频繁。先把清单砍到 3 件核心事项，保住完成率再谈扩张。",
+                    priority: 0
+                ))
+
+            case .punctualityBelowTarget(let rate, let delay):
+                result.append(ReportSuggestion(
+                    tone: .action, icon: "clock.badge.exclamationmark",
+                    title: String(format: "准时率仅 %.0f%%", rate * 100),
+                    detail: String(
+                        format: "有截止时间的事项里只有 %.0f%% 按时完成，平均拖延 %.1f 天。给关键事项提前一天设提醒，比临期才发现来不及有效。",
+                        rate * 100, delay
+                    ),
+                    priority: 0
+                ))
+
+            case .punctualityHealthy(let rate):
+                result.append(ReportSuggestion(
+                    tone: .positive, icon: "checkmark.seal.fill",
+                    title: String(format: "准时率 %.0f%%，节奏很稳", rate * 100),
+                    detail: "有截止时间的事项基本都能按时交付。保持这个习惯，把省下的时间用在更重要的事上。",
+                    priority: 2
+                ))
+
+            case .weekendSpendingHeavy(let share, let weekendDaily, let weekdayDaily):
+                result.append(ReportSuggestion(
+                    tone: .action, icon: "calendar.badge.clock",
+                    title: String(format: "周末支出占 %.0f%%", share * 100),
+                    detail: String(
+                        format: "周末日均 ¥%.0f，工作日只有 ¥%.0f。把大额消费挪到工作日、或给周末设一个固定额度，是最容易见效的调整。",
+                        weekendDaily, weekdayDaily
+                    ),
+                    priority: 2
+                ))
+
+            case .smallTicketFrequent(let count, let total):
+                result.append(ReportSuggestion(
+                    tone: .action, icon: "smallcircle.filled.circle",
+                    title: String(format: "小额消费 %d 笔", count),
+                    detail: String(
+                        format: "合计 ¥%.0f 的零散小额支出。单笔不起眼，累积起来却可观——给这类消费也设个每日额度。",
+                        total
+                    ),
+                    priority: 3
+                ))
+
+            case .categoryAppeared(let name, let amount):
+                result.append(ReportSuggestion(
+                    tone: .action, icon: "sparkles",
+                    title: String(format: "新增了「%@」类支出", name),
+                    detail: String(
+                        format: "本期 ¥%.0f。这是新出现的开销，先确认是阶段性还是长期——长期的话要给它单独设上限。",
+                        amount
+                    ),
+                    priority: 3
+                ))
+
+            case .categoryVanished(let name, let amount):
+                result.append(ReportSuggestion(
+                    tone: .positive, icon: "checkmark.circle",
+                    title: String(format: "「%@」类支出已归零", name),
+                    detail: String(
+                        format: "上期的 ¥%.0f 这期没有再产生。这说明上次的调整见效了，保持住。",
+                        amount
+                    ),
+                    priority: 3
+                ))
+
+            case .categoryShareUp(let name, let delta, let shareDelta):
+                result.append(ReportSuggestion(
+                    tone: .action, icon: "arrow.up.right.circle",
+                    title: String(format: "「%@」占比上升 %.0f 个百分点", name, shareDelta * 100),
+                    detail: String(
+                        format: "金额增加 ¥%.0f，在支出结构里的权重明显变重。如果这是必要开销就接受它；如果不是，现在是最容易调整的时候。",
+                        delta
+                    ),
+                    priority: 2
+                ))
+
+            case .categoryShareDown(let name, let delta, let shareDelta):
+                result.append(ReportSuggestion(
+                    tone: .positive, icon: "arrow.down.right.circle",
+                    title: String(format: "「%@」占比下降 %.0f 个百分点", name, abs(shareDelta) * 100),
+                    detail: String(
+                        format: "金额减少 ¥%.0f，支出结构更集中了。结构变清晰通常意味着消费决策更有取舍。",
+                        abs(delta)
+                    ),
+                    priority: 3
+                ))
+
+            case .nextPeriodTarget(let expenseCap, let completedTarget, let savingsRate):
+                var parts: [String] = []
+                if let cap = expenseCap {
+                    parts.append(String(format: "支出控制在 ¥%.0f 以内", cap))
+                }
+                parts.append(String(format: "完成 %d 项事项", completedTarget))
+                if let rate = savingsRate {
+                    parts.append(String(format: "储蓄率保持 %.0f%%", rate * 100))
+                }
+                result.append(ReportSuggestion(
+                    tone: .action, icon: "target",
+                    title: "下期目标建议",
+                    detail: String(format: "基于近几期的水平，下期可以试着：%@。目标定在「跳一跳够得着」的位置，比定一个够不到的更有用。", parts.joined(separator: "、")),
+                    priority: 1
+                ))
+            }
+        }
+
+        return result
     }
 
     // MARK: - 智能复盘寄语生成
@@ -1014,7 +1492,8 @@ final class PeriodicReportManager: ObservableObject {
         categoryStats: [CategoryExpenseStat],
         parcelCount: Int,
         upcomingCount: Int,
-        vitality: VitalityEvaluation? = nil
+        vitality: VitalityEvaluation? = nil,
+        trendSummary: PeriodTrendSummary? = nil
     ) -> String {
         var segments: [String] = []
 
@@ -1089,6 +1568,7 @@ final class PeriodicReportManager: ObservableObject {
                     "\(upcomingCount) upcoming item\(upcomingCount == 1 ? "" : "s") planned for next week."
                 ))
             }
+            segments.append(contentsOf: trendSummarySentence(trendSummary, periodLabel: "周"))
 
         case .monthly:
             segments.append(L10n.choose(
@@ -1102,6 +1582,7 @@ final class PeriodicReportManager: ObservableObject {
                 ))
             }
             segments.append(L10n.tr("下一月度将迎来新的周期节奏，记得关注即将到期的订阅扣款与重要纪念日。"))
+            segments.append(contentsOf: trendSummarySentence(trendSummary, periodLabel: "月"))
 
         case .quarterly:
             segments.append(L10n.choose(
@@ -1121,6 +1602,7 @@ final class PeriodicReportManager: ObservableObject {
                 }
             }
             segments.append(L10n.tr("以季度为单位回顾一次节奏，正适合校准目标方向：下季度重点投入哪几件事，现在就定下来。"))
+            segments.append(contentsOf: trendSummarySentence(trendSummary, periodLabel: "季度"))
 
         case .yearly:
             segments.append(L10n.choose(
@@ -1140,23 +1622,81 @@ final class PeriodicReportManager: ObservableObject {
                 }
             }
             segments.append(L10n.tr("新的一年继续保持节奏，按自己的目标稳步前进。"))
+            segments.append(contentsOf: trendSummarySentence(trendSummary, periodLabel: "年度"))
         }
 
         return segments.joined(separator: " ")
     }
 
+    /// 生成趋势描述句，融入智能复盘小结。
+    ///
+    /// 只在**有足够样本**（≥3 期）且趋势方向明确时才说话；
+    /// 样本不足时宁可不说，也不编一个「稳步上升」出来。
+    private func trendSummarySentence(_ trend: PeriodTrendSummary?, periodLabel: String) -> [String] {
+        guard let trend, trend.hasMeaningfulTrend else { return [] }
+        var sentences: [String] = []
+
+        let expenseTrend = trend.expenseTrend
+        if expenseTrend.direction == .rising, expenseTrend.streak >= 2 {
+            sentences.append(String(
+                format: "拉长看，近 %d 期的%s支出在持续走高，每期约多花 ¥%.0f，这已经是趋势而非偶然。",
+                expenseTrend.streak + 1, periodLabel, abs(expenseTrend.slope)
+            ))
+        } else if expenseTrend.direction == .falling, expenseTrend.streak <= -2 {
+            sentences.append(String(
+                format: "近 %d 期的%s支出持续回落，每期约省下 ¥%.0f，省钱节奏已经形成。",
+                abs(expenseTrend.streak) + 1, periodLabel, abs(expenseTrend.slope)
+            ))
+        }
+
+        let completionTrend = trend.completionTrend
+        if completionTrend.direction == .rising, completionTrend.streak >= 2 {
+            sentences.append(String(
+                format: "完成量同样在抬升，说明执行力在稳定变强。",
+                completionTrend.streak + 1
+            ))
+        } else if completionTrend.direction == .falling, completionTrend.streak <= -2 {
+            sentences.append(String(
+                format: "完成量在连续回落，需要留意是任务变重了还是节奏被挤掉了。",
+                abs(completionTrend.streak) + 1
+            ))
+        }
+
+        if let punctuality = trend.punctuality, let rate = punctuality.onTimeRate {
+            sentences.append(String(format: "有截止时间的事项准时率为 %.0f%%。", rate * 100))
+        }
+
+        return sentences
+    }
+
     // MARK: - 本地通知定时调度
 
-    /// 统一注册所有已开启报告的本地通知日程
+    /// 所有定期报告通知的 identifier 前缀。
+    ///
+    /// 月报/季报/年报用的是**按具体日期枚举**的一次性触发器（月末/季末/年末
+    /// 不是固定日，固定 `day: 31` 会在短月静默失效），
+    /// 所以 identifier 带日期后缀，重排时必须能按前缀整体清掉。
+    private static let notificationPrefix = "periodic-report-"
+
+    /// 统一注册所有已开启报告的本地通知日程。
+    ///
+    /// 幂等：每次调用都先清空本模块的全部待处理通知，再按当前开关重新注册。
+    /// 依赖 App 每次进入前台的巡检（`AssistantApp` → `performForegroundAudit`）
+    /// 来保持一次性触发器的滚动窗口始终覆盖未来。
     func scheduleNotifications() {
         let center = UNUserNotificationCenter.current()
 
-        // 移除现存旧定时通知
-        center.removePendingNotificationRequests(withIdentifiers: [
-            "periodic-report-daily",
-            "periodic-report-weekly",
-            "periodic-report-monthly"
-        ])
+        // 移除现存旧定时通知。
+        // 不能只按固定 identifier 删——枚举出来的一次性触发器带日期后缀，
+        // 漏删会让「改开关后旧通知仍然会响」。
+        center.getPendingNotificationRequests { requests in
+            let stale = requests
+                .map(\.identifier)
+                .filter { $0.hasPrefix(Self.notificationPrefix) }
+            if !stale.isEmpty {
+                center.removePendingNotificationRequests(withIdentifiers: stale)
+            }
+        }
 
         let cal = Calendar.current
 
@@ -1181,7 +1721,7 @@ final class PeriodicReportManager: ObservableObject {
             center.add(req)
         }
 
-        // 2. 周报定时通知
+        // 2. 周报定时通知（每周固定星期几）
         if isWeeklyReportEnabled {
             let h = cal.component(.hour, from: weeklyTime)
             let m = cal.component(.minute, from: weeklyTime)
@@ -1196,31 +1736,95 @@ final class PeriodicReportManager: ObservableObject {
             content.body = L10n.tr("回溯本周目标达成、支出趋势与下周计划，保持节奏迎接新一周！")
             content.sound = .default
             content.categoryIdentifier = "PERIODIC_REPORT"
+            content.userInfo = ["type": "periodic-report", "period": "weekly"]
 
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComps, repeats: true)
             let req = UNNotificationRequest(identifier: "periodic-report-weekly", content: content, trigger: trigger)
             center.add(req)
         }
 
-        // 3. 月报定时通知
+        // 3. 月报定时通知（每月最后一天）
+        //
+        // 为什么不能直接用 `dateComps.day = 31` 的重复触发器：
+        // UNCalendarNotificationTrigger 在「当月没有这一天」时**静默不触发**——
+        // 2 月、4 月、6 月、9 月、11 月的月报会直接消失，且没有任何报错。
+        // 所以这里枚举未来 12 个「真实月末日」，各自注册一个一次性触发器。
         if isMonthlyReportEnabled {
             let h = cal.component(.hour, from: monthlyTime)
             let m = cal.component(.minute, from: monthlyTime)
-
-            var dateComps = DateComponents()
-            dateComps.day = 1 // 每月 1 日推送上一月汇总
-            dateComps.hour = h
-            dateComps.minute = m
 
             let content = UNMutableNotificationContent()
             content.title = L10n.tr("📅 月度生活成果月报已生成")
             content.body = L10n.tr("全月生活资产与支出账单结构大盘点，点击开启本月新展望。")
             content.sound = .default
             content.categoryIdentifier = "PERIODIC_REPORT"
+            content.userInfo = ["type": "periodic-report", "period": "monthly"]
 
-            let trigger = UNCalendarNotificationTrigger(dateMatching: dateComps, repeats: true)
-            let req = UNNotificationRequest(identifier: "periodic-report-monthly", content: content, trigger: trigger)
-            center.add(req)
+            // 枚举未来 12 个月末（含本月月末）。只注册尚未过去的那些。
+            let monthEnds = ReportPeriodWindow.upcomingMonthEnds(from: .now, count: 12, calendar: cal)
+            for day in monthEnds {
+                guard let fireDate = cal.date(bySettingHour: h, minute: m, second: 0, of: day),
+                      fireDate > .now else { continue }
+                var comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+                comps.second = nil
+                let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+                let identifier = "periodic-report-monthly-\(cal.component(.year, from: fireDate))-\(cal.component(.month, from: fireDate))"
+                let req = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+                center.add(req)
+            }
+        }
+
+        // 4. 季报定时通知（每季度最后一天）
+        //
+        // 同样不能依赖固定 day——季末可能是 3/31、6/30、9/30 或 12/31，
+        // 所以枚举未来 8 个季末（两年）逐个注册。
+        if isQuarterlyReportEnabled {
+            let h = cal.component(.hour, from: quarterlyTime)
+            let m = cal.component(.minute, from: quarterlyTime)
+
+            let content = UNMutableNotificationContent()
+            content.title = L10n.tr("🗓️ 季度深度复盘季报已生成")
+            content.body = L10n.tr("回看本季度的目标达成、财务结构与习惯坚持情况，为下季度校准方向。")
+            content.sound = .default
+            content.categoryIdentifier = "PERIODIC_REPORT"
+            content.userInfo = ["type": "periodic-report", "period": "quarterly"]
+
+            let quarterEnds = ReportPeriodWindow.upcomingQuarterEnds(from: .now, count: 8, calendar: cal)
+            for day in quarterEnds {
+                guard let fireDate = cal.date(bySettingHour: h, minute: m, second: 0, of: day),
+                      fireDate > .now else { continue }
+                var comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+                comps.second = nil
+                let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+                let identifier = "periodic-report-quarterly-\(cal.component(.year, from: fireDate))-\(cal.component(.month, from: fireDate))"
+                let req = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+                center.add(req)
+            }
+        }
+
+        // 5. 年报定时通知（每年 12 月 31 日）
+        if isYearlyReportEnabled {
+            let h = cal.component(.hour, from: yearlyTime)
+            let m = cal.component(.minute, from: yearlyTime)
+
+            let content = UNMutableNotificationContent()
+            content.title = L10n.tr("🎊 年度生活全景年报已生成")
+            content.body = L10n.tr("这一年的目标、财务与健康总览回顾，值得好好读一遍。")
+            content.sound = .default
+            content.categoryIdentifier = "PERIODIC_REPORT"
+            content.userInfo = ["type": "periodic-report", "period": "yearly"]
+
+            let yearEnds = ReportPeriodWindow.upcomingYearEnds(from: .now, count: 3, calendar: cal)
+            for day in yearEnds {
+                guard let fireDate = cal.date(bySettingHour: h, minute: m, second: 0, of: day),
+                      fireDate > .now else { continue }
+                var comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+                comps.second = nil
+                let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+                let identifier = "periodic-report-yearly-\(cal.component(.year, from: fireDate))"
+                let req = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+                center.add(req)
+            }
         }
     }
 }

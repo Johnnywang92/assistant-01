@@ -98,6 +98,12 @@ public final class NavigationRouter: ObservableObject {
     /// 全局统一搜索预填入检索词
     @Published public var prefilledSearchQuery: String? = nil
 
+    /// 待打开的定期报告周期。
+    ///
+    /// 从通知点击进来时，用户预期看到的正是那条通知对应的报告——
+    /// 点周报通知却打开日报，属于把用户的意图丢掉。
+    @Published var requestedReportPeriod: ReportPeriodType? = nil
+
     private init() {}
 
     public func focusTodo(_ id: UUID) {
@@ -323,8 +329,14 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
     ) {
         let userInfo = response.notification.request.content.userInfo
         if let type = userInfo["type"] as? String, type == "periodic-report" {
+            // 透传通知对应的周期：点周报通知就该看到周报，而不是日报
+            let periodRaw = userInfo["period"] as? String
+            let period = periodRaw.flatMap { raw -> ReportPeriodType? in
+                ReportPeriodType.allCases.first { $0.rawValue == raw || $0.identifier == raw }
+            } ?? .daily
             Task { @MainActor in
                 NavigationRouter.shared.selectedTab = .todos
+                NavigationRouter.shared.requestedReportPeriod = period
                 NavigationRouter.shared.activeSheet = .periodicReport
             }
         } else if let type = userInfo["type"] as? String, type == "pickup" {
