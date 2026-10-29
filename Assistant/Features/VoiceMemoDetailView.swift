@@ -16,6 +16,8 @@ struct VoiceMemoDetailView: View {
     @State private var scrubbingTime: TimeInterval?
 
     @State private var isGeneratingAISummary = false
+    @State private var showBlockEditor = false
+    @State private var showShareSheet = false
 
     private var isCurrent: Bool { audio.playingFileName == memo.audioFileName }
     private var fileMissing: Bool { !VoiceMemoStorage.exists(memo.audioFileName) }
@@ -110,6 +112,12 @@ struct VoiceMemoDetailView: View {
         }
         .sheet(isPresented: $showTodoExtractor) {
             VoiceMemoTodoExtractorSheet(memo: memo)
+        }
+        .fullScreenCover(isPresented: $showBlockEditor) {
+            VoiceMemoBlockEditorView(memo: memo)
+        }
+        .sheet(isPresented: $showShareSheet) {
+            VoiceMemoShareSheet(memo: memo)
         }
         .confirmationDialog("删除这条语音备忘？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("删除", role: .destructive) {
@@ -211,8 +219,9 @@ struct VoiceMemoDetailView: View {
                     .bold()
                 }
                 .buttonStyle(.borderless)
-            } else if let t = memo.transcription, !t.isEmpty {
-                Text(t).font(.body).textSelection(.enabled)
+            } else if memo.document.blocks.contains(where: { !$0.isEmpty }) {
+                // 结构化预览：转写不再是「一大坨文字」，而是分好块的笔记
+                transcriptBlocksPreview
             } else {
                 Text("尚未转写。转写全程在本机完成，可随时编辑校对。")
                     .font(.callout).foregroundStyle(.secondary)
@@ -236,15 +245,94 @@ struct VoiceMemoDetailView: View {
                         transcriptDraft = memo.transcription ?? ""
                         isEditingTranscript = true
                     } label: {
-                        Label(memo.hasTranscription ? "编辑" : "手动输入", systemImage: "pencil")
+                        Label(memo.hasTranscription ? "编辑全文" : "手动输入", systemImage: "pencil")
                     }
                 }
                 .buttonStyle(.borderless)
                 .font(.subheadline)
+
+                if memo.hasTranscription {
+                    HStack(spacing: 12) {
+                        Button {
+                            showBlockEditor = true
+                        } label: {
+                            Label("编辑转写", systemImage: "square.and.pencil")
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.subheadline)
+
+                        Spacer()
+
+                        Button {
+                            showShareSheet = true
+                        } label: {
+                            Label("生成分享图", systemImage: "photo.badge.plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                    }
+                }
             }
         } header: {
-            Text("转写文字")
+            HStack {
+                Text("转写文字")
+                Spacer()
+                if memo.hasTranscription {
+                    Text("段落化 · \(memo.document.blocks.filter { !$0.isEmpty }.count) 段")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
         }
+    }
+
+    /// 结构化转写预览。
+    ///
+    /// 只渲染文字块与标题/列表/待办的区别；
+    /// 图片块与语音片段块在详情页用简化形态展示，避免塞进 List 里太重。
+    @ViewBuilder
+    private var transcriptBlocksPreview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(memo.document.blocks) { block in
+                if block.isEmpty { EmptyView() }
+                else {
+                    switch block.kind {
+                    case .heading:
+                        HStack(alignment: .center, spacing: 8) {
+                            RoundedRectangle(cornerRadius: 2).fill(Color.red).frame(width: 3, height: 15)
+                            Text(block.text).font(.headline)
+                        }
+                    case .bullet:
+                        HStack(alignment: .top, spacing: 8) {
+                            Circle().fill(Color.red).frame(width: 5, height: 5).padding(.top, 7)
+                            Text(block.text).font(.callout)
+                        }
+                    case .todo:
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: block.isDone ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(block.isDone ? Color.green : Color.secondary)
+                            Text(block.text).font(.callout).strikethrough(block.isDone)
+                        }
+                    case .quote:
+                        HStack(alignment: .top, spacing: 8) {
+                            RoundedRectangle(cornerRadius: 1).fill(Color.secondary.opacity(0.5)).frame(width: 2)
+                            Text(block.text).font(.callout).foregroundStyle(.secondary).italic()
+                        }
+                    case .image:
+                        Label("图片 · \(block.imageCaption ?? "会议现场")", systemImage: "photo")
+                            .font(.caption).foregroundStyle(.secondary)
+                    case .audio:
+                        Label(MemoShareCardContent.audioCaption(for: block.timeRange), systemImage: "waveform")
+                            .font(.caption).foregroundStyle(.red)
+                    default:
+                        Text(block.text).font(.callout)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
     }
 
     private func generateAISummary() {

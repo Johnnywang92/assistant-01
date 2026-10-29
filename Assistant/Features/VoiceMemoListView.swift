@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 
@@ -378,6 +379,13 @@ enum VoiceMemoActions {
         let audio = VoiceMemoAudioService.shared
         if audio.playingFileName == memo.audioFileName { audio.stopPlayback() }
         VoiceMemoStorage.delete(memo.audioFileName)
+        // 一并删除笔记内嵌图片，避免留下孤儿文件占着空间
+        for name in memo.document.blocks.compactMap({ block -> String? in
+            guard block.kind == .image else { return nil }
+            return block.imageFileName
+        }) {
+            VoiceMemoImageStorage.delete(name)
+        }
         context.delete(memo)
         try? context.save()
     }
@@ -398,6 +406,11 @@ enum VoiceMemoActions {
 
     static func apply(transcription text: String, to memo: VoiceMemo) {
         memo.transcription = text
+        // 转写完成后自动切分成结构化块。
+        // 整段转写没有逐句偏移量，因此这里产出的块**不带时间戳**——
+        // 宁可没有时间点，也不要给一个对不上的假时间点。
+        let document = MemoBlockBuilder.build(from: text, title: memo.title)
+        memo.blocksData = MemoBlockCodec.encode(document)
         let summary = VoiceMemoTextAnalyzer.summarize(text)
         memo.summary = summary.isEmpty ? nil : summary
         // 仍是默认标题时，用转写首句替换
