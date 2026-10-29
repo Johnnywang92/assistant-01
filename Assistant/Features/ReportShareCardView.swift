@@ -1,5 +1,4 @@
 import AssistantCore
-import Photos
 import SwiftUI
 import UIKit
 
@@ -300,6 +299,7 @@ struct ReportShareSheet: View {
 
     @State private var toastMessage: String?
     @State private var showSystemShareSheet: Bool = false
+    @State private var renderedImage: UIImage?
 
     init(reportData: PeriodicReportData, polishedSummary: String? = nil) {
         self.reportData = reportData
@@ -381,52 +381,36 @@ struct ReportShareSheet: View {
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: toastMessage)
         }
+        .sheet(isPresented: $showSystemShareSheet) {
+            if let renderedImage {
+                ShareActivityView(activityItems: [renderedImage])
+            }
+        }
     }
 
     @MainActor
     private func renderImage() -> UIImage? {
-        let renderer = ImageRenderer(content: cardView)
-        renderer.scale = 3.0 // 3x 超高清光栅化
-        renderer.isOpaque = false
-        return renderer.uiImage
+        ShareCardActions.render(cardView)
     }
 
     private func saveToPhotos() {
         guard let image = renderImage() else {
-            showToast("生成图片失败，请重试")
+            showToast(ShareCardActions.renderFailureMessage)
             return
         }
-
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            DispatchQueue.main.async {
-                guard status == .authorized || status == .limited else {
-                    showToast("请在系统设置中允许小助访问相册")
-                    return
-                }
-
-                UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-                Haptic.success()
-                showToast("已保存高清复盘卡片至相册 📸")
-            }
+        Task { @MainActor in
+            showToast(await ShareCardActions.saveToPhotos(image, successMessage: "已保存高清复盘卡片至相册 📸"))
         }
     }
 
     private func shareViaSystem() {
         guard let image = renderImage() else {
-            showToast("生成图片失败，请重试")
+            showToast(ShareCardActions.renderFailureMessage)
             return
         }
 
-        let activityVC = UIActivityViewController(activityItems: [image], applicationActivities: nil)
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            var topVC = rootVC
-            while let presented = topVC.presentedViewController {
-                topVC = presented
-            }
-            activityVC.popoverPresentationController?.sourceView = topVC.view
-            topVC.present(activityVC, animated: true)
-        }
+        renderedImage = image
+        showSystemShareSheet = true
     }
 
     private func showToast(_ msg: String) {

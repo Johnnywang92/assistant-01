@@ -1,5 +1,4 @@
 import AssistantCore
-import Photos
 import SwiftData
 import SwiftUI
 import UIKit
@@ -469,41 +468,18 @@ struct VoiceMemoShareSheet: View {
 
     // MARK: - 渲染与导出
 
-    /// 3x 离屏光栅化（与待办分享卡片同款管线）。
+    /// 3x 离屏光栅化，并压平透明通道（与待办分享卡片同款管线）。
     private func renderCard() -> UIImage? {
-        let renderer = ImageRenderer(content: cardView)
-        renderer.scale = 3.0
-        guard let image = renderer.uiImage else { return nil }
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 3.0
-        format.opaque = true
-        let sized = UIGraphicsImageRenderer(size: image.size, format: format)
-        return sized.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: image.size))
-        }
+        ShareCardActions.render(cardView, flattenAlpha: true)
     }
 
     private func saveToPhotos() {
         guard let image = renderCard() else {
-            showToast("生成图片失败")
+            showToast(ShareCardActions.renderFailureMessage)
             return
         }
         Task { @MainActor in
-            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-            guard status == .authorized || status == .limited else {
-                showToast("未获得相册写入权限")
-                return
-            }
-            do {
-                try await PHPhotoLibrary.shared().performChanges {
-                    PHAssetChangeRequest.creationRequestForAsset(from: image)
-                }
-                showToast("已保存到相册")
-                Haptic.success()
-            } catch {
-                showToast("保存失败：\(error.localizedDescription)")
-                Haptic.warning()
-            }
+            showToast(await ShareCardActions.saveToPhotos(image, successMessage: "已保存到相册"))
         }
     }
 

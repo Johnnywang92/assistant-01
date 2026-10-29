@@ -1996,6 +1996,8 @@ private struct ExpenseShareView: View {
     @Environment(\.dismiss) private var dismiss
     let record: ExpenseRecord
     @State private var includeReceipt = false
+    @State private var showSystemShareSheet = false
+    @State private var shareItems: [Any] = []
 
     private var splitCount: Int { max(record.splitCount, 1) }
     private var shareText: String {
@@ -2033,7 +2035,8 @@ private struct ExpenseShareView: View {
                     if includeReceipt, let data = record.receiptImageData, let image = UIImage(data: data) {
                         Button {
                             // 由系统分享面板同时发送文字和原始图片。
-                            presentShare(items: [shareText, image])
+                            shareItems = [shareText, image]
+                            showSystemShareSheet = true
                         } label: {
                             Label("分享文字和原始单据", systemImage: "photo.on.rectangle.angled")
                         }
@@ -2044,17 +2047,8 @@ private struct ExpenseShareView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } } }
         }
+        .sheet(isPresented: $showSystemShareSheet) {
+            ShareActivityView(activityItems: shareItems)
+        }
     }
-
-    private func presentShare(items: [Any]) {
-        // 将 UIKit 分享面板交给当前窗口层级，避免丢失图片附件。
-        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
-              let root = scene.keyWindow?.rootViewController else { return }
-        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
-        root.present(controller, animated: true)
-    }
-}
-
-private extension UIWindowScene {
-    var keyWindow: UIWindow? { windows.first(where: { $0.isKeyWindow }) }
 }

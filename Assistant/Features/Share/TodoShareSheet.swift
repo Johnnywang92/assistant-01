@@ -7,7 +7,6 @@
 /// - 系统分享桥接 → ShareActivityView.swift
 /// - 分类/标题/分享文案规则 → AssistantCore.TodoShareContent（可单测）
 import AssistantCore
-import Photos
 import SwiftData
 import SwiftUI
 import UIKit
@@ -541,33 +540,28 @@ struct TodoShareSheet: View {
         .padding(.horizontal)
     }
 
-    // MARK: - 3x 高清离屏光栅化 (ImageRenderer)
+    // MARK: - 3x 高清离屏光栅化（ShareCardActions）
 
     @MainActor
     private func renderCardImage() -> UIImage? {
         if shareFormat == .qrCode {
-            let card = TodoQRCodeCardView(
-                title: dynamicCardTitle,
-                items: itemsForCard,
-                qrImage: qrCodeImage
+            return ShareCardActions.render(
+                TodoQRCodeCardView(
+                    title: dynamicCardTitle,
+                    items: itemsForCard,
+                    qrImage: qrCodeImage
+                )
             )
-            let renderer = ImageRenderer(content: card)
-            renderer.scale = 3.0
-            renderer.isOpaque = false
-            return renderer.uiImage
-        } else {
-            let card = TodoShareCardView(
+        }
+        return ShareCardActions.render(
+            TodoShareCardView(
                 title: dynamicCardTitle,
                 items: itemsForCard,
                 showWatermark: showWatermark,
                 theme: selectedTheme,
                 miniQRCode: miniQRCodeImage
             )
-            let renderer = ImageRenderer(content: card)
-            renderer.scale = 3.0 // 3x 超高清清晰度
-            renderer.isOpaque = false
-            return renderer.uiImage
-        }
+        )
     }
 
     private func copyImportLink() {
@@ -584,27 +578,14 @@ struct TodoShareSheet: View {
             return
         }
         guard let image = renderCardImage() else {
-            showToast("生成卡片失败，请重试")
+            showToast(ShareCardActions.renderFailureMessage)
             return
         }
-
-        // 使用 PHPhotoLibrary 规范请求写入权限，杜绝隐私权限导致的系统级 Crash
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            DispatchQueue.main.async {
-                switch status {
-                case .authorized, .limited:
-                    UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-                    Haptic.success()
-                    showToast(shareFormat == .qrCode ? "已保存高清二维码至相册 ✨" : "已保存超清海报至系统相册 ✨")
-                case .denied, .restricted:
-                    Haptic.warning()
-                    showToast("保存失败：请在系统「设置」中允许小助访问相册")
-                case .notDetermined:
-                    showToast("请授权相册访问以保存卡片")
-                @unknown default:
-                    showToast("保存相册遇到未知状态")
-                }
-            }
+        Task { @MainActor in
+            showToast(await ShareCardActions.saveToPhotos(
+                image,
+                successMessage: shareFormat == .qrCode ? "已保存高清二维码至相册 ✨" : "已保存超清海报至系统相册 ✨"
+            ))
         }
     }
 

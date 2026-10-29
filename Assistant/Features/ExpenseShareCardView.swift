@@ -1,5 +1,4 @@
 import AssistantCore
-import Photos
 import SwiftUI
 import UIKit
 
@@ -218,6 +217,8 @@ public struct ExpenseCardShareSheet: View {
 
     @State private var toastMessage: String?
     @State private var includeReceipt = false
+    @State private var showSystemShareSheet = false
+    @State private var shareItems: [Any] = []
 
     public init(record: ExpenseRecord) {
         self.record = record
@@ -291,39 +292,29 @@ public struct ExpenseCardShareSheet: View {
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: toastMessage)
         }
+        .sheet(isPresented: $showSystemShareSheet) {
+            ShareActivityView(activityItems: shareItems)
+        }
     }
 
     @MainActor
     private func renderImage() -> UIImage? {
-        let renderer = ImageRenderer(content: cardView)
-        renderer.scale = 3.0
-        renderer.isOpaque = false
-        return renderer.uiImage
+        ShareCardActions.render(cardView)
     }
 
     private func saveToPhotos() {
         guard let image = renderImage() else {
-            showToast("生成卡片失败，请重试")
+            showToast(ShareCardActions.renderFailureMessage)
             return
         }
-
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            DispatchQueue.main.async {
-                guard status == .authorized || status == .limited else {
-                    showToast("请在系统设置中允许小助访问相册")
-                    return
-                }
-
-                UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
-                Haptic.success()
-                showToast("已保存温润手账卡片至相册 📸")
-            }
+        Task { @MainActor in
+            showToast(await ShareCardActions.saveToPhotos(image, successMessage: "已保存温润手账卡片至相册 📸"))
         }
     }
 
     private func shareViaSystem() {
         guard let image = renderImage() else {
-            showToast("生成卡片失败，请重试")
+            showToast(ShareCardActions.renderFailureMessage)
             return
         }
 
@@ -331,17 +322,8 @@ public struct ExpenseCardShareSheet: View {
         if includeReceipt, let data = record.receiptImageData, let receiptImg = UIImage(data: data) {
             items.append(receiptImg)
         }
-
-        let activityVC = UIActivityViewController(activityItems: items, applicationActivities: nil)
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootVC = windowScene.windows.first?.rootViewController {
-            var topVC = rootVC
-            while let presented = topVC.presentedViewController {
-                topVC = presented
-            }
-            activityVC.popoverPresentationController?.sourceView = topVC.view
-            topVC.present(activityVC, animated: true)
-        }
+        shareItems = items
+        showSystemShareSheet = true
     }
 
     private func showToast(_ msg: String) {
