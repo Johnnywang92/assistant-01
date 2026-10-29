@@ -34,6 +34,9 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
     @AppStorage("weather_last_dismissed_date") private var lastDismissedDateString: String = ""
     @AppStorage("weather_yesterday_max_temp") private var yesterdayMaxTemp: Double = -999.0
     @AppStorage("weather_last_recorded_date") private var lastRecordedDateString: String = ""
+    /// 最近一次评估停在哪一步。真机排查「为什么没提醒」时唯一可见的证据，
+    /// 早退分支若不落盘就永远只是猜测。
+    @AppStorage("weather_last_check_status") private var lastCheckStatus: String = ""
 
     private let locationManager = CLLocationManager()
     private var isChecking = false
@@ -187,16 +190,22 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
         // 今日若已被用户手动划掉关闭，遵循防打扰机制，今天不再弹出
         let todayStr = currentDateString()
         if lastDismissedDateString == todayStr && currentBanner == nil {
+            recordCheckStatus("dismissed-today")
             return
         }
 
-        // 尝试获取位置
-        guard let loc = location ?? locationManager.location else {
+        // 位置三级回退。本服务自己的 CLLocationManager 只设过 delegate、从未启动更新，
+        // 不能当唯一来源；真正在跑 GPS 的是 LocationReminderService（地理围栏与单次采样）。
+        guard let loc = location
+                ?? LocationReminderService.shared.lastKnownLocation
+                ?? locationManager.location else {
+            recordCheckStatus("no-location")
             return
         }
 
         do {
             let weather = try await WeatherService.shared.weather(for: loc)
+            recordCheckStatus("weatherkit-ok")
 
             // 1. 优先检测：气象局严重天气预警 (weather.weatherAlerts)
             if let alerts = weather.weatherAlerts, !alerts.isEmpty {
@@ -224,7 +233,10 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
             // WeatherKit 不可用时使用 Open-Meteo 最高温降级检测降温预警
             if let fallback = await fetchOpenMeteoWeather(for: loc),
                let todayMax = fallback.todayMaxCelsius {
+                recordCheckStatus("open-meteo-ok")
                 evaluateTempDrop(todayMax: todayMax, todayStr: todayStr)
+            } else {
+                recordCheckStatus("weatherkit-failed-and-no-fallback")
             }
         }
     }
@@ -240,7 +252,10 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
                 self.currentBanner = AlertBanner(
                     type: .tempDrop,
                     title: L10n.choose("气温骤降 \(dropInt)°C · 出门建议添衣", "Temp Drop \(dropInt)°C · Dress Warmly"),
-                    detail: L10n.choose("今日最高仅 \(todayMaxInt)°C（昨日最高 \(yesterdayMaxInt)°C），温差突变明显，预防受凉感冒！", "Today's high is only \(todayMaxInt)°C (yesterday \(yesterdayMaxInt)°C). Stay warm!"),
+                    detail: L10n.choose(
+                        "今日最高仅 \(todayMaxInt)°C（\(baselineLabel())记录最高 \(yesterdayMaxInt)°C），温差突变明显，预防受凉感冒！",
+                        "Today's high is only \(todayMaxInt)°C vs \(yesterdayMaxInt)°C on \(baselineLabel()). Stay warm!"
+                    ),
                     icon: "thermometer.snowflake",
                     color: Color.blue,
                     timestamp: .now
@@ -263,11 +278,43 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
         Haptic.light()
     }
 
-    private func currentDateString() -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: Date.now)
+    /// 温差基准的措辞必须反映快照的真实记录日：App 可能隔好几天才成功评估一次，
+    /// 继续沿用「昨日最高」是在报一个对不上的基准。
+    private func baselineLabel() -> String {
+        guard let date = Self.dayParser.date(from: lastRecordedDateString) else {
+            return L10n.choose("上次记录", "the last record")
+        }
+        // 展示用的格式化器不能做成 static：语言/区域是运行时可变的，缓存会把文案冻在旧区域设置上。
+        let formatter = DateFormatter()
+        formatter.locale = L10n.locale
+        formatter.setLocalizedDateFormatFromTemplate(L10n.isEnglish ? "MMM d" : "M月d日")
+        return formatter.string(from: date)
     }
+
+    private func recordCheckStatus(_ status: String) {
+        lastCheckStatus = "\(currentDateString()) \(status)"
+        print("🌤 [WeatherAlert] \(status)")
+    }
+
+    private func currentDateString() -> String {
+        Self.dayFormatter.string(from: Date.now)
+    }
+
+    /// 落盘用的日期串必须与系统日历无关：跟随 Current locale 时，
+    /// 用户改历法（如佛历）会让 `lastRecordedDateString` 的比对整体失真。
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static let dayParser: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 
     // MARK: - CLLocationManagerDelegate
 

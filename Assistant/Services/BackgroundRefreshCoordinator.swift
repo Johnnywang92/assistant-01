@@ -102,5 +102,11 @@ final class BackgroundRefreshCoordinator {
         if !isExpired() {
             await WebDAVSyncService.shared.performBackgroundSyncIfNeeded(context: context)
         }
+
+        // 7. 天气突变与降温评估。后台只走零成本路径：用定位服务的最近一次采样，
+        // 不主动开 GPS——BGAppRefresh 预算只有几十秒，室内定位可能一直等不到结果。
+        if !isExpired() {
+            await WeatherAlertService.shared.checkAlertsIfNeeded()
+        }
     }
 }

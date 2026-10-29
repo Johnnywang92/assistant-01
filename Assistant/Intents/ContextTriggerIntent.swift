@@ -29,7 +29,11 @@ struct ContextTriggerIntent: AppIntent {
         }
 
         let advisor = ContextSmartAdvisor()
-        let result = await advisor.evaluate(reason: reason, wifiSSID: wifiName)
+        // 天气分支需要位置：先做一次单次定位采样（requestLocation 成功或失败都会回调，
+        // 不会挂住意图）。拿不到时 evaluate 自己会回退到定位服务的最近一次缓存。
+        let sampledCoordinate = await LocationReminderService.shared.requestSingleLocationSample()
+        let sampledLocation = sampledCoordinate.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+        let result = await advisor.evaluate(reason: reason, wifiSSID: wifiName, location: sampledLocation)
 
         // 同时将这次 Wi-Fi 与时间驻留事实作为正向样本，喂入学习引擎进行画像增强
         if let wifi = wifiName, !wifi.isEmpty {

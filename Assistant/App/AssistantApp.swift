@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftData
 import SwiftUI
 import os
@@ -231,8 +232,18 @@ private final class ForegroundAuditCoordinator {
 
             // 7. 低功耗单次位置采样独立异步执行（室内 GPS 耗时可达数秒，不阻塞主巡检流水线）
             Task { @MainActor in
-                _ = await LocationReminderService.shared.requestSingleLocationSample(context: context)
+                let sampledCoordinate = await LocationReminderService.shared.requestSingleLocationSample(context: context)
                 LocationReminderService.shared.syncParcelStationGeofences(context: context)
+                // 7.5 天气评估搭在这次采样之后：首帧早已完成，此时位置要么真的拿到、
+                // 要么明确拿不到，不会再出现「首页等天气、天气等 GPS」的互相拖累。
+                if let sampledCoordinate {
+                    await WeatherAlertService.shared.checkAlertsIfNeeded(
+                        location: CLLocation(
+                            latitude: sampledCoordinate.latitude,
+                            longitude: sampledCoordinate.longitude
+                        )
+                    )
+                }
             }
         }
     }

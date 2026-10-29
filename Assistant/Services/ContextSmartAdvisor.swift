@@ -47,16 +47,21 @@ struct ContextSmartAdvisor {
         let events = allActive.filter { $0.type == .event }
         let generals = allActive.filter { $0.type == .general || $0.type == .bill }
 
+        // 调用方没带位置时回退到定位服务的最近一次采样：此前天气分支只在「调用方显式传
+        // location」时才执行，而全仓库唯一调用点（快捷指令 ContextTriggerIntent）并不传，
+        // 等于整条天气链路——包括拼进通知文案的预警横幅——永远进不来。
+        let resolvedLocation = location ?? LocationReminderService.shared.lastKnownLocation
+
         // 0. 自动学习与推断当前地点（家/公司/其他）
         let learningEngine = PlaceLearningEngine(context: context)
-        let resolvedPlace = learningEngine.resolveCurrentPlace(wifiSSID: wifiSSID, coordinate: location?.coordinate)
+        let resolvedPlace = learningEngine.resolveCurrentPlace(wifiSSID: wifiSSID, coordinate: resolvedLocation?.coordinate)
         let placeName = resolvedPlace.map { L10n.tr($0.name.isEmpty ? $0.category.rawValue : $0.name) } ?? ""
 
         // 1. 根据天气环境决策（出门带伞、雨天提醒、气象突变与降温添衣）
         var weatherNotice: String?
-        if let location {
-            weatherNotice = await fetchWeatherNotice(for: location)
-            await WeatherAlertService.shared.checkAlertsIfNeeded(location: location)
+        if let resolvedLocation {
+            weatherNotice = await fetchWeatherNotice(for: resolvedLocation)
+            await WeatherAlertService.shared.checkAlertsIfNeeded(location: resolvedLocation)
             if let banner = WeatherAlertService.shared.currentBanner {
                 let alertPrefix = "\(banner.title)：\(banner.detail)"
                 weatherNotice = (weatherNotice != nil) ? "\(alertPrefix)\n\(weatherNotice!)" : alertPrefix

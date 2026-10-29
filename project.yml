@@ -62,6 +62,10 @@ targets:
       properties:
         BGTaskSchedulerPermittedIdentifiers:
           - com.yifanwang.assistant01.refresh
+        # 只登记标识还不够：系统要求同时声明后台模式，否则 BGTaskScheduler.submit 直接抛错，
+        # 而 BackgroundRefreshCoordinator 只 print 一句就静默过去——后台巡检此前从未真正跑过。
+        UIBackgroundModes:
+          - fetch
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
         CFBundleDisplayName: 小助
