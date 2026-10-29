@@ -220,12 +220,6 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
             playbackDuration = p.duration
             playbackTime = 0
             isPlaying = false
-            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self, let p = self.player else { return }
-                    self.playbackTime = p.currentTime
-                }
-            }
         }
     }
 
@@ -326,8 +320,12 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
 extension VoiceMemoAudioService: AVAudioRecorderDelegate, AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in
+            // 自然播完要停表并释放 player：单例里遗留的重复计时器会以 5Hz 空转整个进程生命周期，
+            // 同时把解码后的音频缓冲一直留在内存里。
+            self.playbackTimer?.invalidate()
+            self.playbackTimer = nil
+            self.player = nil
             self.isPlaying = false
-            self.player?.currentTime = 0
             self.playbackTime = 0
         }
     }
