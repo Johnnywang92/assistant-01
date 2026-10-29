@@ -8,3 +8,5 @@ scripts/config.local
 Assistant/Info.plist
 .workbuddy/
 *.litertlm
+# 设计稿生成图片的临时产物（不属于工程源码）
+generated-images/
