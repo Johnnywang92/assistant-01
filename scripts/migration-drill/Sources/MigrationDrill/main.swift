@@ -1,13 +1,17 @@
 import CryptoKit
 import Foundation
+import SQLite3
 import SwiftData
 
-// P0-1 演练脚本：旧库升级 + 损坏库 + 未知结构库。
+// P0-1 演练脚本：旧库升级 + 损坏库 + 未知结构库 + `#Index` 生效边界。
 // 验证目标（对应 todo.md P0-1 验收：用旧版数据库和损坏数据库分别升级，原文件不被自动删除，
 // 应用不会在内存库中假装保存成功）：
 //   ① V1 旧库经 lightweight 迁移升级到 V2，数据完整、新字段有默认值；
 //   ② 损坏库打开失败，且失败后原文件一个字节都没被删改；
-//   ③ 结构不在迁移计划内的库打开失败，文件同样保留。
+//   ③ 结构不在迁移计划内的库打开失败，文件同样保留；
+//   ④ 应用侧不再有任何删库路径；
+//   ⑤ `#Index` 只在**新建库**生效，老库不会补建；写进 `#if` 会静默失效；
+//      老库要提速只能走文件层 SQL 建索引（见演练 5 的结论）。
 // 注意：本脚本是 SwiftData 迁移机制的演练（微型镜像模型），
 // 应用真实的 V1/V2 模型清单在 Assistant/Services/Persistence.swift，
 // 由 DEBUG 断言 assertSchemaCoverage 保证 V1 ⊆ V2。
@@ -56,6 +60,30 @@ final class DrillTag {
 final class DrillAlien {
     var payload: String
     init(payload: String) { self.payload = payload }
+}
+
+/// 演练 5 用：带 `#Index` 声明的镜像模型（三组索引：两列各一 + 一个复合）
+@available(macOS 15, *)
+@Model
+final class DrillIndexedNote {
+    var statusRaw: String
+    var dueAt: Date
+    init(statusRaw: String, dueAt: Date) {
+        self.statusRaw = statusRaw; self.dueAt = dueAt
+    }
+    // 这一行不能被 #if 包裹：包裹后宏会静默失效，正是演练 5c 要钉住的坑
+    #Index<DrillIndexedNote>([\.statusRaw], [\.dueAt], [\.statusRaw, \.dueAt])
+}
+
+/// 演练 5c 用：与上面唯一的差别是把 `#Index` 写进 #if 分支
+@available(macOS 15, *)
+@Model
+final class DrillIfNote {
+    var statusRaw: String
+    init(statusRaw: String) { self.statusRaw = statusRaw }
+#if os(macOS)
+    #Index<DrillIfNote>([\.statusRaw])
+#endif
 }
 
 enum DrillSchemaV1: VersionedSchema {
@@ -237,11 +265,105 @@ do {
     check(false, "结构约束演练抛错：\(error.localizedDescription)")
 }
 
+// MARK: - 演练 5：SwiftData `#Index` 的真实生效边界
+
+func sqliteExec(_ url: URL, _ sql: String) -> Bool {
+    var db: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else { return false }
+    defer { sqlite3_close(db) }
+    sqlite3_busy_timeout(db, 3000)
+    return sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK
+}
+
+func sqliteStrings(_ url: URL, _ sql: String) -> [String] {
+    var db: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else { return [] }
+    defer { sqlite3_close(db) }
+    sqlite3_busy_timeout(db, 3000)
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+        sqlite3_finalize(stmt)
+        return []
+    }
+    defer { sqlite3_finalize(stmt) }
+    var out: [String] = []
+    while sqlite3_step(stmt) == SQLITE_ROW, let text = sqlite3_column_text(stmt, 0) {
+        out.append(String(cString: text))
+    }
+    return out
+}
+
+func indexes(ofTable url: URL, _ table: String) -> [String] {
+    sqliteStrings(url, "select name from sqlite_master where type='index' and tbl_name='\(table)' order by name")
+}
+
+@available(macOS 15, *)
+func openIndexedNote(_ url: URL) throws -> ModelContainer {
+    let schema = Schema([DrillIndexedNote.self])
+    let config = ModelConfiguration("idxdrill", schema: schema, url: url)
+    return try ModelContainer(for: schema, configurations: config)
+}
+
+if #available(macOS 15.0, *) {
+    print("演练 5：`#Index` 生效边界（决定「加索引提速」这类建议能不能落地）")
+    do {
+        let store = workDir.appendingPathComponent("indexed.store")
+
+        // 5a. 全新库：声明的索引会落地
+        do {
+            let ctx = ModelContext(try openIndexedNote(store))
+            for i in 0..<300 {
+                ctx.insert(DrillIndexedNote(statusRaw: i % 2 == 0 ? "active" : "done",
+                                            dueAt: .now.addingTimeInterval(Double(i))))
+            }
+            try ctx.save()
+        }
+        let created = indexes(ofTable: store, "ZDRILLINDEXEDNOTE")
+        check(created.count == 3, "5a 新建库里 #Index 声明的 3 组索引落地（实得 \(created.count) 组）")
+
+        // 5b. 已存在的库：删掉一组索引后用「声明了该索引」的模型重开——SwiftData 不会补建。
+        //     这就是给已发布的老库加 #Index 的真实结局：声明进不了磁盘，读取路径毫无变化。
+        let dropped = "Z_DrillIndexedNote_SwiftDataIndexOnBinarystatusRaw"
+        check(sqliteExec(store, "drop index \(dropped)"), "5b 前置：删掉已建索引")
+        do {
+            let ctx = ModelContext(try openIndexedNote(store))
+            check(try ctx.fetchCount(FetchDescriptor<DrillIndexedNote>()) == 300, "5b 重开后 300 条数据完整")
+        }
+        let afterReopen = indexes(ofTable: store, "ZDRILLINDEXEDNOTE")
+        check(!afterReopen.contains(dropped), "5b 老库不会被补建索引——对已发布库加 #Index 是空操作（重开后 \(afterReopen.count) 组）")
+
+        // 5c. `#if` 包裹会让宏静默失效：恒真分支也一样，编译、运行都不报错
+        let ifStore = workDir.appendingPathComponent("ifwrapped.store")
+        do {
+            let schema = Schema([DrillIfNote.self])
+            let ctx = ModelContext(try ModelContainer(for: schema,
+                                  configurations: ModelConfiguration("ifdrill", schema: schema, url: ifStore)))
+            for _ in 0..<20 { ctx.insert(DrillIfNote(statusRaw: "active")) }
+            try ctx.save()
+        }
+        check(indexes(ofTable: ifStore, "ZDRILLIFNOTE").isEmpty, "5c 写在 #if 分支里的 #Index 完全不生效（无告警）")
+
+        // 5d. 文件层手工建索引：SwiftData 认它、也会保留它——这是老库唯一可行的提速路径
+        check(sqliteExec(ifStore, "create index IX_MANUAL_STATUS on ZDRILLIFNOTE (ZSTATUSRAW)"), "5d 前置：手工建索引")
+        do {
+            let schema = Schema([DrillIfNote.self])
+            let ctx = ModelContext(try ModelContainer(for: schema,
+                                  configurations: ModelConfiguration("ifdrill", schema: schema, url: ifStore)))
+            check(try ctx.fetchCount(FetchDescriptor<DrillIfNote>()) == 20, "5d 手工索引下 SwiftData 读取正常")
+        }
+        check(indexes(ofTable: ifStore, "ZDRILLIFNOTE").contains("IX_MANUAL_STATUS"), "5d 手工索引在 SwiftData 重开后仍保留")
+    } catch {
+        check(false, "演练 5 抛错：\(error.localizedDescription)")
+    }
+} else {
+    print("演练 5：跳过（`#Index` 需 macOS 15+ / iOS 18+）")
+}
+
 // MARK: - 汇总
 
 print("")
 if failures.isEmpty {
-    print("P0-1 演练全部通过：旧库可升级、损坏库不删文件、未知结构库可恢复。")
+    print("P0-1 演练全部通过：旧库可升级、损坏库不删文件、未知结构库可恢复、`#Index` 生效边界已确认。")
     exit(0)
 } else {
     print("P0-1 演练失败 \(failures.count) 项：")
