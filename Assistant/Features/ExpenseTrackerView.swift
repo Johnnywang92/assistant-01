@@ -2047,7 +2047,7 @@ private struct ExpenseShareView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } } }
         }
-        .sheet(isPresented: $showSystemShareSheet) {
+        .sheet(isPresented: $showSystemShareSheet, onDismiss: { shareItems = [] }) {
             ShareActivityView(activityItems: shareItems)
         }
     }

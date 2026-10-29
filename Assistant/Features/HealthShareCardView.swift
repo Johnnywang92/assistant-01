@@ -579,7 +579,7 @@ public struct HealthShareSheet: View {
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: toastMessage)
         }
-        .sheet(isPresented: $showSystemShareSheet) {
+        .sheet(isPresented: $showSystemShareSheet, onDismiss: { renderedImage = nil }) {
             if let renderedImage {
                 ShareActivityView(activityItems: [renderedImage])
             }

@@ -371,7 +371,7 @@ struct TodoShareSheet: View {
                     .disabled(itemsForCard.isEmpty)
                 }
             }
-            .sheet(isPresented: $showSystemShareSheet) {
+            .sheet(isPresented: $showSystemShareSheet, onDismiss: { renderedImage = nil }) {
                 if let renderedImage {
                     ShareActivityView(activityItems: [renderedImage])
                 }
