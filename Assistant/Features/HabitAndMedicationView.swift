@@ -184,8 +184,13 @@ struct HabitAndMedicationView: View {
     }
 
     private func deleteMeds(at offsets: IndexSet) {
-        for idx in offsets { context.delete(medPlans[idx]) }
+        for idx in offsets {
+            let plan = medPlans[idx]
+            HabitAndMedicationScheduler.cancelMedicationReminders(for: plan.id)
+            context.delete(plan)
+        }
         try? context.save()
+        HabitAndMedicationScheduler(context: context).scheduleMedicationReminders()
     }
 
     // MARK: - 饮食时效自适应智能看板
@@ -386,6 +391,7 @@ struct MedicationRow: View {
     @Bindable var med: MedicationPlan
     var evaluation: MedicationTimingEvaluation?
     @ObservedObject private var seniorManager = SeniorModeManager.shared
+    @Environment(\.modelContext) private var context
     var onEdit: () -> Void
     var onMarkTaken: () -> Void = {}
 
@@ -408,6 +414,15 @@ struct MedicationRow: View {
                     .padding(.vertical, 2)
                     .background(Capsule().fill(Color.blue.opacity(0.12)))
                     .foregroundStyle(.blue)
+
+                    if !med.isEnabled {
+                        Text("已停用提醒")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color(.tertiarySystemFill)))
+                            .foregroundStyle(.secondary)
+                    }
 
                     Spacer()
 
@@ -486,6 +501,23 @@ struct MedicationRow: View {
             }
         }
         .padding(.vertical, 4)
+        .swipeActions(edge: .leading) {
+            Button {
+                if med.isEnabled {
+                    _ = MedicineStockHelper.stopReminder(for: med.medName, context: context)
+                } else {
+                    med.isEnabled = true
+                    try? context.save()
+                    let scheduler = HabitAndMedicationScheduler(context: context)
+                    scheduler.scheduleMedicationReminders()
+                    scheduler.ensureTodayMedicationTodos(for: med)
+                    Haptic.success()
+                }
+            } label: {
+                Label(med.isEnabled ? "停止提醒" : "恢复提醒", systemImage: med.isEnabled ? "bell.slash.fill" : "bell.badge.fill")
+            }
+            .tint(med.isEnabled ? .orange : .green)
+        }
     }
 
     private var isTakenRecently: Bool {
@@ -661,6 +693,7 @@ struct MedicationEditorSheet: View {
     @State private var frequency = 2
     @State private var timePoints: [Date] = []
     @State private var mealRelation: MedicationMealRelation = .afterMeal(minutes: 30)
+    @State private var isEnabled: Bool = true
 
     private let amountOptions: [Double] = [0.5, 1, 1.5, 2, 3, 4, 6]
     private let unitOptions = ["片", "粒", "颗", "袋", "支", "毫升", "滴", "包", "丸", "勺"]
@@ -687,6 +720,7 @@ struct MedicationEditorSheet: View {
         self.med = med
         if let m = med {
             _medName = State(initialValue: m.medName)
+            _isEnabled = State(initialValue: m.isEnabled)
             let (amount, unit) = Self.parseDosage(m.dosage)
             _dosageAmount = State(initialValue: amount)
             _dosageUnit = State(initialValue: unit)
@@ -904,6 +938,30 @@ struct MedicationEditorSheet: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
+
+                Section("提醒设置") {
+                    Toggle("开启每日服药定时提醒", isOn: $isEnabled)
+                }
+
+                if isEditing && med?.isEnabled == true {
+                    Section {
+                        Button(role: .destructive) {
+                            if let m = med {
+                                _ = MedicineStockHelper.stopReminder(for: m.medName, context: context)
+                                dismiss()
+                            }
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Label("一键停止提醒（病好了停服）", systemImage: "bell.slash.fill")
+                                    .foregroundStyle(.red)
+                                Spacer()
+                            }
+                        }
+                    } footer: {
+                        Text("病愈后一键停用每日推送与打卡任务，用药档案与设置完整保留，无需删除药品。")
+                    }
+                }
             }
             .navigationTitle(isEditing ? "编辑服药提醒" : "添加服药提醒")
             .navigationBarTitleDisplayMode(.inline)
@@ -963,11 +1021,14 @@ struct MedicationEditorSheet: View {
         let dosageStr = "每次 \(Self.formatAmount(dosageAmount)) \(dosageUnit)"
         let points = timePoints.map { Self.string(from: $0) }
 
+        let savedPlan: MedicationPlan
         if let med {
             med.medName = medName
             med.dosage = dosageStr
             med.dailyTimePoints = points
             med.mealRelation = mealRelation
+            med.isEnabled = isEnabled
+            savedPlan = med
         } else {
             let plan = MedicationPlan(
                 medName: medName,
@@ -975,13 +1036,57 @@ struct MedicationEditorSheet: View {
                 dailyTimePoints: points,
                 mealRelation: mealRelation
             )
+            plan.isEnabled = isEnabled
             context.insert(plan)
+            savedPlan = plan
         }
+        // 同步补收纳档案（幂等：同名常备药已存在则跳过），让「新增/改名药品」
+        // 在收纳卡片与常备药列表同样可见；老数据重存一次即可回填
+        ensureCabinetMedicine()
 
         try? context.save()
         let scheduler = HabitAndMedicationScheduler(context: context)
-        scheduler.scheduleMedicationReminders()
+        if savedPlan.isEnabled {
+            // 与推送同节奏：立即补建今日服药待办（首页「服药提醒」区），
+            // 后续每天由前台巡检按同一幂等规则物化，不再只有通知没有待办
+            scheduler.ensureTodayMedicationTodos(for: savedPlan)
+            scheduler.scheduleMedicationReminders()
+        } else {
+            HabitAndMedicationScheduler.cancelMedicationReminders(for: savedPlan.id)
+            scheduler.scheduleMedicationReminders()
+        }
         dismiss()
+    }
+
+    /// 服药提醒侧新建计划时，收纳档案里若无同名常备药则补一条最小档案
+    /// （分类/存放位置沿用常用药预设，用法用量取自本表单；有效期等细节由用户后续在收纳页补全）。
+    private func ensureCabinetMedicine() {
+        let name = medName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        guard !cabinetMedicines.contains(where: {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(name) == .orderedSame
+        }) else { return }
+
+        let preset = commonMedicinePresets.first {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(name) == .orderedSame
+        }
+        var draft = MedicineUsageDraft()
+        draft.frequencyCount = frequency
+        draft.dosageAmount = dosageAmount
+        draft.dosageUnit = dosageUnit
+        draft.mealRelation = mealRelation
+        draft.route = preset?.route ?? "口服"
+
+        let item = MedicineItem(
+            name: name,
+            category: preset?.category ?? .other,
+            indications: preset?.indications,
+            usageMethod: draft.formattedUsage,
+            storageLocation: preset?.recommendedLocation ?? "家庭药箱",
+            roomArea: preset?.recommendedArea ?? "储物间",
+            precautions: preset?.precautions
+        )
+        context.insert(item)
     }
 
     // MARK: - 编解码辅助

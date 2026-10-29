@@ -15,6 +15,7 @@ struct ItemStorageVaultView: View {
     private var allExpenseRecords: [ExpenseRecord]
     /// 家庭常备药与健康储备（物品收纳页内统一管理，重点跟踪有效期与用药方法）
     @Query private var medicines: [MedicineItem]
+    @Query private var medPlans: [MedicationPlan]
 
     @State private var searchText: String = ""
     @State private var selectedArea: String = "全部"
@@ -243,13 +244,24 @@ struct ItemStorageVaultView: View {
     /// 左滑“再买一批”可快速录入同种药的新批次（带不同有效期）。
     @ViewBuilder
     private func batchRow(_ med: MedicineItem, showsChevron: Bool) -> some View {
+        let hasActiveReminder = medPlans.contains { $0.medName == med.name && $0.isEnabled }
+
         MedicineItemRow(
             medicine: med,
             showsChevron: showsChevron,
             onTakeDose: (!med.isDisposed && !med.isExpired) ? {
                 let msg = MedicineStockHelper.takeOneDose(medicine: med, context: context)
                 showFeedback("\(med.name)：\(msg)")
-            } : nil
+            } : nil,
+            onEditReminder: {
+                let draft = MedicineUsageDraft.parse(from: med.usageMethod ?? "")
+                reminderTarget = ReminderMedicineTarget(medicine: med, usageDraft: draft)
+                Haptic.light()
+            },
+            onStopReminder: {
+                _ = MedicineStockHelper.stopReminder(for: med.name, context: context)
+                showFeedback("已停止「\(med.name)」服药提醒，常备药档案已保留")
+            }
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -274,14 +286,25 @@ struct ItemStorageVaultView: View {
                 Label("再买一批", systemImage: "plus.circle")
             }
             .tint(.green)
-            Button {
-                let draft = MedicineUsageDraft.parse(from: med.usageMethod ?? "")
-                reminderTarget = ReminderMedicineTarget(medicine: med, usageDraft: draft)
-                Haptic.light()
-            } label: {
-                Label("用药提醒", systemImage: "bell.badge.fill")
+
+            if hasActiveReminder {
+                Button {
+                    _ = MedicineStockHelper.stopReminder(for: med.name, context: context)
+                    showFeedback("已停止「\(med.name)」服药提醒，常备药档案已保留")
+                } label: {
+                    Label("停止提醒", systemImage: "bell.slash.fill")
+                }
+                .tint(.orange)
+            } else {
+                Button {
+                    let draft = MedicineUsageDraft.parse(from: med.usageMethod ?? "")
+                    reminderTarget = ReminderMedicineTarget(medicine: med, usageDraft: draft)
+                    Haptic.light()
+                } label: {
+                    Label("用药提醒", systemImage: "bell.badge.fill")
+                }
+                .tint(.orange)
             }
-            .tint(.orange)
         }
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
@@ -1226,10 +1249,17 @@ private struct MedicineItemRow: View {
     let medicine: MedicineItem
     var showsChevron: Bool = true
     var onTakeDose: (() -> Void)? = nil
+    var onEditReminder: (() -> Void)? = nil
+    var onStopReminder: (() -> Void)? = nil
     @Query private var medPlans: [MedicationPlan]
+    @Environment(\.modelContext) private var context
 
     private var linkedPlan: MedicationPlan? {
         medPlans.first { $0.medName == medicine.name && $0.isEnabled }
+    }
+
+    private var pausedPlan: MedicationPlan? {
+        medPlans.first { $0.medName == medicine.name && !$0.isEnabled }
     }
 
     private var takenRecentlyToday: Bool {
@@ -1269,15 +1299,54 @@ private struct MedicineItemRow: View {
                         .background(Capsule().fill(Color.green.opacity(0.14)))
                         .foregroundStyle(.green)
                     if let plan = linkedPlan {
-                        HStack(spacing: 3) {
-                            Image(systemName: "bell.badge.fill")
-                            Text("每日\(plan.dailyTimePoints.count)次提醒")
+                        Menu {
+                            Button(role: .destructive) {
+                                if let onStopReminder {
+                                    onStopReminder()
+                                } else {
+                                    _ = MedicineStockHelper.stopReminder(for: medicine.name, context: context)
+                                }
+                            } label: {
+                                Label("一键停止提醒（病愈停服）", systemImage: "bell.slash.fill")
+                            }
+                            if let onEditReminder {
+                                Button {
+                                    onEditReminder()
+                                } label: {
+                                    Label("修改提醒排期", systemImage: "clock")
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "bell.badge.fill")
+                                Text("每日\(plan.dailyTimePoints.count)次提醒")
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8, weight: .bold))
+                            }
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.orange.opacity(0.14)))
+                            .foregroundStyle(.orange)
                         }
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.orange.opacity(0.14)))
-                        .foregroundStyle(.orange)
+                        .buttonStyle(.plain)
+                    } else if pausedPlan != nil {
+                        if let onEditReminder {
+                            Button {
+                                onEditReminder()
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "bell.slash")
+                                    Text("提醒已停用")
+                                }
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color(.tertiarySystemFill)))
+                                .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     if medicine.isDisposed {
                         Text("已处理")

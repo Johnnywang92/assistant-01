@@ -468,6 +468,51 @@ final class HealthKitService: ObservableObject {
         }
     }
 
+    /// 按「夜」归组的入睡时刻样本（睡前提醒的锚点数据源）。
+    ///
+    /// 口径与 `sleepStages` 一致：只统计 asleep 类、不统计 `inBed`；
+    /// 归一化（多源重叠合并、最长连续段取 onset、总 asleep 计时长）走
+    /// `AssistantCore.SleepNightNormalizer`（纯规则、有回归测试）。
+    /// 返回的样本按 nightKey 升序；无数据的夜不出现在结果里（不是 0 分钟）。
+    func fetchSleepNights(days: Int = 28) async -> [SleepNightSample] {
+        guard Self.isAvailable, let type = sleepType else { return [] }
+        let now = Date.now
+        guard let windowStart = calendar.date(byAdding: .day, value: -days, to: now) else { return [] }
+        let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: now, options: [])
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.categorySample(type: type, predicate: predicate)],
+            sortDescriptors: []
+        )
+        do {
+            let samples = try await descriptor.result(for: store)
+            let asleepValues: Set<Int> = [
+                HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue,
+                HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
+                HKCategoryValueSleepAnalysis.asleepREM.rawValue
+            ]
+            let segments = samples
+                .filter { asleepValues.contains($0.value) }
+                .map { (start: $0.startDate, end: $0.endDate) }
+                .filter { $0.end > $0.start }
+            guard !segments.isEmpty else { return [] }
+
+            // 按夜归组：每个样本落入其所属 nightKey 的窗口
+            var byNight: [Date: [(start: Date, end: Date)]] = [:]
+            for seg in segments {
+                let key = SleepNightNormalizer.nightKey(for: seg.start, calendar: calendar)
+                byNight[key, default: []].append(seg)
+            }
+            return byNight.compactMap { key, nightSegments in
+                SleepNightNormalizer.sample(nightKey: key, segments: nightSegments, calendar: calendar)
+            }
+            .sorted { $0.nightKey < $1.nightKey }
+        } catch {
+            errors.append(describe(error))
+            return []
+        }
+    }
+
     /// 心率变异性采样（SDNN 毫秒，优先采集夜间睡眠到今晨的连续指标）。
     private func hrvSample(start: Date) async -> HealthMetricValue? {
         guard let type = HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { return nil }

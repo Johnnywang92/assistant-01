@@ -262,6 +262,8 @@ public final class LifeVaultCardManager: ObservableObject {
 struct LifeVaultView: View {
     @Environment(\.modelContext) private var context
     @Query private var storedItems: [StoredItem]
+    /// 家庭常备药（归入物品收纳域）：收纳卡片与统计胶囊必须计入，否则新增药品后收纳数字纹丝不动
+    @Query private var medicineItems: [MedicineItem]
     @Query private var documents: [IDDocumentItem]
     @Query private var passwords: [PasswordVaultItem]
     @Query private var anniversaries: [AnniversaryItem]
@@ -353,6 +355,9 @@ struct LifeVaultView: View {
     // 活跃服药计划
     private var activeMedCount: Int { stats.activeMeds }
 
+    /// 收纳档案中的未处理常备药数量（已用完/丢弃的不计）
+    private var cabinetMedicineCount: Int { medicineItems.reduce(0) { $0 + ($1.isDisposed ? 0 : 1) } }
+
     // 人生大事状态摘要
     private var lifeEventsSummary: String {
         if let first = lifeProjects.first {
@@ -408,7 +413,7 @@ struct LifeVaultView: View {
                         Button {
                             navigateTo(.storage)
                         } label: {
-                            statPill(title: "收纳", count: "\(storedItems.count)", icon: "archivebox.fill", color: .indigo)
+                            statPill(title: "收纳", count: "\(storedItems.count + cabinetMedicineCount)", icon: "archivebox.fill", color: .indigo)
                         }
                         .buttonStyle(.borderless)
 
@@ -872,7 +877,9 @@ struct LifeVaultView: View {
         case .skillPaths:
             return ("技能学习路径", skillPathsSummary, false)
         case .storage:
-            return ("物品收纳", "\(storedItems.count) 件物品", false)
+            // 常备药归入收纳域（MedicineItem）：卡片摘要单独点出药品数，新增药品后立即可见
+            let medicineSuffix = cabinetMedicineCount > 0 ? " · \(cabinetMedicineCount) 种药" : ""
+            return ("物品收纳", "\(storedItems.count) 件物品\(medicineSuffix)", false)
         case .learnedPlaces:
             let placeStatus = places.isEmpty ? "尚未记录地点" : places.map(\.name).prefix(2).joined(separator: "、") + (places.count > 2 ? " 等 \(places.count) 处" : "")
             return ("常用地点", placeStatus, false)

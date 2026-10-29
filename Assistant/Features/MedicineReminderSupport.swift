@@ -387,6 +387,7 @@ struct ReminderMedicineTarget: Identifiable {
 struct AddMedicationReminderPopupSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Query private var allPlans: [MedicationPlan]
 
     let medicine: MedicineItem
     let usageDraft: MedicineUsageDraft
@@ -395,6 +396,14 @@ struct AddMedicationReminderPopupSheet: View {
     @State private var timePoints: [Date] = []
     @State private var alsoCreateTodo: Bool = true
     @State private var enableNotifications: Bool = true
+
+    private var activePlan: MedicationPlan? {
+        allPlans.first { $0.medName == medicine.name && $0.isEnabled }
+    }
+
+    private var hasExistingPlan: Bool {
+        allPlans.contains { $0.medName == medicine.name }
+    }
 
     init(medicine: MedicineItem, usageDraft: MedicineUsageDraft, onComplete: @escaping () -> Void = {}) {
         self.medicine = medicine
@@ -435,9 +444,48 @@ struct AddMedicationReminderPopupSheet: View {
                     }
                     .padding(.vertical, 4)
                 } header: {
-                    Text("已保存常备药")
+                    Text("常备药信息")
                 } footer: {
                     Text("系统已根据用法（\(usageFrequencySummary)）自动匹配提醒时间，可在下方按个人作息微调时刻。")
+                }
+
+                // 若当前该药物已有进行中的提醒，显示一键停止按钮
+                if activePlan != nil {
+                    Section {
+                        HStack(spacing: 10) {
+                            Image(systemName: "bell.badge.fill")
+                                .font(.title3)
+                                .foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("用药提醒进行中")
+                                    .font(.subheadline.bold())
+                                    .foregroundStyle(.orange)
+                                Text("每日 \(activePlan?.dailyTimePoints.count ?? timePoints.count) 次定时提醒已启用")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 2)
+
+                        Button(role: .destructive) {
+                            _ = MedicineStockHelper.stopReminder(for: medicine.name, context: context)
+                            dismiss()
+                            onComplete()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Label("一键停止用药提醒（病愈停服）", systemImage: "bell.slash.fill")
+                                    .font(.headline)
+                                Spacer()
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    } header: {
+                        Text("当前提醒状态")
+                    } footer: {
+                        Text("病愈后一键停止提醒：常备药档案与保质期监控完整保留，立即撤销每日定时通知并清理今日未服待办。后续若需再次服药可随时重新开启。")
+                    }
                 }
 
                 Section("每日服药时刻（已适配 \(timePoints.count) 次/天）") {
@@ -504,7 +552,7 @@ struct AddMedicationReminderPopupSheet: View {
                     } label: {
                         HStack {
                             Spacer()
-                            Text("开启每日用药提醒")
+                            Text(activePlan != nil ? "更新用药提醒排期" : "开启每日用药提醒")
                                 .font(.headline)
                                 .foregroundStyle(.white)
                             Spacer()
@@ -515,7 +563,7 @@ struct AddMedicationReminderPopupSheet: View {
                 }
 
                 Section {
-                    Button("暂不设置提醒") {
+                    Button(activePlan != nil ? "完成返回" : "暂不设置提醒") {
                         dismiss()
                         onComplete()
                     }
@@ -523,16 +571,32 @@ struct AddMedicationReminderPopupSheet: View {
                     .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("添加用药提醒")
+            .navigationTitle(activePlan != nil ? "管理用药提醒" : "添加用药提醒")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("跳过") {
+                    Button("关闭") {
                         dismiss()
                         onComplete()
                     }
                 }
             }
+            .onAppear {
+                if let existing = allPlans.first(where: { $0.medName == medicine.name }), !existing.dailyTimePoints.isEmpty {
+                    let cal = Calendar.current
+                    let dates = existing.dailyTimePoints.compactMap { str -> Date? in
+                        let parts = str.split(separator: ":").compactMap { Int($0) }
+                        guard parts.count == 2 else { return nil }
+                        return cal.date(from: DateComponents(hour: parts[0], minute: parts[1]))
+                    }
+                    if !dates.isEmpty {
+                        timePoints = dates
+                        enableNotifications = existing.isEnabled
+                    }
+                }
+            }
+        }
+    }
         }
     }
 
@@ -605,12 +669,14 @@ struct AddMedicationReminderPopupSheet: View {
         let descriptor = FetchDescriptor<MedicationPlan>(predicate: #Predicate { $0.medName == targetName })
         let existingPlans = (try? context.fetch(descriptor)) ?? []
 
+        let targetPlan: MedicationPlan
         if let existing = existingPlans.first {
             existing.dosage = dosageStr
             existing.dailyTimePoints = timeStrings
             existing.mealRelation = usageDraft.mealRelation
             existing.isEnabled = enableNotifications
             existing.notes = medicine.indications
+            targetPlan = existing
         } else {
             let plan = MedicationPlan(
                 medName: medicine.name,
@@ -621,39 +687,16 @@ struct AddMedicationReminderPopupSheet: View {
             )
             plan.isEnabled = enableNotifications
             context.insert(plan)
-        }
-
-        if alsoCreateTodo {
-            let today = Calendar.current.startOfDay(for: .now)
-            for tp in timeStrings {
-                let parts = tp.split(separator: ":").compactMap { Int($0) }
-                guard parts.count == 2 else { continue }
-                var comps = Calendar.current.dateComponents([.year, .month, .day], from: today)
-                comps.hour = parts[0]
-                comps.minute = parts[1]
-                if let due = Calendar.current.date(from: comps), due > .now {
-                    let todoTitle = "服药：\(medicine.name)（\(tp)）"
-                    let active = TodoStatus.active.rawValue
-                    let medType = TodoType.medication.rawValue
-                    let existingTodos = (try? context.fetch(FetchDescriptor<TodoItem>(
-                        predicate: #Predicate { $0.title == todoTitle && $0.typeRaw == medType && $0.statusRaw == active }
-                    ))) ?? []
-                    if existingTodos.isEmpty {
-                        let todo = TodoItem(
-                            type: .medication,
-                            status: .active,
-                            title: todoTitle,
-                            detail: "\(dosageStr) · \(usageDraft.mealRelation.displayName) · 存放：\(medicine.storageLocation)",
-                            dueAt: due
-                        )
-                        context.insert(todo)
-                    }
-                }
-            }
+            targetPlan = plan
         }
 
         try? context.save()
         let scheduler = HabitAndMedicationScheduler(context: context)
+        // 「今日服药任务」走统一物化规则：当天全部时点都落待办（漏服的以逾期形态供补打卡），
+        // 同名未完成/今日已打卡的自动去重，不再只生成「尚未到点」的条目。
+        if alsoCreateTodo {
+            scheduler.ensureTodayMedicationTodos(for: targetPlan)
+        }
         scheduler.scheduleMedicationReminders()
         Haptic.success()
         dismiss()
@@ -1055,6 +1098,41 @@ enum MedicineStockHelper {
             dueAt: Calendar.current.date(byAdding: .day, value: 1, to: .now)
         )
         context.insert(todo)
+    }
+
+    /// 一键停止服药提醒（保留常备药档案，停用提醒计划、撤销推送并清理未完成待办）
+    @MainActor
+    @discardableResult
+    static func stopReminder(for medicineName: String, context: ModelContext) -> Bool {
+        let descriptor = FetchDescriptor<MedicationPlan>(
+            predicate: #Predicate { $0.medName == medicineName }
+        )
+        guard let plans = try? context.fetch(descriptor), !plans.isEmpty else {
+            return false
+        }
+        for plan in plans {
+            plan.isEnabled = false
+            HabitAndMedicationScheduler.cancelMedicationReminders(for: plan.id)
+        }
+
+        // 清理今日待办中关于该药品的未完成服药打卡任务
+        let activeRaw = TodoStatus.active.rawValue
+        let medTypeRaw = TodoType.medication.rawValue
+        let todoDescriptor = FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.typeRaw == medTypeRaw && $0.statusRaw == activeRaw }
+        )
+        if let activeMedTodos = try? context.fetch(todoDescriptor) {
+            let matching = activeMedTodos.filter { $0.title.contains(medicineName) }
+            for todo in matching {
+                context.delete(todo)
+            }
+        }
+
+        try? context.save()
+        let scheduler = HabitAndMedicationScheduler(context: context)
+        scheduler.scheduleMedicationReminders()
+        Haptic.success()
+        return true
     }
 
     private static func decrementQuantityString(_ text: String, by amount: Double, defaultUnit: String) -> (String?, Double?) {

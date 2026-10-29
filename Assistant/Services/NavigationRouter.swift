@@ -346,6 +346,11 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
             Task { @MainActor in
                 LiveActivityControlNotifications.handle(response)
             }
+        } else if let type = userInfo["type"] as? String, type == "sleepBedtime" {
+            // 睡前提醒的「推迟 20 分钟」：用户显式要求的补提醒，独立 identifier 注册
+            Task { @MainActor in
+                SleepReminderScheduler.handleNotificationResponse(response)
+            }
         } else if let type = userInfo["type"] as? String, type == "todo" {
             if let idString = userInfo["todoId"] as? String, let id = UUID(uuidString: idString) {
                 Task { @MainActor in NavigationRouter.shared.focusTodo(id) }

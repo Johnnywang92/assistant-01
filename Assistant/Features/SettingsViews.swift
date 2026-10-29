@@ -78,6 +78,7 @@ struct SettingsView: View {
     @ObservedObject private var seniorManager = SeniorModeManager.shared
     @ObservedObject private var reportManager = PeriodicReportManager.shared
     @ObservedObject private var langManager = LanguageManager.shared
+    @ObservedObject private var sleepScheduler = SleepReminderScheduler.shared
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.modelContext) private var context
     @State private var selectedMode = AppSettings.currentMode
@@ -108,6 +109,40 @@ struct SettingsView: View {
                 offWorkMinutes = hour * 60 + minute
             }
         )
+    }
+
+    /// 期望就寝时间（"HH:mm"）↔ DatePicker。00:30 表示次日凌晨。
+    private var desiredBedtimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                let parts = (sleepScheduler.desiredBedtimeHHmm ?? "23:00")
+                    .split(separator: ":").compactMap { Int($0) }
+                let hour = parts.count == 2 ? parts[0] : 23
+                let minute = parts.count == 2 ? parts[1] : 0
+                return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: .now) ?? .now
+            },
+            set: { date in
+                let calendar = Calendar.current
+                sleepScheduler.desiredBedtimeHHmm = String(
+                    format: "%02d:%02d",
+                    calendar.component(.hour, from: date),
+                    calendar.component(.minute, from: date)
+                )
+                scheduleSleepResync()
+            }
+        )
+    }
+
+    /// 设置改动后重算今晚建议：DatePicker 滚轮会连续触发 set，防抖 0.4s 再同步
+    @State private var sleepResyncTask: Task<Void, Never>? = nil
+
+    private func scheduleSleepResync() {
+        sleepResyncTask?.cancel()
+        sleepResyncTask = Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            await sleepScheduler.syncSleepReminders()
+        }
     }
 
     private func migrateLegacyOffWorkTimeIfNeeded() {
@@ -578,6 +613,65 @@ struct SettingsView: View {
                         }
                 } header: {
                     Text("生活习惯")
+                }
+
+                // MARK: - 睡前提醒
+                Section {
+                    Toggle("睡前提醒", isOn: Binding(
+                        get: { sleepScheduler.isEnabled },
+                        set: { newValue in
+                            sleepScheduler.isEnabled = newValue
+                            scheduleSleepResync()
+                        }
+                    ))
+                    .tint(.indigo)
+
+                    if sleepScheduler.isEnabled {
+                        DatePicker("期望就寝时间", selection: desiredBedtimeBinding, displayedComponents: .hourAndMinute)
+
+                        Picker("提前缓冲", selection: Binding(
+                            get: { sleepScheduler.windDownMinutes },
+                            set: { newValue in
+                                sleepScheduler.windDownMinutes = newValue
+                                scheduleSleepResync()
+                            }
+                        )) {
+                            Text("提前 15 分钟").tag(15)
+                            Text("提前 30 分钟").tag(30)
+                            Text("提前 45 分钟").tag(45)
+                        }
+
+                        Picker("睡眠目标", selection: Binding(
+                            get: { sleepScheduler.sleepGoalMinutes },
+                            set: { newValue in
+                                sleepScheduler.sleepGoalMinutes = newValue
+                                scheduleSleepResync()
+                            }
+                        )) {
+                            Text("6 小时").tag(360)
+                            Text("6.5 小时").tag(390)
+                            Text("7 小时").tag(420)
+                            Text("7.5 小时").tag(450)
+                            Text("8 小时").tag(480)
+                        }
+
+                        if sleepScheduler.notificationDenied {
+                            Button("打开系统设置开启通知") {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    UIApplication.shared.open(url)
+                                }
+                            }
+                            .foregroundStyle(AppColor.danger)
+                        }
+                    }
+                } header: {
+                    Text("睡前提醒")
+                } footer: {
+                    Text("""
+                    每晚按你的作息习惯与近一周睡眠计算建议就寝时刻：习惯晚睡就晚提醒，睡眠不足会适度提前，单晚调整不超过 45 分钟；提醒范围 21:30–01:30，超出不安排。\
+                    兜底提醒会预注册未来 2–3 晚，连续几晚不打开 App 将停止预注册。\
+                    工作日与周末按周五、周六夜区分，暂不识别调休；健康数据不足时按期望时间或默认 23:00，不会假装智能计算。
+                    """)
                 }
 
                 // MARK: - 万能投喂口

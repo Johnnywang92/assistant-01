@@ -99,6 +99,8 @@ struct AssistantApp: App {
                 // 改由打开保险箱时（PasswordVaultView.onAppear）惰性地按需迁移。
                 StartupMetrics.measure("registerDynamicShortcuts") { router.registerDynamicShortcuts() }
                 TodoNotificationManager.shared.registerCategories()
+                // 睡前提醒的「推迟 20 分钟」按钮，锁屏上点一下就再眯 20 分钟
+                SleepReminderScheduler.registerCategory()
                 // 取件销号通知的「已取件 / 全部取齐」按钮，抬腕即可点
                 await PickupCheckoutService.registerCategory()
                 // 护航/清点伴随通知的「关闭卡片」按钮，手表与 Mac 上都能一键收卡
@@ -205,10 +207,14 @@ private final class ForegroundAuditCoordinator {
             _ = BatteryReminderService(context: context).checkDeviceBattery()
             ExpiryReminder.schedule()
 
-            // 3. 评估周期性家务与服药日程
+            // 3. 评估周期性家务与服药日程（含按天物化首页服药待办）
             let scheduler = HabitAndMedicationScheduler(context: context)
             await scheduler.evaluatePeriodicHabits()
             scheduler.scheduleMedicationReminders()
+            scheduler.ensureTodayMedicationTodos()
+
+            // 3.5 睡前提醒两层注册（兜底本夜+未来2夜，夜间进前台自动精修；每夜最多一条）
+            await SleepReminderScheduler.shared.syncSleepReminders()
 
             // 4. 执行对话记录超期自动滚动清理 (7天/30天自动保留)
             DialogueHistoryManager.shared.cleanExpiredRecords(context: context)

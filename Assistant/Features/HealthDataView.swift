@@ -16,11 +16,14 @@ import SwiftUI
 /// 任何情况下都**不会**把「读不到」渲染成「已完成」或「0 步」这类精确假值。
 struct HealthDataView: View {
     @StateObject private var health = HealthKitService.shared
+    @ObservedObject private var sleepScheduler = SleepReminderScheduler.shared
     @Query(sort: \FoodIntakeRecord.date, order: .reverse) private var foodRecords: [FoodIntakeRecord]
     @Query(sort: \WaterIntakeRecord.date, order: .reverse) private var waterRecords: [WaterIntakeRecord]
     @Environment(\.scenePhase) private var scenePhase
     @State private var isVitalitySuggestionExpanded = false
     @State private var isPleasureAdviceExpanded = true
+    @State private var isSleepWhyExpanded = false
+    @State private var showDesiredBedtimeSheet = false
     @State private var showShareSheet = false
     @State private var dietTrendDays = 7
 
@@ -64,6 +67,9 @@ struct HealthDataView: View {
                 }
                 if let vitality = vitalityEvaluation {
                     vitalityScoreCard(vitality)
+                }
+                if sleepScheduler.isEnabled, HealthKitService.isAvailable {
+                    sleepTonightCard
                 }
                 waterTrackerEntryCard
                 foodCalorieEntryCard
@@ -126,6 +132,8 @@ struct HealthDataView: View {
             await health.requestAuthorization()
         }
         await health.refreshToday()
+        // 睡眠夜样本刷新后重算今晚建议（幂等，顺带对齐通知注册状态）
+        await sleepScheduler.syncSleepReminders()
     }
 
     // MARK: - 喝水记录与折算入口卡
@@ -197,6 +205,220 @@ struct HealthDataView: View {
             .appCard()
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - 今晚睡眠卡
+
+    /// 期望就寝时间（"HH:mm"）↔ DatePicker 的换算。00:30 表示次日凌晨。
+    private var desiredBedtimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                let parts = (sleepScheduler.desiredBedtimeHHmm ?? "23:00")
+                    .split(separator: ":").compactMap { Int($0) }
+                let hour = parts.count == 2 ? parts[0] : 23
+                let minute = parts.count == 2 ? parts[1] : 0
+                return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: .now) ?? .now
+            },
+            set: { date in
+                let cal = Calendar.current
+                sleepScheduler.desiredBedtimeHHmm = String(
+                    format: "%02d:%02d",
+                    cal.component(.hour, from: date),
+                    cal.component(.minute, from: date)
+                )
+            }
+        )
+    }
+
+    private var sleepTonightCard: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            HStack {
+                Label("今晚睡眠", systemImage: "moon.stars.fill")
+                    .font(.headline)
+                    .foregroundStyle(AppColor.text)
+                Spacer()
+                if let plan = sleepScheduler.tonightPlan {
+                    sleepStatusPill(for: plan)
+                }
+            }
+
+            // 通知权限被拒：诚实降级，不显示「已为你安排提醒」
+            if sleepScheduler.notificationDenied {
+                Text(SleepPlanCopy.notificationDeniedText())
+                    .font(.footnote)
+                    .foregroundStyle(AppColor.danger)
+            }
+
+            if let plan = sleepScheduler.tonightPlan {
+                sleepPlanSummary(plan)
+
+                if !sleepScheduler.hasDesiredBedtime {
+                    Button {
+                        showDesiredBedtimeSheet = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "moon.zzz.fill")
+                                .font(.caption)
+                            Text("填写期望就寝时间，推荐会更贴合你的作息")
+                                .font(.caption)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(AppColor.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("填写期望就寝时间")
+                }
+
+                // 「为什么是这个时间」：分钟数与正文同源，全部来自 plan 的真实字段
+                let lines = SleepPlanCopy.reasonLines(for: plan)
+                if !lines.isEmpty {
+                    VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isSleepWhyExpanded.toggle()
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("为什么是这个时间")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(AppColor.secondaryText)
+                                Image(systemName: isSleepWhyExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption2)
+                                    .foregroundStyle(AppColor.secondaryText)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(.isButton)
+
+                        if isSleepWhyExpanded {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                                    HStack(alignment: .top, spacing: 6) {
+                                        Circle()
+                                            .fill(AppColor.secondaryText.opacity(0.5))
+                                            .frame(width: 4, height: 4)
+                                            .padding(.top, 6)
+                                        Text(line)
+                                            .font(.caption2)
+                                            .foregroundStyle(AppColor.secondaryText)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                            }
+                            .transition(.opacity)
+                        }
+                    }
+                }
+            } else {
+                Text("正在结合你的作息计算今晚建议…")
+                    .font(.footnote)
+                    .foregroundStyle(AppColor.secondaryText)
+            }
+        }
+        .padding(AppSpacing.md)
+        .appCard()
+        .sheet(isPresented: $showDesiredBedtimeSheet) {
+            desiredBedtimeSheet
+        }
+    }
+
+    @ViewBuilder
+    private func sleepStatusPill(for plan: SleepPlan) -> some View {
+        let (text, color): (String, Color) = {
+            switch plan.outcome {
+            case .scheduled:
+                return sleepScheduler.notificationDenied
+                    ? ("通知未开启", AppColor.danger)
+                    : ("已安排提醒", AppColor.success)
+            case .immediate:
+                return ("现在准备睡", AppColor.warning)
+            case .skipped:
+                return ("今晚不提醒", AppColor.secondaryText)
+            }
+        }()
+        Text(text)
+            .font(.caption.bold())
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(AppColor.softFill(color), in: Capsule())
+    }
+
+    @ViewBuilder
+    private func sleepPlanSummary(_ plan: SleepPlan) -> some View {
+        switch plan.outcome {
+        case .skipped:
+            VStack(alignment: .leading, spacing: 4) {
+                Text(SleepPlanCopy.headline(for: plan))
+                    .font(.subheadline.bold())
+                    .foregroundStyle(AppColor.text)
+                Text(SleepPlanCopy.body(for: plan))
+                    .font(.footnote)
+                    .foregroundStyle(AppColor.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+        case .immediate, .scheduled:
+            HStack(alignment: .top, spacing: AppSpacing.md) {
+                VStack(spacing: 2) {
+                    Text(SleepNightNormalizer.hourMinute(offset: plan.bedtimeOffset ?? plan.baselineOffset))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppColor.feature)
+                    Text("建议就寝")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(AppColor.secondaryText)
+                }
+                .frame(width: 96, height: 60)
+                .background(AppColor.softFill(AppColor.feature, opacity: 0.08), in: RoundedRectangle(cornerRadius: AppRadius.card))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    if plan.outcome == .immediate {
+                        Text("提醒时刻已过，现在就准备睡吧")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(AppColor.warning)
+                    } else if let fire = plan.fireOffset, !sleepScheduler.notificationDenied {
+                        Text("将在 \(SleepNightNormalizer.hourMinute(offset: fire)) 提醒你准备")
+                            .font(.subheadline)
+                            .foregroundStyle(AppColor.text)
+                    } else {
+                        Text("今晚按建议时刻就寝")
+                            .font(.subheadline)
+                            .foregroundStyle(AppColor.text)
+                    }
+                    Text(SleepPlanCopy.body(for: plan))
+                        .font(.caption)
+                        .foregroundStyle(AppColor.secondaryText)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var desiredBedtimeSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    DatePicker("期望就寝时间", selection: desiredBedtimeBinding, displayedComponents: .hourAndMinute)
+                } footer: {
+                    Text("作为推荐的长期锚点：单晚调整不会偏离它超过 ±60 分钟，防止提醒把作息越带越偏。凌晨时间请选 00:30 这类次日时刻。")
+                }
+            }
+            .navigationTitle("期望就寝时间")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") {
+                        showDesiredBedtimeSheet = false
+                        Task { await sleepScheduler.syncSleepReminders() }
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 
     // MARK: - 状态卡
