@@ -597,8 +597,6 @@ struct AddMedicationReminderPopupSheet: View {
             }
         }
     }
-        }
-    }
 
     private var usageFrequencySummary: String {
         if usageDraft.frequencyCount > 0 {
