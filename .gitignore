@@ -10,3 +10,5 @@ Assistant/Info.plist
 *.litertlm
 # 设计稿生成图片的临时产物（不属于工程源码）
 generated-images/
+# Python 脚本运行产生的字节码缓存（scripts/check_settings_keys.py 等）
+__pycache__/

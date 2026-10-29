@@ -12,6 +12,7 @@ MODE="${1:-all}"
 
 # 「步骤名|命令」列表；管道数组避免 eval 引号问题之外的意外展开。
 STEPS=(
+  "偏好键覆盖闸门|python3 scripts/check_settings_keys.py"
   "AssistantCore 单元测试|cd Packages/AssistantCore && swift test"
 )
 if [ "$MODE" = "all" ]; then

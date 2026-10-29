@@ -51,7 +51,9 @@ public struct SettingsSnapshotDTO: Codable, Hashable {
 
 /// 参与备份的偏好键白名单。
 /// **新增用户偏好时在此登记**——白名单而非全量导出的原因：UserDefaults 里混着
-/// 安全材料与设备缓存，必须逐键过审；漏登记的键只是不进备份，不会报错。
+/// 安全材料与设备缓存，必须逐键过审。
+/// 「漏登记只是不进备份、不会报错」这条静默路径已由 `scripts/check_settings_keys.py` 堵上：
+/// 代码里出现的每个 UserDefaults 键必须在本白名单或闸门的豁免清单里，否则 ci 直接失败。
 public enum AssistantSettingsKeys {
     /// 语言偏好键。`LanguageManager.storageKey` 也指向它，保证单一出处。
     public static let languagePreference = "app_language_preference"
@@ -67,6 +69,8 @@ public enum AssistantSettingsKeys {
         "senior_font_scale_level",             // 长辈模式字号
         "departure_selected_scene_raw",        // 上次选择的出门场景
         "safe_to_spend_rhythm_mode",           // 安心花节奏模式
+        "sleepReminder.desiredBedtime",        // 期望入睡时间 HH:mm
+        "sleepReminder.pseudoDesiredBedtime",  // 由作息推算出的入睡时间
         ExpenseCurrency.preferredCurrencyKey   // 记账默认币种（出国游偏好）
     ]
 
@@ -82,12 +86,16 @@ public enum AssistantSettingsKeys {
         "periodic_report_daily_enabled",           // 日报开关
         "periodic_report_weekly_enabled",          // 周报开关
         "periodic_report_monthly_enabled",         // 月报开关
+        "periodic_report_quarterly_enabled",       // 季报开关
+        "periodic_report_yearly_enabled",          // 年报开关
         "floating_voice_enabled",                  // 悬浮语音球
         "weather_alerts_enabled",                  // 天气预警
         "all_tab_grouping_mode",                   // 待办「全部」按类型分组
         "learnedPlacesEnabled",                    // 常用地点感知
         "voice_memo_auto_transcribe",              // 语音备忘自动转写
-        "voice_use_llm_engine"                     // 语音对话用 LLM 引擎
+        "voice_use_llm_engine",                    // 语音对话用 LLM 引擎
+        "sleepReminder.enabled",                   // 睡前提醒总开关
+        "life_vault_card_dynamic_sort_enabled_v2"  // 人生档案卡片按使用频率排序
     ]
 
     public static let intKeys: [String] = [
@@ -96,7 +104,9 @@ public enum AssistantSettingsKeys {
         "day_timeline_wake_minutes",              // 日程轴起床时间（分钟）
         "day_timeline_off_minutes",               // 日程轴下班时间（分钟）
         "omnibox_auto_dismiss_seconds",           // 投喂口执行后自动关闭
-        "omnibox_clipboard_auto_dismiss_seconds"  // 投喂口剪贴板自动关闭
+        "omnibox_clipboard_auto_dismiss_seconds", // 投喂口剪贴板自动关闭
+        "sleepReminder.windDownMinutes",          // 睡前缓冲提前量
+        "sleepReminder.sleepGoalMinutes"          // 睡眠目标时长
     ]
 
     public static let doubleKeys: [String] = [
@@ -107,14 +117,26 @@ public enum AssistantSettingsKeys {
         "periodic_report_daily_time_interval",   // 日报推送时间
         "periodic_report_weekly_time_interval",  // 周报推送时间
         "periodic_report_monthly_time_interval", // 月报推送时间
+        "periodic_report_quarterly_time_interval", // 季报推送时间
+        "periodic_report_yearly_time_interval",  // 年报推送时间
+        // 场景选择的「上次选择时间」——与已登记的 departure_selected_scene_raw 成对：
+        // 只迁移 raw 不迁移时间戳会让还原后的场景被当成不是今天选的（见 SituationalContextEngine 的当日判定）。
+        "departure_selected_scene_timestamp",
         "daily_water_goal_ml",                   // 每日纯水目标
         "intent_threshold_min_top",              // 判别阈值校准覆盖 · top1 下限
         "intent_threshold_min_margin"            // 判别阈值校准覆盖 · 与次选最小差
-    ] + ExpenseCurrency.allCases.filter { $0 != .cny }.map(\.customRateDefaultsKey)
+    ] + ExpenseCurrency.allCases.filter { $0 != .cny }.map(\.customRateDefaultsKey)  // gate:dynamic_regex expense_exchange_rate_[A-Z]{3}
 
-    /// Data 型：首页 Tab 顺序（JSON 编码的板块列表）
+    /// Data 型：JSON 编码的偏好（首页 Tab 顺序、类别顺序等），还原时按 Data 原样写回
     public static let dataKeys: [String] = [
-        "custom_home_tabs_order_v1"
+        "custom_home_tabs_order_v1",
+        // 待办首页的类别排序同样是用户手动排的，与上面的 Tab 顺序同性质
+        "todo_home_category_order_v1",
+        // 人生档案卡片的自定义顺序
+        "life_vault_card_custom_order_v2",
+        // 周期记账的定义表。它本该是 SwiftData 里的一张表，现状存在 UserDefaults；
+        // 不登记的话备份还原会把用户自己加的周期项整张丢掉，所以先收进白名单止血。
+        "recurring_expenses_data_v1"
     ]
 
     /// 全部白名单键（去重后）
