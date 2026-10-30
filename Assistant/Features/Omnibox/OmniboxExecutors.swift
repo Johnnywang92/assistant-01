@@ -780,6 +780,13 @@ enum OmniboxExecutor {
 
     // MARK: life.record
 
+    /// 生活记录回执：首次建档时补一句说明，避免用户不知道凭空多出一个档案。
+    private static func lifeRecordSummary(_ action: PlannedAction, createdProfile: String?) -> String {
+        let base = OmniboxPlanner.summary(for: .lifeRecord, params: action.params)
+        guard let createdProfile else { return base }
+        return base + "（已新建档案「\(createdProfile)」）"
+    }
+
     private static func executeLifeRecord(_ action: PlannedAction, context: ModelContext) throws -> ActionExecutionOutcome {
         let domain = action.params["domain"] ?? "pet"
         let title = action.params["title"] ?? "生活档案"
@@ -788,12 +795,22 @@ enum OmniboxExecutor {
         switch domain {
         case "pet":
             let desc = FetchDescriptor<PetProfile>()
-            let pets = (try? context.fetch(desc)) ?? []
-            let pet = pets.first ?? {
+            let pets: [PetProfile]
+            do {
+                pets = try context.fetch(desc)
+            } catch {
+                throw OmniboxError.dataUnavailable("暂时读不到宠物档案，本次没有写入，稍后再试一次。")
+            }
+            // 只有确认库中没有档案时才首次建档；读失败不能落到这条路径
+            let createdProfile = pets.isEmpty ? "毛孩子" : nil
+            let pet: PetProfile
+            if let existing = pets.first {
+                pet = existing
+            } else {
                 let p = PetProfile(name: "毛孩子", type: .cat)
                 context.insert(p)
-                return p
-            }()
+                pet = p
+            }
             let snapshot: [String: String] = [
                 "lastExternalDewormDate": pet.lastExternalDewormDate?.ISO8601Format() ?? "",
                 "lastInternalDewormDate": pet.lastInternalDewormDate?.ISO8601Format() ?? "",
@@ -808,18 +825,27 @@ enum OmniboxExecutor {
             try context.save()
             return ActionExecutionOutcome(
                 id: action.id, action: action,
-                summary: OmniboxPlanner.summary(for: .lifeRecord, params: action.params),
+                summary: Self.lifeRecordSummary(action, createdProfile: createdProfile),
                 undo: OmniboxUndoToken(kind: .petRecord, recordID: pet.id, snapshotJSON: ActionUndoToken.makeSnapshotData(snapshot))
             )
 
         case "vehicle":
             let desc = FetchDescriptor<VehicleProfile>()
-            let vehicles = (try? context.fetch(desc)) ?? []
-            let vehicle = vehicles.first ?? {
+            let vehicles: [VehicleProfile]
+            do {
+                vehicles = try context.fetch(desc)
+            } catch {
+                throw OmniboxError.dataUnavailable("暂时读不到车辆档案，本次没有写入，稍后再试一次。")
+            }
+            let createdProfile = vehicles.isEmpty ? "爱车" : nil
+            let vehicle: VehicleProfile
+            if let existing = vehicles.first {
+                vehicle = existing
+            } else {
                 let v = VehicleProfile(name: "爱车", plateNumber: "待完善")
                 context.insert(v)
-                return v
-            }()
+                vehicle = v
+            }
             let snapshot: [String: String] = [
                 "lastEnergyRefillDate": vehicle.lastEnergyRefillDate?.ISO8601Format() ?? "",
                 "lastMaintenanceDate": vehicle.lastMaintenanceDate?.ISO8601Format() ?? ""
@@ -834,35 +860,53 @@ enum OmniboxExecutor {
             try context.save()
             return ActionExecutionOutcome(
                 id: action.id, action: action,
-                summary: OmniboxPlanner.summary(for: .lifeRecord, params: action.params),
+                summary: Self.lifeRecordSummary(action, createdProfile: createdProfile),
                 undo: OmniboxUndoToken(kind: .vehicleRecord, recordID: vehicle.id, snapshotJSON: ActionUndoToken.makeSnapshotData(snapshot))
             )
 
         case "child":
             let desc = FetchDescriptor<ChildProfile>()
-            let children = (try? context.fetch(desc)) ?? []
-            let child = children.first ?? {
+            let children: [ChildProfile]
+            do {
+                children = try context.fetch(desc)
+            } catch {
+                throw OmniboxError.dataUnavailable("暂时读不到宝宝档案，本次没有写入，稍后再试一次。")
+            }
+            let createdProfile = children.isEmpty ? "宝宝" : nil
+            let child: ChildProfile
+            if let existing = children.first {
+                child = existing
+            } else {
                 let c = ChildProfile(name: "宝宝")
                 context.insert(c)
-                return c
-            }()
+                child = c
+            }
             let record = ChildMilestoneRecord(title: detail.isEmpty ? title : detail, child: child)
             context.insert(record)
             try context.save()
             return ActionExecutionOutcome(
                 id: action.id, action: action,
-                summary: OmniboxPlanner.summary(for: .lifeRecord, params: action.params),
+                summary: Self.lifeRecordSummary(action, createdProfile: createdProfile),
                 undo: OmniboxUndoToken(kind: .childRecord, recordID: record.id)
             )
 
         case "skill":
             let desc = FetchDescriptor<SkillPath>()
-            let skills = (try? context.fetch(desc)) ?? []
-            let skill = skills.first ?? {
+            let skills: [SkillPath]
+            do {
+                skills = try context.fetch(desc)
+            } catch {
+                throw OmniboxError.dataUnavailable("暂时读不到技能路径，本次没有写入，稍后再试一次。")
+            }
+            let createdProfile = skills.isEmpty ? title : nil
+            let skill: SkillPath
+            if let existing = skills.first {
+                skill = existing
+            } else {
                 let s = SkillPath(title: title, category: .generic, goal: "持续练习与提升", weeklyMinutes: 120, totalWeeks: 12)
                 context.insert(s)
-                return s
-            }()
+                skill = s
+            }
             let log = SkillPracticeLog(
                 pathID: skill.id,
                 stageIndex: skill.currentStageIndex,
@@ -875,7 +919,7 @@ enum OmniboxExecutor {
             try context.save()
             return ActionExecutionOutcome(
                 id: action.id, action: action,
-                summary: OmniboxPlanner.summary(for: .lifeRecord, params: action.params),
+                summary: Self.lifeRecordSummary(action, createdProfile: createdProfile),
                 undo: OmniboxUndoToken(kind: .skillRecord, recordID: log.id)
             )
 
@@ -1134,11 +1178,15 @@ enum OmniboxExecutor {
 
 enum OmniboxError: LocalizedError {
     case invalidParams(String)
+    /// 本地数据读不出来（不是参数问题）：如实告知，不做任何写入
+    case dataUnavailable(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidParams(let reason):
             return L10n.tr("参数不完整：") + reason
+        case .dataUnavailable(let reason):
+            return reason
         }
     }
 }
