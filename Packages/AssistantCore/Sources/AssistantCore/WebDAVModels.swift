@@ -99,6 +99,88 @@ public enum WebDAVRequestFactory: Sendable {
         return dirURL.appendingPathComponent(filename)
     }
 
+    /// 把服务器在 PROPFIND 里给出的 `<d:href>` 解析成本机配置目录下的文件 URL。
+    ///
+    /// href 是外部输入：跨源的绝对地址会让 `Authorization: Basic` 跟着请求离开用户自己的
+    /// NAS，因此这里只承认三种情况——相对路径、与配置同源同 scheme 且默认端口等价的绝对
+    /// 地址，且路径必须落在备份目录内；其余一律返回 nil，由调用方拒发请求。
+    public static func makeFileURL(
+        fromHref href: String,
+        serverURL: String,
+        remoteDirectory: String
+    ) -> URL? {
+        guard let dirURL = makeDirectoryURL(serverURL: serverURL, remoteDirectory: remoteDirectory) else {
+            return nil
+        }
+        let trimmed = href.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        var path = trimmed
+        if hasAbsoluteScheme(trimmed) {
+            // 先按原样解析（已编码的 href 保持 %E5… 不被二次转义），失败再补编码
+            let absolute = URL(string: trimmed)
+                ?? trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed).flatMap(URL.init(string:))
+            guard let absolute,
+                  let configuredOrigin = origin(of: dirURL),
+                  let hrefOrigin = origin(of: absolute),
+                  configuredOrigin == hrefOrigin else {
+                return nil
+            }
+            path = absolute.path
+        }
+        // 解析器给出的是已解码文本，但直接调用方可能传原始 href，两种都吃
+        path = path.removingPercentEncoding ?? path
+
+        let cleanPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let cleanDirectory = dirURL.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !cleanPath.isEmpty else { return nil }
+        guard cleanDirectory.isEmpty
+            || cleanPath == cleanDirectory
+            || cleanPath.hasPrefix(cleanDirectory + "/") else {
+            return nil
+        }
+        guard let lastSegment = cleanPath.split(separator: "/").last, lastSegment != ".." else {
+            return nil
+        }
+        return dirURL.appendingPathComponent(String(lastSegment))
+    }
+
+    /// 配置是否以明文 http 传输——此时 Basic 凭据与备份文件都会明文过网。
+    /// 未写 scheme 时按 `makeDirectoryURL` 的默认升级规则视为 https，不算明文。
+    public static func usesInsecureTransport(serverURL: String) -> Bool {
+        serverURL
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .hasPrefix("http://")
+    }
+
+    private static func hasAbsoluteScheme(_ value: String) -> Bool {
+        let lowercased = value.lowercased()
+        return lowercased.hasPrefix("http://") || lowercased.hasPrefix("https://")
+    }
+
+    /// scheme + 主机 + 端口（补默认端口，避免 `https://host` 与 `https://host:443` 被判成两地）
+    private static func origin(of url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased(),
+              !host.isEmpty else {
+            return nil
+        }
+        let port = url.port ?? defaultPort(for: scheme)
+        if let port {
+            return "\(scheme)://\(host):\(port)"
+        }
+        return "\(scheme)://\(host)"
+    }
+
+    private static func defaultPort(for scheme: String) -> Int? {
+        switch scheme {
+        case "https": return 443
+        case "http": return 80
+        default: return nil
+        }
+    }
+
     /// 构建 PROPFIND 请求（Depth: 1 列举目录）
     public static func makePROPFINDRequest(url: URL, authHeader: String) -> URLRequest {
         var req = URLRequest(url: url)

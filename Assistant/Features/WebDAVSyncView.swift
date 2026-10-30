@@ -64,6 +64,16 @@ struct WebDAVSyncView: View {
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
 
+                if WebDAVRequestFactory.usesInsecureTransport(serverURL: serverURL) {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(AppColor.warning)
+                        Text("使用 http:// 明文传输：WebDAV 账号密码与备份文件会明文经过网络，请仅在可信局域网或已加密的隧道内使用；条件允许时改用 https://。")
+                            .font(.caption)
+                            .foregroundStyle(AppColor.warning)
+                    }
+                }
+
                 TextField("用户名", text: $username)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)

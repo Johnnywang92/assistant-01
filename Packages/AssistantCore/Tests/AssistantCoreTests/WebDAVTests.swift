@@ -126,4 +126,69 @@ final class WebDAVTests: XCTestCase {
         config.username = "admin"
         XCTAssertTrue(config.isConfigured)
     }
+
+    // MARK: - 服务器 href 不可信：只认同源且落在备份目录内的地址
+
+    private func resolveHref(
+        _ href: String,
+        server: String = "https://nas.lan:5006/dav",
+        directory: String = "assistant-backup"
+    ) -> URL? {
+        WebDAVRequestFactory.makeFileURL(fromHref: href, serverURL: server, remoteDirectory: directory)
+    }
+
+    func testHrefSameOriginAbsoluteInsideDirectory() {
+        let url = resolveHref("https://nas.lan:5006/dav/assistant-backup/a.assistantbackup")
+        XCTAssertEqual(url?.absoluteString, "https://nas.lan:5006/dav/assistant-backup/a.assistantbackup")
+    }
+
+    func testHrefRelativePathResolvesUnderConfiguredDirectory() {
+        let url = resolveHref("/dav/assistant-backup/a.assistantbackup")
+        XCTAssertEqual(url?.absoluteString, "https://nas.lan:5006/dav/assistant-backup/a.assistantbackup")
+    }
+
+    func testHrefCrossOriginAbsoluteIsRejected() {
+        XCTAssertNil(resolveHref("https://evil.example.com/dav/assistant-backup/a.assistantbackup"))
+    }
+
+    func testHrefUserInfoTrickIsRejected() {
+        XCTAssertNil(resolveHref("https://nas.lan:5006@evil.example.com/dav/assistant-backup/a.assistantbackup"))
+    }
+
+    func testHrefSchemeDowngradeIsRejected() {
+        XCTAssertNil(resolveHref("http://nas.lan:5006/dav/assistant-backup/a.assistantbackup"))
+    }
+
+    func testHrefSameOriginButOutsideDirectoryIsRejected() {
+        XCTAssertNil(resolveHref("https://nas.lan:5006/dav/other-secret/a.assistantbackup"))
+        XCTAssertNil(resolveHref("/etc/a.assistantbackup"))
+    }
+
+    func testHrefDefaultPortCountsAsSameOrigin() {
+        let url = resolveHref(
+            "https://nas.lan:443/dav/assistant-backup/a.assistantbackup",
+            server: "https://nas.lan/dav"
+        )
+        XCTAssertEqual(url?.absoluteString, "https://nas.lan/dav/assistant-backup/a.assistantbackup")
+    }
+
+    func testHrefPercentEncodedNameIsDecodedBeforeRebuild() {
+        let url = resolveHref("/dav/assistant-backup/%E5%A4%87%E4%BB%BD%202026.assistantbackup")
+        XCTAssertEqual(url?.lastPathComponent, "备份 2026.assistantbackup")
+    }
+
+    func testHrefTraversalAndEmptyValuesAreRejected() {
+        XCTAssertNil(resolveHref("/dav/assistant-backup/.."))
+        XCTAssertNil(resolveHref(".."))
+        XCTAssertNil(resolveHref(""))
+        XCTAssertNil(resolveHref("   "))
+    }
+
+    func testInsecureTransportDetection() {
+        XCTAssertTrue(WebDAVRequestFactory.usesInsecureTransport(serverURL: "http://192.168.1.100:8080"))
+        XCTAssertTrue(WebDAVRequestFactory.usesInsecureTransport(serverURL: "  HTTP://NAS.LAN  "))
+        XCTAssertFalse(WebDAVRequestFactory.usesInsecureTransport(serverURL: "https://nas.lan:5006"))
+        // 没写 scheme 时 makeDirectoryURL 会补 https，不算明文
+        XCTAssertFalse(WebDAVRequestFactory.usesInsecureTransport(serverURL: "nas.lan:5006"))
+    }
 }

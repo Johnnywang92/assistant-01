@@ -196,29 +196,34 @@ final class WebDAVSyncService: ObservableObject {
 
         let allItems = WebDAVXMLParser.parseMultistatus(xmlData: data, baseURL: dirURL)
 
-        // 只保留 .assistantbackup 后缀的加密备份文件，并按修改时间倒序排列
-        return allItems
-            .filter { $0.name.hasSuffix(".assistantbackup") && !$0.isCollection }
-            .sorted { ($0.lastModified ?? .distantPast) > ($1.lastModified ?? .distantPast) }
+        // 只保留 .assistantbackup 后缀的加密备份文件。href 解析不出同源地址的条目直接丢弃：
+        // 列出来也只会点出一条拒绝回执，反而像在邀请用户把凭据带出本机。
+        let candidates = allItems.filter { $0.name.hasSuffix(".assistantbackup") && !$0.isCollection }
+        let accepted = candidates.filter {
+            WebDAVRequestFactory.makeFileURL(
+                fromHref: $0.path,
+                serverURL: config.serverURL,
+                remoteDirectory: config.remoteDirectory
+            ) != nil
+        }
+        if accepted.count < candidates.count {
+            print("⚠️ [WebDAV] 已忽略 \(candidates.count - accepted.count) 条 href 与配置不同源/不在备份目录内的远端条目")
+        }
+        return accepted.sorted { ($0.lastModified ?? .distantPast) > ($1.lastModified ?? .distantPast) }
     }
 
     /// 从 NAS / 云盘下载备份数据
     public func downloadBackup(item: WebDAVFileItem) async throws -> Data {
         guard let password = getPassword(), !password.isEmpty else { throw WebDAVError.missingPassword }
 
-        let targetURL: URL
-        if item.path.hasPrefix("http://") || item.path.hasPrefix("https://") {
-            guard let u = URL(string: item.path) else { throw WebDAVError.invalidURL }
-            targetURL = u
-        } else {
-            guard let u = WebDAVRequestFactory.makeFileURL(
-                serverURL: config.serverURL,
-                remoteDirectory: config.remoteDirectory,
-                filename: item.name
-            ) else {
-                throw WebDAVError.invalidURL
-            }
-            targetURL = u
+        // href 由服务器给出，不能直接信：只在同源且落在备份目录内时拼请求，跨源一律拒绝，
+        // 否则 Basic 凭据会跟着这条 URL 发到第三方主机。
+        guard let targetURL = WebDAVRequestFactory.makeFileURL(
+            fromHref: item.path,
+            serverURL: config.serverURL,
+            remoteDirectory: config.remoteDirectory
+        ) else {
+            throw WebDAVError.rejectedRemoteHref
         }
 
         let auth = WebDAVRequestFactory.makeAuthHeader(username: config.username, password: password)
@@ -234,12 +239,14 @@ final class WebDAVSyncService: ObservableObject {
     /// 删除远端旧备份
     public func deleteRemoteBackup(item: WebDAVFileItem) async throws {
         guard let password = getPassword(), !password.isEmpty else { throw WebDAVError.missingPassword }
+        // 用 href 而不是 displayname 拼路径：displayname 同样是服务器说了算，直接拼进
+        // 删除请求会把「删一个备份」变成「删这台 NAS 上的任意路径」。
         guard let fileURL = WebDAVRequestFactory.makeFileURL(
+            fromHref: item.path,
             serverURL: config.serverURL,
-            remoteDirectory: config.remoteDirectory,
-            filename: item.name
+            remoteDirectory: config.remoteDirectory
         ) else {
-            throw WebDAVError.invalidURL
+            throw WebDAVError.rejectedRemoteHref
         }
 
         let auth = WebDAVRequestFactory.makeAuthHeader(username: config.username, password: password)
@@ -320,6 +327,7 @@ public enum WebDAVError: LocalizedError {
     case missingConfiguration
     case missingPassword
     case invalidURL
+    case rejectedRemoteHref
     case authenticationFailed
     case cannotCreateDirectory
     case uploadFailed
@@ -335,6 +343,8 @@ public enum WebDAVError: LocalizedError {
             return "请输入 WebDAV 访问密码"
         case .invalidURL:
             return "服务器地址格式不正确，请以 http:// 或 https:// 开头"
+        case .rejectedRemoteHref:
+            return "远端返回的文件地址不在本机配置的服务器与备份目录内，已拒绝下载"
         case .authenticationFailed:
             return "WebDAV 账号或密码错误（HTTP 401/403）"
         case .cannotCreateDirectory:
