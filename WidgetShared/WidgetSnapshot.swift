@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// 主应用与小组件/实时活动扩展共享的数据层。
@@ -123,12 +124,16 @@ public enum WidgetSnapshotStore {
 
     // MARK: - 指令队列（扩展 → 主应用）
 
-    public static func enqueue(_ command: WidgetCommand) {
-        guard let defaults else { return }
-        var pending = drainCommands()
-        pending.append(command)
-        if let data = try? JSONEncoder().encode(pending) {
-            defaults.set(data, forKey: WidgetBridgeConstants.commandsKey)
+    /// 入队一条指令。返回是否真的写进了队列——扩展侧回执要用它决定说「待入账」还是「没能入队」。
+    @discardableResult
+    public static func enqueue(_ command: WidgetCommand) -> Bool {
+        guard defaults != nil else { return false }
+        return withQueueLock {
+            var pending = drainCommands()
+            pending.append(command)
+            guard let data = try? JSONEncoder().encode(pending) else { return false }
+            defaults?.set(data, forKey: WidgetBridgeConstants.commandsKey)
+            return true
         }
     }
 
@@ -145,18 +150,44 @@ public enum WidgetSnapshotStore {
         defaults?.removeObject(forKey: WidgetBridgeConstants.commandsKey)
     }
 
-    /// 对账完成后只摘除已处理的前缀：队列仅由扩展侧 append，处理期间新入队的指令留在队尾等下轮对账。
-    /// 避免旧版「先整表 clear 再处理」在 drain ↔ clear 窗口内丢失并发写入的指令。
-    public static func removeProcessedPrefix(_ processed: [WidgetCommand]) {
-        guard let defaults else { return }
-        let current = drainCommands()
-        guard current.count > processed.count else {
-            clearCommands()
-            return
+    /// 只在对应指令真正落库（save 成功）后调用：摘掉队首 count 条。
+    /// 队列只由扩展侧 append，处理期间新入队的指令留在队尾等下轮对账。
+    public static func removeFirst(_ count: Int) {
+        guard count > 0, defaults != nil else { return }
+        withQueueLock {
+            let remaining = Array(drainCommands().dropFirst(count))
+            guard !remaining.isEmpty else {
+                defaults?.removeObject(forKey: WidgetBridgeConstants.commandsKey)
+                return
+            }
+            if let data = try? JSONEncoder().encode(remaining) {
+                defaults?.set(data, forKey: WidgetBridgeConstants.commandsKey)
+            }
         }
-        if let data = try? JSONEncoder().encode(Array(current.dropFirst(processed.count))) {
-            defaults.set(data, forKey: WidgetBridgeConstants.commandsKey)
+    }
+
+    /// 跨进程互斥：扩展的 `enqueue` 与主应用的 `removeFirst` 都是 read-modify-write，
+    /// 不加锁时两侧交错会互相覆盖、丢掉刚入队的指令。
+    /// 临界区只有一次小 plist 读写，最多等 50ms；拿不到锁就退回无锁执行，绝不卡住扩展进程。
+    private static func withQueueLock<T>(_ body: () -> T) -> T {
+        guard let base = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: WidgetBridgeConstants.appGroupID) else {
+            return body()
         }
+        let fd = open(base.appendingPathComponent("widget-queue.lock").path, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else { return body() }
+        defer { close(fd) }
+
+        var acquired = false
+        for _ in 0..<10 {
+            if flock(fd, LOCK_EX | LOCK_NB) == 0 {
+                acquired = true
+                break
+            }
+            usleep(5_000)
+        }
+        defer { if acquired { flock(fd, LOCK_UN) } }
+        return body()
     }
 
     // MARK: - 扩展侧本地快照突变（让桌面组件即时反映操作，主应用稍后对账）

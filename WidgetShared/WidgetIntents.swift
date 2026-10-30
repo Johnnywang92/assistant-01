@@ -62,9 +62,10 @@ public struct CompleteTodoIntent: AppIntent {
         }
         if let hook = WidgetBridge.appHook {
             hook.handleCompleteTodo(id: id)
-        } else {
-            WidgetSnapshotStore.enqueue(.completeTodo(id))
+        } else if WidgetSnapshotStore.enqueue(.completeTodo(id)) {
             WidgetBridge.applyCompletionLocally(id: id)
+        } else {
+            return .result(dialog: "没能同步到小助，请打开小助再试")
         }
         return .result(dialog: "已完成 ✓")
     }
@@ -101,9 +102,10 @@ public struct ToggleDepartureItemIntent: AppIntent {
         }
         if let hook = WidgetBridge.appHook {
             hook.handleToggleDeparture(id: id, isChecked: isChecked)
-        } else {
-            WidgetSnapshotStore.enqueue(.toggleDeparture(id, isChecked))
+        } else if WidgetSnapshotStore.enqueue(.toggleDeparture(id, isChecked)) {
             WidgetBridge.applyDepartureToggleLocally(id: id, isChecked: isChecked)
+        } else {
+            return .result(dialog: "没能同步到小助，请打开小助再试")
         }
         return .result(dialog: isChecked ? "已带上 ✓" : "已取消确认")
     }
@@ -191,9 +193,16 @@ public struct CompleteAllParcelsIntent: AppIntent {
         if let hook = WidgetBridge.appHook {
             for id in ids { hook.handleCompleteTodo(id: id) }
         } else {
+            var failed = 0
             for id in ids {
-                WidgetSnapshotStore.enqueue(.completeTodo(id))
-                WidgetBridge.applyCompletionLocally(id: id)
+                if WidgetSnapshotStore.enqueue(.completeTodo(id)) {
+                    WidgetBridge.applyCompletionLocally(id: id)
+                } else {
+                    failed += 1
+                }
+            }
+            if failed > 0 {
+                return .result(dialog: "有 \(failed) 件没能同步到小助，请打开小助再试")
             }
         }
         return .result(dialog: "已全部取齐 ✓")
@@ -228,9 +237,16 @@ public struct CheckAllDepartureItemsIntent: AppIntent {
         if let hook = WidgetBridge.appHook {
             for id in ids { hook.handleToggleDeparture(id: id, isChecked: true) }
         } else {
+            var failed = 0
             for id in ids {
-                WidgetSnapshotStore.enqueue(.toggleDeparture(id, true))
-                WidgetBridge.applyDepartureToggleLocally(id: id, isChecked: true)
+                if WidgetSnapshotStore.enqueue(.toggleDeparture(id, true)) {
+                    WidgetBridge.applyDepartureToggleLocally(id: id, isChecked: true)
+                } else {
+                    failed += 1
+                }
+            }
+            if failed > 0 {
+                return .result(dialog: "有 \(failed) 项没能同步到小助，请打开小助再试")
             }
         }
         return .result(dialog: "已全部带齐 ✓")
@@ -271,7 +287,9 @@ public struct QuickAddExpenseIntent: AppIntent {
             }
             return .result(dialog: "没能识别金额，请打开小助手动记账")
         }
-        WidgetSnapshotStore.enqueue(.quickAddExpense(input))
+        guard WidgetSnapshotStore.enqueue(.quickAddExpense(input)) else {
+            return .result(dialog: "没能记录，请打开小助直接记账")
+        }
         return .result(dialog: "已记录，打开小助后自动入账")
     }
 }
@@ -310,7 +328,9 @@ public struct QuickAddTodoIntent: AppIntent {
             }
             return .result(dialog: "已记录，打开小助后确认详情")
         }
-        WidgetSnapshotStore.enqueue(.quickAddTodo(input))
+        guard WidgetSnapshotStore.enqueue(.quickAddTodo(input)) else {
+            return .result(dialog: "没能记录，请打开小助直接新建")
+        }
         return .result(dialog: "已记录，打开小助后确认详情")
     }
 }

@@ -113,6 +113,22 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
 
     // MARK: - 指令对账（扩展 → 主应用）
 
+    /// 单条指令的处理结果。只有 `.applied` / `.consumed` 才允许从队列摘除，
+    /// `.retry` 必须留在队首——否则「报已成功、实际没落库」会再次发生。
+    private enum CommandOutcome {
+        /// 已产生变更，`context.save()` 成功后才能摘除
+        case applied
+        /// 重试也不会成功（条目已不存在、输入无法解析），直接摘除
+        case consumed
+        /// 暂时失败（查询异常等），保留在队首等下次对账
+        case retry
+    }
+
+    private struct CommandBatchResult {
+        var consumed = 0
+        var hitRetry = false
+    }
+
     @discardableResult
     private func drainAndApplyPendingCommands(context: ModelContext) -> Bool {
         var didProcess = false
@@ -120,11 +136,10 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         for _ in 0..<3 {
             let commands = WidgetSnapshotStore.drainCommands()
             guard !commands.isEmpty else { break }
-            processCommandBatch(commands, context: context)
-            didProcess = true
-        }
-        if didProcess {
-            try? context.save()
+            let batch = processCommandBatch(commands, context: context)
+            if batch.consumed > 0 { didProcess = true }
+            // 队首指令暂时失败或整批都没推进：本轮到此为止，留待下次对账，不空转重试
+            if batch.hitRetry || batch.consumed == 0 { break }
         }
         return didProcess
     }
@@ -135,54 +150,96 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         }
     }
 
-    private func processCommandBatch(_ commands: [WidgetCommand], context: ModelContext) {
+    /// 逐条执行队首指令，返回本次可以安全摘除的条数。
+    /// 落库成功后才裁剪队列；`save` 失败则回滚并保留整批，下次对账重来。
+    @discardableResult
+    private func processCommandBatch(_ commands: [WidgetCommand], context: ModelContext) -> CommandBatchResult {
+        var result = CommandBatchResult()
         for command in commands {
-            switch command {
-            case .completeTodo(let id):
-                completeInDB(id: id, context: context)
-
-            case .snoozeTodo(let id, let minutes):
-                snoozeInDB(id: id, minutes: minutes, tomorrow: false, context: context)
-
-            case .snoozeTomorrow(let id):
-                snoozeInDB(id: id, minutes: 0, tomorrow: true, context: context)
-
-            case .toggleDeparture(let id, let isChecked):
-                toggleDepartureInDB(id: id, isChecked: isChecked, context: context)
-
-            case .quickAddExpense(let text):
-                _ = quickAddExpenseInDB(text: text, context: context)
-
-            case .quickAddTodo(let text):
-                quickAddTodoInDB(text: text, context: context)
+            switch apply(command, context: context) {
+            case .applied, .consumed:
+                result.consumed += 1
+            case .retry:
+                result.hitRetry = true
+                // 已处理成功的队首前缀照常落库并摘除；失败的那条及之后的指令全部保留
+                if result.consumed > 0, !commit(result.consumed, context: context) {
+                    result.consumed = 0
+                }
+                return result
             }
         }
-        // 先落库后只摘除已处理前缀；处理期间新入队的指令留在队尾等下轮
-        WidgetSnapshotStore.removeProcessedPrefix(commands)
+        if result.consumed > 0, !commit(result.consumed, context: context) {
+            result.consumed = 0
+        }
+        return result
     }
 
-    private func completeInDB(id: UUID, context: ModelContext) {
+    private func commit(_ count: Int, context: ModelContext) -> Bool {
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            print("⚠️ [WidgetSync] 指令落库失败，保留队列待下次对账: \(error.localizedDescription)")
+            return false
+        }
+        WidgetSnapshotStore.removeFirst(count)
+        return true
+    }
+
+    private func apply(_ command: WidgetCommand, context: ModelContext) -> CommandOutcome {
+        switch command {
+        case .completeTodo(let id):
+            return completeInDB(id: id, context: context)
+
+        case .snoozeTodo(let id, let minutes):
+            return snoozeInDB(id: id, minutes: minutes, tomorrow: false, context: context)
+
+        case .snoozeTomorrow(let id):
+            return snoozeInDB(id: id, minutes: 0, tomorrow: true, context: context)
+
+        case .toggleDeparture(let id, let isChecked):
+            return toggleDepartureInDB(id: id, isChecked: isChecked, context: context)
+
+        case .quickAddExpense(let text):
+            return quickAddExpenseInDB(text: text, context: context)
+
+        case .quickAddTodo(let text):
+            return quickAddTodoInDB(text: text, context: context) == nil ? .consumed : .applied
+        }
+    }
+
+    @discardableResult
+    private func completeInDB(id: UUID, context: ModelContext) -> CommandOutcome {
         let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == id })
         let items: [TodoItem]
         do {
             items = try context.fetch(descriptor)
         } catch {
             // 查询失败不能当成「待办不存在/已完成」：那会收起实时活动，而这条打勾指令随后也被摘除
-            print("⚠️ [WidgetSync] 完成指令查询失败，跳过该指令: \(error.localizedDescription)")
-            return
+            print("⚠️ [WidgetSync] 完成指令查询失败，保留队列重试: \(error.localizedDescription)")
+            return .retry
         }
         guard let item = items.first, item.status == .active else {
             // 已在主应用完成过：仅确保实时活动收起
             PickupActivityHelper.endActivity(for: id)
-            return
+            return .consumed
         }
         item.markAsCompleted(in: context)
         PickupActivityHelper.markCompleted(todoID: id)
+        return .applied
     }
 
-    private func snoozeInDB(id: UUID, minutes: Int, tomorrow: Bool, context: ModelContext) {
+    @discardableResult
+    private func snoozeInDB(id: UUID, minutes: Int, tomorrow: Bool, context: ModelContext) -> CommandOutcome {
         let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == id })
-        guard let item = (try? context.fetch(descriptor))?.first else { return }
+        let item: TodoItem
+        do {
+            guard let found = try context.fetch(descriptor).first else { return .consumed }
+            item = found
+        } catch {
+            print("⚠️ [WidgetSync] 稍后提醒查询失败，保留队列重试: \(error.localizedDescription)")
+            return .retry
+        }
         if tomorrow {
             var components = Calendar.current.dateComponents([.year, .month, .day], from: .now)
             components.day = (components.day ?? 0) + 1
@@ -193,20 +250,29 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             item.reminderOverrideAt = Date.now.addingTimeInterval(TimeInterval(max(1, minutes)) * 60)
         }
         TodoNotificationManager.shared.scheduleNotification(for: item)
-    }
-
-    private func toggleDepartureInDB(id: UUID, isChecked: Bool, context: ModelContext) {
-        let descriptor = FetchDescriptor<DepartureCheckItem>(predicate: #Predicate { $0.id == id })
-        guard let checkItem = (try? context.fetch(descriptor))?.first else { return }
-        checkItem.isChecked = isChecked
-        DepartureActivityHelper.setChecked(itemID: id, isChecked: isChecked)
+        return .applied
     }
 
     @discardableResult
-    private func quickAddExpenseInDB(text: String, context: ModelContext) -> Double {
+    private func toggleDepartureInDB(id: UUID, isChecked: Bool, context: ModelContext) -> CommandOutcome {
+        let descriptor = FetchDescriptor<DepartureCheckItem>(predicate: #Predicate { $0.id == id })
+        let checkItem: DepartureCheckItem
+        do {
+            guard let found = try context.fetch(descriptor).first else { return .consumed }
+            checkItem = found
+        } catch {
+            print("⚠️ [WidgetSync] 出门清点查询失败，保留队列重试: \(error.localizedDescription)")
+            return .retry
+        }
+        checkItem.isChecked = isChecked
+        DepartureActivityHelper.setChecked(itemID: id, isChecked: isChecked)
+        return .applied
+    }
+
+    @discardableResult
+    private func quickAddExpenseInDB(text: String, context: ModelContext) -> CommandOutcome {
         let results = ExpenseNaturalLanguageParser.parseMulti(text)
-        guard !results.isEmpty else { return 0 }
-        var totalExpense = 0.0
+        guard !results.isEmpty else { return .consumed }
         for result in results {
             let record = ExpenseRecord(
                 amount: result.amount,
@@ -220,10 +286,8 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
                 exchangeRateToCNY: result.exchangeRateToCNY
             )
             context.insert(record)
-            if !result.isIncome { totalExpense += result.amount }
         }
-        WidgetSnapshotStore.applyExpenseLocally(amount: totalExpense)
-        return totalExpense
+        return .applied
     }
 
     @discardableResult
