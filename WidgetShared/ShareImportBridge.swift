@@ -28,14 +28,33 @@ public enum ShareImportBridge {
         public let imageFile: String?
         public let source: String
         public let createdAt: Date
+        /// 已失败的处理次数：多次仍失败说明载荷本身有问题，停止重试以免每次回前台都重新解析。
+        public var attempts: Int
 
-        public init(id: String, kind: Kind, text: String?, imageFile: String?, source: String, createdAt: Date) {
+        public init(id: String, kind: Kind, text: String?, imageFile: String?, source: String, createdAt: Date, attempts: Int = 0) {
             self.id = id
             self.kind = kind
             self.text = text
             self.imageFile = imageFile
             self.source = source
             self.createdAt = createdAt
+            self.attempts = attempts
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case id, kind, text, imageFile, source, createdAt, attempts
+        }
+
+        /// 旧版本写入的 JSON 没有 attempts 字段，按 0 处理而不是整条判废弃。
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            kind = try container.decode(Kind.self, forKey: .kind)
+            text = try container.decodeIfPresent(String.self, forKey: .text)
+            imageFile = try container.decodeIfPresent(String.self, forKey: .imageFile)
+            source = try container.decode(String.self, forKey: .source)
+            createdAt = try container.decode(Date.self, forKey: .createdAt)
+            attempts = try container.decodeIfPresent(Int.self, forKey: .attempts) ?? 0
         }
     }
 
@@ -133,19 +152,61 @@ public enum ShareImportBridge {
         try? fm.removeItem(at: dir.appendingPathComponent("\(payload.id).json"))
     }
 
-    /// 排空中转区：读出全部载荷并删除文件（读取即清空）。图片载荷会顺带加载字节。
-    /// 返回按 createdAt 升序排列，保证处理顺序稳定。
-    public static func drainAll() -> [(payload: Payload, imageData: Data?)] {
-        let items = peekAll()
-        for (payload, _) in items {
-            remove(payload)
+    /// 处理暂时失败时累计尝试次数并写回磁盘，返回最新次数；写回失败返回 nil（按未计数处理）。
+    @discardableResult
+    public static func recordFailure(of payload: Payload) -> Int? {
+        guard let dir = inboxDir else { return nil }
+        var updated = payload
+        updated.attempts += 1
+        guard let data = try? JSONEncoder().encode(updated),
+              (try? data.write(to: dir.appendingPathComponent("\(updated.id).json"), options: .atomic)) != nil else {
+            return nil
         }
-        return items
+        return updated.attempts
     }
 
     /// 测试 / 维护用：整目录清空。
     public static func clear() {
         guard let dir = inboxDir else { return }
         try? FileManager.default.removeItem(at: dir)
+    }
+}
+
+/// 已成功落库的分享载荷台账。
+///
+/// 文件放在 App Group 根目录而不是 `ShareInbox/` 内：中转区里的 `*.json` 会被 `peekAll`
+/// 当作载荷读取，解码失败还会被删掉。台账只在「落库成功但删文件失败」时兜底，
+/// 让下次排空不会再入一遍账。
+public enum ShareInboxLedger {
+    private static let fileName = "ShareInboxLedger.json"
+    /// 台账只防重复，留一周足够覆盖「保存成功、删除失败」的场景
+    private static let maxAge: TimeInterval = 7 * 24 * 3600
+
+    private static var url: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: ShareImportBridge.appGroupID)?
+            .appendingPathComponent(fileName)
+    }
+
+    private static func load() -> [String: Date] {
+        guard let url, let data = try? Data(contentsOf: url),
+              let entries = try? JSONDecoder().decode([String: Date].self, from: data) else {
+            return [:]
+        }
+        return entries
+    }
+
+    public static func contains(_ id: String) -> Bool {
+        load()[id] != nil
+    }
+
+    public static func mark(_ id: String) {
+        guard let url else { return }
+        var entries = load()
+        entries[id] = .now
+        let cutoff = Date.now.addingTimeInterval(-maxAge)
+        entries = entries.filter { $0.value > cutoff }
+        guard let data = try? JSONEncoder().encode(entries) else { return }
+        try? data.write(to: url, options: .atomic)
     }
 }
