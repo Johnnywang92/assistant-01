@@ -40,6 +40,8 @@ struct VoiceMemoBlockEditorView: View {
     @State private var showCamera = false
     /// 引用原声片段（选择区间）
     @State private var showClipPicker = false
+    /// 保存失败的提示：失败时不关闭页面，保留用户正在编辑的内容
+    @State private var saveError: String?
 
     private var fileMissing: Bool { !VoiceMemoStorage.exists(memo.audioFileName) }
 
@@ -88,6 +90,17 @@ struct VoiceMemoBlockEditorView: View {
         .onAppear {
             document = memo.document
             if document.title.isEmpty { document.title = memo.title }
+        }
+        .alert(
+            "保存失败",
+            isPresented: Binding(
+                get: { saveError != nil },
+                set: { if !$0 { saveError = nil } }
+            )
+        ) {
+            Button("好", role: .cancel) { saveError = nil }
+        } message: {
+            Text(saveError ?? "")
         }
     }
 
@@ -449,7 +462,12 @@ struct VoiceMemoBlockEditorView: View {
     }
 
     private func commitEditing(_ block: MemoBlock) {
-        if let index = document.blocks.firstIndex(where: { $0.id == block.id }) {
+        commitEditing(blockID: block.id)
+        Haptic.success()
+    }
+
+    private func commitEditing(blockID: UUID) {
+        if let index = document.blocks.firstIndex(where: { $0.id == blockID }) {
             let trimmed = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
             // 空段落直接删掉，不留空壳
             if trimmed.isEmpty {
@@ -460,7 +478,6 @@ struct VoiceMemoBlockEditorView: View {
         }
         editingBlockID = nil
         editingText = ""
-        Haptic.success()
     }
 
     /// 把当前选中的段落改成指定类型。
@@ -502,8 +519,21 @@ struct VoiceMemoBlockEditorView: View {
     }
 
     private func save() {
+        // 顶层「完成」必须先把就地编辑中的草稿写回文档，否则刚改的文字会被静默丢弃
+        if let editingBlockID {
+            commitEditing(blockID: editingBlockID)
+        }
         memo.apply(document: document)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            // 落库失败就留在编辑页并如实提示，不假装保存成功
+            saveError = L10n.choose(
+                "保存失败：\(error.localizedDescription)",
+                "Failed to save: \(error.localizedDescription)"
+            )
+            return
+        }
         Haptic.success()
         dismiss()
     }
