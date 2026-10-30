@@ -335,7 +335,7 @@ struct OmniboxPlanner {
                 systemInstruction: systemInstruction,
                 userContent: userContent,
                 maxNewTokens: 400,
-                grammarGBNF: ActionJSONGrammar.gbnf
+                grammarGBNF: CapabilityRegistry.grammarText
             ), !raw.isEmpty else {
                 return (nil, "端侧模型未返回可用输出（第 \(attempt + 1) 次尝试）")
             }
@@ -397,27 +397,12 @@ struct OmniboxPlanner {
         return Self.basePrompt(schema: schema, narrowed: [top.capability] + candidates.map(\.capability), hint: hint)
     }
 
-    /// 16 类全域能力的字段模板。判别收窄时按 capability 过滤，
-    /// 保证收窄后模型看到的模板与允许的动作严格一致（不一致会诱发幻觉字段）。
+    /// 16 类全域能力的字段模板，顺序与文法注册顺序一致。
+    /// 判别收窄时按 capability 过滤，保证收窄后模型看到的模板与允许的动作严格一致。
     private static var capabilitySchema: [(capability: ActionCapability, line: String)] {
-        [
-            (.expenseCreate, #"1) 记账：{"capability":"expense.create","amount":"数字","isIncome":"false","category":"餐饮美食|交通出行|居家日用|购物消费|休闲娱乐|医疗健康|宠物萌宠|数码家电|人情社交|职业收入|其它收入|其它支出","title":"简短事项名","dateISO":"yyyy-MM-dd HH:mm 可省"}"#),
-            (.expenseUpdate, #"修改账目：{"capability":"expense.update","target":"原账单事项名或关键词","newAmount":"修改后金额"}"#),
-            (.todoCreate, #"待办新建：{"capability":"todo.create","title":"待办标题","detail":"补充说明，可省","dueAtDays":"相对今天的天数，可省","dueAtTime":"HH:mm，可省"}"#),
-            (.todoUpdate, #"修改待办：{"capability":"todo.update","target":"原待办匹配关键词","newTitle":"新标题（可省）","dueAtDays":"新截止相对天数（可省）"}"#),
-            (.todoComplete, #"完成待办：{"capability":"todo.complete","target":"待完成事项匹配词"}"#),
-            (.todoCancel, #"取消待办：{"capability":"todo.cancel","target":"待取消事项匹配词"}"#),
-            (.reminderSnooze, #"推迟提醒：{"capability":"reminder.snooze","target":"提醒事项匹配词","duration":"10分钟|1小时|明早"}"#),
-            (.queryLookup, #"查询事项：{"capability":"query.lookup","target":"查询关键词或完整问句（如「护照放哪了」「上周花了多少」「今天有什么安排」）"}"#),
-            (.memoInbox, #"收集箱：{"capability":"memo.inbox","memo":"原文摘录"}"#),
-            (.foodRecord, #"饮食记录：{"capability":"food.record","foodName":"食物名","mealSlot":"早餐|午餐|晚餐|加餐","calories":"预估千卡可省"}"#),
-            (.waterRecord, #"饮水记录：{"capability":"water.record","beverageType":"白开水|纯茶|黑咖啡|拿铁|牛奶|奶茶|含糖饮料|苏打水","volumeML":"毫升数字","customName":"饮品名可省"}"#),
-            (.storageRecord, #"物品收纳与常备药：{"capability":"storage.record","name":"物品或药品名","location":"详细存放位置","roomArea":"主卧|次卧|客厅|书房|玄关|厨房|阳台|储物间","isMedicine":"true|false"}"#),
-            (.habitLog, #"习惯与服药打卡：{"capability":"habit.log","target":"习惯名或药品名","kind":"habit|medication","dosage":"剂量可省"}"#),
-            (.anniversaryCreate, #"纪念日与到期预警：{"capability":"anniversary.create","title":"名称","category":"纪念日|生日|倒数日|订阅续费|保质期","targetDate":"yyyy-MM-dd可省","price":"金额可省"}"#),
-            (.departureAdd, #"出门检查清单：{"capability":"departure.add","title":"随身物品名","scene":"工作通勤|运动健身|出差旅行|带娃出行|遛狗随行|雨雪出行|日常轻装","location":"放置位置可省"}"#),
-            (.lifeRecord, #"家庭生活档案：{"capability":"life.record","domain":"pet|vehicle|child|skill|document|event","title":"事项或对象名","detail":"详情说明可省","value":"数值可省"}"#)
-        ]
+        CapabilityRegistry.builtIn.compactMap { descriptor in
+            descriptor.actionCapability.map { ($0, descriptor.promptExample) }
+        }
     }
 
     private static func basePrompt(

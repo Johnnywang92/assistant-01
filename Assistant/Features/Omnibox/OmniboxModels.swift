@@ -7,46 +7,13 @@ import SwiftData
 typealias OmniboxCapability = ActionCapability
 
 extension ActionCapability {
+    /// 展示名与图标来自能力描述符，新增能力不再需要改这里。
     var displayName: String {
-        switch self {
-        case .expenseCreate: return L10n.tr("记账")
-        case .expenseUpdate: return L10n.tr("修改账目")
-        case .todoCreate: return L10n.tr("待办")
-        case .todoUpdate: return L10n.tr("修改待办")
-        case .todoComplete: return L10n.tr("完成待办")
-        case .todoCancel: return L10n.tr("取消待办")
-        case .reminderSnooze: return L10n.tr("推迟提醒")
-        case .memoInbox: return L10n.tr("收集箱")
-        case .queryLookup: return L10n.tr("查询事项")
-        case .foodRecord: return L10n.tr("记录饮食")
-        case .waterRecord: return L10n.tr("记录饮水")
-        case .storageRecord: return L10n.tr("物品收纳")
-        case .habitLog: return L10n.tr("习惯与服药")
-        case .anniversaryCreate: return L10n.tr("纪念日与到期")
-        case .departureAdd: return L10n.tr("出门清单")
-        case .lifeRecord: return L10n.tr("生活档案")
-        }
+        L10n.tr(CapabilityRegistry.descriptor(for: self)?.displayName ?? rawValue)
     }
 
     var systemImage: String {
-        switch self {
-        case .expenseCreate: return "yensign.circle.fill"
-        case .expenseUpdate: return "pencil.circle.fill"
-        case .todoCreate: return "checklist"
-        case .todoUpdate: return "pencil.and.list.clipboard"
-        case .todoComplete: return "checkmark.circle.fill"
-        case .todoCancel: return "xmark.circle.fill"
-        case .reminderSnooze: return "clock.arrow.circlepath"
-        case .memoInbox: return "tray.full.fill"
-        case .queryLookup: return "magnifyingglass"
-        case .foodRecord: return "fork.knife"
-        case .waterRecord: return "drop.fill"
-        case .storageRecord: return "shippingbox.fill"
-        case .habitLog: return "pills.fill"
-        case .anniversaryCreate: return "heart.text.square.fill"
-        case .departureAdd: return "door.left.hand.open"
-        case .lifeRecord: return "sparkles.rectangle.stack.fill"
-        }
+        CapabilityRegistry.descriptor(for: self)?.systemImage ?? "questionmark.circle"
     }
 }
 

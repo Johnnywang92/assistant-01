@@ -115,7 +115,7 @@ public struct ActionItem: Identifiable, Codable, Equatable, Sendable {
 
 /// 事务回滚令牌：支持「删除回滚」与「快照式原值还原」
 public struct ActionUndoToken: Codable, Equatable, Sendable {
-    public enum Kind: String, Codable, Sendable {
+    public enum Kind: String, Codable, CaseIterable, Hashable, Sendable {
         case todo
         case expense
         case memoLine
