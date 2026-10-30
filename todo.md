@@ -173,6 +173,8 @@
 
 ## 验证记录
 
+（本节是 2026-10-10 静态审查的口径，测试数与构建结论为当时数据，不再更新；后续每轮验证见各实施记录文末，最新一次为 2026-10-30：`./scripts/ci.sh all` 全绿、`swift test` 852 项。）
+
 - 审查方式：静态阅读当前工作区源码，未运行 iOS 模拟器，也未做屏幕截图；界面问题需要后续在小屏、深色与大字号下实机确认。
 - `swift test`：覆盖 `AssistantCore` 纯逻辑模块（PromptBudget、ActionModels、TaskPlanningInference、SkillPath 等），共 128 项测试、0 失败，100% 通过。
 - `xcodebuild -scheme Assistant -destination "generic/platform=iOS" CODE_SIGNING_ALLOWED=NO build`：成功构建 iOS 整体工程（**BUILD SUCCEEDED**），覆盖全部 9 个动作空间、后台刷新协调器、日历双向同步与跨模块全景搜索模块。
@@ -596,4 +598,47 @@ P0 五项至此全部完成。本轮把三项「部分完成」推到可自动�
 - **新增 `WatchIntegrationGuideView`：**
   - 设置页加入「Apple Watch 腕上协同指南」，直观展示智能叠放（实时活动）、表盘复杂功能添加步骤、Siri 抬腕话术、Apple Watch Ultra 操作按钮（Action Button）及低电量自动化配置。
 - **验证：** swift test **674 项全绿** → xcodegen → generic/platform=iOS **BUILD SUCCEEDED**。
+
+## 2026-10-30 实施记录（2026-10-29 风险审查四批修复收口）
+
+来源：`code-review-2026-10-29.md`（11 项：P1 两项 `CR-01`/`CR-04`，P2 九项）。四批按「凭据与隐私 → 成功但没落库 → 交互真实性 → 导入正确性与性能」推进，逐条状态与证据写在审查文档里，本节只记结论与验证口径。
+
+### 1. 第一批（CR-04 / CR-05）· 凭据与隐私
+
+- [x] **CR-04 自动备份口令**：写死口令改为用户自设、只存 Keychain；未设口令不上传；新增 `scripts/check_backup_pin_literals.py` 字面量闸门并入 `ci.sh`。
+- [x] **CR-05 WebDAV 跨源跳转**：只接受同 scheme 同源、且落在备份目录内的 href；跨源条目从列表丢弃并拒发请求；`http://` 在界面上显式警示。
+
+### 2. 第二批（CR-06 / CR-07 / CR-01）· 「成功但没落库」一族
+
+- [x] **CR-06 扩展指令先摘队后落库**：改为落库成功后才确认消费，失败保留来源并如实回执，按成功子集裁剪队列；顺带修掉队列的无锁 read-modify-write。
+- [x] **CR-07 稍后提醒与出门清点把抛错当不存在**：两条 `try?` 路径与 `completeInDB` 对齐，抛错即保留指令并告警。
+- [x] **CR-01 分享导入失败仍消费原始载荷**：失败不再删除载荷，回执如实说明，重试仍可拿到原数据。
+
+### 3. 第三批（CR-08 / CR-02 / CR-03）· 交互真实性
+
+- [x] **CR-08 收卡动作未 await**：收卡与更新改为 `await` 后回执，并回查 `Activity.activities` 给真实结果。
+- [x] **CR-02 预加载播放分支未启动计时器**：开始/恢复播放统一走唯一进度计时器，不再重复起表。
+- [x] **CR-03 块编辑「完成」丢草稿**：先提交草稿再保存，保存失败留在页面并提示。
+
+### 4. 第四批（CR-11 / CR-09 / CR-10）· 导入正确性与性能
+
+- [x] **CR-11 CSV 裸逗号切分**：新增 Core `CSVParser`（引号、`""` 转义、引号内换行、CRLF/CR、BOM、物理行号）与 `BatchCSVImport` 规划器；导入回执列出跳过行号与原因，一条都没导入时保留输入框内容。`2022-02-31` 这类溢出日期改为「解析后回写比对」判无效。
+- [x] **CR-09 预算播报全表物化**：新增 Core `ExpenseRecordWindow.budgetWindow()`，取数改为窗口谓词；读失败与「今天确实没花钱」分开处理，读不到时如实回复而不是报 ¥0。
+- [x] **CR-10 生活记录读失败凭空建档**：`executeLifeRecord` 四个域（宠物/车辆/孩子/技能）读档失败统一抛 `OmniboxError.dataUnavailable`，只有确实取到空数组才建占位档案，首次建档在回执里注明。
+
+### 提交与验证
+
+- 提交（7 个，按发现拆分并逐个在自己的树上验证）：`cf35ec7` 收卡 await、`6efdd7c` 进度计时器、`ef9c8d5` 块编辑草稿、`36aebfb` CSV 导入、`347a039` 预算窗口取数、`2b2caf9` 生活记录读档、`97b0d81` 审查文档。第一、二批提交在 `5a4cebd` 之前。
+- 已推送：`5a4cebd..97b0d81 main -> main`，本地与 `origin/main` 同步。
+- 闸门：`./scripts/ci.sh all` 退出码 0（偏好键覆盖、圆角令牌、备份口令字面量三道静态闸门 + `swift test` + `xcodegen generate` + generic/platform=iOS 构建）。
+- 测试：当前 HEAD 实跑 `swift test` **852 项、0 失败**（第四批前 822 项；CR-11 +23、CR-09 +7）。
+- 构建：generic/platform=iOS **BUILD SUCCEEDED**。
+
+### 本轮未验 / 未做
+
+- [ ] CR-04/CR-05 需真实 WebDAV 端点做端到端；本轮未联网。
+- [ ] CR-08 的实际发生率只能在 iPhone + Watch/Mac 通知中心现场复现。
+- [ ] CR-09 的抛错分支与大数据集耗时、CR-10 的首次建档路径、CR-11 的「密码」App 导出文件，均未真机实测。
+- [ ] CR-02/CR-03 属 UI 状态流，没有屏幕级复现（App target 无测试 scheme，未新增单测）。
+- [ ] 遗留未动：`WidgetBridgeAppHook` 分支里 6 处 `try? context.save()`（改动需连带 5 个方法签名），与上文 P3+ 的三条真机验收、`6. 真机联调` 一样继续挂账。
 
