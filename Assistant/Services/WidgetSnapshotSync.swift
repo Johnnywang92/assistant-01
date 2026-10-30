@@ -220,12 +220,12 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             return .retry
         }
         guard let item = items.first, item.status == .active else {
-            // 已在主应用完成过：仅确保实时活动收起
-            PickupActivityHelper.endActivity(for: id)
+            // 已在主应用完成过：仅确保实时活动收起（主进程长寿，允许异步收尾）
+            Task { await PickupActivityHelper.endActivity(for: id) }
             return .consumed
         }
         item.markAsCompleted(in: context)
-        PickupActivityHelper.markCompleted(todoID: id)
+        Task { await PickupActivityHelper.markCompleted(todoID: id) }
         return .applied
     }
 
@@ -265,7 +265,7 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             return .retry
         }
         checkItem.isChecked = isChecked
-        DepartureActivityHelper.setChecked(itemID: id, isChecked: isChecked)
+        Task { await DepartureActivityHelper.setChecked(itemID: id, isChecked: isChecked) }
         return .applied
     }
 

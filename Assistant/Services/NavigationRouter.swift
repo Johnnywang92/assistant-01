@@ -343,7 +343,7 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
             // 手腕/锁屏上点「已取件」：销号、推进到下一件或收起销号通知
             Task { @MainActor in
                 let context = Persistence.shared.mainContext
-                PickupCheckoutService.handle(response, context: context)
+                await PickupCheckoutService.handle(response, context: context)
                 WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
             }
         } else if let type = userInfo["type"] as? String, type == "tripArrival" {
@@ -356,7 +356,7 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
         } else if let type = userInfo["type"] as? String, type == "liveActivityControl" {
             // 手腕/Mac 上点护航·清点的伴随关闭动作：一键结束实时活动
             Task { @MainActor in
-                LiveActivityControlNotifications.handle(response)
+                await LiveActivityControlNotifications.handle(response)
             }
         } else if let type = userInfo["type"] as? String, type == "sleepBedtime" {
             // 睡前提醒的「推迟 20 分钟」：用户显式要求的补提醒，独立 identifier 注册

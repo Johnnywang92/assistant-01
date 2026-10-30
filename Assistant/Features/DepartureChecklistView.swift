@@ -350,15 +350,18 @@ struct DepartureChecklistView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 // 把当前清点项推上灵动岛与 Apple Watch 智能叠放，抬腕逐项确认
                 Button {
-                    LiveActivityService.endDepartureActivities()
                     let sceneName = selectedScene.map { $0.displayName } ?? "全部物品"
-                    if LiveActivityService.startDepartureChecklist(
-                        sceneName: sceneName,
-                        items: filteredItems
-                    ) {
-                        Haptic.success()
-                    } else {
-                        Haptic.warning()
+                    let items = filteredItems
+                    Task { @MainActor in
+                        await LiveActivityService.endDepartureActivities()
+                        if LiveActivityService.startDepartureChecklist(
+                            sceneName: sceneName,
+                            items: items
+                        ) {
+                            Haptic.success()
+                        } else {
+                            Haptic.warning()
+                        }
                     }
                 } label: {
                     Image(systemName: "platter.filled.top.iphone")
@@ -654,11 +657,11 @@ struct DepartureChecklistView: View {
     }
 
     private func resetChecklist() {
+        var clearedIDs: [UUID] = []
         for item in filteredItems {
             guard item.isChecked else { continue }
             item.isChecked = false
-            // 同步到锁屏/灵动岛/Mac 镜像的实时活动，否则卡片继续显示全部已勾
-            DepartureActivityHelper.setChecked(itemID: item.id, isChecked: false)
+            clearedIDs.append(item.id)
         }
         checkedShen = false
         checkedShou = false
@@ -666,6 +669,14 @@ struct DepartureChecklistView: View {
         checkedEr = false
         try? context.save()
         Haptic.success()
+        guard !clearedIDs.isEmpty else { return }
+        // 同步到锁屏/灵动岛/Mac 镜像的实时活动，否则卡片继续显示全部已勾；
+        // 逐个 await，多项一起取消时不会互相覆盖状态
+        Task { @MainActor in
+            for id in clearedIDs {
+                await DepartureActivityHelper.setChecked(itemID: id, isChecked: false)
+            }
+        }
     }
 
     private func delete(items: [DepartureCheckItem]) {
@@ -677,21 +688,23 @@ struct DepartureChecklistView: View {
             context.delete(item)
         }
         try? context.save()
-        refreshDepartureActivity(with: remaining)
+        Task { await refreshDepartureActivity(with: remaining) }
     }
 
     /// 弹窗关闭后 @Query 才稳定包含新增项，所以重推时机放在 onDismiss，且只在本次真的改过时执行
     private func refreshDepartureActivityAfterEdit() {
         guard pendingDepartureRefresh else { return }
         pendingDepartureRefresh = false
-        refreshDepartureActivity(with: filteredItems)
+        let items = filteredItems
+        Task { await refreshDepartureActivity(with: items) }
     }
 
     /// 清点卡的物品与必带标记固定在上岛那一刻的 attributes 里，改不了；
     /// 增删改后按当前视图重推一次，否则锁屏/手表上会留下已删除物品的幽灵行或过期名称。
-    private func refreshDepartureActivity(with items: [DepartureCheckItem]) {
+    private func refreshDepartureActivity(with items: [DepartureCheckItem]) async {
         guard LiveActivityService.hasDepartureActivity else { return }
-        LiveActivityService.endDepartureActivities()
+        // 先等旧卡真的收起再重推，否则两代卡片会短暂并存
+        await LiveActivityService.endDepartureActivities()
         let sceneName = selectedScene.map { $0.displayName } ?? "全部物品"
         if !LiveActivityService.startDepartureChecklist(sceneName: sceneName, items: items) {
             // 剩余项已全部勾完（或清单已空）时不再重推，顺带摘掉伴随通知，不留点不到的控制入口
@@ -727,9 +740,10 @@ struct CheckItemRow: View {
     var body: some View {
         Button {
             item.isChecked.toggle()
+            let isChecked = item.isChecked
             // App 内勾选同步到锁屏/灵动岛/Mac 镜像的实时活动；最后一项勾完自动收卡
-            DepartureActivityHelper.setChecked(itemID: item.id, isChecked: item.isChecked)
-            if item.isChecked {
+            Task { await DepartureActivityHelper.setChecked(itemID: item.id, isChecked: isChecked) }
+            if isChecked {
                 Haptic.medium()
             } else {
                 Haptic.light()

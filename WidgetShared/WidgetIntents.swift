@@ -21,17 +21,18 @@ public enum WidgetBridge {
     /// 由主应用在启动时注册；扩展进程保持 nil
     @MainActor public static weak var appHook: WidgetBridgeAppHook?
 
-    /// 扩展进程侧的即时本地突变（快照 + 组件刷新 + 实时活动状态）
+    /// 扩展进程侧的即时本地突变（快照 + 组件刷新 + 实时活动状态）。
+    /// 实时活动更新必须在这里 await 完：intent 返回后扩展进程随时可能被回收。
     @MainActor
-    static func applyCompletionLocally(id: UUID) {
+    static func applyCompletionLocally(id: UUID) async {
         WidgetSnapshotStore.applyCompletionLocally(id: id)
         WidgetCenter.shared.reloadAllTimelines()
-        PickupActivityHelper.markCompleted(todoID: id)
+        await PickupActivityHelper.markCompleted(todoID: id)
     }
 
     @MainActor
-    static func applyDepartureToggleLocally(id: UUID, isChecked: Bool) {
-        DepartureActivityHelper.setChecked(itemID: id, isChecked: isChecked)
+    static func applyDepartureToggleLocally(id: UUID, isChecked: Bool) async {
+        await DepartureActivityHelper.setChecked(itemID: id, isChecked: isChecked)
     }
 }
 
@@ -63,7 +64,7 @@ public struct CompleteTodoIntent: AppIntent {
         if let hook = WidgetBridge.appHook {
             hook.handleCompleteTodo(id: id)
         } else if WidgetSnapshotStore.enqueue(.completeTodo(id)) {
-            WidgetBridge.applyCompletionLocally(id: id)
+            await WidgetBridge.applyCompletionLocally(id: id)
         } else {
             return .result(dialog: "没能同步到小助，请打开小助再试")
         }
@@ -103,7 +104,7 @@ public struct ToggleDepartureItemIntent: AppIntent {
         if let hook = WidgetBridge.appHook {
             hook.handleToggleDeparture(id: id, isChecked: isChecked)
         } else if WidgetSnapshotStore.enqueue(.toggleDeparture(id, isChecked)) {
-            WidgetBridge.applyDepartureToggleLocally(id: id, isChecked: isChecked)
+            await WidgetBridge.applyDepartureToggleLocally(id: id, isChecked: isChecked)
         } else {
             return .result(dialog: "没能同步到小助，请打开小助再试")
         }
@@ -112,6 +113,18 @@ public struct ToggleDepartureItemIntent: AppIntent {
 }
 
 // MARK: - 结束行程护航活动（"已出发"）
+
+/// `Activity.end` 是 async 但不抛错，没有失败通道可接：只能回查活动列表确认是否真的收起来了。
+/// 刚 end 完列表未必立刻刷新，失败时短暂重查几次再定论，免得把系统延迟误报成「未能收起」。
+@MainActor
+private func remainingActivities<T: ActivityAttributes>(_ type: Activity<T>.Type) async -> Int {
+    for _ in 0..<3 {
+        let count = Activity<T>.activities.count
+        if count == 0 { return 0 }
+        try? await Task.sleep(nanoseconds: 120_000_000)
+    }
+    return Activity<T>.activities.count
+}
 
 public struct EndTravelActivityIntent: AppIntent {
     public static let title: LocalizedStringResource = "已出发"
@@ -130,11 +143,18 @@ public struct EndTravelActivityIntent: AppIntent {
             return .result(dialog: "实时活动不可用")
         }
         let activities = Activity<TravelActivityAttributes>.activities
+        guard !activities.isEmpty else {
+            WidgetCenter.shared.reloadAllTimelines()
+            return .result(dialog: "当前没有护航中的行程")
+        }
         for activity in activities {
-            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
+            await activity.end(activity.content, dismissalPolicy: .immediate)
         }
         WidgetCenter.shared.reloadAllTimelines()
-        return .result(dialog: activities.isEmpty ? "当前没有护航中的行程" : "已结束护航，一路顺利 🚄")
+        let remaining = await remainingActivities(Activity<TravelActivityAttributes>.self)
+        return .result(dialog: remaining == 0
+            ? "已结束护航，一路顺利 🚄"
+            : "还有 \(remaining) 张卡片没收起，请再点一次")
     }
 }
 
@@ -156,11 +176,18 @@ public struct EndDepartureActivityIntent: AppIntent {
             return .result(dialog: "实时活动不可用")
         }
         let activities = Activity<DepartureChecklistActivityAttributes>.activities
+        guard !activities.isEmpty else {
+            WidgetCenter.shared.reloadAllTimelines()
+            return .result(dialog: "当前没有清点卡片")
+        }
         for activity in activities {
-            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
+            await activity.end(activity.content, dismissalPolicy: .immediate)
         }
         WidgetCenter.shared.reloadAllTimelines()
-        return .result(dialog: activities.isEmpty ? "当前没有清点卡片" : "已结束出门清点，一路顺利 🎒")
+        let remaining = await remainingActivities(Activity<DepartureChecklistActivityAttributes>.self)
+        return .result(dialog: remaining == 0
+            ? "已结束出门清点，一路顺利 🎒"
+            : "还有 \(remaining) 张卡片没收起，请再点一次")
     }
 }
 
@@ -196,7 +223,7 @@ public struct CompleteAllParcelsIntent: AppIntent {
             var failed = 0
             for id in ids {
                 if WidgetSnapshotStore.enqueue(.completeTodo(id)) {
-                    WidgetBridge.applyCompletionLocally(id: id)
+                    await WidgetBridge.applyCompletionLocally(id: id)
                 } else {
                     failed += 1
                 }
@@ -240,7 +267,7 @@ public struct CheckAllDepartureItemsIntent: AppIntent {
             var failed = 0
             for id in ids {
                 if WidgetSnapshotStore.enqueue(.toggleDeparture(id, true)) {
-                    WidgetBridge.applyDepartureToggleLocally(id: id, isChecked: true)
+                    await WidgetBridge.applyDepartureToggleLocally(id: id, isChecked: true)
                 } else {
                     failed += 1
                 }

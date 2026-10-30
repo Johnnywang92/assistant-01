@@ -111,9 +111,11 @@ public struct DepartureChecklistActivityAttributes: ActivityAttributes {
 // MARK: - 跨进程共用的活动辅助（主应用与扩展均可调用）
 
 public enum PickupActivityHelper {
-    /// 某个快递待办被完成后：更新实时活动状态；全部取完则自动收岛
+    /// 某个快递待办被完成后：更新实时活动状态；全部取完则自动收岛。
+    /// 调用方必须 `await`：扩展进程的 AppIntent 一旦 return 就可能被回收，
+    /// 把 end/update 留给未等待的 Task 会留下「已取件」却没收的死卡。
     @MainActor
-    public static func markCompleted(todoID: UUID) {
+    public static func markCompleted(todoID: UUID) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         for activity in Activity<PickupActivityAttributes>.activities {
             guard activity.attributes.parcels.contains(where: { $0.id == todoID }) else { continue }
@@ -122,27 +124,27 @@ public enum PickupActivityHelper {
             state.completedIDs.append(todoID)
             let allDone = activity.attributes.parcels.allSatisfy { state.completedIDs.contains($0.id) }
             if allDone {
-                Task { await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .immediate) }
+                await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .immediate)
             } else {
-                Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+                await activity.update(ActivityContent(state: state, staleDate: nil))
             }
         }
     }
 
     /// 兜底：直接结束与该待办相关的实时活动
     @MainActor
-    public static func endActivity(for todoID: UUID) {
+    public static func endActivity(for todoID: UUID) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         for activity in Activity<PickupActivityAttributes>.activities {
             guard activity.attributes.parcels.contains(where: { $0.id == todoID }) else { continue }
-            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
+            await activity.end(activity.content, dismissalPolicy: .immediate)
         }
     }
 }
 
 public enum DepartureActivityHelper {
     @MainActor
-    public static func setChecked(itemID: UUID, isChecked: Bool) {
+    public static func setChecked(itemID: UUID, isChecked: Bool) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         for activity in Activity<DepartureChecklistActivityAttributes>.activities {
             var state = activity.content.state
@@ -161,9 +163,9 @@ public enum DepartureActivityHelper {
             let allChecked = activity.attributes.items.allSatisfy { state.checkedIDs.contains($0.id) }
             guard changed || allChecked else { continue }
             if allChecked {
-                Task { await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .immediate) }
+                await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .immediate)
             } else {
-                Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+                await activity.update(ActivityContent(state: state, staleDate: nil))
             }
         }
     }

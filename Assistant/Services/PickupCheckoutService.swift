@@ -138,11 +138,11 @@ enum PickupCheckoutService {
 
     // MARK: - 手表 / 锁屏点击响应
 
-    static func handle(_ response: UNNotificationResponse, context: ModelContext) {
+    static func handle(_ response: UNNotificationResponse, context: ModelContext) async {
         // 「关闭卡片」：不收销号通知里的进度，直接把会话与灵动岛/手表卡片一起关掉，不改动待办
         if response.actionIdentifier == actionClose {
             cancel()
-            LiveActivityService.endPickupActivities()
+            await LiveActivityService.endPickupActivities()
             return
         }
         guard var current = session else { return }
@@ -151,7 +151,7 @@ enum PickupCheckoutService {
 
         let taken = takeAll ? current.steps : Array(current.steps.prefix(1))
         for step in taken {
-            markDone(id: step.id, context: context)
+            await markDone(id: step.id, context: context)
         }
         current.steps.removeFirst(taken.count)
         try? context.save()
@@ -170,13 +170,14 @@ enum PickupCheckoutService {
         }
     }
 
-    private static func markDone(id: UUID, context: ModelContext) {
+    private static func markDone(id: UUID, context: ModelContext) async {
         let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == id })
         if let item = (try? context.fetch(descriptor))?.first, item.status == .active {
             item.markAsCompleted(in: context)
         }
-        // 同步灵动岛 / 手表卡片的已取件状态；全部取完时它会自动 end 活动
-        PickupActivityHelper.markCompleted(todoID: id)
+        // 同步灵动岛 / 手表卡片的已取件状态；全部取完时它会自动 end 活动。
+        // 逐件 await 保证多件一起销号时状态更新不互相覆盖。
+        await PickupActivityHelper.markCompleted(todoID: id)
         // 清掉这条待办原本排期的到期提醒，避免取完还响
         TodoNotificationManager.shared.cancelNotification(for: id)
         // 动态同步驿站地理围栏（包裹取完后自动清理硬件围栏）

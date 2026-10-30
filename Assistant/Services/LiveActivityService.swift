@@ -112,21 +112,23 @@ enum LiveActivityService {
 
     // MARK: - 结束活动
 
-    static func endPickupActivities() {
+    /// 收卡必须 await：end 是 async 但不抛错，调用方若不等待，
+    /// 紧接着的「重推新卡」会与旧卡并存，锁屏上短暂出现两张卡。
+    static func endPickupActivities() async {
         for activity in Activity<PickupActivityAttributes>.activities {
-            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
+            await activity.end(activity.content, dismissalPolicy: .immediate)
         }
     }
 
-    static func endTravelActivities() {
+    static func endTravelActivities() async {
         for activity in Activity<TravelActivityAttributes>.activities {
-            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
+            await activity.end(activity.content, dismissalPolicy: .immediate)
         }
     }
 
-    static func endDepartureActivities() {
+    static func endDepartureActivities() async {
         for activity in Activity<DepartureChecklistActivityAttributes>.activities {
-            Task { await activity.end(activity.content, dismissalPolicy: .immediate) }
+            await activity.end(activity.content, dismissalPolicy: .immediate)
         }
     }
 
@@ -209,16 +211,16 @@ enum LiveActivityControlNotifications {
 
     /// NavigationRouter 在 didReceive 里先判过 type 后调用；只认自己的 action，
     /// 点卡片本体 / ✕ 删除走系统默认行为，不动活动状态。
-    static func handle(_ response: UNNotificationResponse) {
+    static func handle(_ response: UNNotificationResponse) async {
         let userInfo = response.notification.request.content.userInfo
         guard userInfo["type"] as? String == "liveActivityControl" else { return }
         let subtype = userInfo["subtype"] as? String
         switch (subtype, response.actionIdentifier) {
         case ("travel", travelActionEnd):
-            LiveActivityService.endTravelActivities()
+            await LiveActivityService.endTravelActivities()
             UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [travelNotificationIdentifier])
         case ("departure", departureActionCheckAll):
-            checkAllDepartureItems()
+            await checkAllDepartureItems()
         default:
             break
         }
@@ -239,12 +241,14 @@ enum LiveActivityControlNotifications {
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [departureNotificationIdentifier])
     }
 
-    private static func checkAllDepartureItems() {
-        // 逐项走既有桥接钩子：同时写回 DepartureCheckItem 与活动状态，
-        // 最后一项勾完时 DepartureActivityHelper 会自动 end 活动
+    private static func checkAllDepartureItems() async {
+        // 逐项走既有桥接钩子写回 DepartureCheckItem；卡片状态再显式 await 一次，
+        // 保证最后一项勾完时活动真的收起再摘伴随通知——钩子内的更新是异步派发的，
+        // 不等它就 reconcile 会让「全部带齐」点完通知还挂在通知中心。
         for activity in Activity<DepartureChecklistActivityAttributes>.activities {
             for item in activity.attributes.items {
                 WidgetSnapshotSyncController.shared.handleToggleDeparture(id: item.id, isChecked: true)
+                await DepartureActivityHelper.setChecked(itemID: item.id, isChecked: true)
             }
         }
         reconcile()
