@@ -171,7 +171,7 @@ struct VoiceMemoDetailView: View {
             HStack(spacing: 36) {
                 Button { audio.skip(by: -15) } label: { Image(systemName: "gobackward.15").font(.title2) }
                 Button {
-                    audio.togglePlayback(fileName: memo.audioFileName)
+                    Task { await audio.togglePlayback(fileName: memo.audioFileName) }
                     Haptic.light()
                 } label: {
                     Image(systemName: isCurrent && audio.isPlaying ? "pause.circle.fill" : "play.circle.fill")

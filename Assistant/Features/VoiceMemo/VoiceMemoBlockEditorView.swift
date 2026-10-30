@@ -109,7 +109,7 @@ struct VoiceMemoBlockEditorView: View {
     private var playbackBar: some View {
         HStack(spacing: 10) {
             Button {
-                audio.togglePlayback(fileName: memo.audioFileName)
+                Task { await audio.togglePlayback(fileName: memo.audioFileName) }
                 Haptic.light()
             } label: {
                 Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")

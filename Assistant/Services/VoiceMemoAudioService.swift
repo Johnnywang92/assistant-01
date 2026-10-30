@@ -34,6 +34,9 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
     private var meterTimer: Timer?
     private var player: AVAudioPlayer?
     private var playbackTimer: Timer?
+    /// 激活会话是异步的：期间可能被 stopPlayback（离开页面、语音对话插话）打断，
+    /// 用它判断这次播放请求是否已经作废，避免播放器没人持有却还在响
+    private var playbackGeneration = 0
 
     private override init() {
         super.init()
@@ -59,7 +62,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
 
     // MARK: - 录音
 
-    func startRecording() throws {
+    func startRecording() async throws {
         guard !isRecording else { return }
         // 与语音对话互斥
         VoiceDialogueService.shared.stopListening()
@@ -67,9 +70,13 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
         stopPlayback()
         errorMessage = nil
 
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
-        try session.setActive(true)
+        try await VoiceMemoAudioSession.activate(
+            category: .playAndRecord,
+            mode: .default,
+            options: [.defaultToSpeaker, .allowBluetoothHFP]
+        )
+        // 激活期间录音页可能已被关掉（.task 随之取消），别再开一个没人管的录音
+        guard !Task.isCancelled else { return }
 
         let fileName = VoiceMemoStorage.newFileName()
         let settings: [String: Any] = [
@@ -100,9 +107,9 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
         isPaused = true
     }
 
-    func resumeRecording() {
+    func resumeRecording() async {
         guard isRecording, isPaused else { return }
-        try? AVAudioSession.sharedInstance().setActive(true)
+        await VoiceMemoAudioSession.reactivate()
         recorder?.record()
         isPaused = false
     }
@@ -138,7 +145,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
         currentRecordingFile = nil
         isRecording = false
         isPaused = false
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        VoiceMemoAudioSession.deactivateInBackground()
     }
 
     private func startMeterTimer() {
@@ -163,7 +170,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
 
     // MARK: - 回放
 
-    func togglePlayback(fileName: String) {
+    func togglePlayback(fileName: String) async {
         if playingFileName == fileName, let p = player {
             if p.isPlaying {
                 p.pause()
@@ -172,7 +179,9 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
                 playbackTimer?.invalidate()
                 playbackTimer = nil
             } else {
-                activatePlaybackSession()
+                let generation = playbackGeneration
+                await activatePlaybackSession()
+                guard generation == playbackGeneration, player === p else { return }
                 p.play()
                 isPlaying = true
                 playbackTime = p.currentTime
@@ -181,15 +190,17 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
             }
             return
         }
-        play(fileName: fileName)
+        await play(fileName: fileName)
     }
 
-    func play(fileName: String) {
+    func play(fileName: String) async {
         guard !isRecording else { return }
         stopPlayback()
+        let generation = playbackGeneration
         VoiceDialogueService.shared.stopSpeaking()
         do {
-            activatePlaybackSession()
+            await activatePlaybackSession()
+            guard generation == playbackGeneration, !isRecording else { return }
             let p = try AVAudioPlayer(contentsOf: VoiceMemoStorage.url(for: fileName))
             p.enableRate = true
             p.rate = playbackRate
@@ -248,6 +259,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
     }
 
     func stopPlayback() {
+        playbackGeneration &+= 1
         playbackTimer?.invalidate()
         playbackTimer = nil
         player?.stop()
@@ -258,10 +270,8 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
         playbackDuration = 0
     }
 
-    private func activatePlaybackSession() {
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio)
-        try? session.setActive(true)
+    private func activatePlaybackSession() async {
+        try? await VoiceMemoAudioSession.activate(category: .playback, mode: .spokenAudio)
     }
 
     // MARK: - 离线整段转写
@@ -328,6 +338,51 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
                 self.playbackTimer?.invalidate()
                 self.playbackTimer = nil
             }
+        }
+    }
+}
+
+// MARK: - 音频会话
+
+/// 会话的设置、激活与停用都可能阻塞调用线程（挂起报告里被点名的是主线程调用），
+/// 统一挪到专用串行队列：既不卡 UI，串行又能保证「停用录音 → 马上播放」时不会乱序。
+private enum VoiceMemoAudioSession {
+    private static let queue = DispatchQueue(label: "com.yifanwang.assistant01.audio-session", qos: .userInitiated)
+
+    /// 设置分类并激活；返回时会话已就绪
+    static func activate(
+        category: AVAudioSession.Category,
+        mode: AVAudioSession.Mode,
+        options: AVAudioSession.CategoryOptions = []
+    ) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async {
+                let session = AVAudioSession.sharedInstance()
+                do {
+                    try session.setCategory(category, mode: mode, options: options)
+                    try session.setActive(true)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// 按当前分类重新激活（暂停后恢复录音）
+    static func reactivate() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            queue.async {
+                try? AVAudioSession.sharedInstance().setActive(true)
+                continuation.resume()
+            }
+        }
+    }
+
+    /// 结束录音后的停用不需要调用方等待，排队执行即可
+    static func deactivateInBackground() {
+        queue.async {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 }

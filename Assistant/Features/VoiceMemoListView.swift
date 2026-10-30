@@ -167,7 +167,7 @@ struct VoiceMemoRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Button {
-                audio.togglePlayback(fileName: memo.audioFileName)
+                Task { await audio.togglePlayback(fileName: memo.audioFileName) }
                 Haptic.light()
             } label: {
                 Image(systemName: isCurrent && audio.isPlaying ? "pause.circle.fill" : "play.circle.fill")
@@ -289,7 +289,11 @@ struct VoiceMemoRecorderSheet: View {
             // 暂停 / 继续
             Button {
                 Haptic.light()
-                audio.isPaused ? audio.resumeRecording() : audio.pauseRecording()
+                if audio.isPaused {
+                    Task { await audio.resumeRecording() }
+                } else {
+                    audio.pauseRecording()
+                }
             } label: {
                 Image(systemName: audio.isPaused ? "play.fill" : "pause.fill")
                     .font(.title2)
@@ -323,7 +327,7 @@ struct VoiceMemoRecorderSheet: View {
             return
         }
         do {
-            try audio.startRecording()
+            try await audio.startRecording()
             Haptic.medium()
         } catch {
             errorText = error.localizedDescription
