@@ -536,10 +536,12 @@ struct VoiceDialogueView: View {
         if voice.isListening {
             voice.stopListening()
         } else {
-            do {
-                try voice.startListening()
-            } catch {
-                voice.errorMessage = error.localizedDescription
+            Task {
+                do {
+                    try await voice.startListening()
+                } catch {
+                    voice.errorMessage = error.localizedDescription
+                }
             }
         }
     }

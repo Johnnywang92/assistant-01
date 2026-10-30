@@ -1046,8 +1046,8 @@ struct FoodPhotoCalorieView: View {
             let granted = await voiceService.requestPermissions()
             guard granted else { return }
             do {
-                try voiceService.startListening()
-                isListeningVoice = true
+                try await voiceService.startListening()
+                isListeningVoice = voiceService.isListening
                 Haptic.medium()
             } catch {
                 isListeningVoice = false

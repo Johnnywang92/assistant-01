@@ -204,7 +204,12 @@ struct MainTabView: View {
                 return
             }
             do {
-                try voice.startListening()
+                try await voice.startListening()
+                // 激活会话期间被再次点击取消时不会开麦，别继续显示「请说话…」
+                guard voice.isListening else {
+                    isDirectVoiceConversation = false
+                    return
+                }
             } catch {
                 isDirectVoiceConversation = false
                 directVoiceStatus = error.localizedDescription

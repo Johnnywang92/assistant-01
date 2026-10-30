@@ -483,7 +483,7 @@ struct MedicationRow: View {
                     if seniorManager.isSpeaking && seniorManager.currentSpeakingId == med.id.uuidString {
                         seniorManager.stopSpeaking()
                     } else {
-                        seniorManager.speakSenior(text: speech, id: med.id.uuidString)
+                        Task { await seniorManager.speakSenior(text: speech, id: med.id.uuidString) }
                         Haptic.light()
                     }
                 } label: {

@@ -70,7 +70,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
         stopPlayback()
         errorMessage = nil
 
-        try await VoiceMemoAudioSession.activate(
+        try await AudioSessionConfigurator.activate(
             category: .playAndRecord,
             mode: .default,
             options: [.defaultToSpeaker, .allowBluetoothHFP]
@@ -109,7 +109,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
 
     func resumeRecording() async {
         guard isRecording, isPaused else { return }
-        await VoiceMemoAudioSession.reactivate()
+        await AudioSessionConfigurator.reactivate()
         recorder?.record()
         isPaused = false
     }
@@ -145,7 +145,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
         currentRecordingFile = nil
         isRecording = false
         isPaused = false
-        VoiceMemoAudioSession.deactivateInBackground()
+        AudioSessionConfigurator.deactivateInBackground()
     }
 
     private func startMeterTimer() {
@@ -271,7 +271,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
     }
 
     private func activatePlaybackSession() async {
-        try? await VoiceMemoAudioSession.activate(category: .playback, mode: .spokenAudio)
+        try? await AudioSessionConfigurator.activate(category: .playback, mode: .spokenAudio)
     }
 
     // MARK: - 离线整段转写
@@ -338,51 +338,6 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
                 self.playbackTimer?.invalidate()
                 self.playbackTimer = nil
             }
-        }
-    }
-}
-
-// MARK: - 音频会话
-
-/// 会话的设置、激活与停用都可能阻塞调用线程（挂起报告里被点名的是主线程调用），
-/// 统一挪到专用串行队列：既不卡 UI，串行又能保证「停用录音 → 马上播放」时不会乱序。
-private enum VoiceMemoAudioSession {
-    private static let queue = DispatchQueue(label: "com.yifanwang.assistant01.audio-session", qos: .userInitiated)
-
-    /// 设置分类并激活；返回时会话已就绪
-    static func activate(
-        category: AVAudioSession.Category,
-        mode: AVAudioSession.Mode,
-        options: AVAudioSession.CategoryOptions = []
-    ) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            queue.async {
-                let session = AVAudioSession.sharedInstance()
-                do {
-                    try session.setCategory(category, mode: mode, options: options)
-                    try session.setActive(true)
-                    continuation.resume()
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-
-    /// 按当前分类重新激活（暂停后恢复录音）
-    static func reactivate() async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            queue.async {
-                try? AVAudioSession.sharedInstance().setActive(true)
-                continuation.resume()
-            }
-        }
-    }
-
-    /// 结束录音后的停用不需要调用方等待，排队执行即可
-    static func deactivateInBackground() {
-        queue.async {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 }

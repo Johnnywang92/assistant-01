@@ -449,8 +449,8 @@ struct OmniboxView: View {
             do {
                 // 基底取当前输入框内容：转写在其后追加，不覆盖手输/粘贴的内容
                 preSpeechBase = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-                try voiceService.startListening()
-                isVoiceListening = true
+                try await voiceService.startListening()
+                isVoiceListening = voiceService.isListening
                 Haptic.medium()
             } catch {
                 isVoiceListening = false

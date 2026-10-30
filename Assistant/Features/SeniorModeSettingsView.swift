@@ -127,7 +127,7 @@ struct SeniorModeSettingsView: View {
 
                     if seniorManager.isVoiceBroadcastEnabled {
                         Button {
-                            seniorManager.speakSenior(text: "降压药，每日一次每次1片。菜鸟驿站快递，取件码三杠二杠一零四。")
+                            Task { await seniorManager.speakSenior(text: "降压药，每日一次每次1片。菜鸟驿站快递，取件码三杠二杠一零四。") }
                         } label: {
                             HStack {
                                 Image(systemName: seniorManager.isSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2.fill")

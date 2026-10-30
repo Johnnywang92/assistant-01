@@ -714,7 +714,8 @@ struct ExpenseTrackerView: View {
                 if granted {
                     isListeningQuickVoice = true
                     do {
-                        try voice.startListening()
+                        try await voice.startListening()
+                        isListeningQuickVoice = voice.isListening
                     } catch {
                         isListeningQuickVoice = false
                         showFeedback(error.localizedDescription)

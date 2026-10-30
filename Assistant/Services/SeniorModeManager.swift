@@ -93,6 +93,8 @@ public final class SeniorModeManager: NSObject, ObservableObject, AVSpeechSynthe
     // MARK: - 专属大声语音播报 (TTS)
     private let synthesizer = AVSpeechSynthesizer()
     @Published public var isSpeaking: Bool = false
+    /// 激活会话是异步的：期间可能被 stopSpeaking 打断，用它判断这次播报是否已作废
+    private var speechGeneration = 0
     @Published public var currentSpeakingId: String? = nil
 
     private override init() {
@@ -101,7 +103,7 @@ public final class SeniorModeManager: NSObject, ObservableObject, AVSpeechSynthe
     }
 
     /// 以缓慢、清晰、沉稳的长辈友好语速大声朗读文本
-    public func speakSenior(text: String, id: String? = nil) {
+    public func speakSenior(text: String, id: String? = nil) async {
         stopSpeaking()
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -119,14 +121,16 @@ public final class SeniorModeManager: NSObject, ObservableObject, AVSpeechSynthe
         utterance.pitchMultiplier = 1.02
         utterance.volume = 1.0
 
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-        try? AVAudioSession.sharedInstance().setActive(true)
+        let generation = speechGeneration
+        try? await AudioSessionConfigurator.activate(category: .playback, mode: .spokenAudio, options: [.duckOthers])
+        guard generation == speechGeneration else { return }
 
         synthesizer.speak(utterance)
     }
 
     /// 停止语音播报
     public func stopSpeaking() {
+        speechGeneration &+= 1
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }

@@ -17,6 +17,8 @@ final class VoiceDialogueService: NSObject, ObservableObject {
     private let audioEngine = AVAudioEngine()
     private let synthesizer = AVSpeechSynthesizer()
     private var isTapInstalled = false
+    /// 激活会话是异步的：期间可能被 stopListening 打断，用它判断这次开麦是否已作废
+    private var listeningGeneration = 0
 
     @Published public var isListening = false
     @Published public var isSpeaking = false
@@ -56,7 +58,7 @@ final class VoiceDialogueService: NSObject, ObservableObject {
     }
 
     /// 开始离线录音与语音识别
-    public func startListening() throws {
+    public func startListening() async throws {
         // 与语音备忘录互斥：录制中不抢占麦克风；回放中先停止
         if VoiceMemoAudioService.shared.isRecording {
             throw VoiceError.memoRecordingInProgress
@@ -72,9 +74,14 @@ final class VoiceDialogueService: NSObject, ObservableObject {
             throw VoiceError.recognizerUnavailable
         }
 
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        let generation = listeningGeneration
+        try await AudioSessionConfigurator.activate(
+            category: .playAndRecord,
+            mode: .measurement,
+            options: [.duckOthers, .defaultToSpeaker],
+            activationOptions: .notifyOthersOnDeactivation
+        )
+        guard generation == listeningGeneration else { return }
 
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         guard let recognitionRequest = recognitionRequest else {
@@ -138,6 +145,7 @@ final class VoiceDialogueService: NSObject, ObservableObject {
 
     /// 停止录音
     public func stopListening() {
+        listeningGeneration &+= 1
         if audioEngine.isRunning {
             audioEngine.stop()
         }

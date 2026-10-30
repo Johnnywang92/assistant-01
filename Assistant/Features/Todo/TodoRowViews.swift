@@ -552,7 +552,7 @@ struct TodoRow: View {
                     if seniorManager.isSpeaking && seniorManager.currentSpeakingId == item.id.uuidString {
                         seniorManager.stopSpeaking()
                     } else {
-                        seniorManager.speakSenior(text: speechText, id: item.id.uuidString)
+                        Task { await seniorManager.speakSenior(text: speechText, id: item.id.uuidString) }
                         Haptic.light()
                     }
                 } label: {
