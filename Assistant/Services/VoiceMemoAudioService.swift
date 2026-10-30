@@ -168,10 +168,16 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
             if p.isPlaying {
                 p.pause()
                 isPlaying = false
+                playbackTime = p.currentTime
+                playbackTimer?.invalidate()
+                playbackTimer = nil
             } else {
                 activatePlaybackSession()
                 p.play()
                 isPlaying = true
+                playbackTime = p.currentTime
+                // 预加载只建 player 不建计时器：恢复播放必须在这里补上
+                startPlaybackTimer()
             }
             return
         }
@@ -195,14 +201,20 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
             playbackDuration = p.duration
             playbackTime = 0
             isPlaying = true
-            playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self, let p = self.player else { return }
-                    self.playbackTime = p.currentTime
-                }
-            }
+            startPlaybackTimer()
         } catch {
             errorMessage = L10n.choose("音频文件无法播放：\(error.localizedDescription)", "Cannot play audio file: \(error.localizedDescription)")
+        }
+    }
+
+    /// 进度计时器全局唯一：开始/恢复播放时重建，暂停与收尾时失效
+    private func startPlaybackTimer() {
+        playbackTimer?.invalidate()
+        playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let p = self.player else { return }
+                self.playbackTime = p.currentTime
+            }
         }
     }
 
@@ -230,7 +242,9 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
     }
 
     func skip(by delta: TimeInterval) {
-        seek(to: playbackTime + delta)
+        // 以 player 的实际播放位置为基准：playbackTime 最多滞后一个计时周期，
+        // 连续快进时会越跳越偏
+        seek(to: (player?.currentTime ?? playbackTime) + delta)
     }
 
     func stopPlayback() {
@@ -310,6 +324,9 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
             if self.isPlaying {
                 self.player?.pause()
                 self.isPlaying = false
+                // 被来电等中断时同时停表，恢复播放会重建
+                self.playbackTimer?.invalidate()
+                self.playbackTimer = nil
             }
         }
     }
