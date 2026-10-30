@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
@@ -492,24 +493,40 @@ struct DataMigrationView: View {
     private func executeBatchImport() {
         guard let service = migrationService ?? DataMigrationService(context: context) as DataMigrationService? else { return }
         do {
-            let count: Int
+            let imported: Int
             switch batchType {
             case .anniversary:
-                count = try service.batchImportAnniversaries(text: batchText)
-                batchResultNotice = "✅ 成功批量添加 \(count) 个纪念日/生日档案"
+                let report = try service.batchImportAnniversaries(text: batchText)
+                imported = report.imported
+                batchResultNotice = Self.batchImportNotice("批量添加", unit: "个纪念日/生日档案", report: report)
             case .password:
-                count = try service.batchImportPasswords(text: batchText)
-                batchResultNotice = "✅ 成功批量登记 \(count) 个账号密码凭据"
+                let report = try service.batchImportPasswords(text: batchText)
+                imported = report.imported
+                batchResultNotice = Self.batchImportNotice("批量登记", unit: "个账号密码凭据", report: report)
             case .todo:
-                count = try service.batchImportTodos(text: batchText)
+                let count = try service.batchImportTodos(text: batchText)
+                imported = count
                 batchResultNotice = "✅ 成功批量创建 \(count) 条待办事项"
             }
-            batchText = ""
-            Haptic.success()
+            // 有条目落库才清空输入；全部被跳过时保留原文，方便用户按回执改那一行
+            if imported > 0 { batchText = "" }
+            if imported > 0 { Haptic.success() } else { Haptic.error() }
         } catch {
             batchResultNotice = "❌ 导入失败：\(error.localizedDescription)"
             Haptic.error()
         }
+    }
+
+    private static func batchImportNotice(_ verb: String, unit: String, report: BatchImportReport) -> String {
+        var text = report.imported > 0
+            ? "✅ 成功\(verb) \(report.imported) \(unit)"
+            : "⚠️ 未导入任何记录"
+        if !report.skipped.isEmpty {
+            let shown = report.skipped.prefix(5).map { "第 \($0.line) 行：\($0.reason)" }.joined(separator: "；")
+            let tail = report.skipped.count > 5 ? "；…等 \(report.skipped.count) 行" : ""
+            text += "；跳过 \(report.skipped.count) 行（\(shown)\(tail)）"
+        }
+        return text
     }
 }
 

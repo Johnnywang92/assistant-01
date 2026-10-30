@@ -309,23 +309,15 @@ final class DataMigrationService {
     // MARK: - 外部纯文本 / CSV 批量导入
 
     /// 批量导入纪念日（格式：名称, 日期(yyyy-MM-dd), 分类(可选), 备注(可选)）
-    public func batchImportAnniversaries(text: String) throws -> Int {
-        let lines = text.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        var count = 0
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-
-        for line in lines {
-            let parts = line.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-            guard parts.count >= 2 else { continue }
-            let title = String(parts[0])
-            guard let date = formatter.date(from: String(parts[1])) else { continue }
-            let category = parts.count >= 3 && !parts[2].isEmpty ? String(parts[2]) : "纪念日"
-            let notes = parts.count >= 4 ? String(parts[3]) : nil
-
-            let item = AnniversaryItem(title: title, category: category, targetDate: date, notes: notes)
-            context.insert(item)
-            count += 1
+    public func batchImportAnniversaries(text: String) throws -> BatchImportReport {
+        let plan = BatchCSVImport.anniversaries(from: text)
+        for row in plan.rows {
+            context.insert(AnniversaryItem(
+                title: row.title,
+                category: row.category,
+                targetDate: row.date,
+                notes: row.notes
+            ))
         }
 
         do {
@@ -334,34 +326,30 @@ final class DataMigrationService {
             context.rollback()
             throw MigrationCryptoError.persistenceFailure
         }
-        return count
+        return BatchImportReport(imported: plan.rows.count, skipped: plan.skipped)
     }
 
-    /// 批量导入密码 CSV（兼容通用 CSV 格式：标题, 账号, 密码, 分类, 备注）
-    public func batchImportPasswords(text: String) throws -> Int {
-        let lines = text.components(separatedBy: .newlines).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        var count = 0
+    /// 批量导入密码 CSV（兼容通用 CSV 格式：服务名, 账号, 密码, 分类, 备注）
+    public func batchImportPasswords(text: String) throws -> BatchImportReport {
+        let plan = BatchCSVImport.passwords(from: text)
+        var imported = 0
+        var skipped = plan.skipped
 
-        for line in lines {
-            let parts = line.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-            guard parts.count >= 3 else { continue }
-            let title = String(parts[0])
-            let account = String(parts[1])
-            let password = String(parts[2])
-            let category = parts.count >= 4 && !parts[3].isEmpty ? String(parts[3]) : "日常账号"
-            let notes = parts.count >= 5 ? String(parts[4]) : nil
-
-            guard let encrypted = try? PasswordVaultCrypto.encrypt(password) else { continue }
-            let item = PasswordVaultItem(
-                title: title,
-                account: account,
+        for row in plan.rows {
+            guard let encrypted = try? PasswordVaultCrypto.encrypt(row.password) else {
+                skipped.append(.init(line: row.line, reason: "密码加密失败"))
+                continue
+            }
+            context.insert(PasswordVaultItem(
+                title: row.title,
+                account: row.account,
                 passwordEncrypted: encrypted,
-                category: category,
-                notes: notes
-            )
-            context.insert(item)
-            count += 1
+                category: row.category,
+                notes: row.notes
+            ))
+            imported += 1
         }
+        skipped.sort { $0.line < $1.line }
 
         do {
             try context.save()
@@ -369,7 +357,7 @@ final class DataMigrationService {
             context.rollback()
             throw MigrationCryptoError.persistenceFailure
         }
-        return count
+        return BatchImportReport(imported: imported, skipped: skipped)
     }
 
     /// 批量导入待办事项（每行一条）
