@@ -37,7 +37,7 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             .filter { !($0.pickupCode ?? "").isEmpty }
             .map(Self.entry(for:))
 
-        let todayExpense = Self.todayExpenseTotal(context: context)
+        let todayExpense = Self.todayExpenseTotal(context: context) ?? 0
         let todayPractice = Self.todayPracticeEntry(context: context)
 
         return WidgetSnapshot(
@@ -97,7 +97,9 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         )
     }
 
-    private static func todayExpenseTotal(context: ModelContext) -> Double {
+    /// 今日弹性支出合计。查询抛错返回 nil：调用方据此省略或提示，
+    /// 不能把「读失败」当成「今天没花钱」报给用户。
+    private static func todayExpenseTotal(context: ModelContext) -> Double? {
         // 只取今日窗口内的账单，避免全量历史支出记录物化到主线程
         let calendar = Calendar.current
         let dayStart = calendar.startOfDay(for: .now)
@@ -105,7 +107,7 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         let descriptor = FetchDescriptor<ExpenseRecord>(
             predicate: #Predicate { $0.date >= dayStart && $0.date < dayEnd }
         )
-        let records = (try? context.fetch(descriptor)) ?? []
+        guard let records = try? context.fetch(descriptor) else { return nil }
         return records
             .filter { !$0.isIncome }
             .reduce(0) { $0 + $1.amount }
@@ -368,14 +370,17 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             if result.isIncome {
                 return "已入账收入 \(amountText) 元：\(result.title)"
             }
-            let dayTotal = Self.todayExpenseTotal(context: context)
-            let dayText = String(format: dayTotal.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", dayTotal)
-            return "已记账 \(amountText) 元（\(result.category.displayName)），今日累计支出 \(dayText) 元"
+            return "已记账 \(amountText) 元（\(result.category.displayName)）" + Self.todayExpenseSuffix(context: context)
         }
         let totalText = String(format: totalExpense.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", totalExpense)
-        let dayTotal = Self.todayExpenseTotal(context: context)
-        let dayText = String(format: dayTotal.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", dayTotal)
-        return "已记账 \(results.count) 笔合计 \(totalText) 元（\(titles.joined(separator: "、"))），今日累计支出 \(dayText) 元"
+        return "已记账 \(results.count) 笔合计 \(totalText) 元（\(titles.joined(separator: "、"))）" + Self.todayExpenseSuffix(context: context)
+    }
+
+    /// 「今日累计支出」后缀；读账本失败时整段省略，不回退成 0 元。
+    private static func todayExpenseSuffix(context: ModelContext) -> String {
+        guard let total = todayExpenseTotal(context: context) else { return "" }
+        let text = String(format: total.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", total)
+        return "，今日累计支出 \(text) 元"
     }
 
     func handleQuickAddTodo(text: String) async -> String? {
@@ -416,11 +421,25 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
 
     func handleQueryBudget() async -> String {
         let context = Persistence.shared.mainContext
-        let dayTotal = Self.todayExpenseTotal(context: context)
+        guard let dayTotal = Self.todayExpenseTotal(context: context) else {
+            return "暂时读不到账本，算不出今天的安心花额度，稍后再问我一次吧。"
+        }
         let dayText = String(format: dayTotal.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.2f", dayTotal)
         let monthlyBudget = BudgetSettings.monthlyBudget
         if monthlyBudget > 0 {
-            let records = (try? context.fetch(FetchDescriptor<ExpenseRecord>())) ?? []
+            // 只取本月 + 昨日 + 本周一至今，避免全表物化到主线程
+            let window = ExpenseRecordWindow.budgetWindow()
+            let windowStart = window.start
+            let windowEnd = window.end
+            let descriptor = FetchDescriptor<ExpenseRecord>(
+                predicate: #Predicate { $0.date >= windowStart && $0.date < windowEnd }
+            )
+            let records: [ExpenseRecord]
+            do {
+                records = try context.fetch(descriptor)
+            } catch {
+                return "暂时读不到账本，算不出今天的安心花额度，稍后再问我一次吧。"
+            }
             let fixedMonthlyTotal = RecurringExpenseManager.shared.monthlyEstimatedTotal
             let input = SafeToSpendCalculator.inputFromRecords(
                 records: records,
