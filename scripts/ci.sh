@@ -14,6 +14,7 @@ MODE="${1:-all}"
 STEPS=(
   "偏好键覆盖闸门|python3 scripts/check_settings_keys.py"
   "圆角令牌闸门|python3 scripts/check_radius_tokens.py"
+  "备份口令字面量闸门|python3 scripts/check_backup_pin_literals.py"
   "AssistantCore 单元测试|cd Packages/AssistantCore && swift test"
 )
 if [ "$MODE" = "all" ]; then

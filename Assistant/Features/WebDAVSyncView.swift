@@ -31,6 +31,13 @@ struct WebDAVSyncView: View {
     @State private var showUploadPinSheet: Bool = false
     @State private var errorMessage: String?
 
+    @State private var showAutoSyncPINSheet: Bool = false
+    @State private var autoSyncPINInput: String = ""
+    @State private var autoSyncPINConfirm: String = ""
+    @State private var autoSyncPINError: String?
+    /// 用户是为了打开开关才来设口令，保存成功后要把开关拨回去
+    @State private var pendingAutoSyncEnable: Bool = false
+
     var body: some View {
         Form {
             // MARK: - 安全承诺与机制说明
@@ -43,7 +50,7 @@ struct WebDAVSyncView: View {
                         Text("端到端强加密备份")
                             .font(.subheadline.bold())
                     }
-                    Text("所有数据在上传前均在 iPhone 本地经过 PBKDF2（310,000轮）与 AES-256-GCM 随机盐加密封装。即使 NAS 或云盘开放公网访问，备份文件也是无法被破解的密文。")
+                    Text("所有数据在上传前均在 iPhone 本地经过 PBKDF2（310,000轮）与 AES-256-GCM 随机盐加密封装，即使 NAS 或云盘开放公网访问，文件本身也是无法被破解的密文。加密口令全部由你自己设置，App 与服务器都不保存明文副本；一旦忘记口令，对应的远端备份无法再解密。")
                         .font(.caption)
                         .foregroundStyle(AppColor.secondaryText)
                 }
@@ -98,10 +105,43 @@ struct WebDAVSyncView: View {
             Section(header: Text("备份与自动同步")) {
                 Toggle("启用后台静默自动备份", isOn: $autoSyncEnabled)
                     .onChange(of: autoSyncEnabled) { _, newValue in
+                        if newValue && !syncService.hasAutoSyncPIN {
+                            // 没有口令时后台什么都不会传，开关开了也是假的，所以先要口令
+                            autoSyncEnabled = false
+                            beginSettingAutoSyncPIN(enableOnSave: true)
+                            return
+                        }
                         var updated = syncService.config
                         updated.autoSyncEnabled = newValue
                         syncService.saveConfig(updated)
                     }
+
+                HStack {
+                    Text("自动备份口令")
+                    Spacer()
+                    Text(syncService.hasAutoSyncPIN ? "已设置（仅存本机钥匙串）" : "未设置")
+                        .font(.caption)
+                        .foregroundStyle(syncService.hasAutoSyncPIN ? AppColor.secondaryText : AppColor.danger)
+                    Button(syncService.hasAutoSyncPIN ? "更换" : "设置") {
+                        beginSettingAutoSyncPIN(enableOnSave: false)
+                    }
+                    .font(.caption.bold())
+                    .buttonStyle(.borderless)
+                }
+
+                if autoSyncEnabled && !syncService.hasAutoSyncPIN {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(AppColor.danger)
+                        Text("自动备份当前未生效：后台巡检不会上传没有口令保护的备份，请先设置自动备份口令。")
+                            .font(.caption)
+                            .foregroundStyle(AppColor.danger)
+                    }
+                }
+
+                Text("后台自动上传的每个文件都用这里设置的口令加密，口令只保存在本机钥匙串，App 内不保留其他副本。它与「立即打包并上传」时临时填写的口令互相独立；更换口令只影响之后的备份，已上传的文件仍需各自的旧口令。")
+                    .font(.caption2)
+                    .foregroundStyle(AppColor.secondaryText)
 
                 if let lastDate = syncService.config.lastSyncDate {
                     HStack {
@@ -244,6 +284,44 @@ struct WebDAVSyncView: View {
             }
             .presentationDetents([.medium])
         }
+        // MARK: - 自动备份口令设置弹窗
+        .sheet(isPresented: $showAutoSyncPINSheet) {
+            NavigationStack {
+                Form {
+                    Section(header: Text(pendingAutoSyncEnable ? "先为自动备份设置口令" : "自动备份口令")) {
+                        SecureField("请输入 8~64 位口令", text: $autoSyncPINInput)
+                            .textContentType(.newPassword)
+                        SecureField("再次输入确认", text: $autoSyncPINConfirm)
+                            .textContentType(.newPassword)
+                        Text("口令只写入本机钥匙串（不进备份、不同步 iCloud），App 内无法再次查看。后台自动备份的文件只能用它解密，忘记后无法恢复。")
+                            .font(.caption)
+                            .foregroundStyle(AppColor.secondaryText)
+                        if let message = autoSyncPINError {
+                            Text(message)
+                                .font(.caption)
+                                .foregroundStyle(AppColor.danger)
+                        }
+                    }
+
+                    Button {
+                        saveAutoSyncPIN()
+                    } label: {
+                        Text(pendingAutoSyncEnable ? "保存并启用自动备份" : "保存口令")
+                            .bold()
+                            .frame(maxWidth: .infinity)
+                    }
+                    .disabled(autoSyncPINInput.count < 8)
+                }
+                .navigationTitle("自动备份口令")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("取消") { cancelAutoSyncPINSheet() }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
         // MARK: - 下载并还原弹窗
         .sheet(item: $selectedItemForRestore) { item in
             NavigationStack {
@@ -335,6 +413,44 @@ struct WebDAVSyncView: View {
                 testResultText = error.localizedDescription
             }
             isTestingConnection = false
+        }
+    }
+
+    // MARK: - 自动备份口令
+
+    private func beginSettingAutoSyncPIN(enableOnSave: Bool) {
+        autoSyncPINInput = ""
+        autoSyncPINConfirm = ""
+        autoSyncPINError = nil
+        pendingAutoSyncEnable = enableOnSave
+        showAutoSyncPINSheet = true
+    }
+
+    private func cancelAutoSyncPINSheet() {
+        showAutoSyncPINSheet = false
+        pendingAutoSyncEnable = false
+    }
+
+    private func saveAutoSyncPIN() {
+        let pin = autoSyncPINInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let confirm = autoSyncPINConfirm.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard pin == confirm else {
+            autoSyncPINError = "两次输入的口令不一致"
+            return
+        }
+        do {
+            try syncService.setAutoSyncPIN(pin)
+        } catch BackupEnvelopeCrypto.BackupCryptoError.pinOutOfRange {
+            autoSyncPINError = "口令需为 \(BackupEnvelopeCrypto.pinMinLength)~\(BackupEnvelopeCrypto.pinMaxLength) 位字符"
+            return
+        } catch {
+            autoSyncPINError = "口令保存失败，请重试"
+            return
+        }
+        let shouldEnable = pendingAutoSyncEnable
+        cancelAutoSyncPINSheet()
+        if shouldEnable {
+            autoSyncEnabled = true
         }
     }
 

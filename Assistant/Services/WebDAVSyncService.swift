@@ -12,6 +12,7 @@ final class WebDAVSyncService: ObservableObject {
     private let configStorageKey = "webdav_sync_config_v1"
     private let keychainService = "com.yifanwang.assistant01.webdav"
     private let keychainAccount = "webdav_password"
+    private let keychainAutoSyncPINAccount = "auto_sync_pin"
 
     @Published private(set) var config: WebDAVConfig
     @Published private(set) var isSyncing: Bool = false
@@ -34,16 +35,36 @@ final class WebDAVSyncService: ObservableObject {
             UserDefaults.standard.set(data, forKey: configStorageKey)
         }
         if let password, !password.isEmpty {
-            savePasswordToKeychain(password)
+            saveSecret(password, account: keychainAccount)
         }
     }
 
     public func getPassword() -> String? {
-        readPasswordFromKeychain()
+        readSecret(account: keychainAccount)
     }
 
     public var hasPassword: Bool {
-        !(readPasswordFromKeychain() ?? "").isEmpty
+        !(readSecret(account: keychainAccount) ?? "").isEmpty
+    }
+
+    // MARK: - 自动备份口令（用户自设，只存本机钥匙串）
+
+    /// 后台自动备份专用的用户口令。没有它后台就不上传，不存在任何内置兜底常量。
+    public var autoSyncPIN: String? {
+        let stored = readSecret(account: keychainAutoSyncPINAccount)
+        return (stored?.isEmpty ?? true) ? nil : stored
+    }
+
+    public var hasAutoSyncPIN: Bool {
+        autoSyncPIN != nil
+    }
+
+    /// 设置或更换自动备份口令。强度校验沿用备份封套的规则，校验失败时保留原口令。
+    /// 更换只影响之后的备份，已上传的文件仍需各自的旧口令。
+    public func setAutoSyncPIN(_ pin: String) throws {
+        let clean = pin.trimmingCharacters(in: .whitespacesAndNewlines)
+        try BackupEnvelopeCrypto.validatePin(clean)
+        saveSecret(clean, account: keychainAutoSyncPINAccount)
     }
 
     // MARK: - WebDAV 核心能力
@@ -239,11 +260,14 @@ final class WebDAVSyncService: ObservableObject {
             return
         }
 
-        // 使用用户本地设置的默认口令派生或安全 PIN
-        // 如果未设置独立备份密码，使用默认门禁安全盐
-        let defaultSyncPIN = "AssistantAutoSync2026!"
+        // 口令只认用户在设置页存进钥匙串的那一个。没设置就是「还没配好」，
+        // 静默跳过，绝不用内置常量兜底——那样上传的文件等于没加密。
+        guard let pin = autoSyncPIN else {
+            print("⚠️ [WebDAV] 后台自动备份未执行：尚未设置自动备份口令")
+            return
+        }
         do {
-            _ = try await uploadBackup(pin: defaultSyncPIN, hint: "后台自动静默同步至NAS", context: context)
+            _ = try await uploadBackup(pin: pin, hint: "后台自动静默同步至NAS", context: context)
             print("☁️ [WebDAV] 后台自动同步备份至 NAS 成功")
         } catch {
             print("⚠️ [WebDAV] 后台自动同步备份失败: \(error)")
@@ -252,25 +276,25 @@ final class WebDAVSyncService: ObservableObject {
 
     // MARK: - Keychain 密码底层存储
 
-    private func savePasswordToKeychain(_ value: String) {
+    private func saveSecret(_ value: String, account: String) {
         guard let data = value.data(using: .utf8) else { return }
-        deletePasswordFromKeychain()
+        deleteSecret(account: account)
 
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: keychainService,
-            kSecAttrAccount: keychainAccount,
+            kSecAttrAccount: account,
             kSecValueData: data,
             kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
         SecItemAdd(query as CFDictionary, nil)
     }
 
-    private func readPasswordFromKeychain() -> String? {
+    private func readSecret(account: String) -> String? {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: keychainService,
-            kSecAttrAccount: keychainAccount,
+            kSecAttrAccount: account,
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne
         ]
@@ -280,11 +304,11 @@ final class WebDAVSyncService: ObservableObject {
         return String(data: data, encoding: .utf8)
     }
 
-    private func deletePasswordFromKeychain() {
+    private func deleteSecret(account: String) {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: keychainService,
-            kSecAttrAccount: keychainAccount
+            kSecAttrAccount: account
         ]
         SecItemDelete(query as CFDictionary)
     }
