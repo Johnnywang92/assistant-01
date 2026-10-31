@@ -1092,7 +1092,7 @@ struct MedicationEditorSheet: View {
     // MARK: - 编解码辅助
 
     private static func formatAmount(_ value: Double) -> String {
-        value == value.rounded() ? String(Int(value)) : String(format: "%g", value)
+        AmountFormatter.format(value)
     }
 
     /// 从 "每次 1 片" / "每次1.5毫升" 等文本解析出用量与单位（用于编辑回填）

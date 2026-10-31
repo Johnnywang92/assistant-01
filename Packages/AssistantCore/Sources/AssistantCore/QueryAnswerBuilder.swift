@@ -203,14 +203,7 @@ public enum QueryAnswerBuilder {
 
     /// 金额展示：整数不带小数，小数保留两位并去尾零
     public static func formatAmount(_ value: Double) -> String {
-        let rounded = (value * 100).rounded() / 100
-        if rounded == rounded.rounded() {
-            return String(Int(rounded))
-        }
-        var text = String(format: "%.2f", rounded)
-        while text.hasSuffix("0") { text.removeLast() }
-        if text.hasSuffix(".") { text.removeLast() }
-        return text
+        AmountFormatter.format(value)
     }
 
     private static func displayTitle(_ line: ExpenseLine) -> String {

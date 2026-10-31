@@ -312,13 +312,7 @@ struct VoiceIntentProcessor {
     }
 
     private func formatAmount(_ amount: Double) -> String {
-        if amount.truncatingRemainder(dividingBy: 1) == 0 {
-            return String(format: "%.0f", amount)
-        } else if (amount * 10).truncatingRemainder(dividingBy: 1) == 0 {
-            return String(format: "%.1f", amount)
-        } else {
-            return String(format: "%.2f", amount)
-        }
+        AmountFormatter.format(amount)
     }
 
     private func relativeDayLabel(for date: Date, calendar: Calendar = .current) -> String {

@@ -186,11 +186,7 @@ public enum ExpenseCurrency: String, Codable, CaseIterable, Identifiable, Sendab
 
     /// 格式化原币金额（如 "JP¥1500"、"$25.50"）
     public func formatAmount(_ value: Double) -> String {
-        let clean = abs(value)
-        if abs(clean - clean.rounded()) < 0.005 {
-            return "\(symbol)\(String(format: "%.0f", clean))"
-        }
-        return "\(symbol)\(String(format: "%.2f", clean))"
+        AmountFormatter.format(value, currency: self)
     }
 
     /// 格式化汇率可读说明（针对日元/韩元自动补充百元/千元对照）

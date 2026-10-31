@@ -264,6 +264,6 @@ enum ShareInboxService {
     }
 
     private static func formatAmount(_ amount: Double) -> String {
-        amount == amount.rounded() ? String(format: "%.0f", amount) : String(format: "%.2f", amount)
+        AmountFormatter.format(amount)
     }
 }
