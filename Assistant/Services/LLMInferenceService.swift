@@ -635,6 +635,23 @@ public final class LLMInferenceService: ObservableObject {
         let custom = remoteOllamaModel.trimmingCharacters(in: .whitespacesAndNewlines)
         return custom.isEmpty ? LLMModelManager.shared.selectedPreset.ollamaModelTag : custom
     }
+
+    /// 远程后端的可尝试目标。`nil` 表示这条通道本轮不存在：未授权，或端点不是
+    /// https / 本机与局域网地址（`validatedEndpointURL` 刻意拒绝公网明文）。
+    var remoteOllamaTarget: RemoteOllamaTarget? {
+        guard remoteContextConsent, let endpointURL = validatedEndpointURL else { return nil }
+        return RemoteOllamaTarget(endpointURL: endpointURL, model: effectiveOllamaModel)
+    }
+
+    /// 流式增量落点：引擎在后台 actor 上逐 token 回调，状态必须回主 actor 写。
+    /// 两条编排路径用的是同一个闭包，收在这里免得各写一遍。
+    private static func partialOutputSink() -> @Sendable (String) async -> Void {
+        { partial in
+            await MainActor.run {
+                LLMInferenceService.shared.handlePartialOutput(partial)
+            }
+        }
+    }
     @Published public var isGenerating: Bool = false
     @Published public var currentOutput: String = ""
     @Published public var remoteConnectionStatus: String = "未连接"
@@ -865,62 +882,46 @@ public final class LLMInferenceService: ObservableObject {
         <|im_start|>assistant\(assistantStartSuffix)
         """
 
-        if modelReady {
-            isGenerating = true
-            currentOutput = ""
-            beginStreamingSession()
-            defer { isGenerating = false }
+        // 降级顺序只有一个真相：InferenceBackendID.attemptOrder（端侧优先，其次局域网 Ollama）。
+        // 两个入口对「空回复怎么办」的处理原本就不同，这里保持各自的原样，不借重构抹平。
+        for backend in InferenceBackendRegistry.attemptOrder {
+            let request = InferenceRequest(
+                prompt: chatMLPrompt,
+                modelURL: modelManager.localModelURL,
+                maxNewTokens: maxNewTokens,
+                grammar: backend.id.supportsGrammarConstraint ? grammarGBNF : nil,
+                remote: remoteOllamaTarget,
+                onPartialOutput: Self.partialOutputSink()
+            )
+            switch backend.id {
+            case .onDeviceGguf:
+                guard modelReady else { continue }
+                isGenerating = true
+                currentOutput = ""
+                beginStreamingSession()
+                defer { isGenerating = false }
 
-            localEngineStatus = isLocalModelLoaded ? "正在端侧推理 (Metal)..." : "正在加载 GGUF 模型..."
-            do {
-                let output = try await LlamaCppEngine.shared.generate(
-                    prompt: chatMLPrompt,
-                    modelURL: modelManager.localModelURL,
-                    maxNewTokens: maxNewTokens,
-                    grammar: grammarGBNF
-                ) { partial in
-                    await MainActor.run {
-                        LLMInferenceService.shared.handlePartialOutput(partial)
+                localEngineStatus = isLocalModelLoaded ? "正在端侧推理 (Metal)..." : "正在加载 GGUF 模型..."
+                do {
+                    let trimmed = try await backend.generate(request)
+                    isLocalModelLoaded = true
+                    localEngineStatus = "已就绪 (llama.cpp Metal)"
+                    if !trimmed.isEmpty {
+                        currentOutput = trimmed
+                        return trimmed
                     }
+                } catch {
+                    isLocalModelLoaded = false
+                    localEngineStatus = Self.describeLoadFailure(error)
                 }
-                isLocalModelLoaded = true
-                localEngineStatus = "已就绪 (llama.cpp Metal)"
-                let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty {
-                    currentOutput = trimmed
-                    return trimmed
-                }
-            } catch {
-                isLocalModelLoaded = false
-                localEngineStatus = Self.describeLoadFailure(error)
-            }
-        }
-
-        // 若启用了局域网 Ollama 联调，也支持作为备选
-        if remoteContextConsent,
-           let endpointURL = validatedEndpointURL {
-            let apiURL = endpointURL.appendingPathComponent("api/generate")
-            var request = URLRequest(url: apiURL)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.timeoutInterval = 15
-            let body: [String: Any] = [
-                "model": effectiveOllamaModel,
-                "prompt": chatMLPrompt,
-                "stream": false
-            ]
-            if let httpBody = try? JSONSerialization.data(withJSONObject: body) {
-                request.httpBody = httpBody
-                if let (data, response) = try? await URLSession.shared.data(for: request),
-                   (response as? HTTPURLResponse)?.statusCode == 200,
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let reply = json["response"] as? String {
-                    let trimmed = LlamaCppEngine.cleanChatMLOutput(reply)
-                    if !trimmed.isEmpty { return trimmed }
+            case .remoteOllama:
+                // 拿不到结果（未授权、端点无效、非 200、缺字段、网络错误）或空回复，都落到最后的 nil，
+                // 由调用方自己的规则兜底接手
+                if let reply = try? await backend.generate(request), !reply.isEmpty {
+                    return reply
                 }
             }
         }
-
         return nil
     }
 
@@ -1037,13 +1038,12 @@ public final class LLMInferenceService: ObservableObject {
         // 1. 优先检查本地 GGUF 模型文件是否已下载，执行真正的端侧 llama.cpp 推理
         let modelManager = LLMModelManager.shared
         let modelReady = await modelManager.validateModelStatusAndWait()
-        if modelReady {
-            let maxNewTokens = 256
-            let budget = await LlamaCppEngine.shared.promptTokenBudget(
-                at: modelManager.localModelURL,
-                reservingForGeneration: maxNewTokens
-            )
-            let prompt = buildPrompt(
+        let maxNewTokens = 256
+
+        // 对话路径的提示词只有一个装配处，差别只在要不要按预算裁剪：
+        // 端侧窗口受模型画像约束必须先裁；远程通道窗口充裕，历来按 `budgetTokens: nil` 全量装配。
+        func makePrompt(_ budget: Int?) -> String {
+            buildPrompt(
                 query: query,
                 context: context,
                 actionExecutionNote: sideEffectNote,
@@ -1051,60 +1051,78 @@ public final class LLMInferenceService: ObservableObject {
                 budgetTokens: budget,
                 includeLifeProfile: !isSmall
             )
-
-            if prompt.isEmpty {
-                // 必留块自身超预算，降级到规则引擎
-                return await VoiceIntentProcessor(context: context).process(query: query)
-            }
-
-            localEngineStatus = isLocalModelLoaded ? "正在端侧推理 (Metal)..." : "正在加载 GGUF 模型..."
-            do {
-                let output = try await LlamaCppEngine.shared.generate(
-                    prompt: prompt,
-                    modelURL: modelManager.localModelURL,
-                    maxNewTokens: maxNewTokens
-                ) { partial in
-                    await MainActor.run {
-                        LLMInferenceService.shared.handlePartialOutput(partial)
-                    }
-                }
-                isLocalModelLoaded = true
-                localEngineStatus = "已就绪 (llama.cpp Metal)"
-                let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmedOutput.isEmpty {
-                    currentOutput = trimmedOutput
-                    return trimmedOutput
-                }
-            } catch LlamaInferenceError.contextOverflow {
-                // 真分词后仍超预算，安全降级到规则引擎
-                localEngineStatus = "上下文超窗，已降级规则引擎"
-                return await VoiceIntentProcessor(context: context).process(query: query)
-            } catch {
-                isLocalModelLoaded = false
-                localEngineStatus = Self.describeLoadFailure(error)
-            }
-        } else {
-            localEngineStatus = "未下载本地 GGUF 模型"
         }
 
-        // 2. 若未下载本地模型（或本地加载失败），且用户明确授权启用了局域网 Ollama
-        if remoteContextConsent,
-           let endpointURL = validatedEndpointURL {
-            remoteConnectionStatus = "连接中"
-            if let result = await generateViaRemoteOllama(
-                query: query,
-                endpoint: endpointURL,
-                context: context,
-                actionExecutionNote: sideEffectNote,
-                history: history,
-                includeLifeProfile: !isSmall
-            ) {
-                remoteConnectionStatus = "已连接"
-                return result
+        // 1./2. 按注册表顺序尝试：端侧优先，其次局域网 Ollama。顺序真相在 Core。
+        for backend in InferenceBackendRegistry.attemptOrder {
+            switch backend.id {
+            case .onDeviceGguf:
+                guard modelReady else {
+                    localEngineStatus = "未下载本地 GGUF 模型"
+                    continue
+                }
+                let budget = backend.id.requiresTokenBudget
+                    ? await LlamaCppEngine.shared.promptTokenBudget(
+                        at: modelManager.localModelURL,
+                        reservingForGeneration: maxNewTokens
+                    )
+                    : nil
+                let prompt = makePrompt(budget)
+
+                if prompt.isEmpty {
+                    // 必留块自身超预算，降级到规则引擎
+                    return await VoiceIntentProcessor(context: context).process(query: query)
+                }
+
+                localEngineStatus = isLocalModelLoaded ? "正在端侧推理 (Metal)..." : "正在加载 GGUF 模型..."
+                let request = InferenceRequest(
+                    prompt: prompt,
+                    modelURL: modelManager.localModelURL,
+                    maxNewTokens: maxNewTokens,
+                    // 对话路径从不挂文法（挂文法的是投喂口判别），这里保持原样
+                    grammar: nil,
+                    remote: remoteOllamaTarget,
+                    onPartialOutput: Self.partialOutputSink()
+                )
+                do {
+                    let trimmedOutput = try await backend.generate(request)
+                    isLocalModelLoaded = true
+                    localEngineStatus = "已就绪 (llama.cpp Metal)"
+                    if !trimmedOutput.isEmpty {
+                        currentOutput = trimmedOutput
+                        return trimmedOutput
+                    }
+                } catch let error {
+                    if backend.id.stopsOnContextOverflow,
+                       case LlamaInferenceError.contextOverflow = error {
+                        // 真分词后仍超预算，安全降级到规则引擎
+                        localEngineStatus = "上下文超窗，已降级规则引擎"
+                        return await VoiceIntentProcessor(context: context).process(query: query)
+                    }
+                    isLocalModelLoaded = false
+                    localEngineStatus = Self.describeLoadFailure(error)
+                }
+            case .remoteOllama:
+                // 用户未授权或端点不合格：把原因写进状态，不发起请求
+                guard remoteOllamaTarget != nil else {
+                    remoteConnectionStatus = remoteContextConsent ? "请填写有效端点" : "未启用"
+                    continue
+                }
+                remoteConnectionStatus = "连接中"
+                let request = InferenceRequest(
+                    prompt: makePrompt(nil),
+                    modelURL: modelManager.localModelURL,
+                    maxNewTokens: maxNewTokens,
+                    grammar: nil,
+                    remote: remoteOllamaTarget,
+                    onPartialOutput: Self.partialOutputSink()
+                )
+                if let result = try? await backend.generate(request) {
+                    remoteConnectionStatus = "已连接"
+                    return result
+                }
+                remoteConnectionStatus = "连接失败，已使用本机规则"
             }
-            remoteConnectionStatus = "连接失败，已使用本机规则"
-        } else {
-            remoteConnectionStatus = remoteContextConsent ? "请填写有效端点" : "未启用"
         }
 
         // 3. 兜底：使用本机规则引擎
@@ -1121,48 +1139,5 @@ public final class LLMInferenceService: ObservableObject {
         } else {
             return "\(baseReply)\n\n⚠️ 端侧模型推理未就绪（\(localEngineStatus)），已切换至本机规则助手回答。"
         }
-    }
-
-    /// 局域网 Ollama 快速对接（方便电脑开启 `ollama run qwen3:4b` 或 `qwen3:1.7b` 时手机直接联调）
-    private func generateViaRemoteOllama(
-        query: String,
-        endpoint: URL,
-        context: ModelContext,
-        actionExecutionNote: String? = nil,
-        history: [(role: String, text: String)] = [],
-        includeLifeProfile: Bool = true
-    ) async -> String? {
-        let prompt = buildPrompt(
-            query: query,
-            context: context,
-            actionExecutionNote: actionExecutionNote,
-            history: history,
-            includeLifeProfile: includeLifeProfile
-        )
-        let apiURL = endpoint.appendingPathComponent("api/generate")
-        var request = URLRequest(url: apiURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 15
-
-        let body: [String: Any] = [
-            "model": effectiveOllamaModel,
-            "prompt": prompt,
-            "stream": false
-        ]
-        guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return nil }
-        request.httpBody = httpBody
-
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let reply = json["response"] as? String {
-                return LlamaCppEngine.cleanChatMLOutput(reply)
-            }
-        } catch {
-            return nil
-        }
-        return nil
     }
 }
