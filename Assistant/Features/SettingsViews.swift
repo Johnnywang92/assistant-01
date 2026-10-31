@@ -62,94 +62,8 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @AppStorage("user_preferred_title") private var userTitle: String = "你"
-    @AppStorage("floating_voice_enabled") private var floatingVoiceEnabled: Bool = true
-    @AppStorage("floating_voice_norm_x") private var normX: Double = 1.0
-    @AppStorage("floating_voice_norm_y") private var normY: Double = 0.68
-    @AppStorage("weather_alerts_enabled") private var weatherAlertsEnabled: Bool = true
-    @AppStorage("todo_notification_show_sensitive_details") private var showSensitiveTodoNotifications: Bool = true
-    @AppStorage("user_lifestyle_profile") private var lifestyleProfile: UserLifestyleProfile = .officeWorker
-    @AppStorage("user_off_work_minutes") private var offWorkMinutes: Int = 18 * 60
-    @AppStorage("context_adaptive_sorting_enabled") private var isAdaptiveSortingEnabled: Bool = true
-    @AppStorage(ClipboardIngestionService.autoIngestKey) private var autoIngest: Bool = true
-    @AppStorage("omnibox_clipboard_auto_dismiss_seconds") private var clipboardAutoDismissSeconds: Int = 3
-    @AppStorage("omnibox_auto_dismiss_seconds") private var autoDismissSeconds: Int = 3
-    @AppStorage("expense_monthly_budget") private var monthlyBudget: Double = 0
-    @ObservedObject private var tabManager = TabBarManager.shared
-    @ObservedObject private var seniorManager = SeniorModeManager.shared
-    @ObservedObject private var reportManager = PeriodicReportManager.shared
-    @ObservedObject private var langManager = LanguageManager.shared
-    @ObservedObject private var sleepScheduler = SleepReminderScheduler.shared
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.modelContext) private var context
-    @State private var selectedMode = AppSettings.currentMode
-    @State private var voiceReplyEnabled = AppSettings.voiceReplyEnabled
-    @State private var retentionPolicy = AppSettings.dialogueRetentionPolicy
-    @State private var savedDialogueCount: Int = 0
-    @State private var showingClearDialogueAlert: Bool = false
-    @State private var showingPermissionOnboarding: Bool = false
-    @State private var showingLifeEventTabAlert: Bool = false
-    @State private var showingBudgetSheet: Bool = false
-    @State private var lifeEventTabAlertMessage = ""
 
     var isSheet: Bool = false
-
-    private var offWorkTimeBinding: Binding<Date> {
-        Binding(
-            get: {
-                let calendar = Calendar.current
-                return calendar.date(bySettingHour: offWorkMinutes / 60,
-                                     minute: offWorkMinutes % 60,
-                                     second: 0,
-                                     of: .now) ?? .now
-            },
-            set: { newValue in
-                let calendar = Calendar.current
-                let hour = calendar.component(.hour, from: newValue)
-                let minute = calendar.component(.minute, from: newValue)
-                offWorkMinutes = hour * 60 + minute
-            }
-        )
-    }
-
-    /// 期望就寝时间（"HH:mm"）↔ DatePicker。00:30 表示次日凌晨。
-    private var desiredBedtimeBinding: Binding<Date> {
-        Binding(
-            get: {
-                let parts = (sleepScheduler.desiredBedtimeHHmm ?? "23:00")
-                    .split(separator: ":").compactMap { Int($0) }
-                let hour = parts.count == 2 ? parts[0] : 23
-                let minute = parts.count == 2 ? parts[1] : 0
-                return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: .now) ?? .now
-            },
-            set: { date in
-                let calendar = Calendar.current
-                sleepScheduler.desiredBedtimeHHmm = String(
-                    format: "%02d:%02d",
-                    calendar.component(.hour, from: date),
-                    calendar.component(.minute, from: date)
-                )
-                scheduleSleepResync()
-            }
-        )
-    }
-
-    /// 设置改动后重算今晚建议：DatePicker 滚轮会连续触发 set，防抖 0.4s 再同步
-    @State private var sleepResyncTask: Task<Void, Never>? = nil
-
-    private func scheduleSleepResync() {
-        sleepResyncTask?.cancel()
-        sleepResyncTask = Task {
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            guard !Task.isCancelled else { return }
-            await sleepScheduler.syncSleepReminders()
-        }
-    }
-
-    private func migrateLegacyOffWorkTimeIfNeeded() {
-        guard UserDefaults.standard.object(forKey: "user_off_work_minutes") == nil,
-              let legacyHour = UserDefaults.standard.object(forKey: "user_off_work_hour") as? Int else { return }
-        offWorkMinutes = min(max(legacyHour * 60, 0), 23 * 60 + 59)
-    }
 
     var body: some View {
         NavigationStack {
@@ -229,536 +143,58 @@ struct SettingsView: View {
                     Text("助手与称呼")
                 }
 
-                // MARK: - 应用语言切换 (支持跟随系统 / 简体中文 / English)
                 Section {
                     NavigationLink {
-                        AppLanguageSettingsView()
+                        SettingsAppearancePage()
                     } label: {
                         HStack {
-                            Label("语言 / Language", systemImage: "globe")
+                            Label("个性化与界面", systemImage: "paintpalette.fill")
                                 .foregroundStyle(.primary)
                             Spacer()
-                            Text(langManager.selectedLanguage.displayName)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    Picker("语言 / Language", selection: Binding(
-                        get: { langManager.selectedLanguage },
-                        set: { newLang in
-                            Haptic.selection()
-                            langManager.selectedLanguage = newLang
-                        }
-                    )) {
-                        ForEach(AppLanguage.allCases) { lang in
-                            Text(lang.displayName).tag(lang)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                } header: {
-                    Text("语言 / Language")
-                } footer: {
-                    Text(L10n.choose(
-                        "切换后界面、通知与语音助手将立即生效，无需重启 App。",
-                        "Interface, notifications, and voice assistant update immediately without restarting."
-                    ))
-                }
-
-                // MARK: - 核心权限健康度检查
-                Section {
-                    Button {
-                        showingPermissionOnboarding = true
-                    } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                                    .fill(PermissionManager.shared.areAllCorePermissionsReady ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
-                                    .frame(width: 36, height: 36)
-
-                                Image(systemName: PermissionManager.shared.areAllCorePermissionsReady ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                                    .foregroundStyle(PermissionManager.shared.areAllCorePermissionsReady ? Color.green : Color.orange)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("权限检查与配置")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.primary)
-                                Text("集中检查与一键开启所有系统功能权限")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            Text("\(PermissionManager.shared.readyCount) / \(PermissionManager.shared.totalCount) 项")
-                                .font(.caption.bold())
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(PermissionManager.shared.areAllCorePermissionsReady ? Color.green.opacity(0.12) : Color.orange.opacity(0.15)))
-                                .foregroundStyle(PermissionManager.shared.areAllCorePermissionsReady ? Color.green : Color.orange)
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                } header: {
-                    Text("系统权限")
-                } footer: {
-                    Text("局域网模型启用后，生活摘要会发送至指定端点。")
-                }
-
-                Section {
-                    NavigationLink {
-                        AppBackgroundSettingsView()
-                    } label: {
-                        HStack {
-                            Label("主题与背景", systemImage: "paintpalette.fill")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            Text(L10n.tr(AppBackgroundManager.shared.currentStyle.rawValue))
+                            Text("语言、主题、大字模式、语音")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
 
                     NavigationLink {
-                        TabBarCustomizationView()
+                        SettingsRemindersPage()
                     } label: {
                         HStack {
-                            Label("底部导航栏", systemImage: "rectangle.bottomthird.inset.filled")
+                            Label("提醒与报告", systemImage: "bell.badge.fill")
                                 .foregroundStyle(.primary)
                             Spacer()
-                            Text("\(TabBarManager.shared.activeTabs.count) / 5 个板块")
+                            Text("作息、睡前提醒、日报、月预算")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
 
-                    Toggle(isOn: Binding(
-                        get: { tabManager.isTabActive(.lifeEvents) },
-                        set: { enabled in
-                            if enabled {
-                                let result = tabManager.addTab(.lifeEvents)
-                                if !result.success {
-                                    lifeEventTabAlertMessage = L10n.tr(result.message ?? "无法开启人生大事入口")
-                                    showingLifeEventTabAlert = true
-                                }
-                            } else {
-                                let result = tabManager.removeTab(.lifeEvents)
-                                if !result.success {
-                                    lifeEventTabAlertMessage = L10n.tr(result.message ?? "无法关闭人生大事入口")
-                                    showingLifeEventTabAlert = true
-                                }
-                            }
-                        }
-                    )) {
-                        Label("人生大事入口", systemImage: "sparkles")
-                    }
-                    .tint(.pink)
-                } header: {
-                    Text("界面")
-                }
-
-                // MARK: - 长辈关怀模式 (大字与无障碍)
-                Section {
                     NavigationLink {
-                        SeniorModeSettingsView()
-                    } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                                    .fill(seniorManager.isSeniorModeEnabled ? Color.orange.opacity(0.2) : Color.orange.opacity(0.12))
-                                    .frame(width: 36, height: 36)
-
-                                Image(systemName: "figure.walk.motion")
-                                    .font(.title3)
-                                    .foregroundStyle(.orange)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text("大字关怀模式")
-                                        .font(.body.bold())
-                                        .foregroundStyle(.primary)
-
-                                    if seniorManager.isSeniorModeEnabled {
-                                        Text("已开启")
-                                            .font(.caption2.bold())
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Capsule().fill(Color.orange.opacity(0.2)))
-                                            .foregroundStyle(.orange)
-                                    }
-                                }
-
-                                if seniorManager.isSeniorModeEnabled {
-                                    Text(seniorManager.fontScale.title)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-
-                            Spacer()
-                        }
-                    }
-
-                    Toggle("开启大字模式", isOn: $seniorManager.isSeniorModeEnabled)
-                        .tint(.orange)
-                        .onChange(of: seniorManager.isSeniorModeEnabled) { _, val in
-                            if val {
-                                Haptic.success()
-                            } else {
-                                Haptic.warning()
-                            }
-                        }
-                } header: {
-                    Text("无障碍")
-                }
-
-                Section {
-                    Picker("助手模式", selection: $selectedMode) {
-                        ForEach(AssistantMode.allCases, id: \.self) { mode in
-                            Label(L10n.tr(mode.rawValue), systemImage: mode.icon).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .onChange(of: selectedMode) { _, newMode in
-                        AppSettings.currentMode = newMode
-                    }
-
-                    Text(L10n.tr(selectedMode.description))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } header: {
-                    Text("运行模式")
-                }
-
-                Section {
-                    Toggle("语音悬浮球", isOn: $floatingVoiceEnabled)
-
-                    Toggle("朗读语音回答", isOn: $voiceReplyEnabled)
-                        .onChange(of: voiceReplyEnabled) { _, val in
-                            AppSettings.voiceReplyEnabled = val
-                        }
-
-                    if floatingVoiceEnabled {
-                        Button {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                                normX = 1.0
-                                normY = 0.68
-                            }
-                            Haptic.light()
-                        } label: {
-                            HStack {
-                                Text("重置悬浮球位置")
-                                Spacer()
-                                Image(systemName: "arrow.counterclockwise")
-                            }
-                            .font(.subheadline)
-                        }
-                    }
-                } header: {
-                    Text("语音")
-                }
-
-                // MARK: - 对话记录与自动滚动留存 (7天 / 30天)
-                Section {
-                    Picker("记录保留时间", selection: $retentionPolicy) {
-                        ForEach(DialogueRetentionPolicy.allCases) { policy in
-                            Text(L10n.tr(policy.displayName)).tag(policy)
-                        }
-                    }
-                    .onChange(of: retentionPolicy) { _, newValue in
-                        AppSettings.dialogueRetentionPolicy = newValue
-                        DialogueHistoryManager.shared.cleanExpiredRecords(context: context)
-                        savedDialogueCount = DialogueHistoryManager.shared.countHistory(context: context)
-                        Haptic.light()
-                    }
-
-                    HStack {
-                        Text("本地对话")
-                        Spacer()
-                        Text("\(savedDialogueCount) 条")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if savedDialogueCount > 0 {
-                        Button(role: .destructive) {
-                            showingClearDialogueAlert = true
-                        } label: {
-                            HStack {
-                                Label("清空对话记录", systemImage: "trash")
-                                Spacer()
-                            }
-                        }
-                    }
-                } header: {
-                    Text("对话记录")
-                } footer: {
-                    Text("到期自动清理；待办和账单不受影响。")
-                }
-
-                // MARK: - 月预算（今日安心花）
-                Section {
-                    Button {
-                        showingBudgetSheet = true
-                        Haptic.light()
+                        SettingsAIDataPage()
                     } label: {
                         HStack {
-                            Text("月预算")
+                            Label("AI 与数据", systemImage: "brain.head.profile")
+                                .foregroundStyle(.primary)
                             Spacer()
-                            Text(monthlyBudget > 0
-                                 ? "¥\(String(format: "%.0f", monthlyBudget))"
-                                 : "未设置")
-                                .font(.subheadline)
-                                .foregroundStyle(monthlyBudget > 0 ? .secondary : Color.orange)
-                            Image(systemName: "chevron.right")
+                            Text("模型、投喂口、应用锁、备份")
                                 .font(.caption)
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .buttonStyle(.plain)
-                    .sheet(isPresented: $showingBudgetSheet) {
-                        BudgetEditSheet()
-                    }
-                } header: {
-                    Text("消费预算")
-                } footer: {
-                    Text("设置后每天在「智能记账」页顶部计算今日安心花额度，房租、订阅等固定支出自动扣除。")
-                }
 
-                // MARK: - 定期复盘报告 (日报 / 周报 / 月报 / 年报)
-                Section {
                     NavigationLink {
-                        PeriodicReportView()
-                    } label: {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                                    .fill(Color.blue.opacity(0.14))
-                                    .frame(width: 36, height: 36)
-
-                                Image(systemName: "chart.bar.doc.horizontal.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(.blue)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text("生活报告")
-                                        .font(.body.bold())
-                                        .foregroundStyle(.primary)
-
-                                    if reportManager.isDailyReportEnabled {
-                                        Text("日报已开启")
-                                            .font(.caption2.bold())
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Capsule().fill(Color.green.opacity(0.18)))
-                                            .foregroundStyle(.green)
-                                    }
-                                }
-
-                                Text("日报时间：\(reportManager.dailyTime.formatted(date: .omitted, time: .shortened))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-                        }
-                    }
-
-                    Toggle("每日日报提醒", isOn: $reportManager.isDailyReportEnabled)
-                        .tint(.green)
-                } header: {
-                    Text("定期报告")
-                }
-
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("作息习惯与身份")
-                            .font(.body)
-
-                        Picker("作息习惯与身份", selection: Binding(
-                            get: { lifestyleProfile },
-                            set: { newProfile in
-                                Haptic.selection()
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    lifestyleProfile = newProfile
-                                }
-                            }
-                        )) {
-                            ForEach(UserLifestyleProfile.allCases) { profile in
-                                Text(profile.shortTitle).tag(profile)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    .padding(.vertical, 4)
-
-                    if lifestyleProfile == .officeWorker {
-                        DatePicker("常规下班时间", selection: offWorkTimeBinding, displayedComponents: .hourAndMinute)
-                    }
-
-                    Toggle("情境动态排序", isOn: $isAdaptiveSortingEnabled)
-
-                    Toggle("天气预警与添衣提醒", isOn: $weatherAlertsEnabled)
-                    Toggle("在锁屏通知中显示待办详情", isOn: $showSensitiveTodoNotifications)
-                        .onChange(of: showSensitiveTodoNotifications) { _, _ in
-                            TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
-                        }
-                } header: {
-                    Text("生活习惯")
-                }
-
-                // MARK: - 睡前提醒
-                Section {
-                    Toggle("睡前提醒", isOn: Binding(
-                        get: { sleepScheduler.isEnabled },
-                        set: { newValue in
-                            sleepScheduler.isEnabled = newValue
-                            scheduleSleepResync()
-                        }
-                    ))
-                    .tint(.indigo)
-
-                    if sleepScheduler.isEnabled {
-                        DatePicker("期望就寝时间", selection: desiredBedtimeBinding, displayedComponents: .hourAndMinute)
-
-                        Picker("提前缓冲", selection: Binding(
-                            get: { sleepScheduler.windDownMinutes },
-                            set: { newValue in
-                                sleepScheduler.windDownMinutes = newValue
-                                scheduleSleepResync()
-                            }
-                        )) {
-                            Text("提前 15 分钟").tag(15)
-                            Text("提前 30 分钟").tag(30)
-                            Text("提前 45 分钟").tag(45)
-                        }
-
-                        Picker("睡眠目标", selection: Binding(
-                            get: { sleepScheduler.sleepGoalMinutes },
-                            set: { newValue in
-                                sleepScheduler.sleepGoalMinutes = newValue
-                                scheduleSleepResync()
-                            }
-                        )) {
-                            Text("6 小时").tag(360)
-                            Text("6.5 小时").tag(390)
-                            Text("7 小时").tag(420)
-                            Text("7.5 小时").tag(450)
-                            Text("8 小时").tag(480)
-                        }
-
-                        if sleepScheduler.notificationDenied {
-                            Button("打开系统设置开启通知") {
-                                if let url = URL(string: UIApplication.openSettingsURLString) {
-                                    UIApplication.shared.open(url)
-                                }
-                            }
-                            .foregroundStyle(AppColor.danger)
-                        }
-                    }
-                } header: {
-                    Text("睡前提醒")
-                } footer: {
-                    Text("""
-                    每晚按你的作息习惯与近一周睡眠计算建议就寝时刻：习惯晚睡就晚提醒，睡眠不足会适度提前，单晚调整不超过 45 分钟；提醒范围 21:30–01:30，超出不安排。\
-                    兜底提醒会预注册未来 2–3 晚，连续几晚不打开 App 将停止预注册。\
-                    工作日与周末按周五、周六夜区分，暂不识别调休；健康数据不足时按期望时间或默认 23:00，不会假装智能计算。
-                    """)
-                }
-
-                // MARK: - 万能投喂口
-                Section {
-                    Toggle("剪贴板检测自动打开投喂口", isOn: $autoIngest)
-                    Picker("剪贴板唤起后无操作自动退出", selection: $clipboardAutoDismissSeconds) {
-                        Text("不自动退出").tag(0)
-                        Text("3 秒（默认）").tag(3)
-                        Text("5 秒").tag(5)
-                        Text("8 秒").tag(8)
-                        Text("10 秒").tag(10)
-                    }
-                    Picker("确认执行后自动关闭弹窗", selection: $autoDismissSeconds) {
-                        Text("不自动关闭").tag(0)
-                        Text("1 秒").tag(1)
-                        Text("2 秒").tag(2)
-                        Text("3 秒（默认）").tag(3)
-                        Text("5 秒").tag(5)
-                    }
-                } header: {
-                    Text("万能投喂口")
-                } footer: {
-                    Text("检测到剪贴板有内容自动唤起投喂口时，若您无意添加到 App，无需任何操作，弹窗将在指定秒数后自动关闭退出；期间轻点页面查看或操作将保留内容并不再自动关闭。")
-                }
-
-                Section("AI 模型") {
-                    NavigationLink {
-                        LLMModelManagementView()
+                        SettingsSystemPage()
                     } label: {
                         HStack {
-                            Label("端侧大模型", systemImage: "brain.head.profile")
-                                .lineLimit(1)
+                            Label("系统", systemImage: "gearshape.2.fill")
+                                .foregroundStyle(.primary)
                             Spacer()
-                            Text(LLMModelManager.shared.isModelDownloaded
-                                 ? "\(LLMModelManager.shared.selectedPreset.shortName) · \(L10n.tr("已就绪"))"
-                                 : "\(LLMModelManager.shared.selectedPreset.shortName) · \(L10n.tr("可下载"))")
-                                .font(.caption2)
-                                .foregroundStyle(LLMModelManager.shared.isModelDownloaded ? .green : .secondary)
-                                .lineLimit(1)
+                            Text("权限、快捷方式、多端协同")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    NavigationLink {
-                        IntentThresholdCalibrationView()
-                    } label: {
-                        Label("判别阈值校准", systemImage: "slider.horizontal.3")
-                    }
-                }
-
-                Section("安全") {
-                    NavigationLink {
-                        AppLockSettingsView()
-                    } label: {
-                        Label("应用锁", systemImage: "lock.shield.fill")
-                    }
-                }
-
-                Section("快捷方式与多端协同") {
-                    NavigationLink {
-                        WatchIntegrationGuideView()
-                    } label: {
-                        Label("Apple Watch 腕上协同指南", systemImage: "applewatch")
-                    }
-                    NavigationLink {
-                        ShortcutsGuideView()
-                    } label: {
-                        Label("快捷方式指南", systemImage: "bolt.badge.clock.fill")
-                    }
-                    NavigationLink("短信同步向导") { SetupGuideView() }
-                }
-
-                Section("数据管理与云同步") {
-                    NavigationLink {
-                        WebDAVSyncView()
-                    } label: {
-                        Label("NAS 与私有云同步 (WebDAV)", systemImage: "externaldrive.badge.icloud")
-                    }
-
-                    NavigationLink {
-                        DataMigrationView()
-                    } label: {
-                        Label("备份、迁移与导入", systemImage: "arrow.triangle.2.circlepath.circle.fill")
-                    }
-                }
-
-                Section("系统信息") {
-                    LabeledContent("证书签名有效期", value: ExpiryReminder.displayDescription)
-                    NavigationLink("最近收到的原生消息") { RawMessagesView() }
                 }
             }
             .themedScrollContentBackground()
@@ -772,28 +208,6 @@ struct SettingsView: View {
                         Button("完成") { dismiss() }
                     }
                 }
-            }
-            .task {
-                migrateLegacyOffWorkTimeIfNeeded()
-                savedDialogueCount = DialogueHistoryManager.shared.countHistory(context: context)
-            }
-            .alert("清空本地对话记录", isPresented: $showingClearDialogueAlert) {
-                Button("取消", role: .cancel) {}
-                Button("确认清空", role: .destructive) {
-                    DialogueHistoryManager.shared.clearAll(context: context)
-                    savedDialogueCount = 0
-                    Haptic.success()
-                }
-            } message: {
-                Text("确定要彻底清空本地保存的所有历史对话消息吗？此操作不可撤销（已提取的待办事项和账单不会受到影响）。")
-            }
-            .alert("无法修改入口", isPresented: $showingLifeEventTabAlert) {
-                Button("知道了", role: .cancel) {}
-            } message: {
-                Text(lifeEventTabAlertMessage)
-            }
-            .sheet(isPresented: $showingPermissionOnboarding) {
-                PermissionOnboardingView()
             }
         }
     }

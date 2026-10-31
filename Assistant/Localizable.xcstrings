@@ -1,6 +1,142 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "个性化与界面" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Personalization & Appearance"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "个性化与界面"
+                }
+            }
+        }
+    },
+    "提醒与报告" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Reminders & Reports"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "提醒与报告"
+                }
+            }
+        }
+    },
+    "AI 与数据" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "AI & Data"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "AI 与数据"
+                }
+            }
+        }
+    },
+    "系统" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "System"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "系统"
+                }
+            }
+        }
+    },
+    "语言、主题、大字模式、语音" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Language, theme, large text, voice"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "语言、主题、大字模式、语音"
+                }
+            }
+        }
+    },
+    "作息、睡前提醒、日报、月预算" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Routine, bedtime, daily report, budget"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "作息、睡前提醒、日报、月预算"
+                }
+            }
+        }
+    },
+    "模型、投喂口、应用锁、备份" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Models, inbox, app lock, backup"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "模型、投喂口、应用锁、备份"
+                }
+            }
+        }
+    },
+    "权限、快捷方式、多端协同" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Permissions, shortcuts, multi-device"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "权限、快捷方式、多端协同"
+                }
+            }
+        }
+    },
     "" : {
 
     },
