@@ -19,6 +19,8 @@ extension CapabilityDescriptor {
             ruleName: "cap-storage-record",
             ruleBody: #""{" ws "\"capability\":\"storage.record\"" "," ws "\"name\":\"" text "\"" "," ws "\"location\":\"" text "\"" ("," ws "\"roomArea\":\"" text "\"")? ("," ws "\"isMedicine\":\"" is-income "\"")? "}""#
         ),
-        promptExample: #"物品收纳与常备药：{"capability":"storage.record","name":"物品或药品名","location":"详细存放位置","roomArea":"主卧|次卧|客厅|书房|玄关|厨房|阳台|储物间","isMedicine":"true|false"}"#
+        promptExample: #"物品收纳与常备药：{"capability":"storage.record","name":"物品或药品名","location":"详细存放位置","roomArea":"主卧|次卧|客厅|书房|玄关|厨房|阳台|储物间","isMedicine":"true|false"}"#,
+        intentToken: "B",
+        intentLegendName: "物品收纳"
     )
 }

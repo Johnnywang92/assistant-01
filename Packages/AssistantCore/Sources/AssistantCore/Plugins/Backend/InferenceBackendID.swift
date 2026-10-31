@@ -7,7 +7,7 @@ import Foundation
 /// 差异全埋在控制流里：端侧要先查 token 预算、超窗要单独降级到规则引擎、只有端侧挂得住
 /// GBNF 文法、远程通道失败就静默跳过。这些判断散在两个函数中，新增一个后端就得两处都改，
 /// 漏改不会编译报错，只会静默改变用户可观察的降级路径。写成后端自己的属性之后，
-/// 编排读属性，新增后端必须显式回答这三问。
+/// 编排读属性，新增后端必须显式回答这几问。
 public enum InferenceBackendID: String, CaseIterable, Sendable {
     /// 端侧 GGUF + llama.cpp（Metal 全层加速）
     case onDeviceGguf
@@ -42,7 +42,23 @@ public enum InferenceBackendID: String, CaseIterable, Sendable {
         }
     }
 
+    /// 能否读取候选 token 的 logits 做判别。意图判别层要的是**未经采样改写**的相对偏好：
+    /// 在下一 token 位置上对 16 个标签做 softmax。Ollama 的 `api/generate` 不返回
+    /// 指定候选集的 logits，这条通道上拿不到分布，判别只能跳过。
+    public var supportsLogitClassification: Bool {
+        switch self {
+        case .onDeviceGguf: return true
+        case .remoteOllama: return false
+        }
+    }
+
     /// 尝试顺序，即用户可观察的降级路径：端侧优先，其次局域网 Ollama，
     /// 两者都拿不到结果才由上层兜到本机规则引擎。改这里的顺序是改产品行为。
     public static let attemptOrder: [InferenceBackendID] = [.onDeviceGguf, .remoteOllama]
+
+    /// 判别层用哪条通道：按尝试顺序取第一个支持 logits 判别的后端。
+    /// 没有后端申报该能力时返回 nil，调用方降级到生成式路径——不是错误，是能力缺失。
+    public static var classificationBackend: InferenceBackendID? {
+        attemptOrder.first { $0.supportsLogitClassification }
+    }
 }

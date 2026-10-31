@@ -17,6 +17,8 @@ extension CapabilityDescriptor {
             ruleBody: #""{" ws "\"capability\":\"memo.inbox\"" "," ws "\"memo\":\"" text "\"" "}""#
         ),
         promptExample: #"收集箱：{"capability":"memo.inbox","memo":"原文摘录"}"#,
+        intentToken: "8",
+        intentLegendName: "收入收集箱",
         isCore: true
     )
 }

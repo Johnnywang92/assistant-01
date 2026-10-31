@@ -16,6 +16,8 @@ extension CapabilityDescriptor {
             ruleName: "cap-todo-cancel",
             ruleBody: #""{" ws "\"capability\":\"todo.cancel\"" "," ws "\"target\":\"" text "\"" "}""#
         ),
-        promptExample: #"取消待办：{"capability":"todo.cancel","target":"待取消事项匹配词"}"#
+        promptExample: #"取消待办：{"capability":"todo.cancel","target":"待取消事项匹配词"}"#,
+        intentToken: "5",
+        intentLegendName: "取消待办"
     )
 }

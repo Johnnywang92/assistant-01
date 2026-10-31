@@ -18,6 +18,8 @@ extension CapabilityDescriptor {
             ruleName: "cap-departure-add",
             ruleBody: #""{" ws "\"capability\":\"departure.add\"" "," ws "\"title\":\"" text "\"" ("," ws "\"scene\":\"" text "\"")? ("," ws "\"location\":\"" text "\"")? "}""#
         ),
-        promptExample: #"出门检查清单：{"capability":"departure.add","title":"随身物品名","scene":"工作通勤|运动健身|出差旅行|带娃出行|遛狗随行|雨雪出行|日常轻装","location":"放置位置可省"}"#
+        promptExample: #"出门检查清单：{"capability":"departure.add","title":"随身物品名","scene":"工作通勤|运动健身|出差旅行|带娃出行|遛狗随行|雨雪出行|日常轻装","location":"放置位置可省"}"#,
+        intentToken: "E",
+        intentLegendName: "出门清单"
     )
 }

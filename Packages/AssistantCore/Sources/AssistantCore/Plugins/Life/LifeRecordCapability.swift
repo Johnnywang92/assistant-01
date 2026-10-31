@@ -23,6 +23,8 @@ extension CapabilityDescriptor {
                 )
             ]
         ),
-        promptExample: #"家庭生活档案：{"capability":"life.record","domain":"pet|vehicle|child|skill|document|event","title":"事项或对象名","detail":"详情说明可省","value":"数值可省"}"#
+        promptExample: #"家庭生活档案：{"capability":"life.record","domain":"pet|vehicle|child|skill|document|event","title":"事项或对象名","detail":"详情说明可省","value":"数值可省"}"#,
+        intentToken: "F",
+        intentLegendName: "生活档案"
     )
 }

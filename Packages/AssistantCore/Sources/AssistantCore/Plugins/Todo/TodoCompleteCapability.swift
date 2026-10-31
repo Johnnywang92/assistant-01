@@ -14,6 +14,8 @@ extension CapabilityDescriptor {
             ruleName: "cap-todo-complete",
             ruleBody: #""{" ws "\"capability\":\"todo.complete\"" "," ws "\"target\":\"" text "\"" "}""#
         ),
-        promptExample: #"完成待办：{"capability":"todo.complete","target":"待完成事项匹配词"}"#
+        promptExample: #"完成待办：{"capability":"todo.complete","target":"待完成事项匹配词"}"#,
+        intentToken: "4",
+        intentLegendName: "完成待办"
     )
 }

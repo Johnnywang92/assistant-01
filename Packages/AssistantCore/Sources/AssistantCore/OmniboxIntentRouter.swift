@@ -52,25 +52,13 @@ public enum OmniboxIntentLabel: String, CaseIterable, Sendable {
     }
 
     /// 中文释义，仅用于构造提示词与调试展示。
+    ///
+    /// 真相在描述符的 `intentLegendName`，不在这里：图例名与面板名刻意分开
+    /// （面板叫「待办」，图例必须写「新建待办」才不会和「修改待办」混）。
+    /// 查不到描述符属于契约破损（`CapabilityRegistry.validate()` 会报这条），
+    /// 退回 rawValue 只保证提示词不缺行，不保证模型判得对。
     public var displayName: String {
-        switch self {
-        case .expenseCreate: return "记账"
-        case .expenseUpdate: return "修改账目"
-        case .todoCreate: return "新建待办"
-        case .todoUpdate: return "修改待办"
-        case .todoComplete: return "完成待办"
-        case .todoCancel: return "取消待办"
-        case .reminderSnooze: return "推迟提醒"
-        case .queryLookup: return "查询事项"
-        case .memoInbox: return "收入收集箱"
-        case .foodRecord: return "记录饮食"
-        case .waterRecord: return "记录饮水"
-        case .storageRecord: return "物品收纳"
-        case .habitLog: return "习惯与服药打卡"
-        case .anniversaryCreate: return "纪念日与到期"
-        case .departureAdd: return "出门清单"
-        case .lifeRecord: return "生活档案"
-        }
+        CapabilityRegistry.descriptor(intentToken: rawValue)?.intentLegendName ?? rawValue
     }
 
     /// 标签集在提示词里的一行说明。

@@ -19,17 +19,31 @@ final class BackendContractTests: XCTestCase {
         XCTAssertEqual(Set(InferenceBackendID.attemptOrder), Set(InferenceBackendID.allCases))
     }
 
-    // MARK: - 能力位：编排层读的就是这三项
+    // MARK: - 能力位：编排层读的就是这四项
 
     func testCapabilityFlagsMatchDocumentedBehavior() {
-        // 端侧：要预算、挂文法、超窗即停
+        // 端侧：要预算、挂文法、超窗即停、能读候选 logits
         XCTAssertTrue(InferenceBackendID.onDeviceGguf.requiresTokenBudget)
         XCTAssertTrue(InferenceBackendID.onDeviceGguf.supportsGrammarConstraint)
         XCTAssertTrue(InferenceBackendID.onDeviceGguf.stopsOnContextOverflow)
-        // 远程：窗口充裕不裁剪、无文法入口、失败就跳过下一个后端
+        XCTAssertTrue(InferenceBackendID.onDeviceGguf.supportsLogitClassification)
+        // 远程：窗口充裕不裁剪、无文法入口、失败就跳过下一个后端、拿不到 logits
         XCTAssertFalse(InferenceBackendID.remoteOllama.requiresTokenBudget)
         XCTAssertFalse(InferenceBackendID.remoteOllama.supportsGrammarConstraint)
         XCTAssertFalse(InferenceBackendID.remoteOllama.stopsOnContextOverflow)
+        XCTAssertFalse(InferenceBackendID.remoteOllama.supportsLogitClassification)
+    }
+
+    func testClassificationBackendIsResolvedByCapabilityNotHardwired() {
+        // 判别层的通道由能力位选出来，App 侧不再直接引用引擎单例；
+        // 这条断言就是那个「选出来的结果」，改成远程等于把判别层下线。
+        XCTAssertEqual(InferenceBackendID.classificationBackend, .onDeviceGguf)
+    }
+
+    func testAtLeastOneBackendCanClassify() {
+        // 没有后端申报判别时，判别层的唯一出路是跳过（调用方降级到生成式路径）。
+        // 全后端都不支持 = 意图路由整条静默下线，属于契约破损而不是可接受状态。
+        XCTAssertTrue(InferenceBackendID.attemptOrder.contains { $0.supportsLogitClassification })
     }
 
     func testUnsupportedGrammarNeverImpliesBudgetFree() {

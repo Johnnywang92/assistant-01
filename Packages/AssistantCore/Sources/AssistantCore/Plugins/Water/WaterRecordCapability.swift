@@ -26,6 +26,8 @@ extension CapabilityDescriptor {
                 )
             ]
         ),
-        promptExample: #"饮水记录：{"capability":"water.record","beverageType":"白开水|纯茶|黑咖啡|拿铁|牛奶|奶茶|含糖饮料|苏打水","volumeML":"毫升数字","customName":"饮品名可省"}"#
+        promptExample: #"饮水记录：{"capability":"water.record","beverageType":"白开水|纯茶|黑咖啡|拿铁|牛奶|奶茶|含糖饮料|苏打水","volumeML":"毫升数字","customName":"饮品名可省"}"#,
+        intentToken: "A",
+        intentLegendName: "记录饮水"
     )
 }

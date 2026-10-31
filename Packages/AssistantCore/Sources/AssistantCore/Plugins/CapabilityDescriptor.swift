@@ -95,6 +95,12 @@ public struct CapabilityDescriptor: Sendable {
     public let surfaces: Set<CapabilitySurface>
     public let grammar: GrammarFragment?
     public let promptExample: String
+    /// 判别层的单字符标签（`OmniboxIntentLabel.rawValue`）。能力参与「16 选 1」意图判别，
+    /// 靠这个 token 表达；它一旦被写入历史反馈记录就不再能改（`OmniboxJudgmentFeedback` 存原值）。
+    public let intentToken: String
+    /// 判别提示词图例里该标签的释义。与 `displayName` 刻意分开：面板叫「待办」，
+    /// 而判别图例必须写成「新建待办」才不会和「修改待办」混淆。
+    public let intentLegendName: String
     /// 核心能力（收集箱兜底、只读查询），不建议被用户禁用
     public let isCore: Bool
 
@@ -109,6 +115,8 @@ public struct CapabilityDescriptor: Sendable {
         surfaces: Set<CapabilitySurface> = [.model, .rules, .ui],
         grammar: GrammarFragment?,
         promptExample: String,
+        intentToken: String,
+        intentLegendName: String,
         isCore: Bool = false
     ) {
         self.id = id
@@ -121,6 +129,8 @@ public struct CapabilityDescriptor: Sendable {
         self.surfaces = surfaces
         self.grammar = grammar
         self.promptExample = promptExample
+        self.intentToken = intentToken
+        self.intentLegendName = intentLegendName
         self.isCore = isCore
     }
 

@@ -16,6 +16,8 @@ extension CapabilityDescriptor {
             ruleBody: #""{" ws "\"capability\":\"query.lookup\"" "," ws "\"target\":\"" text "\"" "}""#
         ),
         promptExample: #"查询事项：{"capability":"query.lookup","target":"查询关键词或完整问句（如「护照放哪了」「上周花了多少」「今天有什么安排」）"}"#,
+        intentToken: "7",
+        intentLegendName: "查询事项",
         isCore: true
     )
 }

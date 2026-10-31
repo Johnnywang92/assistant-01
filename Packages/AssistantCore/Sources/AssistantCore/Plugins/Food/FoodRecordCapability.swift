@@ -24,6 +24,8 @@ extension CapabilityDescriptor {
                 .init(name: "cap-food-meal-slot", body: #""早餐" | "午餐" | "晚餐" | "加餐""#)
             ]
         ),
-        promptExample: #"饮食记录：{"capability":"food.record","foodName":"食物名","mealSlot":"早餐|午餐|晚餐|加餐","calories":"预估千卡可省"}"#
+        promptExample: #"饮食记录：{"capability":"food.record","foodName":"食物名","mealSlot":"早餐|午餐|晚餐|加餐","calories":"预估千卡可省"}"#,
+        intentToken: "9",
+        intentLegendName: "记录饮食"
     )
 }

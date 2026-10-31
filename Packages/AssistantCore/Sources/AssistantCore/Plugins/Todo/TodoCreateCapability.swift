@@ -29,6 +29,8 @@ extension CapabilityDescriptor {
             ruleName: "cap-todo-create",
             ruleBody: #""{" ws "\"capability\":\"todo.create\"" "," ws "\"title\":\"" text "\"" ("," ws "\"detail\":\"" text "\"" ("," ws "\"dueAtDays\":\"" days "\"" ("," ws "\"dueAtTime\":\"" time "\"")?)?)? "}""#
         ),
-        promptExample: #"待办新建：{"capability":"todo.create","title":"待办标题","detail":"补充说明，可省","dueAtDays":"相对今天的天数，可省","dueAtTime":"HH:mm，可省"}"#
+        promptExample: #"待办新建：{"capability":"todo.create","title":"待办标题","detail":"补充说明，可省","dueAtDays":"相对今天的天数，可省","dueAtTime":"HH:mm，可省"}"#,
+        intentToken: "2",
+        intentLegendName: "新建待办"
     )
 }

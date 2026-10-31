@@ -18,6 +18,8 @@ extension CapabilityDescriptor {
                 .init(name: "cap-reminder-snooze-duration", body: #""10分钟" | "1小时" | "明早""#)
             ]
         ),
-        promptExample: #"推迟提醒：{"capability":"reminder.snooze","target":"提醒事项匹配词","duration":"10分钟|1小时|明早"}"#
+        promptExample: #"推迟提醒：{"capability":"reminder.snooze","target":"提醒事项匹配词","duration":"10分钟|1小时|明早"}"#,
+        intentToken: "6",
+        intentLegendName: "推迟提醒"
     )
 }

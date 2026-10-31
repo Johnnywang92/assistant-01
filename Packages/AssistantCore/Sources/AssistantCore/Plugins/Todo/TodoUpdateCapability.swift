@@ -21,6 +21,8 @@ extension CapabilityDescriptor {
             ruleName: "cap-todo-update",
             ruleBody: #""{" ws "\"capability\":\"todo.update\"" "," ws "\"target\":\"" text "\"" ("," ws "\"newTitle\":\"" text "\"" ("," ws "\"dueAtDays\":\"" days "\"")?)? "}""#
         ),
-        promptExample: #"修改待办：{"capability":"todo.update","target":"原待办匹配关键词","newTitle":"新标题（可省）","dueAtDays":"新截止相对天数（可省）"}"#
+        promptExample: #"修改待办：{"capability":"todo.update","target":"原待办匹配关键词","newTitle":"新标题（可省）","dueAtDays":"新截止相对天数（可省）"}"#,
+        intentToken: "3",
+        intentLegendName: "修改待办"
     )
 }

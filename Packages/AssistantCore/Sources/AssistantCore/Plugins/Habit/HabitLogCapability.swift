@@ -19,6 +19,8 @@ extension CapabilityDescriptor {
                 .init(name: "cap-habit-kind", body: #""habit" | "medication""#)
             ]
         ),
-        promptExample: #"习惯与服药打卡：{"capability":"habit.log","target":"习惯名或药品名","kind":"habit|medication","dosage":"剂量可省"}"#
+        promptExample: #"习惯与服药打卡：{"capability":"habit.log","target":"习惯名或药品名","kind":"habit|medication","dosage":"剂量可省"}"#,
+        intentToken: "C",
+        intentLegendName: "习惯与服药打卡"
     )
 }

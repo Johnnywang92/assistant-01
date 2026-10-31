@@ -20,6 +20,8 @@ extension CapabilityDescriptor {
             ruleName: "cap-expense-update",
             ruleBody: #""{" ws "\"capability\":\"expense.update\"" "," ws "\"target\":\"" text "\"" "," ws "\"newAmount\":\"" number "\"" "}""#
         ),
-        promptExample: #"修改账目：{"capability":"expense.update","target":"原账单事项名或关键词","newAmount":"修改后金额"}"#
+        promptExample: #"修改账目：{"capability":"expense.update","target":"原账单事项名或关键词","newAmount":"修改后金额"}"#,
+        intentToken: "1",
+        intentLegendName: "修改账目"
     )
 }

@@ -65,6 +65,12 @@ public enum CapabilityRegistry {
         descriptor(id: capability.rawValue)
     }
 
+    /// 判别层标签 → 描述符。`intentToken` 与 `OmniboxIntentLabel.rawValue` 一一对应，
+    /// 前者是声明、后者是运行时枚举；一致性由 `validate()` 双向检查。
+    public static func descriptor(intentToken: String) -> CapabilityDescriptor? {
+        builtIn.first { $0.intentToken == intentToken }
+    }
+
     // MARK: - 文法
 
     private final class GrammarCache: @unchecked Sendable {
@@ -137,10 +143,44 @@ public enum CapabilityRegistry {
         for capability in ActionCapability.allCases where descriptor(for: capability) == nil {
             issues.append("能力缺少描述符：\(capability.rawValue)")
         }
+        issues += intentContractIssues(builtIn)
         do {
             _ = try grammar(enabledIDs: nil)
         } catch {
             issues.append("文法合成失败：\(error)")
+        }
+        return issues
+    }
+
+    /// 判别标签与 `OmniboxIntentLabel` 之间的双向一致检查。
+    ///
+    /// 单独成函数（而不是散在 `validate()` 里）是为了能跑负例：漏声明一个 token、
+    /// 或声明一个枚举里没有的 token，后果都是判别空间静默少一类——模型照样输出，
+    /// 只是那一类永远选不中，线上看不出来。这类破损必须能被构造出来验。
+    static func intentContractIssues(_ descriptors: [CapabilityDescriptor]) -> [String] {
+        var issues: [String] = []
+        var seenTokens = Set<String>()
+        for descriptor in descriptors {
+            if descriptor.intentToken.isEmpty {
+                issues.append("\(descriptor.id) 未声明判别标签")
+            } else if !seenTokens.insert(descriptor.intentToken).inserted {
+                issues.append("判别标签重复声明：\(descriptor.intentToken)（\(descriptor.id)）")
+            }
+            if descriptor.intentLegendName.isEmpty {
+                issues.append("\(descriptor.id) 的判别标签 \(descriptor.intentToken) 没有图例释义")
+            }
+        }
+        for token in seenTokens where OmniboxIntentLabel(rawValue: token) == nil {
+            issues.append("判别标签 \(token) 在 OmniboxIntentLabel 里没有对应 case")
+        }
+        for label in OmniboxIntentLabel.allCases {
+            guard let descriptor = descriptors.first(where: { $0.intentToken == label.rawValue }) else {
+                issues.append("判别标签 \(label.rawValue) 没有描述符声明")
+                continue
+            }
+            if descriptor.actionCapability != label.capability {
+                issues.append("判别标签 \(label.rawValue) 的枚举指向 \(label.capability.rawValue)，描述符却声明为 \(descriptor.id)")
+            }
         }
         return issues
     }

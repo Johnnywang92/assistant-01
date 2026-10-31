@@ -242,6 +242,98 @@ final class OmniboxIntentRouterTests: XCTestCase {
         }
     }
 
+    // MARK: - 判别声明归属（标签与图例名来自描述符，不来自枚举）
+
+    /// 16 组「能力 id / 判别标签 / 图例名」，顺序即 `CapabilityRegistry.builtIn`。
+    /// 标签一旦写进历史反馈记录就不能改，图例名同时是提示词的一部分——两者都要逐字钉住。
+    private static let goldenIntentDeclarations: [(id: String, token: String, legend: String)] = [
+        ("expense.create", "0", "记账"),
+        ("expense.update", "1", "修改账目"),
+        ("todo.create", "2", "新建待办"),
+        ("todo.update", "3", "修改待办"),
+        ("todo.complete", "4", "完成待办"),
+        ("todo.cancel", "5", "取消待办"),
+        ("reminder.snooze", "6", "推迟提醒"),
+        ("query.lookup", "7", "查询事项"),
+        ("memo.inbox", "8", "收入收集箱"),
+        ("food.record", "9", "记录饮食"),
+        ("water.record", "A", "记录饮水"),
+        ("storage.record", "B", "物品收纳"),
+        ("habit.log", "C", "习惯与服药打卡"),
+        ("anniversary.create", "D", "纪念日与到期"),
+        ("departure.add", "E", "出门清单"),
+        ("life.record", "F", "生活档案")
+    ]
+
+    func testIntentDeclarationsMatchGoldenTriples() {
+        let actual = CapabilityRegistry.builtIn.map { ($0.id, $0.intentToken, $0.intentLegendName) }
+        XCTAssertEqual(actual.count, Self.goldenIntentDeclarations.count)
+        for (index, golden) in Self.goldenIntentDeclarations.enumerated() {
+            guard index < actual.count else { return XCTFail("注册表少了第 \(index) 位：\(golden.id)") }
+            XCTAssertEqual(actual[index].0, golden.id, "注册表顺序漂移（第 \(index) 位）")
+            XCTAssertEqual(actual[index].1, golden.token, "\(golden.id) 的判别标签变成 \(actual[index].1)")
+            XCTAssertEqual(actual[index].2, golden.legend, "\(golden.id) 的图例名变成 \(actual[index].2)")
+        }
+    }
+
+    /// 判别提示词的图例行。模型看到的 16 个选项全在这一行里，改一个字都是改判别看什么。
+    func testPromptLegendIsPinnedByteForByte() {
+        XCTAssertEqual(
+            OmniboxIntentLabel.promptLegend,
+            "0=记账 1=修改账目 2=新建待办 3=修改待办 4=完成待办 5=取消待办 6=推迟提醒 7=查询事项 8=收入收集箱 9=记录饮食 A=记录饮水 B=物品收纳 C=习惯与服药打卡 D=纪念日与到期 E=出门清单 F=生活档案"
+        )
+    }
+
+    func testLegendNameIsSplitFromPanelNameOnlyWhereDocumented() {
+        // 面板叫「待办」，图例必须写「新建待办」才不与「修改待办」混淆；
+        // 收集箱与习惯同理。除这三处外两者一致，多一处少一处都要被这条测试抓到。
+        let split = Set(CapabilityRegistry.builtIn.filter { $0.displayName != $0.intentLegendName }.map(\.id))
+        XCTAssertEqual(split, ["todo.create", "memo.inbox", "habit.log"])
+
+        XCTAssertEqual(OmniboxIntentLabel.todoCreate.displayName, "新建待办")
+        XCTAssertEqual(OmniboxIntentLabel.memoInbox.displayName, "收入收集箱")
+        XCTAssertEqual(OmniboxIntentLabel.habitLog.displayName, "习惯与服药打卡")
+        XCTAssertEqual(OmniboxIntentLabel.expenseCreate.displayName, "记账")
+    }
+
+    func testIntentContractRejectsMissingDuplicatedAndUnmappedTokens() {
+        // 正例：真实注册表干净。
+        XCTAssertEqual(CapabilityRegistry.intentContractIssues(CapabilityRegistry.builtIn), [])
+
+        let base = CapabilityRegistry.builtIn[0]
+
+        // 漏声明标签 → 判别空间静默少一类，线上只表现为「这类输入判不出来」。
+        var silent = CapabilityRegistry.builtIn
+        silent[0] = rewriting(base, token: "", legend: base.intentLegendName)
+        XCTAssertTrue(
+            CapabilityRegistry.intentContractIssues(silent).contains { $0.contains("未声明判别标签") },
+            "漏声明标签必须被抓到"
+        )
+
+        // 两个能力抢同一标签 → 其中一个永远选不中。
+        let duplicated = CapabilityRegistry.builtIn + [rewriting(base, token: "1", legend: "重复标签")]
+        XCTAssertTrue(
+            CapabilityRegistry.intentContractIssues(duplicated).contains { $0.contains("判别标签重复声明") },
+            "标签重复必须被抓到"
+        )
+
+        // 声明了枚举里没有的标签 → 提示词教模型输出一个分布里不存在的选项。
+        let orphan = Array(CapabilityRegistry.builtIn.dropFirst())
+            + [rewriting(base, token: "G", legend: base.intentLegendName)]
+        XCTAssertTrue(
+            CapabilityRegistry.intentContractIssues(orphan).contains { $0.contains("没有对应 case") },
+            "孤立标签必须被抓到"
+        )
+
+        // 图例名为空 → 提示词出现「0= 」半行，模型对该类无释义。
+        var nameless = CapabilityRegistry.builtIn
+        nameless[0] = rewriting(base, token: base.intentToken, legend: "")
+        XCTAssertTrue(
+            CapabilityRegistry.intentContractIssues(nameless).contains { $0.contains("没有图例释义") },
+            "空图例名必须被抓到"
+        )
+    }
+
     // MARK: - 置信度校准的实际后果
 
     func testLowProbabilityConfidenceWouldTriggerConfirmation() {
@@ -256,6 +348,30 @@ final class OmniboxIntentRouterTests: XCTestCase {
     }
 
     // MARK: - 辅助
+
+    /// 只改判别两个字段、其余原样带过。负例必须能被构造，否则「漏声明一个标签」这类
+    /// 静默破损只能靠人肉检查描述符文件。
+    private func rewriting(
+        _ descriptor: CapabilityDescriptor,
+        token: String,
+        legend: String
+    ) -> CapabilityDescriptor {
+        CapabilityDescriptor(
+            id: descriptor.id,
+            ownerModuleID: descriptor.ownerModuleID,
+            displayName: descriptor.displayName,
+            systemImage: descriptor.systemImage,
+            params: descriptor.params,
+            isDestructive: descriptor.isDestructive,
+            undoKinds: descriptor.undoKinds,
+            surfaces: descriptor.surfaces,
+            grammar: descriptor.grammar,
+            promptExample: descriptor.promptExample,
+            intentToken: token,
+            intentLegendName: legend,
+            isCore: descriptor.isCore
+        )
+    }
 
     private func equalLogits(over labels: [OmniboxIntentLabel]) -> [OmniboxIntentLabel: Double] {
         Dictionary(uniqueKeysWithValues: labels.map { ($0, 0.0) })
