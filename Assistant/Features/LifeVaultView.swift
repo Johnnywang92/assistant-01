@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 
@@ -24,62 +25,48 @@ public enum LifeVaultCardType: String, CaseIterable, Identifiable, Codable, Hash
 
     public var id: String { rawValue }
 
-    /// 模块标题
+    /// 穷尽 switch 转发到 Core 注册表键（同 C1 `LLMModelPreset` → `ModelRegistry` 形态）。
+    public var moduleID: ModuleID {
+        switch self {
+        case .lifeEvents: return .lifeEvents
+        case .documents: return .documents
+        case .passwords: return .passwords
+        case .voiceMemos: return .voiceMemos
+        case .anniversaries: return .anniversaries
+        case .painPoints: return .painPoints
+        case .skillPaths: return .skillPaths
+        case .storage: return .storage
+        case .learnedPlaces: return .learnedPlaces
+        case .foodCalorie: return .foodCalorie
+        case .healthData: return .healthData
+        case .habits: return .habits
+        case .pets: return .pets
+        case .children: return .children
+        case .vehicles: return .vehicles
+        case .departure: return .departure
+        }
+    }
+
+    private var descriptor: ModuleDescriptor {
+        guard let d = ModuleRegistry.descriptor(id: moduleID) else {
+            fatalError("ModuleRegistry 缺少 \(moduleID.rawValue) 的描述符")
+        }
+        return d
+    }
+
+    /// 模块标题（真相在 Core `ModuleDescriptor.vaultCard.title`）
     public var title: String {
-        switch self {
-        case .lifeEvents: return "人生大事筹备中心"
-        case .documents: return "重要证件"
-        case .passwords: return "密码库"
-        case .voiceMemos: return "语音备忘录"
-        case .anniversaries: return "纪念日"
-        case .painPoints: return "续费与物品临期"
-        case .skillPaths: return "技能学习路径"
-        case .storage: return "物品收纳"
-        case .learnedPlaces: return "常用地点"
-        case .foodCalorie: return "饮食热量估算"
-        case .healthData: return "健康数据"
-        case .habits: return "运动与药物保健品"
-        case .pets: return "宠物管家"
-        case .children: return "亲子育儿"
-        case .vehicles: return "爱车管理"
-        case .departure: return "出门清单"
-        }
+        descriptor.vaultCard?.title ?? rawValue
     }
 
-    /// 所属分类
+    /// 所属分类（真相在 Core `ModuleDescriptor.vaultCard.category`）
     public var category: String {
-        switch self {
-        case .lifeEvents: return "人生大事"
-        case .documents, .passwords, .voiceMemos: return "私密资料"
-        case .anniversaries, .painPoints: return "生活提醒"
-        case .skillPaths: return "学习成长"
-        case .storage, .learnedPlaces: return "物品与地点"
-        case .foodCalorie, .healthData, .habits: return "健康与习惯"
-        case .pets, .children: return "家庭与陪伴"
-        case .vehicles, .departure: return "出行"
-        }
+        descriptor.vaultCard?.category ?? ""
     }
 
-    /// SF Symbol 图标名称
+    /// SF Symbol 图标名称（真相在 Core `ModuleDescriptor.vaultCard.icon`）
     public var icon: String {
-        switch self {
-        case .lifeEvents: return "sparkles"
-        case .documents: return "person.text.rectangle.fill"
-        case .passwords: return "key.fill"
-        case .voiceMemos: return "mic.circle.fill"
-        case .anniversaries: return "gift.fill"
-        case .painPoints: return "shield.lefthalf.filled"
-        case .skillPaths: return "book.fill"
-        case .storage: return "archivebox.fill"
-        case .learnedPlaces: return "brain.head.profile"
-        case .foodCalorie: return "fork.knife.circle.fill"
-        case .healthData: return "heart.text.square.fill"
-        case .habits: return "figure.run"
-        case .pets: return "pawprint.fill"
-        case .children: return "figure.and.child.holdinghands"
-        case .vehicles: return "car.fill"
-        case .departure: return "bag.fill"
-        }
+        descriptor.vaultCard?.icon ?? "questionmark.circle"
     }
 
     /// 主题色彩
@@ -670,45 +657,10 @@ struct LifeVaultView: View {
 
     @ViewBuilder
     private func destinationView(for destination: LifeVaultCardType) -> some View {
-        Group {
-            switch destination {
-            case .lifeEvents:
-                LifeEventManagementView()
-            case .documents:
-                IDDocumentVaultView()
-            case .passwords:
-                PasswordVaultView()
-            case .storage:
-                ItemStorageVaultView()
-            case .vehicles:
-                VehicleManagementView()
-            case .departure:
-                DepartureChecklistView()
-            case .anniversaries:
-                AnniversaryManagementView()
-            case .habits:
-                HabitAndMedicationView()
-            case .voiceMemos:
-                VoiceMemoListView()
-            case .pets:
-                PetManagementView()
-            case .children:
-                ChildManagementView()
-            case .skillPaths:
-                SkillPathListView()
-            case .foodCalorie:
-                FoodPhotoCalorieView()
-            case .painPoints:
-                PainPointManagementView()
-            case .learnedPlaces:
-                LearnedPlacesView()
-            case .healthData:
-                HealthDataView()
+        ModuleViewRegistry.vaultView(for: destination.moduleID)
+            .onAppear {
+                cardManager.recordUsage(for: destination)
             }
-        }
-        .onAppear {
-            cardManager.recordUsage(for: destination)
-        }
     }
 
     private var foodStatusSummary: String {
@@ -863,45 +815,44 @@ struct LifeVaultView: View {
     private func cardInfo(for card: LifeVaultCardType) -> (title: String, status: String, isAlert: Bool) {
         switch card {
         case .lifeEvents:
-            return ("人生大事筹备中心", lifeEventsSummary, false)
+            return (card.title, lifeEventsSummary, false)
         case .documents:
-            return ("重要证件", expiringDocCount > 0 ? "\(expiringDocCount) 张即将到期" : "\(documents.count) 张证件", expiringDocCount > 0)
+            return (card.title, expiringDocCount > 0 ? "\(expiringDocCount) 张即将到期" : "\(documents.count) 张证件", expiringDocCount > 0)
         case .passwords:
-            return ("密码库", "\(passwords.count) 组账号", false)
+            return (card.title, "\(passwords.count) 组账号", false)
         case .voiceMemos:
-            return ("语音备忘录", "\(voiceMemos.count) 条录音", false)
+            return (card.title, "\(voiceMemos.count) 条录音", false)
         case .anniversaries:
-            return ("纪念日", nearestAnniversarySummary, false)
+            return (card.title, nearestAnniversarySummary, false)
         case .painPoints:
-            return ("续费与物品临期", "\(subscriptions.count) 项续费 · \(expiries.count) 项临期", false)
+            return (card.title, "\(subscriptions.count) 项续费 · \(expiries.count) 项临期", false)
         case .skillPaths:
-            return ("技能学习路径", skillPathsSummary, false)
+            return (card.title, skillPathsSummary, false)
         case .storage:
-            // 常备药归入收纳域（MedicineItem）：卡片摘要单独点出药品数，新增药品后立即可见
             let medicineSuffix = cabinetMedicineCount > 0 ? " · \(cabinetMedicineCount) 种药" : ""
-            return ("物品收纳", "\(storedItems.count) 件物品\(medicineSuffix)", false)
+            return (card.title, "\(storedItems.count) 件物品\(medicineSuffix)", false)
         case .learnedPlaces:
             let placeStatus = places.isEmpty ? "尚未记录地点" : places.map(\.name).prefix(2).joined(separator: "、") + (places.count > 2 ? " 等 \(places.count) 处" : "")
-            return ("常用地点", placeStatus, false)
+            return (card.title, placeStatus, false)
         case .foodCalorie:
-            return ("饮食热量估算", foodStatusSummary, false)
+            return (card.title, foodStatusSummary, false)
         case .healthData:
-            return ("健康数据", healthStatusSummary, false)
+            return (card.title, healthStatusSummary, false)
         case .habits:
-            return ("运动与药物保健品", "\(habits.count) 项运动 · \(activeMedCount) 项药物与保健品", false)
+            return (card.title, "\(habits.count) 项运动 · \(activeMedCount) 项药物与保健品", false)
         case .pets:
             let attentionSuffix = stats.needAttentionPets > 0 ? " · \(stats.needAttentionPets) 项待处理" : ""
             let petStatus = pets.isEmpty ? "未录入爱宠 · 每月驱虫/疫苗提醒" : "\(pets.count) 只毛孩子\(attentionSuffix)"
-            return ("宠物管家", petStatus, stats.needAttentionPets > 0)
+            return (card.title, petStatus, stats.needAttentionPets > 0)
         case .children:
             let vaccineSuffix = stats.pendingVaccineDoses > 0 ? " · \(stats.pendingVaccineDoses) 剂适龄疫苗" : ""
             let childStatus = children.isEmpty ? "未录入宝贝 · 国家免疫规划疫苗追踪" : "\(children.count) 位宝贝\(vaccineSuffix)"
-            return ("亲子育儿", childStatus, false)
+            return (card.title, childStatus, false)
         case .vehicles:
-            return ("爱车管理", vehicleStatusSummary, needCareVehicleCount > 0)
+            return (card.title, vehicleStatusSummary, needCareVehicleCount > 0)
         case .departure:
             let departureStatus = uncheckedDepartureCount > 0 ? "\(uncheckedDepartureCount) 件未确认" : "\(departureItems.count) 件随身物品"
-            return ("出门清单", departureStatus, uncheckedDepartureCount > 0)
+            return (card.title, departureStatus, uncheckedDepartureCount > 0)
         }
     }
 }

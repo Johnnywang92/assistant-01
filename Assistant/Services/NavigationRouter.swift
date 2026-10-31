@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import SwiftUI
 import UIKit
@@ -20,46 +21,41 @@ public final class NavigationRouter: ObservableObject {
 
         public var id: String { rawValue }
 
-        public var title: String {
+        /// 穷尽 switch 转发到 Core 注册表键（同 C1 `LLMModelPreset` → `ModelRegistry` 形态）。
+        /// 新增 AppTab case 漏接 ModuleID 要编译报错，不允许运行期查到别的模块。
+        public var moduleID: ModuleID {
             switch self {
-            case .todos: return L10n.tr("首页")
-            case .lifeEvents: return L10n.tr("人生大事")
-            case .departure: return L10n.tr("出门防丢")
-            case .expenses: return L10n.tr("记账")
-            case .vault: return L10n.tr("生活档案")
-            case .passwords: return L10n.tr("密码箱")
-            case .documents: return L10n.tr("证件卡包")
-            case .memos: return L10n.tr("语音备忘")
-            case .settings: return L10n.tr("设置")
+            case .todos: return .todos
+            case .lifeEvents: return .lifeEvents
+            case .departure: return .departure
+            case .expenses: return .expenses
+            case .vault: return .vault
+            case .passwords: return .passwords
+            case .documents: return .documents
+            case .memos: return .voiceMemos
+            case .settings: return .settings
             }
+        }
+
+        private var descriptor: ModuleDescriptor {
+            // 注册表缺描述符属于契约破损（ModuleRegistry.validate() 会报），
+            // fatalError 只在 DEBUG 自检漏网时触发， release 不会走到这里。
+            guard let d = ModuleRegistry.descriptor(id: moduleID) else {
+                fatalError("ModuleRegistry 缺少 \(moduleID.rawValue) 的描述符")
+            }
+            return d
+        }
+
+        public var title: String {
+            L10n.tr(descriptor.tabBar?.title ?? rawValue)
         }
 
         public var systemImage: String {
-            switch self {
-            case .todos: return "house.fill"
-            case .lifeEvents: return "sparkles"
-            case .departure: return "briefcase.fill"
-            case .expenses: return "yensign.circle.fill"
-            case .vault: return "folder.badge.person.crop"
-            case .passwords: return "key.fill"
-            case .documents: return "person.text.rectangle.fill"
-            case .memos: return "mic.circle.fill"
-            case .settings: return "gearshape.fill"
-            }
+            descriptor.tabBar?.systemImage ?? "questionmark.circle"
         }
 
         public var subtitle: String {
-            switch self {
-            case .todos: return L10n.tr("待办、快递取件与每日安排总览")
-            case .lifeEvents: return L10n.tr("订婚、婚礼、乔迁、升学宴等长期项目")
-            case .departure: return L10n.tr("随身物品清点、防丢检查与口诀")
-            case .expenses: return L10n.tr("日常收支账本与统计分析")
-            case .vault: return L10n.tr("纪念日、运动、药物保健品等生活全档案")
-            case .passwords: return L10n.tr("高强度账号密码离线保险箱")
-            case .documents: return L10n.tr("身份证、护照、驾驶证重要卡包")
-            case .memos: return L10n.tr("离线随身录音、倍速回放与转写提取待办")
-            case .settings: return L10n.tr("主题壁纸、单手悬浮球与偏好设置")
-            }
+            L10n.tr(descriptor.tabBar?.subtitle ?? "")
         }
     }
 

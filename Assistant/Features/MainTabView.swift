@@ -1,3 +1,4 @@
+import AssistantCore
 import Combine
 import SwiftData
 import SwiftUI
@@ -221,36 +222,7 @@ struct MainTabView: View {
 
     @ViewBuilder
     private func tabContentView(for tab: NavigationRouter.AppTab) -> some View {
-        Group {
-            switch tab {
-            case .todos:
-                TodoListView()
-            case .lifeEvents:
-                LifeEventManagementView()
-            case .departure:
-                NavigationStack {
-                    DepartureChecklistView()
-                }
-            case .expenses:
-                ExpenseTrackerView()
-            case .vault:
-                LifeVaultView()
-            case .passwords:
-                NavigationStack {
-                    PasswordVaultView()
-                }
-            case .documents:
-                NavigationStack {
-                    IDDocumentVaultView()
-                }
-            case .memos:
-                NavigationStack {
-                    VoiceMemoListView()
-                }
-            case .settings:
-                SettingsView(isSheet: false)
-            }
-        }
+        ModuleViewRegistry.tabView(for: tab.moduleID)
     }
 
     // MARK: - 动态角标徽标
