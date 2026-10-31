@@ -46,9 +46,9 @@ struct OmniboxIntentRouter {
         }
         // localModelURL 与 selectedPreset 是 @MainActor 隔离属性，必须回到主actor 取。
         let modelURL = await modelManager.localModelURL
-        let isQwen3 = await modelManager.selectedPreset.isQwen3Family
+        let chatDialect = await modelManager.selectedPreset.chatDialect
 
-        let prompt = Self.makePrompt(for: text, isQwen3Family: isQwen3)
+        let prompt = Self.makePrompt(for: text, chatDialect: chatDialect)
 
         // 分类不生成任何 token，预算只需容纳提示词本身。
         let budget = await LlamaCppEngine.shared.promptTokenBudget(at: modelURL, reservingForGeneration: 0)
@@ -139,7 +139,7 @@ struct OmniboxIntentRouter {
     ///刻意保持极短：判别是「16 选 1」，模型不需要被教怎么做，只需要被告知选项。
     /// 长提示词既拖慢推理，也会挤占分类路径本就更紧的上下文预算。
     /// 末尾的 `答案：` 让下一个 token 就是标签数字，读 logits 即可。
-    static func makePrompt(for text: String, isQwen3Family: Bool = false) -> String {
+    static func makePrompt(for text: String, chatDialect: ModelChatDialect = .plainChatML) -> String {
         let body = """
         你是意图分类器。只输出一个数字标签，不要解释。
         \(OmniboxIntentLabel.promptLegend)
@@ -148,7 +148,7 @@ struct OmniboxIntentRouter {
         输入：\(text)
         答案：
         """
-        let assistantSuffix = isQwen3Family ? "\n<think>\n\n</think>\n\n" : ""
+        let assistantSuffix = chatDialect.assistantStartSuffix
         return """
         <|im_start|>system
         你是个人助手的意图分类器。把用户输入归入一个标签，只输出该标签的数字，不输出任何其它内容。<|im_end|>

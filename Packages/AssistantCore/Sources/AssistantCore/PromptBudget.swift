@@ -71,6 +71,14 @@ public enum PromptBlockID: String, CaseIterable, Sendable {
 
     /// 必留块（dropRank == nil）
     public var isProtected: Bool { dropRank == nil }
+
+    /// 生活档案块在提示词中的固定输出顺序。与 `dropRank` 无关：
+    /// 输出顺序影响小模型注意力，丢弃顺序只影响预算裁剪。
+    /// App 侧按此清单装配，新增生活档案模块需同时登记 Provider 与这里。
+    public static let lifeProfileOrder: [PromptBlockID] = [
+        .parcel, .todo, .finance, .anniversary, .storage,
+        .habit, .vault, .family, .memo, .place
+    ]
 }
 
 /// 提示词的一个整块。装配时以块为单位保留或丢弃。

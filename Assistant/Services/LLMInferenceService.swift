@@ -83,12 +83,25 @@ actor LlamaCppEngine {
         #endif
     }
 
-    /// 端侧推理上下文窗口上限。KV 缓存按 token 线性增长（Qwen2.5-1.5B 约 28KB/token），
-    /// 4096 token ≈ 115MB，是安全上界；再高在低端机有 jetsam 风险。
-    static let maxContextTokens = 4096
-    /// 读不到模型训练窗时的兜底值（与旧实现写死的 2048 对齐，保证退化行为不变）
-    static let fallbackContextTokens = 2048
-    /// 为生成长度与 KV 对齐预留的 token 数
+    /// 引擎默认推理画像。
+    ///
+    /// 逐字等于 C3 之前无条件生效的那组常量，只有一种情况会用到它：模型文件名不在
+    /// `ModelRegistry` 里——即用户在「AI 本地大模型」页自行导入的 GGUF。注册过的模型一律
+    /// 用自己的画像，不再受这里影响。
+    static let defaultInferenceProfile = ModelInferenceProfile(
+        maxContextTokens: 4096, fallbackContextTokens: 2048,
+        topK: 40, topP: 0.90, temperature: 0.60
+    )
+
+    /// 按模型文件名取推理画像。
+    ///
+    /// 引擎握着的只有文件路径，`ModelRegistry.validate()` 已锁死「下载地址文件名 == 描述符
+    /// fileName」且「文件名不重复」，所以这里是唯一不会张冠李戴的入口。
+    static func inferenceProfile(forModelNamed fileName: String) -> ModelInferenceProfile {
+        ModelRegistry.descriptor(fileName: fileName)?.inference ?? defaultInferenceProfile
+    }
+
+    /// 为生成长度与 KV 对齐预留的 token 数。留在引擎：这是 ChatML 边界开销，与哪个模型无关。
     static let contextSafetyMargin = 32
 
     /// 由总窗口推算可用于提示词正文的预算。与 `generate` 内的校验共用这一处算法，
@@ -168,21 +181,28 @@ actor LlamaCppEngine {
         self.loadedModelPath = nil
     }
 
-    /// 申请多少上下文窗口：取模型训练窗与设备上限的较小值。
-    private static func requestedContextTokens(for model: OpaquePointer) -> Int {
+    /// 申请多少上下文窗口：取模型训练窗与该模型画像上限的较小值。
+    private static func requestedContextTokens(
+        for model: OpaquePointer,
+        profile: ModelInferenceProfile
+    ) -> Int {
         let train = Int(llama_model_n_ctx_train(model))
-        let resolved = train > 0 ? train : fallbackContextTokens
-        return max(512, min(resolved, maxContextTokens))
+        let resolved = train > 0 ? train : profile.fallbackContextTokens
+        return max(512, min(resolved, profile.maxContextTokens))
     }
 
     /// 供上层在**装配提示词之前**查询可用预算，避免先拼完超长文本再发现装不下。
     /// 模型加载失败时不报错：返回兜底预算，让调用方照常装配出一份可用的短提示词。
     func promptTokenBudget(at modelURL: URL, reservingForGeneration maxNewTokens: Int) -> Int {
-        let fallback = Self.promptBudget(contextTokens: Self.fallbackContextTokens, maxNewTokens: maxNewTokens)
+        let profile = Self.inferenceProfile(forModelNamed: modelURL.lastPathComponent)
+        let fallback = Self.promptBudget(contextTokens: profile.fallbackContextTokens, maxNewTokens: maxNewTokens)
         do {
             try ensureModelLoaded(at: modelURL)
             guard let model else { return fallback }
-            return Self.promptBudget(contextTokens: Self.requestedContextTokens(for: model), maxNewTokens: maxNewTokens)
+            return Self.promptBudget(
+                contextTokens: Self.requestedContextTokens(for: model, profile: profile),
+                maxNewTokens: maxNewTokens
+            )
         } catch {
             return fallback
         }
@@ -201,11 +221,12 @@ actor LlamaCppEngine {
         guard let model, let vocab else {
             throw LlamaInferenceError.modelLoadFailed(modelURL.lastPathComponent)
         }
+        let profile = Self.inferenceProfile(forModelNamed: modelURL.lastPathComponent)
 
         var ctxParams = llama_context_default_params()
-        // 窗口按模型训练窗取、封顶在 maxContextTokens。写死 2048 会让「12 段生活档案」
+        // 窗口按模型训练窗取、封顶在该模型画像的上限。写死 2048 会让「12 段生活档案」
         // 必然溢出，而溢出后的截断又会吃掉最该留的数据。
-        ctxParams.n_ctx = UInt32(Self.requestedContextTokens(for: model))
+        ctxParams.n_ctx = UInt32(Self.requestedContextTokens(for: model, profile: profile))
         ctxParams.n_batch = 512
         let cpuCount = ProcessInfo.processInfo.activeProcessorCount
         let threadCount = Int32(max(2, min(6, cpuCount - 1)))
@@ -317,9 +338,9 @@ actor LlamaCppEngine {
             }
         }
 
-        llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40))
-        llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.90, 1))
-        llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.60))
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_k(Int32(profile.topK)))
+        llama_sampler_chain_add(sampler, llama_sampler_init_top_p(Float(profile.topP), 1))
+        llama_sampler_chain_add(sampler, llama_sampler_init_temp(Float(profile.temperature)))
         llama_sampler_chain_add(sampler, llama_sampler_init_dist(UInt32.random(in: 1...UInt32.max)))
 
         // 4. 自回归解码循环（使用 UTF-8 字节缓冲避免中文多字节 BPE 拆字乱码）
@@ -441,7 +462,10 @@ actor LlamaCppEngine {
         var promptTokens = await tokenize(prompt)
         guard !promptTokens.isEmpty else { throw LlamaInferenceError.tokenizationFailed }
 
-        let maxCtx = Self.requestedContextTokens(for: model)
+        let maxCtx = Self.requestedContextTokens(
+            for: model,
+            profile: Self.inferenceProfile(forModelNamed: modelURL.lastPathComponent)
+        )
         let neededCtx = promptTokens.count + Self.contextSafetyMargin
         guard neededCtx <= maxCtx else {
             throw LlamaInferenceError.contextOverflow(
@@ -532,7 +556,8 @@ actor LlamaCppEngine {
     }
 
     func promptTokenBudget(at modelURL: URL, reservingForGeneration maxNewTokens: Int) -> Int {
-        Self.promptBudget(contextTokens: Self.fallbackContextTokens, maxNewTokens: maxNewTokens)
+        let profile = Self.inferenceProfile(forModelNamed: modelURL.lastPathComponent)
+        return Self.promptBudget(contextTokens: profile.fallbackContextTokens, maxNewTokens: maxNewTokens)
     }
 
     /// 未链接二进制时的桩实现：与 generate 一样抛 frameworkNotLinked，
@@ -705,9 +730,10 @@ public final class LLMInferenceService: ObservableObject {
     }
 
     /// 生活档案类段落：预算不足时按 `PromptBlockID.dropRank` 整块丢弃。
-    private static let lifeProfileBlockIDs: Set<PromptBlockID> = [
-        .parcel, .todo, .finance, .anniversary, .storage, .habit, .vault, .family, .memo, .place
-    ]
+    /// 输出顺序与成员清单由 Core 的 `PromptBlockID.lifeProfileOrder` 统一维护。
+    private static var lifeProfileBlockIDs: Set<PromptBlockID> {
+        Set(PromptBlockID.lifeProfileOrder)
+    }
 
     /// 提取用户全模块生活数据并构建 ChatML 提示词模板（覆盖快递、待办、记账、纪念日、收纳、用药习惯、订阅保质期、萌宠、育儿、爱车、证件到期、语音备忘与常去地点）
     ///
@@ -742,234 +768,7 @@ public final class LLMInferenceService: ObservableObject {
         blocks.append(PromptBlock(id: .persona, text: personaText))
 
         if includeLifeProfile {
-            // 1. 快递信息
-            let active = TodoStatus.active.rawValue
-            let parcelType = TodoType.parcel.rawValue
-            let parcels = (try? context.fetch(FetchDescriptor<TodoItem>(
-                predicate: #Predicate { $0.typeRaw == parcelType && $0.statusRaw == active }
-            ))) ?? []
-            let parcelText: String = parcels.isEmpty ? "暂无待取包裹" : parcels.prefix(6).map {
-                let code = $0.pickupCode ?? "无取件码"
-                let loc = $0.location ?? $0.station ?? "暂存点"
-                return "\($0.courier ?? "快递")（码：\(code)，在 \(loc)）"
-            }.joined(separator: "；")
-            blocks.append(PromptBlock(id: .parcel, text: "• 待取快递：\(parcelText)"))
-
-            // 2. 待办与活动日程
-            let todos = (try? context.fetch(FetchDescriptor<TodoItem>(
-                predicate: #Predicate { $0.typeRaw != parcelType && $0.statusRaw == active }
-            ))) ?? []
-            let todoText: String = todos.isEmpty ? "暂无未完成待办" : todos.prefix(6).map { item in
-                var parts = [item.title]
-                if let due = item.dueAt {
-                    parts.append(due.formatted(date: .abbreviated, time: .shortened))
-                }
-                if let loc = item.location, !loc.isEmpty {
-                    parts.append("@\(loc)")
-                }
-                return parts.joined(separator: " ")
-            }.joined(separator: "；")
-            blocks.append(PromptBlock(id: .todo, text: "• 日常待办与日程：\(todoText)"))
-
-            // 3. 记账开销与近期明细（细分今日、昨日、前天、本周、本月及带日期的逐笔明细）
-            let calendar = Calendar.current
-            let currentMonth = calendar.component(.month, from: .now)
-            let currentYear = calendar.component(.year, from: .now)
-            let twoDaysAgo = calendar.date(byAdding: .day, value: -2, to: .now) ?? .now
-            var todayExpense: Double = 0
-            var yesterdayExpense: Double = 0
-            var dayBeforeYesterdayExpense: Double = 0
-            var weekExpense: Double = 0
-            var monthExpense: Double = 0
-            var monthIncome: Double = 0
-            var categoryTotals: [String: Double] = [:]
-            let windowStart = min(
-                calendar.date(from: DateComponents(year: currentYear, month: currentMonth, day: 1)) ?? .now,
-                calendar.dateInterval(of: .weekOfYear, for: .now)?.start ?? .now,
-                calendar.startOfDay(for: twoDaysAgo)
-            )
-            let records = ((try? context.fetch(FetchDescriptor<ExpenseRecord>(
-                predicate: #Predicate { $0.date >= windowStart },
-                sortBy: [SortDescriptor(\.date, order: .reverse)]
-            ))) ?? [])
-
-            var recentExpenseDescriptor = FetchDescriptor<ExpenseRecord>(
-                predicate: #Predicate { !$0.isIncome },
-                sortBy: [SortDescriptor(\.date, order: .reverse)]
-            )
-            recentExpenseDescriptor.fetchLimit = 5
-            let recentExpenseRecords = (try? context.fetch(recentExpenseDescriptor)) ?? []
-
-            let formatAmt: (Double) -> String = { val in
-                if val.truncatingRemainder(dividingBy: 1) == 0 {
-                    return String(format: "%.0f", val)
-                } else if (val * 10).truncatingRemainder(dividingBy: 1) == 0 {
-                    return String(format: "%.1f", val)
-                } else {
-                    return String(format: "%.2f", val)
-                }
-            }
-            let relDayLabel: (Date) -> String = { d in
-                if calendar.isDateInToday(d) { return "今天" }
-                if calendar.isDateInYesterday(d) { return "昨天" }
-                if calendar.isDate(d, inSameDayAs: twoDaysAgo) { return "前天" }
-                return "\(calendar.component(.month, from: d))月\(calendar.component(.day, from: d))日"
-            }
-
-            for r in records {
-                let isThisMonth = calendar.component(.year, from: r.date) == currentYear &&
-                    calendar.component(.month, from: r.date) == currentMonth
-                if r.isIncome {
-                    if isThisMonth { monthIncome += r.amount }
-                } else {
-                    if calendar.isDateInToday(r.date) { todayExpense += r.amount }
-                    if calendar.isDateInYesterday(r.date) { yesterdayExpense += r.amount }
-                    if calendar.isDate(r.date, inSameDayAs: twoDaysAgo) { dayBeforeYesterdayExpense += r.amount }
-                    if calendar.isDate(r.date, equalTo: .now, toGranularity: .weekOfYear) { weekExpense += r.amount }
-                    if isThisMonth {
-                        monthExpense += r.amount
-                        categoryTotals[r.categoryRaw, default: 0] += r.amount
-                    }
-                }
-            }
-            let topCatText = categoryTotals.sorted { $0.value > $1.value }.prefix(3)
-                .map { "\($0.key) ¥\(formatAmt($0.value))" }
-                .joined(separator: "、")
-            let recentExpenseText = recentExpenseRecords
-                .map { "[\(relDayLabel($0.date))·\($0.categoryRaw)] \($0.title.isEmpty ? $0.categoryRaw : $0.title) ¥\(formatAmt($0.amount))" }
-                .joined(separator: "、")
-
-            let financeOverview: String = {
-                var parts: [String] = []
-                if todayExpense > 0 {
-                    parts.append("今天已消费 ¥\(formatAmt(todayExpense))")
-                } else if yesterdayExpense > 0 {
-                    parts.append("今天暂未产生消费，昨天消费了 ¥\(formatAmt(yesterdayExpense))")
-                } else {
-                    parts.append("今天与昨天暂未记账")
-                }
-                if todayExpense > 0 && yesterdayExpense > 0 {
-                    parts.append("昨天消费 ¥\(formatAmt(yesterdayExpense))")
-                }
-                if dayBeforeYesterdayExpense > 0 {
-                    parts.append("前天消费 ¥\(formatAmt(dayBeforeYesterdayExpense))")
-                }
-                parts.append("本周累计消费 ¥\(formatAmt(weekExpense))")
-                parts.append("本月累计消费 ¥\(formatAmt(monthExpense))（收入 ¥\(formatAmt(monthIncome))）")
-                return parts.joined(separator: "，")
-            }()
-            let financeDetails = "\(financeOverview)\(topCatText.isEmpty ? "" : "；主要分类：\(topCatText)")\(recentExpenseText.isEmpty ? "" : "；近期逐笔明细：\(recentExpenseText)")"
-            blocks.append(PromptBlock(id: .finance, text: "• 财务账本：\(financeDetails)"))
-
-            // 4. 纪念日与倒数日
-            let anniversaries = ((try? context.fetch(FetchDescriptor<AnniversaryItem>())) ?? [])
-                .map { ($0, $0.daysUntilNext) }
-                .sorted { $0.1 < $1.1 }
-            let anniText: String = anniversaries.isEmpty ? "无" : anniversaries.prefix(3).map {
-                "\($0.0.title)（还有 \($0.1) 天）"
-            }.joined(separator: "、")
-            blocks.append(PromptBlock(id: .anniversary, text: "• 纪念日倒数：\(anniText)"))
-
-            // 5. 物品收纳箱（优先匹配问题关键词）
-            let storedItems = (try? context.fetch(FetchDescriptor<StoredItem>())) ?? []
-            let matchedStored = storedItems.filter { [queryText] item in
-                queryText.contains(item.name) || queryText.contains(item.roomArea) || item.name.contains(queryText)
-            }
-            let displayStored = matchedStored.isEmpty ? Array(storedItems.prefix(5)) : Array(matchedStored.prefix(6))
-            let storageText: String = displayStored.isEmpty ? "未录入" : displayStored.map {
-                "\($0.name) -> \($0.roomArea)·\($0.location)"
-            }.joined(separator: "；")
-            blocks.append(PromptBlock(id: .storage, text: "• 物品收纳位置：\(storageText)"))
-
-            // 6. 习惯打卡、每日服药计划与今日饮食热量记录
-            let habits = ((try? context.fetch(FetchDescriptor<PeriodicHabit>())) ?? []).filter { $0.isEnabled }
-            let meds = ((try? context.fetch(FetchDescriptor<MedicationPlan>())) ?? []).filter { $0.isEnabled }
-            let startOfToday = Calendar.current.startOfDay(for: .now)
-            let todayFoodRecords = (try? context.fetch(FetchDescriptor<FoodIntakeRecord>(
-                predicate: #Predicate { $0.date >= startOfToday },
-                sortBy: [SortDescriptor(\.date, order: .reverse)]
-            ))) ?? []
-            var habitMedParts: [String] = []
-            if !meds.isEmpty {
-                habitMedParts.append("用药：" + meds.prefix(4).map { "\($0.medName) \($0.dosage)（\($0.dailyTimePoints.joined(separator: "/"))）" }.joined(separator: "、"))
-            }
-            if !habits.isEmpty {
-                habitMedParts.append("习惯：" + habits.prefix(4).map { "\($0.title)（\($0.recurrenceRaw)）" }.joined(separator: "、"))
-            }
-            if !todayFoodRecords.isEmpty {
-                let totalCalories = Int(todayFoodRecords.reduce(0.0) { $0 + $1.consumedCalories }.rounded())
-                let itemsDesc = todayFoodRecords.prefix(4).map { rec in
-                    let ratioText = rec.consumedRatio < 0.999 ? "（吃了\(Int((rec.consumedRatio * 100).rounded()))%）" : ""
-                    return "\(rec.foodName)\(ratioText)\(Int(rec.consumedCalories.rounded()))千卡"
-                }.joined(separator: "、")
-                habitMedParts.append("今日饮食摄入：共 \(totalCalories) 千卡（\(itemsDesc)）")
-            }
-            if let dietSummary = DietaryPreferenceService.shared.promptSummary(with: context) {
-                habitMedParts.append("饮食偏好画像：\(dietSummary)")
-            }
-            let habitMedText = habitMedParts.isEmpty ? "无" : habitMedParts.joined(separator: "；")
-            blocks.append(PromptBlock(id: .habit, text: "• 用药、习惯与今日饮食：\(habitMedText)"))
-
-            // 7. 订阅扣费与物品/证件保质期预警
-            let subs = (try? context.fetch(FetchDescriptor<SubscriptionItem>())) ?? []
-            let expiries = ((try? context.fetch(FetchDescriptor<ItemExpiryItem>())) ?? []).filter { !$0.isResolved }
-            let idDocs = (try? context.fetch(FetchDescriptor<IDDocumentItem>())) ?? []
-            var alertParts: [String] = []
-            if !subs.isEmpty {
-                alertParts.append("订阅：" + subs.prefix(3).map { "\($0.name) \($0.priceString)" }.joined(separator: "、"))
-            }
-            if !expiries.isEmpty {
-                alertParts.append("保质期：" + expiries.prefix(3).map { "\($0.title)（\($0.expireDate.formatted(date: .abbreviated, time: .omitted))到期）" }.joined(separator: "、"))
-            }
-            if !idDocs.isEmpty {
-                alertParts.append("已存证件：" + idDocs.prefix(4).map { doc in
-                    if doc.isPermanent { return "\(doc.title)(长期)" }
-                    if let exp = doc.expiryDate { return "\(doc.title)(\(exp.formatted(date: .abbreviated, time: .omitted))到期)" }
-                    return doc.title
-                }.joined(separator: "、"))
-            }
-            let vaultAlertText = alertParts.isEmpty ? "无" : alertParts.joined(separator: "；")
-            blocks.append(PromptBlock(id: .vault, text: "• 证件/订阅/保质期：\(vaultAlertText)"))
-
-            // 8. 家庭关怀：萌宠、宝贝育儿与爱车档案
-            let pets = (try? context.fetch(FetchDescriptor<PetProfile>())) ?? []
-            let children = (try? context.fetch(FetchDescriptor<ChildProfile>())) ?? []
-            let vehicles = (try? context.fetch(FetchDescriptor<VehicleProfile>())) ?? []
-            var familyParts: [String] = []
-            if !pets.isEmpty {
-                familyParts.append("宠物：" + pets.prefix(2).map { pet in
-                    let w = pet.weightKg.map { String(format: "%.1fkg", $0) } ?? ""
-                    return "\(pet.name)(\(pet.breed) \(w))"
-                }.joined(separator: "、"))
-            }
-            if !children.isEmpty {
-                familyParts.append("宝贝：" + children.prefix(2).map { child in
-                    let h = child.effectiveHeightCm.map { String(format: "身高%.0fcm", $0) } ?? ""
-                    let w = child.effectiveWeightKg.map { String(format: "体重%.1fkg", $0) } ?? ""
-                    return "\(child.name)(\(child.ageDescription) \(h) \(w))".trimmingCharacters(in: .whitespaces)
-                }.joined(separator: "、"))
-            }
-            if !vehicles.isEmpty {
-                familyParts.append("爱车：" + vehicles.prefix(2).map { v in
-                    "\(v.name)(\(v.plateNumber)，距保养\(v.daysUntilNextMaintenance)天)"
-                }.joined(separator: "、"))
-            }
-            let familyText = familyParts.isEmpty ? "未录入" : familyParts.joined(separator: "；")
-            blocks.append(PromptBlock(id: .family, text: "• 家庭档案(萌宠/育儿/爱车)：\(familyText)"))
-
-            // 9. 语音备忘与常去地点
-            var memoDescriptor = FetchDescriptor<VoiceMemo>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
-            memoDescriptor.fetchLimit = 2
-            let memos = (try? context.fetch(memoDescriptor)) ?? []
-            let memoText: String = memos.isEmpty ? "无" : memos.prefix(2).map { m in
-                let snippet = (m.summary ?? m.transcription ?? "").prefix(30)
-                return snippet.isEmpty ? m.title : "\(m.title)：\(snippet)"
-            }.joined(separator: "；")
-            blocks.append(PromptBlock(id: .memo, text: "• 近期语音备忘：\(memoText)"))
-
-            let places = (try? context.fetch(FetchDescriptor<LearnedPlace>())) ?? []
-            let placeText: String = places.isEmpty ? "未学习" : places.prefix(3).map { "\($0.category.rawValue)：\($0.name)" }.joined(separator: "、")
-            blocks.append(PromptBlock(id: .place, text: "• 常去地点：\(placeText)"))
+            blocks.append(contentsOf: PromptBlockProviders.lifeProfileBlocks(context: context, query: queryText))
         }
 
         // 财务/操作精确回执（必留）
@@ -1001,7 +800,7 @@ public final class LLMInferenceService: ObservableObject {
         }
 
         // 必留：用户问句（Qwen3 架构默认预填闭合 `<think>` 块以跳过长思考链，直出端侧低延迟回答）
-        let assistantStartSuffix = LLMModelManager.shared.selectedPreset.isQwen3Family ? "\n<think>\n\n</think>\n\n" : ""
+        let assistantStartSuffix = LLMModelManager.shared.selectedPreset.chatDialect.assistantStartSuffix
         let queryBlockText = """
         <|im_start|>user
         \(query)<|im_end|>
@@ -1057,7 +856,7 @@ public final class LLMInferenceService: ObservableObject {
         let modelManager = LLMModelManager.shared
         let modelReady = await modelManager.validateModelStatusAndWait()
 
-        let assistantStartSuffix = modelManager.selectedPreset.isQwen3Family ? "\n<think>\n\n</think>\n\n" : ""
+        let assistantStartSuffix = modelManager.selectedPreset.chatDialect.assistantStartSuffix
         let chatMLPrompt = """
         <|im_start|>system
         \(systemInstruction)<|im_end|>

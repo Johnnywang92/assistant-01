@@ -194,4 +194,22 @@ final class PromptBudgetTests: XCTestCase {
         XCTAssertEqual(fit.droppedIDs, [.place])
         XCTAssertEqual(text, "A|C")
     }
+
+    // MARK: - 生活档案输出顺序
+
+    func testLifeProfileOrderCoversEveryDroppableBlockExactlyOnce() {
+        // App 侧按此清单装配提示词：漏一块会静默丢数据，多一块会重复注入。
+        // history 虽然可丢，但由对话历史单独装配，不属于生活档案块。
+        let droppable = PromptBlockID.allCases.filter { !$0.isProtected && $0 != .history }
+        XCTAssertEqual(Set(PromptBlockID.lifeProfileOrder), Set(droppable))
+        XCTAssertEqual(PromptBlockID.lifeProfileOrder.count, droppable.count)
+    }
+
+    func testLifeProfileOrderIsStable() {
+        // 顺序影响小模型注意力：快递/待办在前，备忘/地点在后。改动必须显式改这里。
+        XCTAssertEqual(PromptBlockID.lifeProfileOrder, [
+            .parcel, .todo, .finance, .anniversary, .storage,
+            .habit, .vault, .family, .memo, .place
+        ])
+    }
 }

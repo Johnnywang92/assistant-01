@@ -5,6 +5,11 @@ import SwiftUI
 import AssistantCore
 
 /// 端侧可选大模型规格预设（支持升级切换至 Qwen3 系列）
+///
+/// 这里只剩「预设 → 描述符」的一一对应：展示文案、本地文件名、发布指纹、下载地址与
+/// ChatML 方言全部在 `AssistantCore.ModelRegistry`。新增一个模型 = Core 一个描述符条目
+/// + `builtIn` 一行 + 下面一行 case。case 的 rawValue 已持久化在
+/// `llm_selected_model_preset_v1`，**不能改名**。
 public enum LLMModelPreset: String, CaseIterable, Identifiable, Sendable {
     case qwen3_1_7b = "qwen3_1_7b"
     case qwen3_4b = "qwen3_4b"
@@ -12,129 +17,60 @@ public enum LLMModelPreset: String, CaseIterable, Identifiable, Sendable {
 
     public var id: String { rawValue }
 
-    /// 模型展示名称
-    public var displayName: String {
+    /// 刻意用穷尽 switch 而不是按 `rawValue` 查表：新增 case 忘记接描述符会是编译错误，
+    /// 而不是运行期读到别的模型的文件名、把完好文件判成无效。
+    public var descriptor: ModelDescriptor {
+        let model: ModelDescriptor
         switch self {
-        case .qwen3_1_7b: return "Qwen3-1.7B-Instruct (推荐)"
-        case .qwen3_4b: return "Qwen3-4B-Instruct (增强版)"
-        case .qwen2_5_1_5b: return "Qwen2.5-1.5B-Instruct (轻量兼容)"
+        case .qwen3_1_7b: model = .qwen3_1_7b
+        case .qwen3_4b: model = .qwen3_4b
+        case .qwen2_5_1_5b: model = .qwen2_5_1_5b
         }
+        #if DEBUG
+        assert(model.id == rawValue, "描述符 \(model.id) 被接到预设 \(rawValue) 上")
+        #endif
+        return model
     }
+
+    /// 列表主标题（含推荐语）
+    public var displayName: String { descriptor.displayName }
 
     /// 简短名称（用于导航栏、状态栏与提示词）
-    public var shortName: String {
-        switch self {
-        case .qwen3_1_7b: return "Qwen3-1.7B"
-        case .qwen3_4b: return "Qwen3-4B"
-        case .qwen2_5_1_5b: return "Qwen2.5-1.5B"
-        }
-    }
+    public var shortName: String { descriptor.shortName }
 
     /// 模型能力与适用机型说明
-    public var subtitle: String {
-        switch self {
-        case .qwen3_1_7b:
-            return L10n.tr("新一代千问 Qwen3 架构 · 推理与指令遵循大幅提升，兼顾速度与低内存")
-        case .qwen3_4b:
-            return L10n.tr("40 亿参数高阶端侧模型 · 食物热量推断与复杂拆解更强（建议 8GB+ 内存机型）")
-        case .qwen2_5_1_5b:
-            return L10n.tr("经典轻量端侧模型 · 体积最小，兼容旧版已下载模型文件")
-        }
-    }
+    public var subtitle: String { L10n.tr(descriptor.subtitle) }
 
     /// 参数规模展示文案
-    public var parameterCountText: String {
-        switch self {
-        case .qwen3_1_7b: return "17.2 亿 (1.7B)"
-        case .qwen3_4b: return "40.2 亿 (4.0B)"
-        case .qwen2_5_1_5b: return "15.4 亿 (1.54B)"
-        }
-    }
+    public var parameterCountText: String { descriptor.parameterCountText }
 
     /// 文件体积可读说明
-    public var formattedExpectedSize: String {
-        switch self {
-        case .qwen3_1_7b: return L10n.tr("约 1.11 GB")
-        case .qwen3_4b: return L10n.tr("约 2.50 GB")
-        case .qwen2_5_1_5b: return L10n.tr("约 1.12 GB")
-        }
-    }
+    public var formattedExpectedSize: String { L10n.tr(descriptor.expectedSizeText) }
 
     /// 运行内存预估说明
-    public var estimatedRAMText: String {
-        switch self {
-        case .qwen3_1_7b: return L10n.tr("约 1.2 GB")
-        case .qwen3_4b: return L10n.tr("约 2.6 GB")
-        case .qwen2_5_1_5b: return L10n.tr("约 980 MB")
-        }
-    }
+    public var estimatedRAMText: String { L10n.tr(descriptor.estimatedRAMText) }
 
     /// 本地存储文件名
-    public var fileName: String {
-        switch self {
-        case .qwen3_1_7b: return "Qwen3-1.7B-Q4_K_M.gguf"
-        case .qwen3_4b: return "Qwen3-4B-Q4_K_M.gguf"
-        case .qwen2_5_1_5b: return "qwen2.5-1.5b-instruct-q4_k_m.gguf"
-        }
-    }
+    public var fileName: String { descriptor.fileName }
 
-    /// 已核验的发布产物清单（发布方给出的权威指纹）。
-    ///
-    /// 清单本体在 `AssistantCore.ModelReleaseCatalog`——放在 Core 是为了让
-    /// 「哈希抄错一位」这种事故能在 `swift test` 阶段被拦下，
-    /// 而不是等到所有用户都下载失败才暴露。
-    public var publishedReleases: [ModelReleaseIntegrity] {
-        guard let entry = ModelReleaseCatalog.entry(id: rawValue) else { return [] }
-        return [entry.integrity]
-    }
+    /// 已核验的发布产物清单（发布方给出的权威指纹），清单本体在 Core
+    public var publishedReleases: [ModelReleaseIntegrity] { descriptor.publishedReleases }
 
     /// 预期字节大小（取已核验发布产物的精确体积，不再用估算值）
-    public var expectedSizeApproxBytes: Int64 {
-        publishedReleases.first?.byteSize ?? 0
-    }
+    public var expectedSizeApproxBytes: Int64 { descriptor.expectedSizeApproxBytes }
 
     /// 校验时的最小合法字节数
-    public var minValidSizeBytes: Int64 {
-        switch self {
-        case .qwen3_1_7b: return 900_000_000
-        case .qwen3_4b: return 2_000_000_000
-        case .qwen2_5_1_5b: return 850_000_000
-        }
-    }
+    public var minValidSizeBytes: Int64 { descriptor.minValidSizeBytes }
 
     /// 对应局域网 Ollama 推荐模型名
-    public var ollamaModelTag: String {
-        switch self {
-        case .qwen3_1_7b: return "qwen3:1.7b"
-        case .qwen3_4b: return "qwen3:4b"
-        case .qwen2_5_1_5b: return "qwen2.5:1.5b"
-        }
-    }
+    public var ollamaModelTag: String { descriptor.ollamaModelTag }
 
-    /// 是否属于 Qwen3 架构家族（支持 `<think>` 思考标签控制）
-    public var isQwen3Family: Bool {
-        switch self {
-        case .qwen3_1_7b, .qwen3_4b: return true
-        case .qwen2_5_1_5b: return false
-        }
-    }
+    /// ChatML 方言；`assistantStartSuffix` 决定助手起始标记后预填什么
+    public var chatDialect: ModelChatDialect { descriptor.chatDialect }
 
     /// 获取指定下载源的下载地址
     public func downloadURL(for source: LLMDownloadSource) -> URL {
-        switch (self, source) {
-        case (.qwen3_1_7b, .modelScope):
-            return URL(string: "https://www.modelscope.cn/models/unsloth/Qwen3-1.7B-GGUF/resolve/master/Qwen3-1.7B-Q4_K_M.gguf")!
-        case (.qwen3_1_7b, .huggingFace):
-            return URL(string: "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf")!
-        case (.qwen3_4b, .modelScope):
-            return URL(string: "https://www.modelscope.cn/models/Qwen/Qwen3-4B-GGUF/resolve/master/Qwen3-4B-Q4_K_M.gguf")!
-        case (.qwen3_4b, .huggingFace):
-            return URL(string: "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf")!
-        case (.qwen2_5_1_5b, .modelScope):
-            return URL(string: "https://www.modelscope.cn/models/qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/master/qwen2.5-1.5b-instruct-q4_k_m.gguf")!
-        case (.qwen2_5_1_5b, .huggingFace):
-            return URL(string: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf")!
-        }
+        descriptor.downloadURL(for: source.modelSourceID)
     }
 }
 
@@ -146,6 +82,14 @@ public enum LLMDownloadSource: String, CaseIterable, Identifiable {
     public var id: String { rawValue }
 
     public var displayName: String { L10n.tr(rawValue) }
+
+    /// UI 文案与稳定标识解耦：展示用整句中文，查描述符用 Core 的源 id
+    var modelSourceID: ModelDownloadSourceID {
+        switch self {
+        case .modelScope: return .modelScope
+        case .huggingFace: return .huggingFace
+        }
+    }
 
     public var downloadURL: URL {
         LLMModelPreset.qwen3_1_7b.downloadURL(for: self)
