@@ -10,10 +10,16 @@ import UIKit
 struct ReportShareCardView: View {
     let reportData: PeriodicReportData
     let polishedSummary: String?
+    /// 财务隐私敏感块，由分享面板逐次勾选，默认不上卡
+    var showExpenseBreakdown: Bool
+    var showSafeToSpend: Bool
 
-    init(reportData: PeriodicReportData, polishedSummary: String? = nil) {
+    init(reportData: PeriodicReportData, polishedSummary: String? = nil,
+         showExpenseBreakdown: Bool = false, showSafeToSpend: Bool = false) {
         self.reportData = reportData
         self.polishedSummary = polishedSummary
+        self.showExpenseBreakdown = showExpenseBreakdown
+        self.showSafeToSpend = showSafeToSpend
     }
 
     private var themeColor: Color {
@@ -58,6 +64,35 @@ struct ReportShareCardView: View {
         case .quarterly: return "QUARTERLY REPORT · 季度回顾"
         case .yearly: return "YEARLY ARCHIVE · 年度成果"
         }
+    }
+
+    /// 前瞻清单数据源：日报看明天，其余周期看下一期
+    private var outlookTodos: [TodoItem] {
+        reportData.period == .daily ? reportData.tomorrowTodos : reportData.upcomingTodos
+    }
+
+    private func suggestionTint(_ tone: ReportSuggestion.Tone) -> Color {
+        switch tone {
+        case .urgent: return Color.red
+        case .action: return Color.orange
+        case .positive: return Color.green
+        }
+    }
+
+    /// 健康一行胶囊：步数 / 睡眠 / 活动能量，缺哪项跳过哪项，全缺整行不出现
+    private var healthCapsules: [(icon: String, label: String, value: String)] {
+        guard let snapshot = reportData.healthSnapshot else { return [] }
+        var capsules: [(icon: String, label: String, value: String)] = []
+        if let steps = snapshot.values[.stepCount]?.value, steps > 0 {
+            capsules.append(("figure.walk", "步数", String(format: "%.0f", steps)))
+        }
+        if let sleep = snapshot.values[.sleep]?.value, sleep > 0 {
+            capsules.append(("bed.double.fill", "睡眠", String(format: "%.1f h", sleep)))
+        }
+        if let energy = snapshot.values[.activeEnergy]?.value, energy > 0 {
+            capsules.append(("flame.fill", "活动", String(format: "%.0f kcal", energy)))
+        }
+        return capsules
     }
 
     public var body: some View {
@@ -164,7 +199,31 @@ struct ReportShareCardView: View {
                 )
             }
 
-            // 4. 重点完成清单 (最多展示 2 项)
+            // 3.5 健康一行胶囊 (步数 / 睡眠 / 活动能量)
+            if !healthCapsules.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(Array(healthCapsules.enumerated()), id: \.offset) { _, capsule in
+                        HStack(spacing: 4) {
+                            Image(systemName: capsule.icon)
+                                .font(.system(size: 10))
+                                .foregroundStyle(themeColor)
+                            Text(capsule.label)
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.white.opacity(0.6))
+                            Text(capsule.value)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.06))
+                        .clipShape(Capsule())
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+
+            // 4. 重点完成清单 (最多展示 3 项)
             if !reportData.completedTodos.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("KEY ACCOMPLISHMENTS · 重点成果")
@@ -173,7 +232,7 @@ struct ReportShareCardView: View {
                         .tracking(0.5)
 
                     VStack(spacing: 5) {
-                        ForEach(Array(reportData.completedTodos.prefix(2))) { todo in
+                        ForEach(Array(reportData.completedTodos.prefix(3))) { todo in
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark.seal.fill")
                                     .font(.system(size: 11))
@@ -193,7 +252,144 @@ struct ReportShareCardView: View {
                 }
             }
 
-            // 5. 底部品牌与专属网站标识
+            // 5. 行动建议 (最多 2 条；只上标题，detail 可能含金额与健康细节，不进社交卡片)
+            if !reportData.suggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("NEXT ACTIONS · 行动建议")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .tracking(0.5)
+
+                    VStack(spacing: 5) {
+                        ForEach(Array(reportData.suggestions.prefix(2))) { suggestion in
+                            HStack(spacing: 6) {
+                                Image(systemName: suggestion.icon)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(suggestionTint(suggestion.tone))
+                                Text(suggestion.title)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Color.white.opacity(0.85))
+                                    .lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.05))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
+                        }
+                    }
+                }
+            }
+
+            // 6. 明日 / 下期前瞻 (真实待办标题，最多 2 条)
+            if !outlookTodos.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(reportData.period == .daily ? "UP NEXT · 明日前瞻" : "UP NEXT · 下期前瞻")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .tracking(0.5)
+
+                    VStack(spacing: 5) {
+                        ForEach(Array(outlookTodos.prefix(2))) { todo in
+                            HStack(spacing: 6) {
+                                Image(systemName: "calendar")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.cyan)
+                                Text(todo.title)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Color.white.opacity(0.85))
+                                    .lineLimit(1)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.05))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
+                        }
+                    }
+                }
+            }
+
+            // 7. 支出构成 (可选块：类别 top3 + 最大单笔)
+            if showExpenseBreakdown, !reportData.categoryStats.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("SPENDING MIX · 支出构成")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .tracking(0.5)
+
+                    VStack(spacing: 5) {
+                        ForEach(Array(reportData.categoryStats.prefix(3))) { stat in
+                            HStack(spacing: 6) {
+                                Image(systemName: stat.category.icon)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.orange)
+                                Text(L10n.tr(stat.category.rawValue))
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Color.white.opacity(0.85))
+                                    .lineLimit(1)
+                                Spacer(minLength: 6)
+                                Text("¥\(AmountFormatter.format(stat.amount))")
+                                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                                    .foregroundStyle(.white)
+                                Text("\(Int((stat.ratio * 100).rounded()))%")
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(Color.white.opacity(0.45))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.05))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
+                        }
+
+                        if let maxItem = reportData.maxExpenseItem {
+                            HStack(spacing: 6) {
+                                Image(systemName: "crown.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Color.yellow.opacity(0.85))
+                                Text(maxItem.title)
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .foregroundStyle(Color.white.opacity(0.7))
+                                    .lineLimit(1)
+                                Spacer(minLength: 6)
+                                Text("最大单笔 ¥\(AmountFormatter.format(maxItem.amount))")
+                                    .font(.system(size: 9.5))
+                                    .foregroundStyle(Color.white.opacity(0.45))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                        }
+                    }
+                }
+            }
+
+            // 8. 今日安心花 (可选块；仅日报且预算开启时有数据)
+            if showSafeToSpend, let sts = reportData.safeToSpend, sts.isEnabled {
+                HStack(spacing: 6) {
+                    Image(systemName: "yensign.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.orange)
+                    Text("今日安心花剩余")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                    Spacer(minLength: 6)
+                    if sts.isTodayOverspent {
+                        Text("已超额 ¥\(AmountFormatter.format(sts.todayOverspentAmount))")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.red)
+                    } else {
+                        Text("¥\(AmountFormatter.format(sts.safeToSpendToday))")
+                            .font(.system(size: 13, weight: .heavy, design: .rounded))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
+            }
+
+            // 9. 底部品牌与专属网站标识
             VStack(spacing: 12) {
                 Rectangle()
                     .fill(Color.white.opacity(0.1))
@@ -300,6 +496,8 @@ struct ReportShareSheet: View {
     @State private var toastMessage: String?
     @State private var showSystemShareSheet: Bool = false
     @State private var renderedImage: UIImage?
+    @State private var showExpenseBreakdown = false
+    @State private var showSafeToSpend = false
 
     init(reportData: PeriodicReportData, polishedSummary: String? = nil) {
         self.reportData = reportData
@@ -307,7 +505,9 @@ struct ReportShareSheet: View {
     }
 
     private var cardView: ReportShareCardView {
-        ReportShareCardView(reportData: reportData, polishedSummary: polishedSummary)
+        ReportShareCardView(reportData: reportData, polishedSummary: polishedSummary,
+                            showExpenseBreakdown: showExpenseBreakdown,
+                            showSafeToSpend: showSafeToSpend)
     }
 
     public var body: some View {
@@ -316,6 +516,29 @@ struct ReportShareSheet: View {
                 VStack(spacing: 20) {
                     cardView
                         .padding(.top, 10)
+
+                    // 可选内容：财务明细默认不上卡，分享前逐次勾选
+                    if !reportData.categoryStats.isEmpty || reportData.safeToSpend?.isEnabled == true {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("可选内容（含财务明细，默认不展示）")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            if !reportData.categoryStats.isEmpty {
+                                Toggle("展示支出构成与最大单笔", isOn: $showExpenseBreakdown)
+                                    .font(.subheadline)
+                            }
+                            if reportData.safeToSpend?.isEnabled == true {
+                                Toggle("展示今日安心花剩余", isOn: $showSafeToSpend)
+                                    .font(.subheadline)
+                            }
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
+                        .padding(.horizontal, 24)
+                    }
 
                     // 导出操作按钮组
                     VStack(spacing: 12) {

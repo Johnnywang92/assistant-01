@@ -1,6 +1,74 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "可选内容（含财务明细，默认不展示）" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Optional content (financial details, off by default)"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "可选内容（含财务明细，默认不展示）"
+                }
+            }
+        }
+    },
+    "展示支出构成与最大单笔" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Show spending mix & largest expense"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "展示支出构成与最大单笔"
+                }
+            }
+        }
+    },
+    "展示今日安心花剩余" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Show today's safe-to-spend balance"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "展示今日安心花剩余"
+                }
+            }
+        }
+    },
+    "今日安心花剩余" : {
+        "extractionState" : "manual",
+        "localizations" : {
+            "en" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "Safe to spend today"
+                }
+            },
+            "zh-Hans" : {
+                "stringUnit" : {
+                    "state" : "translated",
+                    "value" : "今日安心花剩余"
+                }
+            }
+        }
+    },
     "个性化与界面" : {
         "extractionState" : "manual",
         "localizations" : {
