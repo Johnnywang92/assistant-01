@@ -47,6 +47,23 @@ public enum SleepNightNormalizer {
         return dayStart
     }
 
+    /// 用于排期「即将到来的就寝提醒」的目标夜归属：
+    /// - 若当前处于清晨或白天（05:00 以后的任意时刻），目标夜均为当日（today）的夜晚；
+    /// - 若当前处于深夜/凌晨（00:00 ~ 04:59）：
+    ///   若在凌晨 3 点前，仍属于当夜（昨日夜，提醒就寝）；
+    ///   若在凌晨 3 点及以后，当夜作息已彻底结束，顺延为今日（today）夜晚。
+    public static func upcomingNightKey(for date: Date, calendar: Calendar) -> Date {
+        let dayStart = calendar.startOfDay(for: date)
+        let hour = calendar.component(.hour, from: date)
+        if hour >= 5 {
+            return dayStart
+        }
+        if hour < 3, let yesterday = calendar.date(byAdding: .day, value: -1, to: dayStart) {
+            return yesterday
+        }
+        return dayStart
+    }
+
     /// 时刻 → 夜内 offset（距该夜 12:00 的墙上时钟分钟数，`[0, 1440)`）。
     /// 日期不属于该夜窗口时返回 nil。
     public static func offset(of date: Date, nightKey: Date, calendar: Calendar) -> Int? {

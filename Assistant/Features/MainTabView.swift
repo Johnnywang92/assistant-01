@@ -13,6 +13,7 @@ struct MainTabView: View {
     @State private var showScanner = false
     @State private var showOmnibox = false
     @State private var showUnifiedSearch = false
+    @State private var showSettings = false
     @State private var showClipboardReadError = false
     @State private var autoStartListening = false
     @ObservedObject private var clipboard = ClipboardIngestionService.shared
@@ -104,6 +105,10 @@ struct MainTabView: View {
             UnifiedSearchView()
                 .environment(\.locale, LanguageManager.shared.locale)
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(isSheet: true)
+                .environment(\.locale, LanguageManager.shared.locale)
+        }
         .onChange(of: router.activeSheet) { _, newSheet in
             if newSheet == .voice {
                 autoStartListening = false
@@ -117,6 +122,9 @@ struct MainTabView: View {
                 router.activeSheet = nil
             } else if newSheet == .unifiedSearch {
                 showUnifiedSearch = true
+                router.activeSheet = nil
+            } else if newSheet == .settings {
+                showSettings = true
                 router.activeSheet = nil
             }
         }

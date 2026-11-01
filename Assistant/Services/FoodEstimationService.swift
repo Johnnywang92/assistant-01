@@ -143,6 +143,62 @@ final class FoodEstimationService: ObservableObject {
         return nil
     }
 
+    /// 无照片时，直接根据用户手输或语音输入的食物名称估算整餐热量。
+    @discardableResult
+    func estimateCalories(fromText text: String, mealDate: Date = .now) async -> FoodCalorieEstimate? {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        isEstimating = true
+        statusMessage = nil
+        needsManualSelection = false
+        candidates = []
+        defer { isEstimating = false }
+
+        // 1. 本地规则与食物库匹配（支持多菜「米饭、辣椒炒肉」拆解）
+        if let hinted = FoodCalorieEstimator.estimateMeal(fromHint: clean, confidence: 0.95) {
+            estimate = hinted
+            statusMessage = "已解析「\(hinted.displayName)」，可在下方调整份量或吃剩比例。"
+            return hinted
+        }
+
+        // 2. 词库模糊搜索
+        let matched = FoodCatalog.items(matchingName: clean)
+        if let first = matched.first {
+            let est = FoodCalorieEstimate(food: first, portion: .regular, confidence: 0.85)
+            estimate = est
+            statusMessage = "已匹配到食物「\(first.name)」。"
+            return est
+        }
+
+        // 3. 端侧大模型推断
+        let systemInstruction = """
+        你是一个食物热量估算助手。根据用户输入的菜名或食物描述，
+        判断是哪一种常见食物，并估算一份的标准热量（千卡）。
+        只输出 JSON，格式为：{"food":"常见中文菜名","calories":数字,"portion":"标准份"}
+        不要输出任何解释文字。
+        """
+        if let output = await LLMInferenceService.shared.generateCustomTask(
+            systemInstruction: systemInstruction,
+            userContent: "用户吃了：\(clean)。请估算热量。",
+            maxNewTokens: 64
+        ), let parsed = FoodLLMOutputParser.parse(output),
+           let food = FoodCatalog.item(matchingNameStrict: parsed.foodName) ?? FoodCatalog.items(matchingName: parsed.foodName).first {
+            let portion = parsed.portion ?? .regular
+            let baseline = food.standardServingCalories
+            let cal = parsed.calories > 0 ? Self.reconcile(llmCalories: parsed.calories, baseline: baseline) : baseline
+            let est = FoodCalorieEstimate(food: food, portion: portion, confidence: 0.8)
+                .withOverriddenCalories(cal)
+            estimate = est
+            statusMessage = "已结合 AI 解析出「\(food.name)」。"
+            return est
+        }
+
+        // 4. 无法自动解析，提示手动选择
+        needsManualSelection = true
+        statusMessage = "未能在食物库中直接找到「\(clean)」，请点击「从食物库选择」挑选相近菜品。"
+        return nil
+    }
+
     /// 用端侧 LLM 细化候选。
     ///
     /// 只在「有候选」或「用户提供了补充描述」时调用：不让小模型在毫无信息时凭空猜。

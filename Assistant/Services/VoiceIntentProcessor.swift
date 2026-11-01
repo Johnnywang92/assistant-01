@@ -80,8 +80,8 @@ struct VoiceIntentProcessor {
             }()
             let report = PeriodicReportManager.shared.generateReport(period: period, for: .now, context: context)
             return L10n.choose(
-                "【\(report.title)】\(report.smartSummary)（已搞定 \(report.completedTodos.count) 件事项，总支出 ¥\(String(format: "%.2f", report.totalExpense))）。可在「更多」菜单中打开图表查看详情。",
-                "[\(report.title)] \(report.smartSummary) (\(report.completedTodos.count) completed, total spending ¥\(String(format: "%.2f", report.totalExpense))). Open Reports in More for charts."
+                "【\(report.title)】\(report.smartSummary)（已搞定 \(report.completedTodos.count) 件事项，总支出 ¥\(String(format: "%.2f", report.totalExpense))）。可在「生活档案」页面顶部卡片中打开完整图表复盘。",
+                "[\(report.title)] \(report.smartSummary) (\(report.completedTodos.count) completed, total spending ¥\(String(format: "%.2f", report.totalExpense))). Open Reports at the top of Life Vault for charts."
             )
         }
 

@@ -54,5 +54,14 @@ struct AssistantAppShortcuts: AppShortcutsProvider {
             shortTitle: "今日待办",
             systemImageName: "checklist"
         )
+        AppShortcut(
+            intent: ReportScreenTimeIntent(),
+            phrases: [
+                "用\(.applicationName)记录屏幕时间",
+                "\(.applicationName)上报屏幕时间"
+            ],
+            shortTitle: "上报屏幕时间",
+            systemImageName: "hourglass"
+        )
     }
 }

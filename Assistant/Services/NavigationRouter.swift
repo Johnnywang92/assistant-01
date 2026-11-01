@@ -91,6 +91,8 @@ public final class NavigationRouter: ObservableObject {
     @Published public var requestedSkillPathList: Bool = false
     /// 深链/统一搜索触发：切到生活档案后直接推入指定子板块
     @Published public var requestedVaultDestination: String? = nil
+    /// 深链/统一搜索触发：设置子页面直达路由目标
+    @Published public var requestedSettingsDestination: String? = nil
     /// 全局统一搜索预填入检索词
     @Published public var prefilledSearchQuery: String? = nil
 
@@ -121,6 +123,35 @@ public final class NavigationRouter: ObservableObject {
         } else {
             selectedTab = .vault
             requestedVaultDestination = vaultDestination ?? tab.rawValue
+        }
+    }
+
+    /// 全域索引搜索结果跳转调度
+    public func navigateToSearchRoute(_ route: SearchRoute) {
+        switch route {
+        case .todo(let id):
+            focusTodo(id)
+            requestedTodoDetailID = id
+        case .tab(let tabName):
+            if let tab = AppTab(rawValue: tabName) {
+                if TabBarManager.shared.isTabActive(tab) {
+                    selectedTab = tab
+                } else {
+                    selectedTab = .vault
+                    requestedVaultDestination = tab.rawValue
+                }
+            }
+        case .vault(let destination):
+            selectedTab = .vault
+            requestedVaultDestination = destination
+        case .setting(let destination):
+            if TabBarManager.shared.isTabActive(.settings) {
+                selectedTab = .settings
+                requestedSettingsDestination = destination
+            } else {
+                requestedSettingsDestination = destination
+                activeSheet = .settings
+            }
         }
     }
 
@@ -187,6 +218,8 @@ public final class NavigationRouter: ObservableObject {
         case "parcels", "express", "package":
             selectedTab = .todos
             requestedFilter = "快递"
+        case "report", "reports", "periodic-report", "daily-report":
+            navigateTo(tab: .vault, vaultDestination: "periodicReport")
         case "settings":
             selectedTab = .settings
         case "omnibox", "drop", "feed":

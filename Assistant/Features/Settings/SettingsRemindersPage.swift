@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 /// 设置子页：提醒与报告（生活习惯、睡前提醒、日报开关、月预算）。
@@ -12,6 +13,7 @@ struct SettingsRemindersPage: View {
     @AppStorage("expense_monthly_budget") private var monthlyBudget: Double = 0
     @ObservedObject private var reportManager = PeriodicReportManager.shared
     @ObservedObject private var sleepScheduler = SleepReminderScheduler.shared
+    @ObservedObject private var screenTracker = ScreenTimeTracker.shared
     @Environment(\.modelContext) private var context
     @State private var showingBudgetSheet: Bool = false
 
@@ -118,6 +120,9 @@ struct SettingsRemindersPage: View {
                     get: { sleepScheduler.isEnabled },
                     set: { newValue in
                         sleepScheduler.isEnabled = newValue
+                        if newValue {
+                            Task { await sleepScheduler.requestAuthorization() }
+                        }
                         scheduleSleepResync()
                     }
                 ))
@@ -165,10 +170,30 @@ struct SettingsRemindersPage: View {
                 Text("睡前提醒")
             } footer: {
                 Text("""
-                每晚按你的作息习惯与近一周睡眠计算建议就寝时刻：习惯晚睡就晚提醒，睡眠不足会适度提前，单晚调整不超过 45 分钟；提醒范围 21:30–01:30，超出不安排。\
-                兜底提醒会预注册未来 2–3 晚，连续几晚不打开 App 将停止预注册。\
-                工作日与周末按周五、周六夜区分，暂不识别调休；健康数据不足时按期望时间或默认 23:00，不会假装智能计算。
+                每晚综合你的历史作息习惯、睡眠债、运动负荷、晚餐与咖啡因摄入、天气与气温、四季时令、睡前待服药物、身体活力分以及手机屏幕使用时长动态建议就寝时刻与准备缓冲；单晚调整不超过 45 分钟，提醒范围 21:30–01:30。
                 """)
+            }
+
+            // MARK: - 手机屏幕使用时间感知
+            Section {
+                Stepper(value: Binding(
+                    get: { screenTracker.todayScreenTimeMinutes },
+                    set: { newValue in
+                        screenTracker.recordScreenTime(minutes: newValue)
+                        scheduleSleepResync()
+                    }
+                ), in: 0...960, step: 30) {
+                    HStack {
+                        Text("今日屏幕使用时长")
+                        Spacer()
+                        Text("\(screenTracker.todayScreenTimeMinutes / 60) 小时 \(screenTracker.todayScreenTimeMinutes % 60) 分钟")
+                            .foregroundStyle(AppColor.secondaryText)
+                    }
+                }
+            } header: {
+                Text("屏幕使用时间")
+            } footer: {
+                Text("可在 iOS「快捷指令」中通过「上报屏幕使用时间」动作配置每日定时自动化上报，亦可在此查看与微调。用机过久蓝光会抑制褪黑素释放，助手将自动提前提醒放下手机。")
             }
 
             // MARK: - 定期复盘报告 (日报开关；报告正文入口在首页与语音)

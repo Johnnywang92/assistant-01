@@ -2,7 +2,7 @@ import AssistantCore
 import Foundation
 import SwiftData
 import SwiftUI
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// 报告周期类型
 enum ReportPeriodType: String, CaseIterable, Identifiable, Sendable {
@@ -1689,10 +1689,12 @@ final class PeriodicReportManager: ObservableObject {
         // 移除现存旧定时通知。
         // 不能只按固定 identifier 删——枚举出来的一次性触发器带日期后缀，
         // 漏删会让「改开关后旧通知仍然会响」。
+        // prefix 先取到局部：回调闭包是 nonisolated，不能直接引用主演员隔离的静态属性。
+        let prefix = Self.notificationPrefix
         center.getPendingNotificationRequests { requests in
             let stale = requests
                 .map(\.identifier)
-                .filter { $0.hasPrefix(Self.notificationPrefix) }
+                .filter { $0.hasPrefix(prefix) }
             if !stale.isEmpty {
                 center.removePendingNotificationRequests(withIdentifiers: stale)
             }

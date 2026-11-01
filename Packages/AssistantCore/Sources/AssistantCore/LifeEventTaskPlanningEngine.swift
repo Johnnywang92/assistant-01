@@ -557,7 +557,7 @@ public enum LifeEventTaskPlanningEngine {
             return ("", [])
         }
 
-        var lines = text.components(separatedBy: .newlines)
+        let lines = text.components(separatedBy: .newlines)
         var actionItems: [String] = []
         var isInActionSection = false
 

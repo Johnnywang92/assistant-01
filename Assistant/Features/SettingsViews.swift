@@ -60,13 +60,24 @@ struct ManualImportView: View {
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var router = NavigationRouter.shared
     @AppStorage("assistant_custom_name") private var assistantName: String = "小助"
     @AppStorage("user_preferred_title") private var userTitle: String = "你"
+    @State private var navPath = NavigationPath()
 
     var isSheet: Bool = false
 
+    enum SettingsSubpage: Hashable {
+        case appearance
+        case reminders
+        case aiData
+        case system
+        case tabBarCustomization
+        case setupGuide
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navPath) {
             Form {
                 Section {
                     HStack(spacing: 10) {
@@ -202,6 +213,22 @@ struct SettingsView: View {
             .themedRow()
             .navigationTitle("助手设置")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: SettingsSubpage.self) { subpage in
+                switch subpage {
+                case .appearance: SettingsAppearancePage()
+                case .reminders: SettingsRemindersPage()
+                case .aiData: SettingsAIDataPage()
+                case .system: SettingsSystemPage()
+                case .tabBarCustomization: TabBarCustomizationView()
+                case .setupGuide: SetupGuideView()
+                }
+            }
+            .onAppear {
+                handleRequestedDestination()
+            }
+            .onChange(of: router.requestedSettingsDestination) { _, _ in
+                handleRequestedDestination()
+            }
             .toolbar {
                 if isSheet {
                     ToolbarItem(placement: .confirmationAction) {
@@ -210,6 +237,27 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private func handleRequestedDestination() {
+        guard let dest = router.requestedSettingsDestination else { return }
+        switch dest {
+        case "appearance_tabbar":
+            navPath.append(SettingsSubpage.tabBarCustomization)
+        case "appearance", "appearance_language", "appearance_theme", "appearance_background", "appearance_dynamic_type", "appearance_voice":
+            navPath.append(SettingsSubpage.appearance)
+        case "reminders", "reminders_sleep", "reminders_screentime", "reminders_report", "reminders_budget", "reminders_anniversary", "reminders_battery", "reminders_privacy":
+            navPath.append(SettingsSubpage.reminders)
+        case "aiData", "aiData_model", "aiData_omnibox", "aiData_applock", "aiData_backup":
+            navPath.append(SettingsSubpage.aiData)
+        case "system_shortcuts", "system_guide":
+            navPath.append(SettingsSubpage.setupGuide)
+        case "system", "system_permissions", "system_about":
+            navPath.append(SettingsSubpage.system)
+        default:
+            break
+        }
+        router.requestedSettingsDestination = nil
     }
 }
 

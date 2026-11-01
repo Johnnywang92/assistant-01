@@ -1,210 +1,6 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
-    "可选内容（含财务明细，默认不展示）" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "Optional content (financial details, off by default)"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "可选内容（含财务明细，默认不展示）"
-                }
-            }
-        }
-    },
-    "展示支出构成与最大单笔" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "Show spending mix & largest expense"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "展示支出构成与最大单笔"
-                }
-            }
-        }
-    },
-    "展示今日安心花剩余" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "Show today's safe-to-spend balance"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "展示今日安心花剩余"
-                }
-            }
-        }
-    },
-    "今日安心花剩余" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "Safe to spend today"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "今日安心花剩余"
-                }
-            }
-        }
-    },
-    "个性化与界面" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "Personalization & Appearance"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "个性化与界面"
-                }
-            }
-        }
-    },
-    "提醒与报告" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "Reminders & Reports"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "提醒与报告"
-                }
-            }
-        }
-    },
-    "AI 与数据" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "AI & Data"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "AI 与数据"
-                }
-            }
-        }
-    },
-    "系统" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "System"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "系统"
-                }
-            }
-        }
-    },
-    "语言、主题、大字模式、语音" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "Language, theme, large text, voice"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "语言、主题、大字模式、语音"
-                }
-            }
-        }
-    },
-    "作息、睡前提醒、日报、月预算" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "Routine, bedtime, daily report, budget"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "作息、睡前提醒、日报、月预算"
-                }
-            }
-        }
-    },
-    "模型、投喂口、应用锁、备份" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "Models, inbox, app lock, backup"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "模型、投喂口、应用锁、备份"
-                }
-            }
-        }
-    },
-    "权限、快捷方式、多端协同" : {
-        "extractionState" : "manual",
-        "localizations" : {
-            "en" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "Permissions, shortcuts, multi-device"
-                }
-            },
-            "zh-Hans" : {
-                "stringUnit" : {
-                    "state" : "translated",
-                    "value" : "权限、快捷方式、多端协同"
-                }
-            }
-        }
-    },
     "" : {
 
     },
@@ -258,9 +54,6 @@
           }
         }
       }
-    },
-    " 千卡" : {
-
     },
     " 日报" : {
       "extractionState" : "manual",
@@ -925,6 +718,9 @@
           }
         }
       }
+    },
+    "· 总睡眠 %@h" : {
+
     },
     "· 提前 %@ 天预警" : {
       "extractionState" : "manual",
@@ -1703,6 +1499,16 @@
         }
       }
     },
+    "%@ · 整份 %lld 卡" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · 整份 %2$lld 卡"
+          }
+        }
+      }
+    },
     "%@ (%@)" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2178,15 +1984,11 @@
         }
       }
     },
-    "%@约 %lldg · 整份 %lld 千卡 · 实入 %lld 千卡" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@约 %2$lldg · 整份 %3$lld 千卡 · 实入 %4$lld 千卡"
-          }
-        }
-      }
+    "%@暂无记账明细" : {
+
+    },
+    "%@暂无饮食记录" : {
+
     },
     "%arg · 成长档案" : {
       "extractionState" : "manual",
@@ -2695,6 +2497,9 @@
     "%lld 千卡" : {
 
     },
+    "%lld 卡" : {
+
+    },
     "%lld 处" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2708,6 +2513,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 处"
+          }
+        }
+      }
+    },
+    "%lld 小时 %lld 分钟" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 小时 %2$lld 分钟"
           }
         }
       }
@@ -2759,6 +2574,9 @@
         }
       }
     },
+    "%lld 项" : {
+
+    },
     "%lld 项待办" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2789,6 +2607,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 项需处理"
+          }
+        }
+      }
+    },
+    "%lld 餐 · %lld 千卡" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 餐 · %2$lld 千卡"
           }
         }
       }
@@ -2885,6 +2713,9 @@
           }
         }
       }
+    },
+    "%lld卡" : {
+
     },
     "%lld周期：每 %@ 天提醒一次" : {
       "extractionState" : "manual",
@@ -7711,6 +7542,23 @@
         }
       }
     },
+    "AI 与数据" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI & Data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI 与数据"
+          }
+        }
+      }
+    },
     "AI 决策" : {
 
     },
@@ -8306,6 +8154,9 @@
     "NAS 与私有云同步 (WebDAV)" : {
 
     },
+    "NEXT ACTIONS · 行动建议" : {
+
+    },
     "O型" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8457,6 +8308,9 @@
     "Siri 抬腕语音指令（免开 App 内联执行）" : {
 
     },
+    "SPENDING MIX · 支出构成" : {
+
+    },
     "Tab 栏外观效果" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8473,6 +8327,12 @@
           }
         }
       }
+    },
+    "UP NEXT · 下期前瞻" : {
+
+    },
+    "UP NEXT · 明日前瞻" : {
+
     },
     "USDA FDC %@" : {
 
@@ -9021,6 +8881,15 @@
           }
         }
       }
+    },
+    "上报今日手机屏幕使用时长（分钟），供睡眠作息算法结合蓝光与晚间用机负荷调整提醒与准备缓冲。" : {
+
+    },
+    "上报屏幕使用时间" : {
+
+    },
+    "上报屏幕时间" : {
+
     },
     "上期" : {
 
@@ -10085,6 +9954,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "个人常备药品"
+          }
+        }
+      }
+    },
+    "个性化与界面" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personalization & Appearance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个性化与界面"
           }
         }
       }
@@ -11895,6 +11781,23 @@
     "今日安心花 · Safe-to-Spend" : {
 
     },
+    "今日安心花剩余" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safe to spend today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今日安心花剩余"
+          }
+        }
+      }
+    },
     "今日安排 · %lld" : {
 
     },
@@ -11904,7 +11807,10 @@
     "今日尚无饮水记录" : {
 
     },
-    "今日尚未记录饮食，拍张照片或选菜名即可估算" : {
+    "今日尚未记录" : {
+
+    },
+    "今日屏幕使用时长" : {
 
     },
     "今日已支出 ¥38.00" : {
@@ -12065,6 +11971,12 @@
 
     },
     "今日暂无待办事项" : {
+
+    },
+    "今日暂无记录，可在上方手输或拍照记录" : {
+
+    },
+    "今日暂无记账，可在上方一句话记一笔" : {
 
     },
     "今日有效补水" : {
@@ -12378,9 +12290,6 @@
     "从相册选图" : {
 
     },
-    "从相册选择" : {
-
-    },
     "从相册选择照片壁纸" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12648,6 +12557,9 @@
     "传统模式：将本月可用弹性额度均摊到每一天。" : {
 
     },
+    "估算" : {
+
+    },
     "估算咖啡因" : {
 
     },
@@ -12806,6 +12718,23 @@
     },
     "作为推荐的长期锚点：单晚调整不会偏离它超过 ±60 分钟，防止提醒把作息越带越偏。凌晨时间请选 00:30 这类次日时刻。" : {
 
+    },
+    "作息、睡前提醒、日报、月预算" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Routine, bedtime, daily report, budget"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作息、睡前提醒、日报、月预算"
+          }
+        }
+      }
     },
     "作息习惯与身份" : {
       "extractionState" : "manual",
@@ -13013,6 +12942,9 @@
           }
         }
       }
+    },
+    "使用时长（分钟）" : {
+
     },
     "使用期间" : {
       "extractionState" : "manual",
@@ -13334,9 +13266,6 @@
       }
     },
     "保存手账日签至相册 (社交分享)" : {
-
-    },
-    "保存本次记录" : {
 
     },
     "保存水光卡片至相册 (社交分享)" : {
@@ -13758,9 +13687,6 @@
       }
     },
     "停止语音记账" : {
-
-    },
-    "停止语音输入" : {
 
     },
     "停车" : {
@@ -14336,7 +14262,7 @@
         }
       }
     },
-    "全域跨模块一站式搜索" : {
+    "全域倒排索引已就绪" : {
 
     },
     "全天" : {
@@ -14407,7 +14333,13 @@
         }
       }
     },
-    "全景搜索" : {
+    "全景大厅 ›" : {
+
+    },
+    "全景索引搜索" : {
+
+    },
+    "全景索引检索「%@」(支持全拼/首字母)" : {
 
     },
     "全月成果沉淀与次月规划" : {
@@ -14839,6 +14771,9 @@
     "共 %lld 批" : {
 
     },
+    "共 %lld 笔明细" : {
+
+    },
     "共 %lld 类别" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14856,15 +14791,18 @@
         }
       }
     },
-    "共 %lld 道菜品" : {
+    "共 %lld 道" : {
 
     },
-    "共 %lld 餐 · 因未吃完少摄入约 %lld 千卡" : {
+    "共 %lld 餐" : {
+
+    },
+    "共 %lld 餐 · 累计 %lld 千卡" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "共 %1$lld 餐 · 因未吃完少摄入约 %2$lld 千卡"
+            "value" : "共 %1$lld 餐 · 累计 %2$lld 千卡"
           }
         }
       }
@@ -14953,9 +14891,6 @@
           }
         }
       }
-    },
-    "共记录 %lld 餐 · 点击下方记录可随时修改吃剩比例" : {
-
     },
     "关心父母近况" : {
       "extractionState" : "manual",
@@ -15514,6 +15449,9 @@
     "再次输入确认" : {
 
     },
+    "最大单笔 ¥%@" : {
+
+    },
     "最早一批剩 %lld 天到期" : {
 
     },
@@ -15521,6 +15459,9 @@
 
     },
     "最早一批有效至 %@" : {
+
+    },
+    "最近搜索" : {
 
     },
     "最近收到的原生消息" : {
@@ -18457,9 +18398,6 @@
         }
       }
     },
-    "加入本餐" : {
-
-    },
     "加密备份生成成功！" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18510,6 +18448,9 @@
           }
         }
       }
+    },
+    "加菜" : {
+
     },
     "加载中…" : {
       "extractionState" : "manual",
@@ -20280,6 +20221,9 @@
     "可以为本餐自定义名称（如「工作日便当」「老妈炖排骨套餐」），保存时将作为饮食记录名称。" : {
 
     },
+    "可在 iOS「快捷指令」中通过「上报屏幕使用时间」动作配置每日定时自动化上报，亦可在此查看与微调。用机过久蓝光会抑制褪黑素释放，助手将自动提前提醒放下手机。" : {
+
+    },
     "可在新建或编辑待办时，设置每天、隔天、每3天或每周等重复周期。\n待办完成后将自动生成下一期事项。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -20330,9 +20274,6 @@
           }
         }
       }
-    },
-    "可点击加入本餐累加热量" : {
-
     },
     "可能是尚未授权读取，或「健康」里今天还没有记录。" : {
       "extractionState" : "manual",
@@ -20385,10 +20326,30 @@
         }
       }
     },
+    "可选内容（含财务明细，默认不展示）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Optional content (financial details, off by default)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可选内容（含财务明细，默认不展示）"
+          }
+        }
+      }
+    },
+    "吃 %lld%%" : {
+
+    },
     "吃1次" : {
 
     },
-    "吃了 %lld%%" : {
+    "吃了多少" : {
 
     },
     "吃麦当劳" : {
@@ -21691,9 +21652,6 @@
           }
         }
       }
-    },
-    "在全景搜索中查找「%@」(账单·收纳·证件·备忘)" : {
-
     },
     "在出租车、餐厅、会议室起身时，强制停留 3 秒钟检查座位与桌面，可减少 80% 的物品遗落。" : {
       "extractionState" : "manual",
@@ -24742,6 +24700,9 @@
         }
       }
     },
+    "完成并保存记录" : {
+
+    },
     "完成待办" : {
 
     },
@@ -26681,8 +26642,15 @@
     "将取件码复制到剪贴板，便于在驿站时报出" : {
 
     },
-    "将在 %@ 提醒你准备" : {
-
+    "将在 %@ 提醒你准备（提前 %lld 分钟）" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "将在 %1$@ 提醒你准备（提前 %2$lld 分钟）"
+          }
+        }
+      }
     },
     "将备份中的数据去重并入当前应用，不删除现有新数据。" : {
 
@@ -27201,6 +27169,9 @@
         }
       }
     },
+    "屏幕使用时间" : {
+
+    },
     "展开今日时间轴" : {
 
     },
@@ -27221,8 +27192,42 @@
         }
       }
     },
+    "展示今日安心花剩余" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show today's safe-to-spend balance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展示今日安心花剩余"
+          }
+        }
+      }
+    },
     "展示健康指标与饮水。轻触「饮水」可快速打卡并查看咖啡/奶茶水分折算。" : {
 
+    },
+    "展示支出构成与最大单笔" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show spending mix & largest expense"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "展示支出构成与最大单笔"
+          }
+        }
+      }
     },
     "展示方式" : {
       "extractionState" : "manual",
@@ -29126,6 +29131,9 @@
         }
       }
     },
+    "已索引 %lld 项应用数据与系统设置" : {
+
+    },
     "已累计 (child.growthRecords.count) 次测量 · (child.milestones.count) 个里程碑 · (child.healthVisits.count) 条健康记录" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -29305,9 +29313,6 @@
         }
       }
     },
-    "已计入本餐 ✓" : {
-
-    },
     "已记录，打开小助后确认详情" : {
 
     },
@@ -29423,6 +29428,9 @@
       }
     },
     "已超支" : {
+
+    },
+    "已超额 ¥%@" : {
 
     },
     "已超额完成今日补水目标 🎉" : {
@@ -32445,9 +32453,6 @@
         }
       }
     },
-    "快捷补菜 / 搭配推荐：" : {
-
-    },
     "快捷识图建待办" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -33146,9 +33151,6 @@
           }
         }
       }
-    },
-    "懂你饮食推荐" : {
-
     },
     "成都" : {
       "extractionState" : "manual",
@@ -34012,9 +34014,6 @@
         }
       }
     },
-    "手动选择食物" : {
-
-    },
     "手机" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34085,6 +34084,9 @@
           }
         }
       }
+    },
+    "手输食物（如：牛肉面 / 米饭+炒青菜）" : {
+
     },
     "打包耗材" : {
       "extractionState" : "manual",
@@ -34844,9 +34846,6 @@
         }
       }
     },
-    "拍一张食物照片，自动估算热量" : {
-
-    },
     "拍小票记账" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35139,9 +35138,6 @@
           }
         }
       }
-    },
-    "按描述重新估算" : {
-
     },
     "按摩" : {
       "extractionState" : "manual",
@@ -35479,6 +35475,9 @@
 
     },
     "推荐候选分类（点击一键修正）：" : {
+
+    },
+    "推荐快速检索" : {
 
     },
     "推荐携带装备（清单暂无）：" : {
@@ -36327,6 +36326,23 @@
         }
       }
     },
+    "提醒与报告" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminders & Reports"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒与报告"
+          }
+        }
+      }
+    },
     "提醒与时间" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -36584,7 +36600,7 @@
         }
       }
     },
-    "搜索待办/取件码/账单/收纳/证件/备忘" : {
+    "搜索待办/记录/数据/证件/密码/设置…" : {
 
     },
     "搜索标题或转写内容" : {
@@ -36866,6 +36882,19 @@
         }
       }
     },
+    "支 ¥%@" : {
+
+    },
+    "支 ¥%@ / 收 ¥%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "支 ¥%1$@ / 收 ¥%2$@"
+          }
+        }
+      }
+    },
     "支出" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -36906,7 +36935,7 @@
     "支持信用卡账单与还款" : {
 
     },
-    "支持检索待办日程、快递取件码、记账明细、物品存放位置、重要证件与语音备忘录全文。" : {
+    "支持拼音首字母检索（如输入 sm 搜「睡眠提醒」、zd 搜「账单」、sz 搜「设置」），毫秒级直达全应用功能与数据。" : {
 
     },
     "支持燃油车定期加油、纯电车波谷充电提醒；联动常规保养、车险续保与年检防遗忘。" : {
@@ -36942,6 +36971,9 @@
           }
         }
       }
+    },
+    "收 ¥%@" : {
+
     },
     "收入" : {
       "extractionState" : "manual",
@@ -37653,9 +37685,6 @@
     "整份 %lld" : {
 
     },
-    "整份合计约 %lld 千卡" : {
-
-    },
     "整份热量" : {
 
     },
@@ -37876,9 +37905,6 @@
       }
     },
     "整餐份量" : {
-
-    },
-    "整餐吃了多少" : {
 
     },
     "文件不是支持的 GGUF 格式。" : {
@@ -39027,6 +39053,9 @@
         }
       }
     },
+    "时段常吃：" : {
+
+    },
     "时空画像自主学习引擎" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -39233,6 +39262,9 @@
           }
         }
       }
+    },
+    "昨夜入睡时刻：%@" : {
+
     },
     "昨天" : {
       "extractionState" : "manual",
@@ -41281,6 +41313,9 @@
         }
       }
     },
+    "未能精准识别食物" : {
+
+    },
     "未能识别出金额，请写明金额（如：吃午饭 25 元）" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41669,9 +41704,6 @@
         }
       }
     },
-    "本餐菜品明细" : {
-
-    },
     "机动车行驶证" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41787,6 +41819,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "杂物断舍离：清理闲置旧物与非当季衣物"
+          }
+        }
+      }
+    },
+    "权限、快捷方式、多端协同" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permissions, shortcuts, multi-device"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "权限、快捷方式、多端协同"
           }
         }
       }
@@ -42420,16 +42469,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "柯基犬"
-          }
-        }
-      }
-    },
-    "标准份约 %lld 千卡 · 识别度 %lld%%" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "标准份约 %1$lld 千卡 · 识别度 %2$lld%%"
           }
         }
       }
@@ -43158,6 +43197,23 @@
         }
       }
     },
+    "模型、投喂口、应用锁、备份" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Models, inbox, app lock, backup"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型、投喂口、应用锁、备份"
+          }
+        }
+      }
+    },
     "模型参数" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -43419,7 +43475,7 @@
         }
       }
     },
-    "正在全景检索…" : {
+    "正在全域倒排索引检索…" : {
 
     },
     "正在合并漂移点并解析真实地名与角色…" : {
@@ -43507,6 +43563,9 @@
         }
       }
     },
+    "正在本地识别语音，请说出菜名（如「西红柿鸡蛋面」）…" : {
+
+    },
     "正在本机多区域识别菜品与估算热量…" : {
 
     },
@@ -43563,9 +43622,6 @@
           }
         }
       }
-    },
-    "正在聆听中（纯本地离线识别），可直接说出菜名组合…" : {
-
     },
     "正在获取当前 GPS 坐标并采样..." : {
       "extractionState" : "manual",
@@ -44508,7 +44564,7 @@
     "每日饮水目标" : {
 
     },
-    "每晚按你的作息习惯与近一周睡眠计算建议就寝时刻：习惯晚睡就晚提醒，睡眠不足会适度提前，单晚调整不超过 45 分钟；提醒范围 21:30–01:30，超出不安排。兜底提醒会预注册未来 2–3 晚，连续几晚不打开 App 将停止预注册。工作日与周末按周五、周六夜区分，暂不识别调休；健康数据不足时按期望时间或默认 23:00，不会假装智能计算。" : {
+    "每晚综合你的历史作息习惯、睡眠债、运动负荷、晚餐与咖啡因摄入、天气与气温、四季时令、睡前待服药物、身体活力分以及手机屏幕使用时长动态建议就寝时刻与准备缓冲；单晚调整不超过 45 分钟，提醒范围 21:30–01:30。" : {
 
     },
     "每月" : {
@@ -45477,6 +45533,9 @@
           }
         }
       }
+    },
+    "沙拉或混合菜食材丰富，建议从食物库快速挑选。" : {
+
     },
     "沙盒 / Documents / Models" : {
       "extractionState" : "manual",
@@ -46897,9 +46956,6 @@
         }
       }
     },
-    "添加配菜/主食" : {
-
-    },
     "添加销售顾问、保险与上牌代办，明确购车流程中的对接人。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -47143,6 +47199,9 @@
           }
         }
       }
+    },
+    "清空" : {
+
     },
     "清空使用频次统计" : {
 
@@ -47780,6 +47839,9 @@
     "点击即可复制 URL，可在「快捷指令」App 中添加「打开 URL」动作创建自动化。" : {
 
     },
+    "点击可加入本餐" : {
+
+    },
     "点击右上角 + 录入身份证、护照、驾照等证件正反面照片" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -48133,9 +48195,6 @@
           }
         }
       }
-    },
-    "照片没能认出具体食物" : {
-
     },
     "照顾不同朋友的饮食偏好与忌口" : {
       "extractionState" : "manual",
@@ -49456,6 +49515,9 @@
         }
       }
     },
+    "生活复盘报告，日报 · 周报 · 月报 · 年报" : {
+
+    },
     "生活报告" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -50266,6 +50328,9 @@
 
     },
     "直接拍照识物" : {
+
+    },
+    "相册" : {
 
     },
     "相册照片存储" : {
@@ -52793,6 +52858,23 @@
         }
       }
     },
+    "系统" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统"
+          }
+        }
+      }
+    },
     "系统信息" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -54210,9 +54292,6 @@
         }
       }
     },
-    "置信度 %lld%%" : {
-
-    },
     "置顶" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55387,6 +55466,9 @@
     "菜品名称" : {
 
     },
+    "菜品明细" : {
+
+    },
     "菜场" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55943,9 +56025,6 @@
     "补充微调" : {
 
     },
-    "补充描述（支持多菜，如：米饭、辣椒炒肉）" : {
-
-    },
     "补充水分 300ml" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55964,6 +56043,9 @@
       }
     },
     "补充说明（如：发热超过38.5℃时服用）" : {
+
+    },
+    "补充说明（如：少油、红烧肉）" : {
 
     },
     "补牙" : {
@@ -56854,9 +56936,6 @@
         }
       }
     },
-    "记录 2 餐以上，App 即可自动洞察你的咖啡/奶茶习惯、主食偏好与加餐规律，在合适时机给出懂你的饮食建议。" : {
-
-    },
     "记录保留时间" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -56890,6 +56969,9 @@
           }
         }
       }
+    },
+    "记录周期" : {
+
     },
     "记录宝宝成长里程碑" : {
       "extractionState" : "manual",
@@ -57975,7 +58057,7 @@
         }
       }
     },
-    "识别到的可能食物" : {
+    "识别到的可能菜品" : {
 
     },
     "识别到的待办事项（可编辑）" : {
@@ -58379,6 +58461,23 @@
         }
       }
     },
+    "语言、主题、大字模式、语音" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language, theme, large text, voice"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语言、主题、大字模式、语音"
+          }
+        }
+      }
+    },
     "语言表达" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -58569,16 +58668,10 @@
     "语音记账" : {
 
     },
-    "语音输入菜名" : {
-
-    },
     "说一句话快速创建一条待办，例如：明天下午三点取快递" : {
 
     },
     "说一句话快速记一笔账，例如：咖啡 18 元" : {
-
-    },
-    "说完了" : {
 
     },
     "请先勾选待办事宜" : {
@@ -59230,6 +59323,9 @@
           }
         }
       }
+    },
+    "账目周期" : {
+
     },
     "购买日期" : {
 
@@ -60098,6 +60194,9 @@
     "轻微超支" : {
 
     },
+    "轻点打开复盘数据中心" : {
+
+    },
     "轻点放大预览" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -60165,9 +60264,6 @@
           }
         }
       }
-    },
-    "轻触查看详情与调整热量" : {
-
     },
     "较弱" : {
       "extractionState" : "manual",
@@ -60769,9 +60865,6 @@
     "近 %lld 期支出走势" : {
 
     },
-    "近期饮食记录" : {
-
-    },
     "返回上一页" : {
 
     },
@@ -61100,9 +61193,6 @@
           }
         }
       }
-    },
-    "这在沙拉、混合菜这类菜品上很常见——照片里看不出用了什么食材。手动选一个或添加多道菜品，热量依然只是参考值。" : {
-
     },
     "这段时间还没有饮食记录，拍照估算或记账推测后就能看到趋势。" : {
 
@@ -62522,9 +62612,6 @@
           }
         }
       }
-    },
-    "重选主菜" : {
-
     },
     "野营" : {
       "extractionState" : "manual",
@@ -64811,6 +64898,12 @@
     "食物名称（例如：自制牛肉面、外卖便当）" : {
 
     },
+    "食物库" : {
+
+    },
+    "食物库挑选" : {
+
+    },
     "食物热量估算" : {
 
     },
@@ -64870,6 +64963,9 @@
 
     },
     "饮食时效要求（防伤胃与吸收自适应）" : {
+
+    },
+    "饮食记录" : {
 
     },
     "饮食记录详情" : {

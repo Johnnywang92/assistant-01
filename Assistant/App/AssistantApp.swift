@@ -3,41 +3,33 @@ import SwiftData
 import SwiftUI
 import os
 
-/// 冷启动埋点：进程内相对时刻 + 单段同步耗时。仅 DEBUG 构建输出，发布构建为空操作。
+/// 冷启动埋点：进程内相对时刻 + 单段同步耗时。DEBUG 与 Release 均输出到统一日志
+/// （subsystem `assistant.startup`），每启约二十行，开销可忽略；
+/// 真机首启瓶颈需要用 Release 构建采样，Console.app 按 subsystem 过滤即可。
 enum StartupMetrics {
     private static let start = CFAbsoluteTimeGetCurrent()
     private static let logger = Logger(subsystem: "assistant.startup", category: "timing")
-    #if DEBUG
     private static let seenNodesLock = OSAllocatedUnfairLock(initialState: Set<String>())
-    #endif
 
     static func mark(_ node: String) {
-        #if DEBUG
         let elapsed = Int((CFAbsoluteTimeGetCurrent() - start) * 1000)
         logger.log("t+\(elapsed, privacy: .public)ms  \(node, privacy: .public)")
-        #endif
     }
 
     /// 只输出一次的节点（SwiftUI body / onAppear 会被反复求值）。key 固定用于去重，detail 懒求值。
     static func markOnce(_ key: String, _ detail: @autoclosure () -> String = "") {
-        #if DEBUG
         let inserted = seenNodesLock.withLock { $0.insert(key).inserted }
         if !inserted { return }
         let extra = detail()
         mark(extra.isEmpty ? key : "\(key) \(extra)")
-        #endif
     }
 
     @discardableResult
     static func measure<R>(_ node: String, _ body: () throws -> R) rethrows -> R {
-        #if DEBUG
         let begin = CFAbsoluteTimeGetCurrent()
         let result = try body()
         logger.log("cost \(Int((CFAbsoluteTimeGetCurrent() - begin) * 1000), privacy: .public)ms  \(node, privacy: .public)")
         return result
-        #else
-        return try body()
-        #endif
     }
 }
 
@@ -100,14 +92,19 @@ struct AssistantApp: App {
                 // 改由打开保险箱时（PasswordVaultView.onAppear）惰性地按需迁移。
                 StartupMetrics.measure("registerDynamicShortcuts") { router.registerDynamicShortcuts() }
                 await TodoNotificationManager.shared.registerCategoriesAsync()
+                StartupMetrics.mark("category.todo")
                 // 睡前提醒的「推迟 20 分钟」按钮，锁屏上点一下就再眯 20 分钟
                 await SleepReminderScheduler.registerCategoryAsync()
+                StartupMetrics.mark("category.sleep")
                 // 取件销号通知的「已取件 / 全部取齐」按钮，抬腕即可点
                 await PickupCheckoutService.registerCategory()
+                StartupMetrics.mark("category.pickup")
                 // 护航/清点伴随通知的「关闭卡片」按钮，手表与 Mac 上都能一键收卡
                 await LiveActivityControlNotifications.registerCategories()
+                StartupMetrics.mark("category.liveActivity")
                 // 到站/落地清点提醒的「开始清点」按钮，锁屏上点一下就进清单
                 await TripArrivalService.shared.registerCategory()
+                StartupMetrics.mark("category.tripArrival")
                 StartupMetrics.mark("notifyCategories ready")
                 // 优先对账扩展侧（小组件/手表卡片）指令并刷新共享快照
                 StartupMetrics.measure("refreshSnapshot") { WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext) }
@@ -123,15 +120,17 @@ struct AssistantApp: App {
             }
         }
         .modelContainer(Persistence.shared)
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { phase in
             guard Persistence.recoveryError == nil else { return }
             if phase == .active {
                 lockManager.appWillEnterForeground()
+                ScreenTimeTracker.shared.appWillEnterForeground()
                 // 回前台第一时间对账小组件/手表指令，确保 UI 立即反映用户在组件上的打勾/记账操作
                 WidgetSnapshotSyncController.shared.processPendingCommands(context: Persistence.shared.mainContext)
                 ForegroundAuditCoordinator.shared.scheduleAudit(delayNanoseconds: 350_000_000)
             } else if phase == .background {
                 lockManager.appDidEnterBackground()
+                ScreenTimeTracker.shared.appDidEnterBackground()
                 let bgContext = Persistence.shared.mainContext
                 // 回后台前确保驿站围栏与最新待办同步
                 LocationReminderService.shared.syncParcelStationGeofences(context: bgContext)
@@ -199,36 +198,48 @@ private final class ForegroundAuditCoordinator {
 
             // 0. 优先对账扩展侧（小组件/手表卡片）产生的指令
             WidgetSnapshotSyncController.shared.processPendingCommands(context: context)
+            StartupMetrics.mark("audit.widgetCommands")
 
             // 1. 共用 BackgroundRefreshCoordinator 幂等巡检（收件箱、防扣款/临期、周期记账、分享中转区、到站提醒）
             await BackgroundRefreshCoordinator.shared.performIdempotentAudits(context: context)
+            StartupMetrics.mark("audit.idempotentAudits")
             guard !Task.isCancelled else { return }
 
             // 2. 检查手机低电量 & 临期提醒
             _ = BatteryReminderService(context: context).checkDeviceBattery()
             ExpiryReminder.schedule()
+            StartupMetrics.mark("audit.batteryExpiry")
 
             // 3. 评估周期性家务与服药日程（含按天物化首页服药待办）
             let scheduler = HabitAndMedicationScheduler(context: context)
             await scheduler.evaluatePeriodicHabits()
+            StartupMetrics.mark("audit.periodicHabits")
             scheduler.scheduleMedicationReminders()
+            StartupMetrics.mark("audit.medicationReminders")
             scheduler.ensureTodayMedicationTodos()
+            StartupMetrics.mark("audit.medicationTodos")
 
             // 3.5 睡前提醒两层注册（兜底本夜+未来2夜，夜间进前台自动精修；每夜最多一条）
             await SleepReminderScheduler.shared.syncSleepReminders()
+            StartupMetrics.mark("audit.sleepReminders")
 
             // 4. 执行对话记录超期自动滚动清理 (7天/30天自动保留)
             DialogueHistoryManager.shared.cleanExpiredRecords(context: context)
+            StartupMetrics.mark("audit.dialogueCleanup")
 
             // 5. 同步灵动岛/手表伴随通知状态
             PickupCheckoutService.reconcile(context: context)
             LiveActivityControlNotifications.reconcile()
+            StartupMetrics.mark("audit.liveActivityReconcile")
 
             // 6. 同步定期复盘报告与待办通知排期（以及驿站地理围栏）
             PeriodicReportManager.shared.scheduleNotifications()
+            StartupMetrics.mark("audit.reportNotifications")
             TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
+            StartupMetrics.mark("audit.todoNotifications")
 
             self.lastCompletedAt = CFAbsoluteTimeGetCurrent()
+            StartupMetrics.mark("audit.end")
 
             // 7. 低功耗单次位置采样独立异步执行（室内 GPS 耗时可达数秒，不阻塞主巡检流水线）
             Task { @MainActor in

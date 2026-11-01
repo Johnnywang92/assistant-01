@@ -286,6 +286,8 @@ struct LifeVaultView: View {
     @State private var showResetCountsConfirmation = false
     /// 顶部轻量提示信息
     @State private var bannerTipMessage: String?
+    /// 复盘报告弹窗呈现控制
+    @State private var showPeriodicReport = false
 
     /// 单次渲染窗口内只算一遍的看板统计快照（与 ExpenseTrackerView 同款的 0.05s 访问窗口缓存）
     private struct VaultStats {
@@ -373,6 +375,67 @@ struct LifeVaultView: View {
     var body: some View {
         NavigationStack {
             List {
+                // MARK: - 顶部生活报告卡片（日报 · 周报 · 月报 · 年报）
+                Section {
+                    Button {
+                        showPeriodicReport = true
+                        Haptic.light()
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [Color.blue, Color.indigo],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(width: 40, height: 40)
+
+                                Image(systemName: "chart.bar.doc.horizontal.fill")
+                                    .font(.body.bold())
+                                    .foregroundStyle(.white)
+                            }
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack(spacing: 6) {
+                                    Text(L10n.tr("生活复盘报告"))
+                                        .font(.body.weight(.semibold))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+
+                                    Text(L10n.tr("日报 · 周报 · 月报 · 年报"))
+                                        .font(.system(size: 10, weight: .medium))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Capsule().fill(Color.blue.opacity(0.12)))
+                                        .foregroundStyle(Color.blue)
+                                        .lineLimit(1)
+                                }
+
+                                Text(L10n.tr("待办完成度、收支分析、健康活力与行动建议"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer(minLength: 4)
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("生活复盘报告，日报 · 周报 · 月报 · 年报")
+                    .accessibilityHint("轻点打开复盘数据中心")
+                }
+                .disabled(editMode == .active)
+
                 // 顶部快速看板统计（保留 Button 跳转入口与彩色标识，2026-10-14 按用户要求回退只读化改动）
                 Section {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
@@ -605,6 +668,20 @@ struct LifeVaultView: View {
                         }
                 }
             }
+            .sheet(isPresented: $showPeriodicReport) {
+                PeriodicReportView(initialPeriod: router.requestedReportPeriod ?? .daily)
+            }
+            .onChange(of: showPeriodicReport) { _, isPresented in
+                if !isPresented {
+                    router.requestedReportPeriod = nil
+                }
+            }
+            .onChange(of: router.activeSheet) { _, newSheet in
+                if newSheet == .periodicReport {
+                    showPeriodicReport = true
+                    router.activeSheet = nil
+                }
+            }
             .navigationDestination(item: $selectedDestination) { destination in
                 destinationView(for: destination)
             }
@@ -634,6 +711,8 @@ struct LifeVaultView: View {
                 case "painPoints", "subscriptions": navigateTo(.painPoints)
                 case "health", "healthData": navigateTo(.healthData)
                 case "places", "learnedPlaces": navigateTo(.learnedPlaces)
+                case "report", "reports", "periodicReport", "periodic-report", "dailyReport":
+                    showPeriodicReport = true
                 default: break
                 }
                 router.requestedVaultDestination = nil

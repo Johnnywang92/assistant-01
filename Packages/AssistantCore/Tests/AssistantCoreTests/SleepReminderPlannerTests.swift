@@ -292,4 +292,166 @@ final class SleepReminderPlannerTests: XCTestCase {
         let p = plan(samples: habitSamples(onset: 650, asleep: 372))
         XCTAssertTrue(SleepPlanCopy.body(for: p).contains("少 48 分钟"))
     }
+
+    // MARK: - 多维情景感知因素单元测试（活力、运动、饮食、天气、季节、药物、屏幕时间）
+
+    func testVitalityAdjustmentAdvanceBedtime() {
+        var factors = SleepContextFactors()
+        factors.vitalityLevel = .exhausted
+        factors.vitalityScore = 35
+
+        let input = SleepReminderPlanner.Input(
+            now: eveningNow,
+            calendar: utcCalendar,
+            nightKey: nightKey,
+            samples: habitSamples(onset: 660), // 23:00
+            desiredBedtimeOffset: 660,
+            contextFactors: factors
+        )
+        let p = SleepReminderPlanner.plan(input)
+        // 疲劳待恢复提前 20 分钟 -> 640 (22:40)
+        XCTAssertEqual(p.bedtimeOffset, 640)
+        XCTAssertTrue(p.reasons.contains(where: {
+            if case .vitalityAdjustment(let lvl, _, let min, _) = $0 {
+                return lvl == .exhausted && min == -20
+            }
+            return false
+        }))
+        XCTAssertTrue(SleepPlanCopy.body(for: p).contains("疲劳待恢复"))
+    }
+
+    func testExerciseAndLateWorkoutFactors() {
+        let workoutEnd = utcCalendar.date(byAdding: .hour, value: 21, to: day)! // 21:00 结束运动
+        let now2130 = utcCalendar.date(byAdding: .minute, value: 21 * 60 + 30, to: day)! // 21:30 巡检
+        var factors = SleepContextFactors()
+        factors.workoutMinutes = 60
+        factors.activeEnergyBurned = 550
+        factors.lastWorkoutEndTime = workoutEnd
+
+        let input = SleepReminderPlanner.Input(
+            now: now2130,
+            calendar: utcCalendar,
+            nightKey: nightKey,
+            samples: habitSamples(onset: 660),
+            desiredBedtimeOffset: 660,
+            windDownMinutes: 30,
+            contextFactors: factors
+        )
+        let p = SleepReminderPlanner.plan(input)
+        // 60min 高运动量提前 10min -> 650 (22:50)
+        XCTAssertEqual(p.bedtimeOffset, 650)
+        // 晚间运动延长 15min 缓冲 -> 30 + 15 = 45min
+        XCTAssertEqual(p.effectiveWindDownMinutes, 45)
+        XCTAssertEqual(p.fireOffset, 605) // 650 - 45 = 605
+        XCTAssertTrue(SleepPlanCopy.reasonLines(for: p).contains(where: { $0.contains("日间运动量") }))
+        XCTAssertTrue(SleepPlanCopy.reasonLines(for: p).contains(where: { $0.contains("晚间运动缓冲") }))
+    }
+
+    func testFoodIntakeAndLateCaffeine() {
+        var factors = SleepContextFactors()
+        factors.hasLateCaffeineIntake = true
+
+        let input = SleepReminderPlanner.Input(
+            now: eveningNow,
+            calendar: utcCalendar,
+            nightKey: nightKey,
+            samples: habitSamples(onset: 660),
+            desiredBedtimeOffset: 660,
+            windDownMinutes: 30,
+            contextFactors: factors
+        )
+        let p = SleepReminderPlanner.plan(input)
+        XCTAssertEqual(p.effectiveWindDownMinutes, 40) // +10min 缓冲
+        XCTAssertTrue(p.reasons.contains(where: {
+            if case .lateCaffeineWarning = $0 { return true }
+            return false
+        }))
+    }
+
+    func testWeatherAndSeasonFactors() {
+        var factors = SleepContextFactors()
+        factors.isTempDropAlert = true
+        factors.season = .winter
+
+        let input = SleepReminderPlanner.Input(
+            now: eveningNow,
+            calendar: utcCalendar,
+            nightKey: nightKey,
+            samples: habitSamples(onset: 660),
+            desiredBedtimeOffset: 660,
+            contextFactors: factors
+        )
+        let p = SleepReminderPlanner.plan(input)
+        // 冬季 -10，降温 -5 -> 共提前 15min (645 / 22:45)
+        XCTAssertEqual(p.bedtimeOffset, 645)
+        XCTAssertTrue(SleepPlanCopy.body(for: p).contains("冬季顺应早卧"))
+        XCTAssertTrue(SleepPlanCopy.body(for: p).contains("夜间气温较低"))
+    }
+
+    func testScreenTimeWarning() {
+        var factors = SleepContextFactors()
+        factors.screenTimeMinutes = 300 // 5 小时
+
+        let input = SleepReminderPlanner.Input(
+            now: eveningNow,
+            calendar: utcCalendar,
+            nightKey: nightKey,
+            samples: habitSamples(onset: 660),
+            desiredBedtimeOffset: 660,
+            windDownMinutes: 30,
+            contextFactors: factors
+        )
+        let p = SleepReminderPlanner.plan(input)
+        // 延长 15min 缓冲 -> 45min
+        XCTAssertEqual(p.effectiveWindDownMinutes, 45)
+        XCTAssertTrue(p.reasons.contains(where: {
+            if case .screenTimeWarning(let mins, let ext, _) = $0 {
+                return mins == 300 && ext == 15
+            }
+            return false
+        }))
+        XCTAssertTrue(SleepPlanCopy.body(for: p).contains("屏幕使用 5 小时"))
+    }
+
+    func testPendingMedicationsReminderInCopy() {
+        var factors = SleepContextFactors()
+        factors.pendingBedtimeMedications = ["褪黑素", "氨氯地平片"]
+
+        let input = SleepReminderPlanner.Input(
+            now: eveningNow,
+            calendar: utcCalendar,
+            nightKey: nightKey,
+            samples: habitSamples(onset: 660),
+            desiredBedtimeOffset: 660,
+            contextFactors: factors
+        )
+        let p = SleepReminderPlanner.plan(input)
+        let body = SleepPlanCopy.body(for: p)
+        XCTAssertTrue(body.contains("⚠️ 睡前记得服用：褪黑素、氨氯地平片"))
+        let lines = SleepPlanCopy.reasonLines(for: p)
+        XCTAssertTrue(lines.contains(where: { $0.contains("睡前药物提醒") && $0.contains("褪黑素") }))
+    }
+
+    func testUpcomingNightKeyCalculation() {
+        // 白天 09:00 -> 归属今日
+        let morning = utcCalendar.date(bySettingHour: 9, minute: 0, second: 0, of: day)!
+        let morningKey = SleepNightNormalizer.upcomingNightKey(for: morning, calendar: utcCalendar)
+        XCTAssertEqual(morningKey, utcCalendar.startOfDay(for: day))
+
+        // 晚上 21:00 -> 归属今日
+        let evening = utcCalendar.date(bySettingHour: 21, minute: 0, second: 0, of: day)!
+        let eveningKey = SleepNightNormalizer.upcomingNightKey(for: evening, calendar: utcCalendar)
+        XCTAssertEqual(eveningKey, utcCalendar.startOfDay(for: day))
+
+        // 凌晨 01:00 -> 归属昨日夜
+        let midnight1 = utcCalendar.date(bySettingHour: 1, minute: 0, second: 0, of: day)!
+        let midnight1Key = SleepNightNormalizer.upcomingNightKey(for: midnight1, calendar: utcCalendar)
+        let yesterday = utcCalendar.date(byAdding: .day, value: -1, to: day)!
+        XCTAssertEqual(midnight1Key, utcCalendar.startOfDay(for: yesterday))
+
+        // 凌晨 04:00 -> 已进清晨，归属今日夜
+        let earlyDawn = utcCalendar.date(bySettingHour: 4, minute: 0, second: 0, of: day)!
+        let dawnKey = SleepNightNormalizer.upcomingNightKey(for: earlyDawn, calendar: utcCalendar)
+        XCTAssertEqual(dawnKey, utcCalendar.startOfDay(for: day))
+    }
 }

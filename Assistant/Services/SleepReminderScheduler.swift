@@ -1,5 +1,6 @@
 import AssistantCore
 import Foundation
+import SwiftData
 @preconcurrency import UserNotifications
 
 /// 睡前提醒的调度层：把 Core 算出的 `SleepPlan` 变成系统通知/卡片状态。
@@ -11,8 +12,8 @@ import Foundation
 /// - **精修层**：夜间时段进前台时用最新数据重算本夜并覆盖同 identifier。
 ///   若原通知已送达（delivered），去重规则拦截，不会补发第二条。
 ///
-/// P1 的 energyAdj 恒为 0（Core 侧 `SleepReminderPlanner.energyAdjustment`），
-/// 两层在数值上暂时重合；P2 引入白天活力修正后自动获得「白天粗算、夜间精修」的分工。
+/// 综合考量：运动情况、食物摄入与夜宵/咖啡因、天气与气温突变、四季时令节律、
+/// 睡前药物、身体活力指数、手机屏幕使用时长等全维度多源指标。
 ///
 /// ## 每夜最多提醒一次（审查 B）
 /// `alreadyReminded` = delivered 含本夜 identifier ∨ `lastRemindedNightKey == 本夜`。
@@ -26,6 +27,10 @@ final class SleepReminderScheduler: ObservableObject {
     @Published private(set) var tonightPlan: SleepPlan?
     /// 通知权限被拒（UI 须显示去系统设置的降级文案，不得显示「已为你安排今晚提醒」）
     @Published private(set) var notificationDenied = false
+    /// 最近一次记录到的入睡起始时间点（昨夜实际入睡时刻）
+    @Published private(set) var lastNightSleepOnset: Date?
+    /// 最近一次记录到的总睡眠时长（小时）
+    @Published private(set) var lastNightTotalSleepHours: Double?
 
     // MARK: 持久化设置
 
@@ -141,9 +146,26 @@ final class SleepReminderScheduler: ObservableObject {
         }
     }
 
-    // MARK: 巡检入口
+    // MARK: 授权与巡检入口
 
-    /// 前台巡检调用（幂等）。计算本夜 + 未来 2 夜并注册/清理通知。
+    /// 显式请求系统通知权限（设置页开启开关或引导时调用）
+    @discardableResult
+    func requestAuthorization() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        do {
+            let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+            notificationDenied = !granted
+            if granted {
+                await syncSleepReminders()
+            }
+            return granted
+        } catch {
+            notificationDenied = true
+            return false
+        }
+    }
+
+    /// 前台与后台巡检调用（幂等）。计算本夜 + 未来 2 夜并注册/清理通知。
     func syncSleepReminders() async {
         guard isEnabled, HealthKitService.isAvailable else {
             tonightPlan = nil
@@ -151,7 +173,12 @@ final class SleepReminderScheduler: ObservableObject {
         }
 
         let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
+        var settings = await center.notificationSettings()
+        // 若处于未决状态且用户开启了提醒，主动尝试请求授权以唤醒系统权限弹窗
+        if settings.authorizationStatus == .notDetermined {
+            _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+            settings = await center.notificationSettings()
+        }
         let authorized = (settings.authorizationStatus == .authorized
             || settings.authorizationStatus == .provisional
             || settings.authorizationStatus == .ephemeral)
@@ -162,19 +189,32 @@ final class SleepReminderScheduler: ObservableObject {
         let samples = await HealthKitService.shared.fetchSleepNights(days: 28)
         let userDesiredOffset = desiredBedtimeHHmm.flatMap { SleepNightNormalizer.offset(hourMinute: $0) }
 
+        // 提取昨夜/最近一次的实际入睡起始时间点与总时长
+        if let lastSample = samples.last {
+            self.lastNightSleepOnset = SleepNightNormalizer.date(nightKey: lastSample.nightKey, offset: lastSample.onsetOffset, calendar: calendar)
+            self.lastNightTotalSleepHours = Double(lastSample.asleepMinutes) / 60.0
+        } else if let snapshotOnset = HealthKitService.shared.snapshot?.sleepOnset {
+            self.lastNightSleepOnset = snapshotOnset
+            self.lastNightTotalSleepHours = HealthKitService.shared.snapshot?.sleepHours
+        }
+
         // pseudo-desired：从未填写期望且样本攒够 14 夜 → 把当时习惯**冻结**为长期锚
-        // （只冻结一次，此后不跟随习惯漂移——这正是防「提醒把习惯带偏」反馈环的目的）
         if userDesiredOffset == nil,
            SleepReminderPlanner.shouldFreezePseudoDesired(hasDesired: false, sampleCount: samples.count) {
             freezePseudoDesired(samples: samples, now: now, calendar: calendar)
         }
         let desiredOffset = userDesiredOffset
             ?? pseudoDesiredHHmm.flatMap { SleepNightNormalizer.offset(hourMinute: $0) }
-        let tonightKey = SleepNightNormalizer.nightKey(for: now, calendar: calendar)
 
-        // 查已送达（每夜最多一次的权威依据）；观察到送达即固化 nightKey，
-        // 用户清掉通知中心也不会导致重发
+        // 关键修复：白天使用 upcomingNightKey 锁定今日即将到来的夜晚，避免清晨命中已过期的昨夜
+        let tonightKey = SleepNightNormalizer.upcomingNightKey(for: now, calendar: calendar)
+
+        // 查已送达（每夜最多一次的权威依据）
         let deliveredIDs = Set(await center.deliveredNotifications().map(\.request.identifier))
+
+        // 汇聚当日多维情景感知因素（运动、饮食、天气、温度、季节、药物、活力、屏幕时间等）
+        let context = Persistence.shared.mainContext
+        let contextFactors = await collectContextFactors(context: context, calendar: calendar, targetNightKey: tonightKey)
 
         var tonight: SleepPlan?
         for dayOffset in 0...2 {
@@ -186,12 +226,15 @@ final class SleepReminderScheduler: ObservableObject {
                 samples: samples,
                 desiredBedtimeOffset: desiredOffset,
                 sleepGoalMinutes: sleepGoalMinutes,
-                windDownMinutes: windDownMinutes
+                windDownMinutes: windDownMinutes,
+                contextFactors: dayOffset == 0 ? contextFactors : nil
             ))
 
             let id = SleepReminderPlanner.notificationID(nightKey: plan.nightKey, calendar: calendar)
-            let alreadyReminded = deliveredIDs.contains(id) || lastRemindedNightKey == plan.nightKey
-            if deliveredIDs.contains(id) {
+            let isDelivered = deliveredIDs.contains(id)
+            let isLastRemindedSameDay = lastRemindedNightKey.map { calendar.isDate($0, inSameDayAs: plan.nightKey) } ?? false
+            let alreadyReminded = isDelivered || isLastRemindedSameDay
+            if isDelivered {
                 lastRemindedNightKey = plan.nightKey
             }
 
@@ -206,19 +249,114 @@ final class SleepReminderScheduler: ObservableObject {
                 registerNotification(plan: plan, fireAt: fireAt, id: id)
             case .showCardOnly:
                 // 前台临场时段：只亮卡片，不发通知；清掉可能存在的旧注册
-                await center.removePendingNotificationRequests(withIdentifiers: [id])
+                center.removePendingNotificationRequests(withIdentifiers: [id])
             case .none:
                 // 已提醒过 / 计划跳过 / 权限拒绝：一律清掉本夜注册，杜绝补发
-                await center.removePendingNotificationRequests(withIdentifiers: [id])
+                center.removePendingNotificationRequests(withIdentifiers: [id])
             }
             if dayOffset == 0 {
-                tonight = plan // 卡片也展示 skipped（越界/过点时 UI 需要据此显示降级文案）
+                tonight = plan // 卡片展示今晚建议
             }
         }
         tonightPlan = tonight
     }
 
     // MARK: 私有
+
+    /// 汇聚今日情景感知各维因素
+    private func collectContextFactors(
+        context: ModelContext,
+        calendar: Calendar,
+        targetNightKey: Date
+    ) async -> SleepContextFactors {
+        let healthSnapshot = HealthKitService.shared.snapshot
+        let workoutMin = healthSnapshot?.workoutMinutes
+        let activeCal = healthSnapshot?.activeEnergy
+        let hrv = healthSnapshot?.heartRateVariability
+
+        // 饮食记录
+        var foodCalories: Double?
+        var lastFoodIntake: Date?
+        var hasLateCaffeine = false
+
+        let todayStart = calendar.startOfDay(for: .now)
+        let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart) ?? .now
+        let foodDesc = FetchDescriptor<FoodIntakeRecord>(
+            predicate: #Predicate<FoodIntakeRecord> { record in
+                record.date >= todayStart && record.date < tomorrowStart
+            },
+            sortBy: [SortDescriptor(\.date, order: .forward)]
+        )
+        if let foods = try? context.fetch(foodDesc), !foods.isEmpty {
+            foodCalories = foods.reduce(0.0) { $0 + $1.consumedCalories }
+            lastFoodIntake = foods.map(\.date).max()
+
+            let caffeineKeywords = ["咖啡", "拿铁", "美式", "卡布", "摩卡", "生椰", "浓茶", "乌龙", "绿茶", "红茶", "普洱", "奶茶", "能量饮料", "红牛", "魔爪", "可乐", "caffeine", "coffee", "tea"]
+            hasLateCaffeine = foods.contains { record in
+                let lower = record.foodName.lowercased()
+                let isCaff = caffeineKeywords.contains { lower.contains($0) }
+                let hr = calendar.component(.hour, from: record.date)
+                return isCaff && hr >= 14
+            }
+        }
+
+        // 天气与温度
+        let weather = WeatherAlertService.shared.cachedWeatherSnapshot
+        let isTempDropAlert = WeatherAlertService.shared.currentBanner?.type == .tempDrop
+        let weatherDesc = weather?.conditionDescription
+        let isRainy = weather?.isRainyOrSnowy ?? false
+        let tempC = weather?.temperatureCelsius
+
+        // 季节节律
+        let season = Season.current(for: targetNightKey, calendar: calendar)
+
+        // 睡前待服药物
+        var pendingMeds: [String] = []
+        let medDesc = FetchDescriptor<MedicationPlan>()
+        if let medPlans = try? context.fetch(medDesc) {
+            for plan in medPlans where plan.isEnabled {
+                let isBedtime = (plan.mealRelation == .bedtime)
+                let isLatePoint = plan.dailyTimePoints.contains { tp in
+                    guard let h = Int(tp.prefix(2)) else { return false }
+                    return h >= 20
+                }
+                if isBedtime || isLatePoint {
+                    let takenToday = plan.lastTakenAt.map { calendar.isDateInToday($0) } ?? false
+                    if !takenToday {
+                        pendingMeds.append(plan.medName)
+                    }
+                }
+            }
+        }
+
+        // 活力指数
+        let vitality = VitalityEvaluator.evaluate(
+            snapshot: healthSnapshot ?? .empty(day: .now),
+            foodIntakeCalories: foodCalories
+        )
+
+        // 屏幕时间
+        let screenMinutes = ScreenTimeTracker.shared.todayScreenTimeMinutes
+
+        return SleepContextFactors(
+            workoutMinutes: workoutMin,
+            activeEnergyBurned: activeCal,
+            lastWorkoutEndTime: nil,
+            foodCalories: foodCalories,
+            lastFoodIntakeTime: lastFoodIntake,
+            hasLateCaffeineIntake: hasLateCaffeine,
+            weatherDescription: weatherDesc,
+            isRainyOrSnowy: isRainy,
+            temperatureCelsius: tempC,
+            isTempDropAlert: isTempDropAlert,
+            season: season,
+            pendingBedtimeMedications: pendingMeds,
+            vitalityScore: Double(vitality.score),
+            vitalityLevel: vitality.level,
+            screenTimeMinutes: screenMinutes > 0 ? screenMinutes : nil,
+            hrvSDNN: hrv
+        )
+    }
 
     private var lastRemindedNightKey: Date? {
         get {
@@ -262,9 +400,7 @@ final class SleepReminderScheduler: ObservableObject {
         comps.second = 0
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
         let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
-        // 同 identifier 直接覆盖（幂等）；先移后加以保证覆盖语义一致
         let center = UNUserNotificationCenter.current()
-        center.removePendingNotificationRequests(withIdentifiers: [id])
         center.add(request) { error in
             if let error {
                 print("Failed to schedule sleep reminder: \(error)")

@@ -37,6 +37,8 @@ public final class HealthDaySnapshotRecord {
     public var sleepREM: Double?
     /// 深度睡眠（小时）
     public var sleepDeep: Double?
+    /// 昨晚睡眠起始时间点（入睡时间）
+    public var sleepOnset: Date?
     /// 心率（次/分）
     public var heartRate: Double?
     /// 静息心率（次/分）
@@ -91,11 +93,12 @@ public final class HealthDaySnapshotRecord {
         let summary: WorkoutRecordSummary? = workoutCount.map {
             WorkoutRecordSummary(count: $0, totalDurationMinutes: workoutMinutes ?? 0)
         }
-        return HealthDaySnapshot(day: day, values: values, workoutSummary: summary)
+        return HealthDaySnapshot(day: day, values: values, workoutSummary: summary, sleepOnset: sleepOnset)
     }
 
     /// 把快照写进本记录（nil 字段保持不动，由 `mergeForStorage` 保证合并语义正确）。
     public func apply(_ snapshot: HealthDaySnapshot) {
+        if let onset = snapshot.sleepOnset { sleepOnset = onset }
         if let v = snapshot.value(for: .stepCount)?.value { stepCount = v }
         if let v = snapshot.value(for: .activeEnergy)?.value { activeEnergy = v }
         if let v = snapshot.value(for: .restingEnergy)?.value { restingEnergy = v }

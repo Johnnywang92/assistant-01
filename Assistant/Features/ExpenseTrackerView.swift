@@ -85,12 +85,23 @@ fileprivate struct ExpenseSummary {
     }
 }
 
+/// 记账明细查看时间周期筛选
+enum ExpenseTimePeriodFilter: String, CaseIterable, Identifiable {
+    case thisMonth = "本月"
+    case thisWeek = "本周"
+    case today = "今天"
+    case all = "全部"
+
+    var id: String { rawValue }
+}
+
 /// 智能记账本主界面
 struct ExpenseTrackerView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \ExpenseRecord.date, order: .reverse) private var records: [ExpenseRecord]
     @Environment(\.colorScheme) private var colorScheme
 
+    @State private var selectedPeriodFilter: ExpenseTimePeriodFilter = .thisMonth
     @State private var quickInputText: String = ""
     @AppStorage(ExpenseCurrency.preferredCurrencyKey) private var preferredCurrencyRaw: String = ExpenseCurrency.cny.rawValue
     @State private var showingManualAddSheet = false
@@ -115,6 +126,7 @@ struct ExpenseTrackerView: View {
     private final class ExpenseAnalysisCache {
         var key: Int = -1
         var recordCount: Int = -1
+        var periodFilter: ExpenseTimePeriodFilter?
         var lastCheckedTime: CFAbsoluteTime = 0
         var summary: ExpenseSummary?
         var grouped: [(key: String, items: [ExpenseRecord])]?
@@ -122,15 +134,17 @@ struct ExpenseTrackerView: View {
 
     @State private var analysisCache = ExpenseAnalysisCache()
 
-    /// 覆盖统计/分组所依赖的字段 + 归属日（跨午夜自动失效）的轻量内容指纹（带 50ms 渲染脉冲节流）。
+    /// 覆盖统计/分组所依赖的字段 + 周期筛选 + 归属日（跨午夜自动失效）的轻量内容指纹（带 50ms 渲染脉冲节流）。
     private var analysisKey: Int {
         let now = CFAbsoluteTimeGetCurrent()
         if analysisCache.key != -1,
            analysisCache.recordCount == records.count,
+           analysisCache.periodFilter == selectedPeriodFilter,
            (now - analysisCache.lastCheckedTime) < 0.05 {
             return analysisCache.key
         }
         var hasher = Hasher()
+        hasher.combine(selectedPeriodFilter.rawValue)
         hasher.combine(Calendar.current.startOfDay(for: .now).timeIntervalSinceReferenceDate)
         hasher.combine(records.count)
         for record in records {
@@ -146,6 +160,7 @@ struct ExpenseTrackerView: View {
         let computed = hasher.finalize()
         analysisCache.lastCheckedTime = now
         analysisCache.recordCount = records.count
+        analysisCache.periodFilter = selectedPeriodFilter
         return computed
     }
 
@@ -214,6 +229,42 @@ struct ExpenseTrackerView: View {
         }
     }
 
+    /// 按选中周期过滤后的账目列表
+    private var filteredRecords: [ExpenseRecord] {
+        switch selectedPeriodFilter {
+        case .today:
+            return records.filter { calendar.isDateInToday($0.date) }
+        case .thisWeek:
+            guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: .now) else {
+                return records
+            }
+            return records.filter { weekInterval.contains($0.date) }
+        case .thisMonth:
+            guard let monthInterval = calendar.dateInterval(of: .month, for: .now) else {
+                return records
+            }
+            return records.filter { monthInterval.contains($0.date) }
+        case .all:
+            return records
+        }
+    }
+
+    /// 周期统计汇总文案
+    private var periodSummaryText: String {
+        let items = filteredRecords
+        let totalExpense = items.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount }
+        let totalIncome = items.filter { $0.isIncome }.reduce(0) { $0 + $1.amount }
+        if totalExpense > 0 && totalIncome > 0 {
+            return "支出 ¥\(String(format: "%.2f", totalExpense)) · 入账 ¥\(String(format: "%.2f", totalIncome))"
+        } else if totalExpense > 0 {
+            return "支出 ¥\(String(format: "%.2f", totalExpense))"
+        } else if totalIncome > 0 {
+            return "入账 ¥\(String(format: "%.2f", totalIncome))"
+        } else {
+            return "¥0.00"
+        }
+    }
+
     // 按日期分组记录（与 summary 共用内容指纹缓存，避免每次 body 重算全量分组）
     private var groupedRecords: [(key: String, items: [ExpenseRecord])] {
         let key = analysisKey
@@ -222,7 +273,8 @@ struct ExpenseTrackerView: View {
             return cached
         }
 
-        let grouped = Dictionary(grouping: records) { item in
+        let items = filteredRecords
+        let grouped = Dictionary(grouping: items) { item in
             if calendar.isDateInToday(item.date) {
                 return "今天"
             } else if calendar.isDateInYesterday(item.date) {
@@ -475,54 +527,113 @@ struct ExpenseTrackerView: View {
                         )
                     }
                 } else {
-                    ForEach(groupedRecords, id: \.key) { group in
-                        Section(group.key) {
-                            ForEach(group.items) { item in
-                                Button {
-                                    recordToEdit = item
-                                    Haptic.light()
-                                } label: {
-                                    ExpenseRow(item: item)
+                    Section {
+                        VStack(spacing: 8) {
+                            Picker("账目周期", selection: $selectedPeriodFilter) {
+                                ForEach(ExpenseTimePeriodFilter.allCases) { period in
+                                    Text(period.rawValue).tag(period)
                                 }
-                                .buttonStyle(.plain)
-                                .swipeActions(edge: .leading) {
+                            }
+                            .pickerStyle(.segmented)
+
+                            HStack {
+                                Text("共 \(filteredRecords.count) 笔明细")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(periodSummaryText)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+
+                    if filteredRecords.isEmpty {
+                        Section {
+                            VStack(spacing: 8) {
+                                Image(systemName: "tray")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 8)
+                                Text(selectedPeriodFilter == .today ? "今日暂无记账，可在上方一句话记一笔" : "\(selectedPeriodFilter.rawValue)暂无记账明细")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.bottom, 8)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    } else {
+                        ForEach(groupedRecords, id: \.key) { group in
+                            Section {
+                                ForEach(group.items) { item in
                                     Button {
                                         recordToEdit = item
                                         Haptic.light()
                                     } label: {
-                                        Label("编辑", systemImage: "pencil")
+                                        ExpenseRow(item: item)
                                     }
-                                    .tint(.indigo)
-                                }
-                                .swipeActions(edge: .trailing) {
-                                    Button {
-                                        recordToShare = item
-                                    } label: {
-                                        Label("分享", systemImage: "square.and.arrow.up")
+                                    .buttonStyle(.plain)
+                                    .swipeActions(edge: .leading) {
+                                        Button {
+                                            recordToEdit = item
+                                            Haptic.light()
+                                        } label: {
+                                            Label("编辑", systemImage: "pencil")
+                                        }
+                                        .tint(.indigo)
                                     }
-                                    .tint(.blue)
-                                }
-                                .contextMenu {
-                                    Button {
-                                        recordToEdit = item
-                                    } label: {
-                                        Label("编辑这笔账目", systemImage: "pencil")
+                                    .swipeActions(edge: .trailing) {
+                                        Button {
+                                            recordToShare = item
+                                        } label: {
+                                            Label("分享", systemImage: "square.and.arrow.up")
+                                        }
+                                        .tint(.blue)
                                     }
+                                    .contextMenu {
+                                        Button {
+                                            recordToEdit = item
+                                        } label: {
+                                            Label("编辑这笔账目", systemImage: "pencil")
+                                        }
 
-                                    Button(role: .destructive) {
-                                        deleteRecord(item)
-                                    } label: {
-                                        Label("删除这笔账目", systemImage: "trash")
-                                    }
-                                    Button {
-                                        recordToShare = item
-                                    } label: {
-                                        Label("分享账单", systemImage: "square.and.arrow.up")
+                                        Button(role: .destructive) {
+                                            deleteRecord(item)
+                                        } label: {
+                                            Label("删除这笔账目", systemImage: "trash")
+                                        }
+                                        Button {
+                                            recordToShare = item
+                                        } label: {
+                                            Label("分享账单", systemImage: "square.and.arrow.up")
+                                        }
                                     }
                                 }
-                            }
-                            .onDelete { offsets in
-                                deleteRecords(offsets: offsets, from: group.items)
+                                .onDelete { offsets in
+                                    deleteRecords(offsets: offsets, from: group.items)
+                                }
+                            } header: {
+                                HStack {
+                                    Text(group.key)
+                                    Spacer()
+                                    let dayExp = group.items.filter { !$0.isIncome }.reduce(0) { $0 + $1.amount }
+                                    let dayInc = group.items.filter { $0.isIncome }.reduce(0) { $0 + $1.amount }
+                                    if dayExp > 0 && dayInc > 0 {
+                                        Text("支 ¥\(String(format: "%.2f", dayExp)) / 收 ¥\(String(format: "%.2f", dayInc))")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    } else if dayExp > 0 {
+                                        Text("支 ¥\(String(format: "%.2f", dayExp))")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    } else if dayInc > 0 {
+                                        Text("收 ¥\(String(format: "%.2f", dayInc))")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .textCase(nil)
                             }
                         }
                     }

@@ -46,6 +46,8 @@ struct FoodPhotoCalorieView: View {
     /// 离线语音听写服务
     @StateObject private var voiceService = VoiceDialogueService.shared
     @State private var isListeningVoice = false
+    /// 历史记录时间周期筛选（本周 / 今天 / 本月 / 全部）
+    @State private var selectedRecordPeriod: FoodRecordPeriodFilter = .thisWeek
 
     private var todayRecords: [FoodIntakeRecord] {
         let cal = Calendar.current
@@ -63,9 +65,8 @@ struct FoodPhotoCalorieView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: AppSpacing.md) {
-                todaySummaryCard
-                dietaryRecommendationCard
-                photoSection
+                topSummaryAndRecommendationCard
+                inputSection
                 if estimation.isEstimating {
                     estimatingIndicator
                 }
@@ -74,14 +75,14 @@ struct FoodPhotoCalorieView: View {
                 } else if estimation.needsManualSelection {
                     manualSelectionSection
                 }
-                if !estimation.candidates.isEmpty {
+                if !vision.candidates.isEmpty && estimation.estimate != nil {
                     candidatesSection
                 }
                 if !records.isEmpty {
                     recordsHistorySection
                 }
             }
-            .padding(AppSpacing.lg)
+            .padding(AppSpacing.md)
         }
         .themedAppBackground()
         .navigationTitle("食物热量估算")
@@ -178,306 +179,263 @@ struct FoodPhotoCalorieView: View {
         }
     }
 
-    // MARK: - 今日热量汇总卡
+    // MARK: - 顶部今日数据与画像建议（紧凑合并卡片）
 
-    private var todaySummaryCard: some View {
-        HStack(spacing: AppSpacing.md) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Image(systemName: "flame.fill")
-                        .foregroundStyle(.orange)
-                    Text("今日已记录摄入")
-                        .font(.subheadline.bold())
-                }
-                if todayRecords.isEmpty {
-                    Text("今日尚未记录饮食，拍张照片或选菜名即可估算")
-                        .font(.caption)
-                        .foregroundStyle(AppColor.secondaryText)
-                } else {
-                    let savedDiff = max(0, todayFullCalories - todayConsumedCalories)
-                    if savedDiff >= 5 {
-                        Text("共 \(todayRecords.count) 餐 · 因未吃完少摄入约 \(Int(savedDiff.rounded())) 千卡")
-                            .font(.caption)
-                            .foregroundStyle(AppColor.secondaryText)
-                    } else {
-                        Text("共记录 \(todayRecords.count) 餐 · 点击下方记录可随时修改吃剩比例")
-                            .font(.caption)
-                            .foregroundStyle(AppColor.secondaryText)
-                    }
-                }
-            }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("\(Int(todayConsumedCalories.rounded()))")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppColor.primary)
-                Text("千卡")
-                    .font(.caption2)
-                    .foregroundStyle(AppColor.secondaryText)
-            }
-        }
-        .padding(AppSpacing.md)
-        .appCard()
-    }
-
-    // MARK: - 饮食偏好懂你推荐卡
-
-    private var dietaryRecommendationCard: some View {
+    private var topSummaryAndRecommendationCard: some View {
         let profile = preferenceService.profile
         let recommendations = preferenceService.currentRecommendations
 
-        return VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            HStack {
-                Label("懂你饮食推荐", systemImage: "sparkles")
-                    .font(.subheadline.bold())
-                    .foregroundStyle(AppColor.primary)
-                Spacer()
-                Button {
-                    showingPreferenceDetail = true
-                } label: {
-                    HStack(spacing: 2) {
-                        Text(profile.sampleCount < 2 ? "饮食画像" : (profile.tags.first ?? "饮食画像"))
-                            .font(.caption.weight(.medium))
-                        Image(systemName: "chevron.right")
-                            .font(.caption2)
+        return VStack(spacing: 8) {
+            HStack(alignment: .center) {
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.orange.opacity(0.14))
+                            .frame(width: 32, height: 32)
+                        Image(systemName: "flame.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.orange)
                     }
-                    .foregroundStyle(AppColor.secondaryText)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("今日已记录摄入")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(AppColor.secondaryText)
+                        Text(todayRecords.isEmpty ? "今日尚未记录" : "共 \(todayRecords.count) 餐")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.secondaryText)
+                    }
+                }
+
+                Spacer()
+
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text("\(Int(todayConsumedCalories.rounded()))")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppColor.primary)
+                    Text("千卡")
+                        .font(.caption2.bold())
+                        .foregroundStyle(AppColor.secondaryText)
                 }
             }
 
             if let firstRec = recommendations.first {
-                VStack(alignment: .leading, spacing: 6) {
+                Divider()
+                Button {
+                    showingPreferenceDetail = true
+                } label: {
                     HStack(spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.primary)
+
                         Text(firstRec.slot.rawValue)
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
+                            .font(.system(size: 10, weight: .bold))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1.5)
                             .background(AppColor.primary.opacity(0.12))
                             .foregroundStyle(AppColor.primary)
                             .clipShape(Capsule())
 
                         Text(firstRec.title)
-                            .font(.subheadline.weight(.semibold))
-                    }
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(AppColor.text)
+                            .lineLimit(1)
 
-                    Text(firstRec.suggestionText)
-                        .font(.footnote)
-                        .foregroundStyle(AppColor.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+                        Spacer()
 
-                    if let tip = firstRec.healthTip {
-                        HStack(alignment: .top, spacing: 4) {
-                            Image(systemName: firstRec.isHealthierAlternative ? "leaf.fill" : "info.circle.fill")
-                                .font(.caption2)
-                                .foregroundStyle(firstRec.isHealthierAlternative ? .green : AppColor.primary)
-                            Text(tip)
-                                .font(.caption2)
-                                .foregroundStyle(firstRec.isHealthierAlternative ? .green : AppColor.secondaryText)
-                        }
-                    }
-
-                    if !firstRec.suggestedFoods.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(firstRec.suggestedFoods, id: \.self) { foodName in
-                                    Button {
-                                        selectSuggestedFood(foodName)
-                                    } label: {
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "plus.circle.fill")
-                                                .font(.caption2)
-                                            Text(foodName)
-                                                .font(.caption.weight(.medium))
-                                        }
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 5)
-                                        .background(AppColor.surface)
-                                        .clipShape(Capsule())
-                                        .overlay(
-                                            Capsule()
-                                                .stroke(AppColor.primary.opacity(0.2), lineWidth: 1)
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
+                        Image(systemName: "chevron.right")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.secondaryText)
                     }
                 }
-            } else {
-                Text("记录 2 餐以上，App 即可自动洞察你的咖啡/奶茶习惯、主食偏好与加餐规律，在合适时机给出懂你的饮食建议。")
-                    .font(.footnote)
-                    .foregroundStyle(AppColor.secondaryText)
-            }
-
-            if !profile.tags.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(profile.tags, id: \.self) { tag in
-                            Text(tag)
-                                .font(.caption2)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.secondary.opacity(0.1))
-                                .clipShape(Capsule())
-                        }
-                    }
-                }
+                .buttonStyle(.plain)
             }
         }
         .padding(AppSpacing.md)
         .appCard()
     }
 
-    private func selectSuggestedFood(_ foodName: String) {
-        let cleanName = foodName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let matched = FoodCatalog.items.first(where: {
-            $0.name == cleanName || cleanName.contains($0.name) || $0.name.contains(cleanName)
-        }) {
-            estimation.selectManually(food: matched, portion: .regular, consumedRatio: 1.0)
-            didAdjust = true
-            Haptic.light()
-        } else {
-            hintText = cleanName
-            showingFoodPicker = true
-        }
-    }
+    // MARK: - 统一输入区（支持拍照识图、相册选图、直接文字手输与离线语音）
 
-    // MARK: - 照片区
-
-    private var photoSection: some View {
+    private var inputSection: some View {
         VStack(spacing: AppSpacing.sm) {
+            // 1. 照片预览卡片（当已拍摄或从相册选择照片时展示）
             if let photo {
-                Image(uiImage: photo)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(height: 220)
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
-                    .clipped()
-            } else {
-                RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
-                    .fill(AppColor.surface)
-                    .frame(height: 220)
-                    .overlay {
-                        VStack(spacing: AppSpacing.sm) {
-                            Image(systemName: "fork.knife.circle")
-                                .font(.system(size: 44))
-                                .foregroundStyle(AppColor.secondaryText)
-                            Text("拍一张食物照片，自动估算热量")
-                                .font(.footnote)
-                                .foregroundStyle(AppColor.secondaryText)
-                        }
+                ZStack(alignment: .topTrailing) {
+                    Image(uiImage: photo)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(height: 150)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+                        .clipped()
+
+                    Button {
+                        self.photo = nil
+                        self.pickedItems = []
+                        Haptic.light()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.white, Color.black.opacity(0.6))
+                            .padding(8)
                     }
+                }
             }
 
-            HStack(spacing: AppSpacing.sm) {
+            // 2. 常驻文字输入框与语音输入（无照片时手输，有照片时作为补充提示）
+            HStack(spacing: 8) {
+                Image(systemName: "fork.knife")
+                    .font(.footnote)
+                    .foregroundStyle(AppColor.secondaryText)
+
+                TextField(
+                    photo == nil ? "手输食物（如：牛肉面 / 米饭+炒青菜）" : "补充说明（如：少油、红烧肉）",
+                    text: $hintText
+                )
+                .font(.subheadline)
+                .submitLabel(.search)
+                .onSubmit {
+                    submitEstimation()
+                }
+
+                if !hintText.isEmpty {
+                    Button {
+                        hintText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // 语音输入按钮
+                Button {
+                    toggleVoiceListening()
+                } label: {
+                    Image(systemName: isListeningVoice ? "waveform" : "mic.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(isListeningVoice ? .red : AppColor.primary)
+                        .symbolEffect(.bounce, value: isListeningVoice)
+                        .frame(width: 32, height: 32)
+                        .background(isListeningVoice ? Color.red.opacity(0.12) : AppColor.primary.opacity(0.1))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+
+                // 估算按钮
+                Button {
+                    submitEstimation()
+                } label: {
+                    Text("估算")
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            (hintText.isEmpty && photo == nil) ? Color.secondary.opacity(0.4) : AppColor.primary
+                        )
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(hintText.isEmpty && photo == nil)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(.secondarySystemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+            )
+
+            // 语音正在录音提示
+            if isListeningVoice {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 6, height: 6)
+                    Text("正在本地识别语音，请说出菜名（如「西红柿鸡蛋面」）…")
+                        .font(.caption2)
+                        .foregroundStyle(Color.red)
+                    Spacer()
+                    Button("完成") {
+                        stopVoiceListeningAndEstimate()
+                    }
+                    .font(.caption2.bold())
+                    .foregroundStyle(.red)
+                }
+                .padding(.horizontal, 4)
+            }
+
+            // 3. 快捷入口按钮栏（拍照、相册、食物库）
+            HStack(spacing: 10) {
                 Button {
                     showingCamera = true
                 } label: {
-                    Label("拍照", systemImage: "camera.fill")
+                    Label("拍照", systemImage: "camera")
+                        .font(.caption.weight(.medium))
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
 
                 PhotosPicker(selection: $pickedItems, maxSelectionCount: 1, matching: .images) {
-                    Label("从相册选择", systemImage: "photo.on.rectangle")
+                    Label("相册", systemImage: "photo")
+                        .font(.caption.weight(.medium))
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.plain)
+
+                Button {
+                    showingFoodPicker = true
+                } label: {
+                    Label("食物库", systemImage: "book.pages")
+                        .font(.caption.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
-            .font(.footnote)
 
-            // 补充描述与语音输入：识别不准时，用户的说明比模型猜更准
-            if photo != nil {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        TextField("补充描述（支持多菜，如：米饭、辣椒炒肉）", text: $hintText)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.footnote)
-                            .onSubmit { Task { await runEstimation() } }
-
-                        // 离线语音一键输入按钮
-                        Button {
-                            toggleVoiceListening()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: isListeningVoice ? "waveform" : "mic.fill")
-                                    .font(.subheadline)
-                                    .foregroundStyle(isListeningVoice ? .red : AppColor.primary)
-                                    .symbolEffect(.bounce, value: isListeningVoice)
-                                if isListeningVoice {
-                                    Text("说完了")
-                                        .font(.caption2.bold())
-                                        .foregroundStyle(.red)
-                                }
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(isListeningVoice ? Color.red.opacity(0.12) : AppColor.primary.opacity(0.12))
-                            .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(isListeningVoice ? "停止语音输入" : "语音输入菜名")
-                    }
-
-                    if isListeningVoice {
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(Color.red)
-                                .frame(width: 6, height: 6)
-                            Text("正在聆听中（纯本地离线识别），可直接说出菜名组合…")
-                                .font(.caption2)
-                                .foregroundStyle(Color.red)
-                        }
-                        .padding(.leading, 2)
-                    } else if !hintText.isEmpty {
-                        Button("按描述重新估算") {
-                            Task { await runEstimation() }
-                        }
-                        .font(.caption)
-                    }
-
-                    // 快捷时段与常吃菜品气泡推荐
-                    let suggestions = quickSuggestionFoods
-                    if !suggestions.isEmpty {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("快捷补菜 / 搭配推荐：")
+            // 4. 时段快捷补菜（当尚未估算时，提供小巧的快速点选气泡）
+            if estimation.estimate == nil {
+                let suggestions = quickSuggestionFoods
+                if !suggestions.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            Text("时段常吃：")
                                 .font(.caption2)
                                 .foregroundStyle(AppColor.secondaryText)
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 6) {
-                                    ForEach(suggestions) { food in
-                                        Button {
-                                            handleQuickSuggestionTap(food)
-                                        } label: {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "plus.circle.fill")
-                                                    .font(.caption2)
-                                                Text(food.name)
-                                                    .font(.caption.weight(.medium))
-                                            }
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 5)
-                                            .background(AppColor.surface)
-                                            .clipShape(Capsule())
-                                            .overlay(
-                                                Capsule()
-                                                    .stroke(AppColor.primary.opacity(0.2), lineWidth: 1)
-                                            )
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
+                            ForEach(suggestions.prefix(6)) { food in
+                                Button {
+                                    handleQuickSuggestionTap(food)
+                                } label: {
+                                    Text("+ \(food.name)")
+                                        .font(.caption2.weight(.medium))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color(.tertiarySystemFill))
+                                        .clipShape(Capsule())
                                 }
-                                .padding(.vertical, 2)
+                                .buttonStyle(.plain)
                             }
                         }
-                        .padding(.top, 2)
+                        .padding(.vertical, 2)
                     }
                 }
             }
         }
+        .padding(AppSpacing.md)
+        .appCard()
     }
 
     private var estimatingIndicator: some View {
@@ -492,11 +450,11 @@ struct FoodPhotoCalorieView: View {
         .appCard()
     }
 
-    // MARK: - 结果区（支持整餐多菜明细 + 份量 + 吃剩比例）
+    // MARK: - 结果区（精简现代设计：突出总热量、收敛杂乱按钮、平滑滑杆）
 
     private func resultSection(_ estimate: FoodCalorieEstimate) -> some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
-            // 整餐标题与总热量（支持轻触标题改名）
+            // 1. 餐品标题与总摄入热量
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
                     Button {
@@ -505,44 +463,43 @@ struct FoodPhotoCalorieView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Text(estimate.displayName)
-                                .font(.headline)
+                                .font(.headline.weight(.semibold))
                                 .foregroundStyle(AppColor.text)
-                            Image(systemName: "pencil.line")
-                                .font(.caption)
+                            Image(systemName: "pencil")
+                                .font(.caption2)
                                 .foregroundStyle(AppColor.primary)
                         }
                     }
                     .buttonStyle(.plain)
 
-                    HStack(spacing: AppSpacing.xs) {
+                    HStack(spacing: 6) {
                         if estimate.dishes.count > 1 {
-                            Text("共 \(estimate.dishes.count) 道菜品")
-                                .font(.caption2.bold())
+                            Text("共 \(estimate.dishes.count) 道")
+                                .font(.system(size: 10, weight: .semibold))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(AppColor.primary.opacity(0.14)))
+                                .background(Capsule().fill(AppColor.primary.opacity(0.12)))
                                 .foregroundStyle(AppColor.primary)
                         }
                         Text(estimate.confidenceLevel.displayName)
                             .font(.caption2)
                             .foregroundStyle(confidenceColor(estimate.confidenceLevel))
-                        if estimate.confidence < 1 {
-                            Text("置信度 \(Int(estimate.confidence * 100))%")
-                                .font(.caption2)
-                                .foregroundStyle(AppColor.secondaryText)
-                        }
                     }
                 }
+
                 Spacer()
+
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(Int(estimate.consumedCalories.rounded()))")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(AppColor.primary)
-                        + Text(" 千卡")
-                        .font(.footnote)
-                        .foregroundStyle(AppColor.secondaryText)
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text("\(Int(estimate.consumedCalories.rounded()))")
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundStyle(AppColor.primary)
+                        Text("千卡")
+                            .font(.caption.bold())
+                            .foregroundStyle(AppColor.secondaryText)
+                    }
                     if estimate.consumedRatio < 0.999 || estimate.dishes.count > 1 {
-                        Text("整份合计约 \(Int(estimate.fullPortionCalories.rounded())) 千卡")
+                        Text("整份约 \(Int(estimate.fullPortionCalories.rounded())) 千卡")
                             .font(.caption2)
                             .foregroundStyle(AppColor.secondaryText)
                     }
@@ -551,17 +508,21 @@ struct FoodPhotoCalorieView: View {
 
             Divider()
 
-            // 本餐识别菜品明细（可点击单道菜修改菜名/换菜/直接改热量数值，或调整份量、吃剩百分比，增删配菜）
-            VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            // 2. 餐品明细（点击整行进入修改/换菜/改热量，去除杂乱的行内小步进器）
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("本餐菜品明细")
-                        .font(.subheadline.bold())
+                    Text("菜品明细")
+                        .font(.caption.bold())
+                        .foregroundStyle(AppColor.secondaryText)
                     Spacer()
                     Button {
                         showingAddDishPicker = true
                     } label: {
-                        Label("添加配菜/主食", systemImage: "plus.circle.fill")
-                            .font(.caption.bold())
+                        HStack(spacing: 3) {
+                            Image(systemName: "plus.circle.fill")
+                            Text("加菜")
+                        }
+                        .font(.caption.bold())
                     }
                     .buttonStyle(.borderless)
                 }
@@ -572,74 +533,46 @@ struct FoodPhotoCalorieView: View {
                             editingDish = dish
                             Haptic.light()
                         } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
+                            HStack(spacing: 6) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     Text(dish.food.name)
                                         .font(.subheadline.weight(.medium))
                                         .foregroundStyle(AppColor.text)
-                                    Image(systemName: "pencil")
+                                    Text("\(dish.portion.displayName) · 整份 \(Int(dish.fullPortionCalories.rounded())) 卡")
                                         .font(.caption2)
-                                        .foregroundStyle(AppColor.primary)
+                                        .foregroundStyle(AppColor.secondaryText)
                                 }
-                                Text("\(dish.portion.displayName)约 \(Int((dish.food.standardServingGrams * dish.portion.multiplier).rounded()))g · 整份 \(Int(dish.fullPortionCalories.rounded())) 千卡 · 实入 \(Int(dish.consumedCalories.rounded())) 千卡")
+                                Image(systemName: "pencil")
                                     .font(.caption2)
-                                    .foregroundStyle(AppColor.secondaryText)
+                                    .foregroundStyle(.tertiary)
                             }
                         }
                         .buttonStyle(.plain)
 
                         Spacer()
 
-                        // 单道菜份量切换
+                        // 单菜份量切换
                         Menu {
                             ForEach(FoodPortion.allCases, id: \.self) { p in
-                                Button {
+                                Button(p.displayName) {
                                     estimation.updateDishPortion(dishID: dish.id, portion: p)
                                     didAdjust = true
                                     Haptic.light()
-                                } label: {
-                                    if dish.portion == p {
-                                        Label(p.displayName, systemImage: "checkmark")
-                                    } else {
-                                        Text(p.displayName)
-                                    }
                                 }
                             }
                         } label: {
                             Text(dish.portion.displayName)
-                                .font(.caption2)
+                                .font(.caption2.weight(.medium))
                                 .padding(.horizontal, 7)
-                                .padding(.vertical, 4)
-                                .background(Capsule().fill(Color.secondary.opacity(0.14)))
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                                .foregroundStyle(.primary)
                         }
 
-                        // 单道菜吃掉比例微调（如米饭只吃一半，菜吃完了）
-                        HStack(spacing: 4) {
-                            Button {
-                                estimation.updateDishConsumedRatio(dishID: dish.id, ratio: max(0, dish.consumedRatio - 0.25))
-                                didAdjust = true
-                                Haptic.light()
-                            } label: {
-                                Image(systemName: "minus.circle")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.plain)
-
-                            Text("\(Int((dish.consumedRatio * 100).rounded()))%")
-                                .font(.caption.bold().monospacedDigit())
-                                .foregroundStyle(AppColor.primary)
-                                .frame(minWidth: 36, alignment: .center)
-
-                            Button {
-                                estimation.updateDishConsumedRatio(dishID: dish.id, ratio: min(1, dish.consumedRatio + 0.25))
-                                didAdjust = true
-                                Haptic.light()
-                            } label: {
-                                Image(systemName: "plus.circle")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        Text("\(Int(dish.consumedCalories.rounded())) 卡")
+                            .font(.subheadline.bold().monospacedDigit())
+                            .foregroundStyle(AppColor.primary)
+                            .frame(minWidth: 46, alignment: .trailing)
 
                         if estimate.dishes.count > 1 {
                             Button {
@@ -647,28 +580,29 @@ struct FoodPhotoCalorieView: View {
                                 didAdjust = true
                                 Haptic.light()
                             } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(AppColor.secondaryText)
+                                Image(systemName: "trash")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
                     .padding(.horizontal, 8)
                     .background(
-                        RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
-                            .fill(Color.secondary.opacity(0.07))
+                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                            .fill(Color.secondary.opacity(0.06))
                     )
                 }
             }
 
             Divider()
 
-            // 整餐份量选择
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            // 3. 整餐份量
+            VStack(alignment: .leading, spacing: 6) {
                 Text("整餐份量")
-                    .font(.subheadline.bold())
+                    .font(.caption.bold())
+                    .foregroundStyle(AppColor.secondaryText)
                 Picker("份量", selection: Binding(
                     get: { estimation.estimate?.portion ?? .regular },
                     set: { newValue in
@@ -683,39 +617,18 @@ struct FoodPhotoCalorieView: View {
                 .pickerStyle(.segmented)
             }
 
-            // 吃剩比例（核心需求：有时候没吃完，支持滑杆/步进/快捷比例实时调整）
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                HStack(spacing: 8) {
-                    Text("整餐吃了多少")
-                        .font(.subheadline.bold())
+            // 4. 吃了多少（平滑滑杆与 4 个直观快捷胶囊，删去多余的 - / + 步进器）
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("吃了多少")
+                        .font(.caption.bold())
+                        .foregroundStyle(AppColor.secondaryText)
                     Spacer()
-                    Button {
-                        let current = estimation.estimate?.consumedRatio ?? 1.0
-                        estimation.updateConsumedRatio(max(0, current - 0.05))
-                        didAdjust = true
-                        Haptic.light()
-                    } label: {
-                        Image(systemName: "minus.circle")
-                            .font(.subheadline)
-                    }
-                    .buttonStyle(.plain)
-
                     Text("\(Int(((estimation.estimate?.consumedRatio ?? 1) * 100).rounded()))%")
                         .font(.subheadline.bold().monospacedDigit())
                         .foregroundStyle(AppColor.primary)
-                        .frame(minWidth: 44, alignment: .center)
-
-                    Button {
-                        let current = estimation.estimate?.consumedRatio ?? 1.0
-                        estimation.updateConsumedRatio(min(1, current + 0.05))
-                        didAdjust = true
-                        Haptic.light()
-                    } label: {
-                        Image(systemName: "plus.circle")
-                            .font(.subheadline)
-                    }
-                    .buttonStyle(.plain)
                 }
+
                 Slider(
                     value: Binding(
                         get: { estimation.estimate?.consumedRatio ?? 1 },
@@ -727,119 +640,139 @@ struct FoodPhotoCalorieView: View {
                     in: 0...1,
                     step: 0.05
                 )
-                // 常用快捷值
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: AppSpacing.xs) {
-                        ForEach([(1.0, "全部吃完 100%"), (0.75, "吃了大半 75%"), (0.5, "吃了一半 50%"), (0.33, "三分之一 33%"), (0.25, "只吃一点 25%")], id: \.0) { value, label in
-                            Button(label) {
-                                estimation.updateConsumedRatio(value)
-                                didAdjust = true
-                                Haptic.light()
-                            }
-                            .font(.caption2)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+
+                HStack(spacing: 8) {
+                    ForEach([(1.0, "全部吃完 100%"), (0.75, "吃了大半 75%"), (0.5, "吃了一半 50%"), (0.25, "只尝少许 25%")], id: \.0) { value, label in
+                        let isSelected = abs((estimation.estimate?.consumedRatio ?? 1.0) - value) < 0.03
+                        Button {
+                            estimation.updateConsumedRatio(value)
+                            didAdjust = true
+                            Haptic.light()
+                        } label: {
+                            Text(label)
+                                .font(.caption2.weight(isSelected ? .bold : .regular))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 6)
+                                .background(isSelected ? AppColor.primary.opacity(0.15) : Color(.tertiarySystemFill))
+                                .foregroundStyle(isSelected ? AppColor.primary : .secondary)
+                                .clipShape(Capsule())
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
 
             if let message = estimation.statusMessage {
                 Text(message)
-                    .font(.caption)
-                    .foregroundStyle(AppColor.secondaryText)
-            }
-
-            HStack {
-                // 改选食物
-                Button {
-                    showingFoodPicker = true
-                } label: {
-                    Label("重选主菜", systemImage: "list.bullet")
-                        .font(.footnote)
-                }
-                .buttonStyle(.borderless)
-
-                Spacer()
-
-                Button {
-                    saveRecord()
-                } label: {
-                    Label("保存本次记录", systemImage: "checkmark.circle.fill")
-                        .font(.footnote.bold())
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
-        }
-        .padding(AppSpacing.md)
-        .appCard()
-    }
-
-    // MARK: - 手动选择区
-
-    private var manualSelectionSection: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            Label("照片没能认出具体食物", systemImage: "questionmark.circle")
-                .font(.subheadline.bold())
-                .foregroundStyle(AppColor.warning)
-            Text("这在沙拉、混合菜这类菜品上很常见——照片里看不出用了什么食材。手动选一个或添加多道菜品，热量依然只是参考值。")
-                .font(.caption)
-                .foregroundStyle(AppColor.secondaryText)
-            Button {
-                showingFoodPicker = true
-            } label: {
-                Label("手动选择食物", systemImage: "list.bullet")
-            }
-            .buttonStyle(.borderedProminent)
-            .font(.footnote)
-        }
-        .padding(AppSpacing.md)
-        .appCard()
-    }
-
-    // MARK: - 候选区（支持一键「+ 加入本餐」或替换）
-
-    private var candidatesSection: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            HStack {
-                Text("识别到的可能食物")
-                    .font(.subheadline.bold())
-                Spacer()
-                Text("可点击加入本餐累加热量")
                     .font(.caption2)
                     .foregroundStyle(AppColor.secondaryText)
             }
-            ForEach(vision.candidates) { candidate in
-                let isIncluded = estimation.estimate?.dishes.contains(where: { $0.food.id == candidate.food.id }) ?? false
-                HStack(spacing: AppSpacing.sm) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(candidate.food.name)
-                            .font(.subheadline)
-                        Text("标准份约 \(Int(candidate.food.standardServingCalories.rounded())) 千卡 · 识别度 \(Int(candidate.confidence * 100))%")
-                            .font(.caption2)
-                            .foregroundStyle(AppColor.secondaryText)
-                    }
-                    Spacer()
-                    if isIncluded {
-                        Text("已计入本餐 ✓")
-                            .font(.caption2.bold())
-                            .foregroundStyle(AppColor.success)
-                    } else {
+
+            // 5. 保存主操作按钮
+            Button {
+                saveRecord()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                    Text("完成并保存记录")
+                }
+                .font(.subheadline.bold())
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(AppColor.primary)
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(AppSpacing.md)
+        .appCard()
+    }
+
+    // MARK: - 手动选择引导（当无法直接匹配具体食物时）
+
+    private var manualSelectionSection: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "questionmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(AppColor.warning)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("未能精准识别食物")
+                    .font(.subheadline.bold())
+                Text("沙拉或混合菜食材丰富，建议从食物库快速挑选。")
+                    .font(.caption2)
+                    .foregroundStyle(AppColor.secondaryText)
+            }
+
+            Spacer()
+
+            Button {
+                showingFoodPicker = true
+            } label: {
+                Text("食物库挑选")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(AppColor.primary.opacity(0.12))
+                    .foregroundStyle(AppColor.primary)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(AppSpacing.md)
+        .appCard()
+    }
+
+    // MARK: - 候选区（紧凑横向药丸胶囊）
+
+    private var candidatesSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("识别到的可能菜品")
+                    .font(.caption.bold())
+                    .foregroundStyle(AppColor.secondaryText)
+                Spacer()
+                Text("点击可加入本餐")
+                    .font(.caption2)
+                    .foregroundStyle(AppColor.secondaryText)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(vision.candidates) { candidate in
+                        let isIncluded = estimation.estimate?.dishes.contains(where: { $0.food.id == candidate.food.id }) ?? false
                         Button {
-                            estimation.addDish(
-                                food: candidate.food,
-                                portion: .regular,
-                                consumedRatio: estimation.estimate?.consumedRatio ?? 1.0
-                            )
-                            didAdjust = true
-                            Haptic.light()
+                            if !isIncluded {
+                                estimation.addDish(
+                                    food: candidate.food,
+                                    portion: .regular,
+                                    consumedRatio: estimation.estimate?.consumedRatio ?? 1.0
+                                )
+                                didAdjust = true
+                                Haptic.light()
+                            }
                         } label: {
-                            Label("加入本餐", systemImage: "plus.circle.fill")
-                                .font(.caption.bold())
+                            HStack(spacing: 4) {
+                                Image(systemName: isIncluded ? "checkmark.circle.fill" : "plus.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(isIncluded ? AppColor.success : AppColor.primary)
+                                Text(candidate.food.name)
+                                    .font(.caption.weight(.medium))
+                                Text("\(Int(candidate.food.standardServingCalories.rounded()))卡")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(isIncluded ? AppColor.success.opacity(0.1) : Color(.tertiarySystemFill))
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule().stroke(isIncluded ? AppColor.success.opacity(0.3) : Color.clear, lineWidth: 1)
+                            )
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                        .buttonStyle(.plain)
+                        .disabled(isIncluded)
                     }
                 }
                 .padding(.vertical, 2)
@@ -849,98 +782,212 @@ struct FoodPhotoCalorieView: View {
         .appCard()
     }
 
+/// 饮食记录展示周期筛选
+enum FoodRecordPeriodFilter: String, CaseIterable, Identifiable {
+    case thisWeek = "本周"
+    case today = "今天"
+    case thisMonth = "本月"
+    case all = "全部"
+
+    var id: String { rawValue }
+}
+
     // MARK: - 历史记录与吃剩比例二次调整
+
+    private var filteredFoodRecords: [FoodIntakeRecord] {
+        let cal = Calendar.current
+        switch selectedRecordPeriod {
+        case .today:
+            return records.filter { cal.isDateInToday($0.date) }
+        case .thisWeek:
+            guard let weekInterval = cal.dateInterval(of: .weekOfYear, for: .now) else { return records }
+            return records.filter { weekInterval.contains($0.date) }
+        case .thisMonth:
+            guard let monthInterval = cal.dateInterval(of: .month, for: .now) else { return records }
+            return records.filter { monthInterval.contains($0.date) }
+        case .all:
+            return records
+        }
+    }
+
+    private var groupedFoodRecords: [(key: String, totalCalories: Double, items: [FoodIntakeRecord])] {
+        let cal = Calendar.current
+        let items = filteredFoodRecords
+        guard !items.isEmpty else { return [] }
+
+        if selectedRecordPeriod == .today {
+            let total = items.reduce(0.0) { $0 + $1.consumedCalories }
+            return [("今天", total, items)]
+        }
+
+        let grouped = Dictionary(grouping: items) { item in
+            if cal.isDateInToday(item.date) {
+                return "今天"
+            } else if cal.isDateInYesterday(item.date) {
+                return "昨天"
+            } else {
+                return item.date.formatted(date: .abbreviated, time: .omitted)
+            }
+        }
+
+        var result: [(key: String, totalCalories: Double, items: [FoodIntakeRecord])] = []
+
+        if let todayItems = grouped["今天"], !todayItems.isEmpty {
+            let total = todayItems.reduce(0.0) { $0 + $1.consumedCalories }
+            result.append(("今天", total, todayItems))
+        }
+
+        if let yesterdayItems = grouped["昨天"], !yesterdayItems.isEmpty {
+            let total = yesterdayItems.reduce(0.0) { $0 + $1.consumedCalories }
+            result.append(("昨天", total, yesterdayItems))
+        }
+
+        let otherKeys = grouped.keys
+            .filter { $0 != "今天" && $0 != "昨天" }
+            .sorted { k1, k2 in
+                guard let d1 = grouped[k1]?.first?.date, let d2 = grouped[k2]?.first?.date else { return false }
+                return d1 > d2
+            }
+
+        for k in otherKeys {
+            if let dateItems = grouped[k] {
+                let total = dateItems.reduce(0.0) { $0 + $1.consumedCalories }
+                result.append((k, total, dateItems))
+            }
+        }
+
+        return result
+    }
 
     private var recordsHistorySection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack {
-                Text("近期饮食记录")
+                Text("饮食记录")
                     .font(.subheadline.bold())
                 Spacer()
-                Text("轻触查看详情与调整热量")
+                Text("共 \(filteredFoodRecords.count) 餐 · 累计 \(Int(filteredFoodRecords.reduce(0) { $0 + $1.consumedCalories }.rounded())) 千卡")
                     .font(.caption2)
                     .foregroundStyle(AppColor.secondaryText)
             }
 
-            ForEach(records.prefix(20)) { record in
-                Button {
-                    editingRecord = record
-                    Haptic.light()
-                } label: {
-                    HStack(spacing: AppSpacing.sm) {
-                        if let data = record.imageData, let uiImg = UIImage(data: data) {
-                            Image(uiImage: uiImg)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 44, height: 44)
-                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
-                        } else {
-                            RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
-                                .fill(AppColor.surface)
-                                .frame(width: 44, height: 44)
-                                .overlay {
-                                    Image(systemName: "fork.knife")
-                                        .foregroundStyle(AppColor.secondaryText)
-                                }
+            Picker("记录周期", selection: $selectedRecordPeriod) {
+                ForEach(FoodRecordPeriodFilter.allCases) { period in
+                    Text(period.rawValue).tag(period)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.vertical, 2)
+
+            if filteredFoodRecords.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "fork.knife")
+                        .font(.title3)
+                        .foregroundStyle(AppColor.secondaryText.opacity(0.6))
+                        .padding(.top, 8)
+                    Text(selectedRecordPeriod == .today ? "今日暂无记录，可在上方手输或拍照记录" : "\(selectedRecordPeriod.rawValue)暂无饮食记录")
+                        .font(.caption)
+                        .foregroundStyle(AppColor.secondaryText)
+                        .padding(.bottom, 8)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            } else {
+                ForEach(groupedFoodRecords, id: \.key) { group in
+                    if selectedRecordPeriod != .today {
+                        HStack {
+                            Text(group.key)
+                                .font(.caption.bold())
+                                .foregroundStyle(AppColor.secondaryText)
+                            Spacer()
+                            Text("\(group.items.count) 餐 · \(Int(group.totalCalories.rounded())) 千卡")
+                                .font(.caption2)
+                                .foregroundStyle(AppColor.secondaryText)
                         }
+                        .padding(.top, 4)
+                    }
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(record.foodName)
-                                .font(.subheadline.bold())
-                                .foregroundStyle(AppColor.text)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
+                    ForEach(group.items) { record in
+                        Button {
+                            editingRecord = record
+                            Haptic.light()
+                        } label: {
+                            HStack(spacing: AppSpacing.sm) {
+                                if let data = record.imageData, let uiImg = UIImage(data: data) {
+                                    Image(uiImage: uiImg)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 44, height: 44)
+                                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
+                                } else {
+                                    RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
+                                        .fill(AppColor.surface)
+                                        .frame(width: 44, height: 44)
+                                        .overlay {
+                                            Image(systemName: "fork.knife")
+                                                .foregroundStyle(AppColor.secondaryText)
+                                        }
+                                }
 
-                            HStack(spacing: 6) {
-                                Text(record.portion.displayName)
-                                    .font(.caption2)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Capsule().fill(Color.secondary.opacity(0.15)))
-                                    .foregroundStyle(AppColor.secondaryText)
-                                    .fixedSize()
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(record.foodName)
+                                        .font(.subheadline.bold())
+                                        .foregroundStyle(AppColor.text)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
 
-                                if record.consumedRatio < 0.999 {
-                                    Text("吃了 \(Int((record.consumedRatio * 100).rounded()))%")
-                                        .font(.caption2.bold())
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Capsule().fill(AppColor.primary.opacity(0.15)))
+                                    HStack(spacing: 5) {
+                                        Text(record.portion.displayName)
+                                            .font(.caption2)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Capsule().fill(Color.secondary.opacity(0.12)))
+                                            .foregroundStyle(AppColor.secondaryText)
+                                            .fixedSize()
+
+                                        if record.consumedRatio < 0.999 {
+                                            Text("吃 \(Int((record.consumedRatio * 100).rounded()))%")
+                                                .font(.caption2.bold())
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Capsule().fill(AppColor.primary.opacity(0.15)))
+                                                .foregroundStyle(AppColor.primary)
+                                                .fixedSize()
+                                        }
+
+                                        Text(record.date.formatted(date: .omitted, time: .shortened))
+                                            .font(.caption2)
+                                            .foregroundStyle(AppColor.secondaryText)
+                                            .lineLimit(1)
+                                    }
+                                }
+
+                                Spacer(minLength: 8)
+
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    Text("\(Int(record.consumedCalories.rounded())) 千卡")
+                                        .font(.subheadline.bold().monospacedDigit())
                                         .foregroundStyle(AppColor.primary)
                                         .fixedSize()
+                                    if record.consumedRatio < 0.999 {
+                                        Text("整份 \(Int(record.fullPortionCalories.rounded()))")
+                                            .font(.caption2)
+                                            .foregroundStyle(AppColor.secondaryText)
+                                            .fixedSize()
+                                    }
                                 }
 
-                                Text("· \(record.date.formatted(date: .abbreviated, time: .shortened))")
+                                Image(systemName: "chevron.right")
                                     .font(.caption2)
-                                    .foregroundStyle(AppColor.secondaryText)
-                                    .lineLimit(1)
+                                    .foregroundStyle(AppColor.secondaryText.opacity(0.5))
                             }
+                            .padding(.vertical, 5)
                         }
+                        .buttonStyle(.plain)
 
-                        Spacer(minLength: 8)
-
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("\(Int(record.consumedCalories.rounded())) 千卡")
-                                .font(.subheadline.bold().monospacedDigit())
-                                .foregroundStyle(AppColor.primary)
-                                .fixedSize()
-                            if record.consumedRatio < 0.999 {
-                                Text("整份 \(Int(record.fullPortionCalories.rounded()))")
-                                    .font(.caption2)
-                                    .foregroundStyle(AppColor.secondaryText)
-                                    .fixedSize()
-                            }
+                        if record.id != group.items.last?.id {
+                            Divider()
                         }
-
-                        Image(systemName: "chevron.right")
-                            .font(.caption2.bold())
-                            .foregroundStyle(AppColor.secondaryText.opacity(0.6))
                     }
-                    .padding(.vertical, 6)
-                }
-                .buttonStyle(.plain)
-                if record.id != records.prefix(20).last?.id {
-                    Divider()
                 }
             }
         }
@@ -1021,15 +1068,9 @@ struct FoodPhotoCalorieView: View {
             didAdjust = true
             Haptic.light()
         } else {
-            if hintText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                hintText = food.name
-            } else {
-                hintText += "、" + food.name
-            }
+            hintText = food.name
+            submitEstimation()
             Haptic.light()
-            Task {
-                await runEstimation()
-            }
         }
     }
 
@@ -1060,12 +1101,7 @@ struct FoodPhotoCalorieView: View {
         isListeningVoice = false
         voiceService.stopListening()
         Haptic.light()
-        let clean = hintText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !clean.isEmpty {
-            Task {
-                await runEstimation()
-            }
-        }
+        submitEstimation()
     }
 
     private func stopVoiceListening() {
@@ -1075,8 +1111,23 @@ struct FoodPhotoCalorieView: View {
 
     // MARK: - 动作
 
+    private func submitEstimation() {
+        let clean = hintText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if photo != nil {
+            Task { await runEstimation() }
+        } else if !clean.isEmpty {
+            Task {
+                didAdjust = false
+                await estimation.estimateCalories(fromText: clean, mealDate: mealDate)
+            }
+        }
+    }
+
     private func runEstimation() async {
-        guard let photo else { return }
+        guard let photo else {
+            submitEstimation()
+            return
+        }
         let historyPrior = FoodEstimationService.buildHistoryPrior(from: records)
         _ = await estimation.estimateCalories(
             for: photo,

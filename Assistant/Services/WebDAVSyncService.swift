@@ -88,7 +88,7 @@ final class WebDAVSyncService: ObservableObject {
 
         // 1. 尝试探测目录 PROPFIND
         let propfindReq = WebDAVRequestFactory.makePROPFINDRequest(url: dirURL, authHeader: auth)
-        let (data, response) = try await URLSession.shared.data(for: propfindReq)
+        let (_, response) = try await URLSession.shared.data(for: propfindReq)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw WebDAVError.networkFailure("非 HTTP 响应")

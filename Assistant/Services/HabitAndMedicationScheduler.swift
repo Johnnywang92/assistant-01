@@ -1,7 +1,7 @@
 import AssistantCore
 import Foundation
 import SwiftData
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// 周期性家务检查与服药定时调度器
 @MainActor
@@ -80,6 +80,43 @@ struct HabitAndMedicationScheduler {
         )
         guard let plans = try? context.fetch(descriptor) else { return }
 
+        // 在仍处于主演员隔离时把模型快照为纯值条目：
+        // getPendingNotificationRequests 的回调是 @Sendable，不能捕获 SwiftData 模型类。
+        struct Entry: Sendable {
+            let id: String
+            let title: String
+            let subtitle: String
+            let body: String
+            let hour: Int
+            let minute: Int
+            let planId: String
+            let medName: String
+        }
+        let registrations: [Entry] = plans.flatMap { plan in
+            plan.dailyTimePoints.compactMap { timePoint -> Entry? in
+                let parts = timePoint.split(separator: ":").compactMap { Int($0) }
+                guard parts.count == 2 else { return nil }
+                let hour = parts[0]
+                let minute = parts[1]
+                let body: String
+                if let notes = plan.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+                    body = notes
+                } else {
+                    body = "到点服药提醒，服用后可在今日待办中打卡记录。"
+                }
+                return Entry(
+                    id: "med-\(plan.id.uuidString)-\(hour)-\(minute)",
+                    title: plan.medName,
+                    subtitle: "\(timePoint) · \(plan.dosage) · \(plan.mealRelation.displayName)",
+                    body: body,
+                    hour: hour,
+                    minute: minute,
+                    planId: plan.id.uuidString,
+                    medName: plan.medName
+                )
+            }
+        }
+
         let center = UNUserNotificationCenter.current()
         center.getPendingNotificationRequests { requests in
             // 清除所有历史服药推送，避免停用或删除后的幽灵通知
@@ -88,39 +125,27 @@ struct HabitAndMedicationScheduler {
                 center.removePendingNotificationRequests(withIdentifiers: existingMedIds)
             }
 
-            for plan in plans {
-                for timePoint in plan.dailyTimePoints {
-                    let parts = timePoint.split(separator: ":").compactMap { Int($0) }
-                    guard parts.count == 2 else { continue }
-                    let hour = parts[0]
-                    let minute = parts[1]
+            for reg in registrations {
+                let content = UNMutableNotificationContent()
+                content.title = reg.title
+                content.subtitle = reg.subtitle
+                content.body = reg.body
+                content.sound = .default
+                content.interruptionLevel = .timeSensitive
+                content.relevanceScore = 0.9
+                content.threadIdentifier = "medication-reminders"
+                content.userInfo = [
+                    "type": "medication",
+                    "planId": reg.planId,
+                    "medName": reg.medName
+                ]
 
-                    let content = UNMutableNotificationContent()
-                    content.title = plan.medName
-                    content.subtitle = "\(timePoint) · \(plan.dosage) · \(plan.mealRelation.displayName)"
-                    if let notes = plan.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-                        content.body = notes
-                    } else {
-                        content.body = "到点服药提醒，服用后可在今日待办中打卡记录。"
-                    }
-                    content.sound = .default
-                    content.interruptionLevel = .timeSensitive
-                    content.relevanceScore = 0.9
-                    content.threadIdentifier = "medication-reminders"
-                    content.userInfo = [
-                        "type": "medication",
-                        "planId": plan.id.uuidString,
-                        "medName": plan.medName
-                    ]
+                var dateComponents = DateComponents()
+                dateComponents.hour = reg.hour
+                dateComponents.minute = reg.minute
 
-                    var dateComponents = DateComponents()
-                    dateComponents.hour = hour
-                    dateComponents.minute = minute
-
-                    let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
-                    let reqId = "med-\(plan.id.uuidString)-\(hour)-\(minute)"
-                    center.add(UNNotificationRequest(identifier: reqId, content: content, trigger: trigger))
-                }
+                let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+                center.add(UNNotificationRequest(identifier: reg.id, content: content, trigger: trigger))
             }
         }
     }

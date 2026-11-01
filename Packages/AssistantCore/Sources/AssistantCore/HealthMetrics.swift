@@ -273,15 +273,19 @@ public struct HealthDaySnapshot: Equatable, Sendable {
     public let values: [HealthMetricKind: HealthMetricValue]
     /// 健身记录聚合摘要
     public let workoutSummary: WorkoutRecordSummary?
+    /// 昨晚入睡起始时间点（从昨夜睡眠样本中最长连续段的起点推算）
+    public let sleepOnset: Date?
 
     public init(
         day: Date,
         values: [HealthMetricKind: HealthMetricValue],
-        workoutSummary: WorkoutRecordSummary? = nil
+        workoutSummary: WorkoutRecordSummary? = nil,
+        sleepOnset: Date? = nil
     ) {
         self.day = day
         self.values = values
         self.workoutSummary = workoutSummary
+        self.sleepOnset = sleepOnset
     }
 
     /// 取某项指标值。
@@ -366,7 +370,8 @@ public enum HealthMetrics {
     public static func aggregate(
         _ values: [HealthMetricValue],
         day: Date,
-        workoutSummary: WorkoutRecordSummary? = nil
+        workoutSummary: WorkoutRecordSummary? = nil,
+        sleepOnset: Date? = nil
     ) -> HealthDaySnapshot {
         var buckets: [HealthMetricKind: [Double]] = [:]
         for value in values {
@@ -385,7 +390,7 @@ public enum HealthMetrics {
             }
             merged[kind] = HealthMetricValue(kind: kind, value: combinedValue, day: day)
         }
-        return HealthDaySnapshot(day: day, values: merged, workoutSummary: workoutSummary)
+        return HealthDaySnapshot(day: day, values: merged, workoutSummary: workoutSummary, sleepOnset: sleepOnset)
     }
 
     /// 合并同一天的两份快照（例：后台与前台各拉一次）。
@@ -409,7 +414,8 @@ public enum HealthMetrics {
             values[kind] = HealthMetricValue(kind: kind, value: mergedValue, day: lhs.day)
         }
         let mergedWorkout = rhs.workoutSummary ?? lhs.workoutSummary
-        return HealthDaySnapshot(day: lhs.day, values: values, workoutSummary: mergedWorkout)
+        let onset = rhs.sleepOnset ?? lhs.sleepOnset
+        return HealthDaySnapshot(day: lhs.day, values: values, workoutSummary: mergedWorkout, sleepOnset: onset)
     }
 
     /// 同一天重复落库时的合并语义：**新读到的指标覆盖旧值，未读到的指标保留旧值**。
@@ -428,7 +434,8 @@ public enum HealthMetrics {
             values[kind] = newValue
         }
         let workout = new.workoutSummary ?? previous.workoutSummary
-        return HealthDaySnapshot(day: previous.day, values: values, workoutSummary: workout)
+        let onset = new.sleepOnset ?? previous.sleepOnset
+        return HealthDaySnapshot(day: previous.day, values: values, workoutSummary: workout, sleepOnset: onset)
     }
 
     /// 计算所有目标的达成情况。缺失指标的 `actual` 为 nil，状态为 `.noData`。

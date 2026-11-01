@@ -16,6 +16,21 @@ enum ModuleViewRegistry {
         #if DEBUG
         assert(contractIssues.isEmpty, "模块 View 注册表与 Core 描述符不一致：\(contractIssues)")
         #endif
+        return rawTabView(for: moduleID)
+    }
+
+    // MARK: - 生活档案子页面视图
+
+    static func vaultView(for moduleID: ModuleID) -> AnyView {
+        #if DEBUG
+        assert(contractIssues.isEmpty, "模块 View 注册表与 Core 描述符不一致：\(contractIssues)")
+        #endif
+        return rawVaultView(for: moduleID)
+    }
+
+    // MARK: - 无断言底层构造（供公共入口与 contractIssues 自检共享，避免循环递归死锁）
+
+    private static func rawTabView(for moduleID: ModuleID) -> AnyView {
         switch moduleID {
         case .todos:
             return AnyView(TodoListView())
@@ -42,12 +57,7 @@ enum ModuleViewRegistry {
         }
     }
 
-    // MARK: - 生活档案子页面视图
-
-    static func vaultView(for moduleID: ModuleID) -> AnyView {
-        #if DEBUG
-        assert(contractIssues.isEmpty, "模块 View 注册表与 Core 描述符不一致：\(contractIssues)")
-        #endif
+    private static func rawVaultView(for moduleID: ModuleID) -> AnyView {
         switch moduleID {
         case .lifeEvents:
             return AnyView(LifeEventManagementView())
@@ -92,17 +102,19 @@ enum ModuleViewRegistry {
     #if DEBUG
     /// 交叉校验：Core 描述符声明了某 surface，这里的 switch 就必须能构造出非空 View。
     /// 漏接会在首次导航时断言，而不是静默展示空白页。
+    /// 注意：自检遍历必须调用 `rawTabView` / `rawVaultView`，刻意不调用 `tabView` / `vaultView`
+    /// （如同 InferenceBackendRegistry 刻意不调用 backend(for:)），否则会在 `swift_once` 内部重入死锁。
     private static let contractIssues: [String] = {
         var issues: [String] = []
         for descriptor in ModuleRegistry.builtIn {
             if descriptor.tabBar != nil {
-                let view = tabView(for: descriptor.id)
+                let view = rawTabView(for: descriptor.id)
                 if isBlank(view) {
                     issues.append("模块 \(descriptor.id.rawValue) 声明了 tabBar 但 View 注册表返回空")
                 }
             }
             if descriptor.vaultCard != nil {
-                let view = vaultView(for: descriptor.id)
+                let view = rawVaultView(for: descriptor.id)
                 if isBlank(view) {
                     issues.append("模块 \(descriptor.id.rawValue) 声明了 vault 但 View 注册表返回空")
                 }

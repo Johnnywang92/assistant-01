@@ -379,7 +379,7 @@ struct HealthDataView: View {
                             .font(.subheadline.bold())
                             .foregroundStyle(AppColor.warning)
                     } else if let fire = plan.fireOffset, !sleepScheduler.notificationDenied {
-                        Text("将在 \(SleepNightNormalizer.hourMinute(offset: fire)) 提醒你准备")
+                        Text("将在 \(SleepNightNormalizer.hourMinute(offset: fire)) 提醒你准备（提前 \(plan.effectiveWindDownMinutes) 分钟）")
                             .font(.subheadline)
                             .foregroundStyle(AppColor.text)
                     } else {
@@ -390,8 +390,28 @@ struct HealthDataView: View {
                     Text(SleepPlanCopy.body(for: plan))
                         .font(.caption)
                         .foregroundStyle(AppColor.secondaryText)
-                        .lineLimit(3)
+                        .lineLimit(4)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if let onset = sleepScheduler.lastNightSleepOnset {
+                        let cal = Calendar.current
+                        let h = cal.component(.hour, from: onset)
+                        let m = cal.component(.minute, from: onset)
+                        HStack(spacing: 4) {
+                            Image(systemName: "bed.double.fill")
+                                .font(.caption2)
+                                .foregroundStyle(AppColor.feature)
+                            Text("昨夜入睡时刻：\(String(format: "%02d:%02d", h, m))")
+                                .font(.caption2)
+                                .foregroundStyle(AppColor.secondaryText)
+                            if let totalH = sleepScheduler.lastNightTotalSleepHours, totalH > 0 {
+                                Text("· 总睡眠 \(String(format: "%.1f", totalH))h")
+                                    .font(.caption2)
+                                    .foregroundStyle(AppColor.secondaryText)
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -795,6 +815,12 @@ struct HealthDataView: View {
                 }
                 if let hr = health.snapshot?.heartRate {
                     statBox(title: "心率", value: HealthMetrics.format(hr, for: .heartRate), icon: "heart.fill", tint: .red)
+                }
+                if let onset = health.snapshot?.sleepOnset ?? sleepScheduler.lastNightSleepOnset {
+                    let cal = Calendar.current
+                    let h = cal.component(.hour, from: onset)
+                    let m = cal.component(.minute, from: onset)
+                    statBox(title: "入睡起始时刻", value: String(format: "%02d:%02d", h, m), icon: "moon.stars.fill", tint: .indigo)
                 }
                 if let rem = health.snapshot?.sleepREM {
                     statBox(title: "REM 快速眼动", value: HealthMetrics.format(rem, for: .sleepREM), icon: "brain.head.profile", tint: .indigo)

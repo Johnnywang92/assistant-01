@@ -216,7 +216,12 @@ final class HealthKitService: ObservableObject {
             values.append(HealthMetricValue(kind: .workoutDuration, value: duration, day: startOfDay))
         }
 
-        let newSnapshot = HealthMetrics.aggregate(values, day: startOfDay, workoutSummary: workoutResult?.summary)
+        let newSnapshot = HealthMetrics.aggregate(
+            values,
+            day: startOfDay,
+            workoutSummary: workoutResult?.summary,
+            sleepOnset: sleepResult.onset
+        )
         // 读到空结果时保留旧快照，避免抖动把已有数据抹掉
         if newSnapshot.readState == .hasData || snapshot == nil {
             snapshot = newSnapshot
@@ -413,15 +418,16 @@ final class HealthKitService: ObservableObject {
     /// 昨夜睡眠时长与细分阶段（REM、深睡眠，单位：小时）。
     ///
     /// 口径：从昨天中午到现在，累加处于「已入睡」状态的样本时长（跨来源重叠区间只算一次）。
-    /// **只统计 asleep 类样本，不统计 `inBed`（在床上）**——避免翻倍。
-    private func sleepStages(start: Date) async -> (total: HealthMetricValue?, rem: HealthMetricValue?, deep: HealthMetricValue?) {
-        guard let type = sleepType else { return (nil, nil, nil) }
+    /// 优先统计 asleep 类样本（Core/Deep/REM/Unspecified）；若无 asleep 样本（如仅通过 iPhone 就寝记录），回退统计 inBed。
+    /// 同时读取并计算最长睡眠段的起始时刻（onset，睡眠起始时间点）。
+    private func sleepStages(start: Date) async -> (total: HealthMetricValue?, rem: HealthMetricValue?, deep: HealthMetricValue?, onset: Date?) {
+        guard let type = sleepType else { return (nil, nil, nil, nil) }
         let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: start) ?? start
         let windowStart = calendar.date(byAdding: .hour, value: 12, to: yesterdayStart) ?? yesterdayStart
         let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: .now, options: [])
         let descriptor = HKSampleQueryDescriptor(
             predicates: [.categorySample(type: type, predicate: predicate)],
-            sortDescriptors: []
+            sortDescriptors: [SortDescriptor(\.startDate, order: .forward)]
         )
         do {
             let samples = try await descriptor.result(for: store)
@@ -431,46 +437,57 @@ final class HealthKitService: ObservableObject {
                 HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
                 HKCategoryValueSleepAnalysis.asleepREM.rawValue
             ]
+            let inBedValue = HKCategoryValueSleepAnalysis.inBed.rawValue
 
-            // 合并重叠区间的通用方法
-            func mergedDuration(for filterValues: Set<Int>) -> Double {
+            let hasAsleep = samples.contains { asleepValues.contains($0.value) }
+            let targetValues = hasAsleep ? asleepValues : [inBedValue]
+
+            // 合并重叠区间的通用方法，并返回合并后的区间列表与总时长
+            func mergedIntervals(for filterValues: Set<Int>) -> (intervals: [(start: Date, end: Date)], hours: Double) {
                 let intervals = samples
                     .filter { filterValues.contains($0.value) }
                     .map { (max($0.startDate, windowStart), $0.endDate) }
                     .filter { $0.1 > $0.0 }
                     .sorted { $0.0 < $1.0 }
-                var totalSeconds: TimeInterval = 0
-                var current: (Date, Date)?
+                var merged: [(start: Date, end: Date)] = []
                 for interval in intervals {
-                    if let c = current, interval.0 <= c.1 {
-                        current = (c.0, max(c.1, interval.1))
+                    if var last = merged.last, interval.0 <= last.1 {
+                        last.1 = max(last.1, interval.1)
+                        merged[merged.count - 1] = last
                     } else {
-                        if let c = current { totalSeconds += c.1.timeIntervalSince(c.0) }
-                        current = interval
+                        merged.append(interval)
                     }
                 }
-                if let c = current { totalSeconds += c.1.timeIntervalSince(c.0) }
-                return totalSeconds / 3600.0
+                let totalSeconds = merged.reduce(0.0) { $0 + $1.1.timeIntervalSince($1.0) }
+                return (merged, totalSeconds / 3600.0)
             }
 
-            let totalH = mergedDuration(for: asleepValues)
-            let remH = mergedDuration(for: [HKCategoryValueSleepAnalysis.asleepREM.rawValue])
-            let deepH = mergedDuration(for: [HKCategoryValueSleepAnalysis.asleepDeep.rawValue])
+            let (mainIntervals, totalH) = mergedIntervals(for: targetValues)
+            let remH = hasAsleep ? mergedIntervals(for: [HKCategoryValueSleepAnalysis.asleepREM.rawValue]).hours : 0
+            let deepH = hasAsleep ? mergedIntervals(for: [HKCategoryValueSleepAnalysis.asleepDeep.rawValue]).hours : 0
+
+            // 睡眠起始时间点：最长连续睡眠段的起点（若并列取更早者）
+            let onset: Date? = mainIntervals.max { a, b in
+                let da = a.end.timeIntervalSince(a.start)
+                let db = b.end.timeIntervalSince(b.start)
+                if da == db { return a.start > b.start }
+                return da < db
+            }?.start
 
             let totalMetric = totalH > 0 ? HealthMetricValue(kind: .sleep, value: totalH, day: start) : nil
             let remMetric = remH > 0 ? HealthMetricValue(kind: .sleepREM, value: remH, day: start) : nil
             let deepMetric = deepH > 0 ? HealthMetricValue(kind: .sleepDeep, value: deepH, day: start) : nil
 
-            return (totalMetric, remMetric, deepMetric)
+            return (totalMetric, remMetric, deepMetric, onset)
         } catch {
             errors.append(describe(error))
-            return (nil, nil, nil)
+            return (nil, nil, nil, nil)
         }
     }
 
     /// 按「夜」归组的入睡时刻样本（睡前提醒的锚点数据源）。
     ///
-    /// 口径与 `sleepStages` 一致：只统计 asleep 类、不统计 `inBed`；
+    /// 口径与 `sleepStages` 一致：优先统计 asleep 类；若当夜无分期数据则回退 `inBed`；
     /// 归一化（多源重叠合并、最长连续段取 onset、总 asleep 计时长）走
     /// `AssistantCore.SleepNightNormalizer`（纯规则、有回归测试）。
     /// 返回的样本按 nightKey 升序；无数据的夜不出现在结果里（不是 0 分钟）。
@@ -481,7 +498,7 @@ final class HealthKitService: ObservableObject {
         let predicate = HKQuery.predicateForSamples(withStart: windowStart, end: now, options: [])
         let descriptor = HKSampleQueryDescriptor(
             predicates: [.categorySample(type: type, predicate: predicate)],
-            sortDescriptors: []
+            sortDescriptors: [SortDescriptor(\.startDate, order: .forward)]
         )
         do {
             let samples = try await descriptor.result(for: store)
@@ -491,20 +508,24 @@ final class HealthKitService: ObservableObject {
                 HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
                 HKCategoryValueSleepAnalysis.asleepREM.rawValue
             ]
-            let segments = samples
-                .filter { asleepValues.contains($0.value) }
-                .map { (start: $0.startDate, end: $0.endDate) }
-                .filter { $0.end > $0.start }
-            guard !segments.isEmpty else { return [] }
+            let inBedValue = HKCategoryValueSleepAnalysis.inBed.rawValue
 
             // 按夜归组：每个样本落入其所属 nightKey 的窗口
-            var byNight: [Date: [(start: Date, end: Date)]] = [:]
-            for seg in segments {
-                let key = SleepNightNormalizer.nightKey(for: seg.start, calendar: calendar)
-                byNight[key, default: []].append(seg)
+            var byNight: [Date: [HKCategorySample]] = [:]
+            for sample in samples {
+                let key = SleepNightNormalizer.nightKey(for: sample.startDate, calendar: calendar)
+                byNight[key, default: []].append(sample)
             }
-            return byNight.compactMap { key, nightSegments in
-                SleepNightNormalizer.sample(nightKey: key, segments: nightSegments, calendar: calendar)
+            return byNight.compactMap { key, nightSamples in
+                // 优先使用 asleep 类阶段样本；若该夜无分期数据（如 iPhone 就寝跟踪），回退使用 inBed
+                let hasAsleep = nightSamples.contains { asleepValues.contains($0.value) }
+                let effective = hasAsleep
+                    ? nightSamples.filter { asleepValues.contains($0.value) }
+                    : nightSamples.filter { $0.value == inBedValue }
+                let nightSegments = effective
+                    .map { (start: $0.startDate, end: $0.endDate) }
+                    .filter { $0.end > $0.start }
+                return SleepNightNormalizer.sample(nightKey: key, segments: nightSegments, calendar: calendar)
             }
             .sorted { $0.nightKey < $1.nightKey }
         } catch {

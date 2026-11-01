@@ -305,33 +305,9 @@ struct TodoListView: View {
                         .wallpaperReadableText()
                 }
 
-                // 搜索词非空时，提供一键跳往「跨模块全景搜索」入口（避免首字母拦截打断中文拼音输入）
+                // 搜索词非空时，展示全域索引实时匹配卡片，支持直接跳转任意模块/设置或进入全景搜索
                 if !crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let trimmedQuery = crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    Button {
-                        router.prefilledSearchQuery = trimmedQuery
-                        router.activeSheet = .unifiedSearch
-                        crossModuleSearchText = ""
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass.circle.fill")
-                                .foregroundStyle(.tint)
-                            Text("在全景搜索中查找「\(trimmedQuery)」(账单·收纳·证件·备忘)")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.plain)
+                    homeSearchIndexPreview(query: crossModuleSearchText)
                 }
 
                 // 上下滑动排序模式开启提示横幅
@@ -466,14 +442,23 @@ struct TodoListView: View {
                     }
                 }
             }
-            // 首页搜索栏：输入时实时筛选当前页待办（支持完整中文拼音输入），按键盘「搜索」或点击横幅唤起跨模块全景搜索
-            .searchable(text: $crossModuleSearchText, prompt: Text(L10n.tr("搜索待办，回车跨模块搜账单/物品/证件/备忘…")))
+            // 首页搜索栏：输入时实时筛选当前页待办（支持完整中文拼音输入），按键盘「搜索」或点击横幅唤起跨模块全景搜索。
+            // displayMode 必须钉死 .always：automatic 模式下搜索栏交给系统随滚动收放，
+            // 而首页主体是横向分页 TabView + 多个条件横幅，纵向滚动联动失效，搜索栏被收起后有时不再回来。
+            .searchable(
+                text: $crossModuleSearchText,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: Text(L10n.tr("搜索待办、记录、数据、证件或设置…"))
+            )
             .onSubmit(of: .search) {
                 let trimmed = crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
                 router.prefilledSearchQuery = trimmed
                 router.activeSheet = .unifiedSearch
                 crossModuleSearchText = ""
+            }
+            .task {
+                await SearchIndexService.shared.rebuildIndex(context: context)
             }
             .sheet(isPresented: $showAddTodo) {
                 AddTodoSheet(initialCategory: selectedFilter)
@@ -689,6 +674,92 @@ struct TodoListView: View {
             AppMotion.animate(.easeInOut(duration: 0.25)) {
                 prepToastMessage = nil
             }
+        }
+    }
+
+    // MARK: - 首页全域搜索实时预览卡片
+
+    @ViewBuilder
+    private func homeSearchIndexPreview(query: String) -> some View {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            let matches = SearchIndexService.shared.engine.search(query: trimmed, limit: 4)
+            VStack(spacing: 6) {
+                Button {
+                    router.prefilledSearchQuery = trimmed
+                    router.activeSheet = .unifiedSearch
+                    crossModuleSearchText = ""
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkle.magnifyingglass")
+                            .foregroundStyle(.tint)
+                        Text("全景索引检索「\(trimmed)」(支持全拼/首字母)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("全景大厅 ›")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.tint)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                if !matches.isEmpty {
+                    VStack(spacing: 4) {
+                        ForEach(matches.prefix(3)) { match in
+                            Button {
+                                router.navigateToSearchRoute(match.document.route)
+                                crossModuleSearchText = ""
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: match.document.category.icon)
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(.tint)
+                                        .frame(width: 22, height: 22)
+                                        .background(Color.accentColor.opacity(0.12), in: Circle())
+
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        HStack(spacing: 4) {
+                                            Text(match.document.title)
+                                                .font(.caption.weight(.medium))
+                                                .foregroundStyle(.primary)
+                                                .lineLimit(1)
+                                            if let badge = match.document.badge {
+                                                Text(badge)
+                                                    .font(.system(size: 9, weight: .semibold))
+                                                    .foregroundStyle(.secondary)
+                                                    .padding(.horizontal, 4)
+                                                    .padding(.vertical, 1)
+                                                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                                            }
+                                        }
+                                        if let sub = match.document.subtitle {
+                                            Text(sub)
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color(.secondarySystemBackground).opacity(0.85), in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
         }
     }
 
