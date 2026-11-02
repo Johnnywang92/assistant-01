@@ -123,7 +123,7 @@ struct AssistantApp: App {
             }
         }
         .modelContainer(Persistence.shared)
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             guard Persistence.recoveryError == nil else { return }
             if phase == .active {
                 lockManager.appWillEnterForeground()

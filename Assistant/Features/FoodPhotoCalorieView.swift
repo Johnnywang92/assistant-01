@@ -182,7 +182,6 @@ struct FoodPhotoCalorieView: View {
     // MARK: - 顶部今日数据与画像建议（紧凑合并卡片）
 
     private var topSummaryAndRecommendationCard: some View {
-        let profile = preferenceService.profile
         let recommendations = preferenceService.currentRecommendations
 
         return VStack(spacing: 8) {
