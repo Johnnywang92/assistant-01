@@ -354,6 +354,18 @@ struct TodoRow: View {
                         )
                     }
 
+                    if !item.tags.isEmpty {
+                        ForEach(item.tags.prefix(2), id: \.self) { tag in
+                            Text("#\(tag)")
+                                .font(.caption2.bold())
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.indigo.opacity(0.12)))
+                                .foregroundStyle(Color.indigo)
+                        }
+                    }
+
                     Spacer(minLength: 0)
 
                     if item.type == .parcel || item.type == .returnParcel {

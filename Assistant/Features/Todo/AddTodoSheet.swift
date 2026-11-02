@@ -1144,15 +1144,18 @@ struct AddTodoSheet: View {
         let trimmedCode = pickupCode.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedStation = station.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        let (extractedTitle, extractedTags) = TagExtractor.extractTags(from: trimmedTitle)
+        let finalTitle = extractedTitle.isEmpty ? trimmedTitle : extractedTitle
+
         let minOrder = TodoItem.minimumSortOrder(in: context)
 
         let item = TodoItem(
             type: type,
             status: .active,
-            title: trimmedTitle,
+            title: finalTitle,
             detail: trimmedDetail.isEmpty ? nil : trimmedDetail,
             pickupCode: trimmedCode.isEmpty ? nil : trimmedCode,
-            courier: (type == .parcel || type == .returnParcel) ? (trimmedTitle.contains("快递") || trimmedTitle.contains("速递") || trimmedTitle.contains("顺丰") ? trimmedTitle : nil) : nil,
+            courier: (type == .parcel || type == .returnParcel) ? (finalTitle.contains("快递") || finalTitle.contains("速递") || finalTitle.contains("顺丰") ? finalTitle : nil) : nil,
             station: trimmedStation.isEmpty ? nil : trimmedStation,
             location: trimmedStation.isEmpty ? nil : trimmedStation,
             dueAt: hasDueDate ? dueDate : nil,
@@ -1163,7 +1166,8 @@ struct AddTodoSheet: View {
             remindBeforeMinutes: remindBeforeMinutes == -1 ? customRemindBeforeMinutes : remindBeforeMinutes,
             qrCodePayload: qrCodePayload,
             qrCodeImageData: qrCodeImageData,
-            attachmentImageData: attachmentImageData
+            attachmentImageData: attachmentImageData,
+            tags: extractedTags
         )
         context.insert(item)
         TodoNotificationManager.shared.scheduleNotification(for: item)

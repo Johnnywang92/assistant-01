@@ -68,7 +68,10 @@ struct EditTodoSheet: View {
         self._qrCodePayload = State(initialValue: item.qrCodePayload)
         self._qrCodeImageData = State(initialValue: item.qrCodeImageData)
         self._attachmentImageData = State(initialValue: item.attachmentImageData)
+        self._currentTags = State(initialValue: item.tags)
     }
+
+    @State private var currentTags: [String] = []
 
     var body: some View {
         NavigationStack {
@@ -76,6 +79,31 @@ struct EditTodoSheet: View {
                 // 1. 事项基本信息
                 Section("事项内容") {
                     TextField("待办名称", text: $title)
+
+                    if !currentTags.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(currentTags, id: \.self) { tag in
+                                    HStack(spacing: 4) {
+                                        Text("#\(tag)")
+                                            .font(.caption.bold())
+                                        Button {
+                                            currentTags.removeAll { $0 == tag }
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.caption2)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(Color.indigo.opacity(0.12)))
+                                    .foregroundStyle(Color.indigo)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
 
                     Picker("分类类型", selection: $type) {
                         ForEach(TodoType.allCases.filter { $0 != .data }, id: \.self) { t in
@@ -482,7 +510,15 @@ struct EditTodoSheet: View {
         guard !trimmedTitle.isEmpty else { return }
         if hasDueDate { Task { await NotificationService.requestAuthorization() } }
 
-        item.title = trimmedTitle
+        let (extractedTitle, extractedTags) = TagExtractor.extractTags(from: trimmedTitle)
+        let finalTitle = extractedTitle.isEmpty ? trimmedTitle : extractedTitle
+        var mergedTags = currentTags
+        for tag in extractedTags where !mergedTags.contains(tag) {
+            mergedTags.append(tag)
+        }
+
+        item.title = finalTitle
+        item.tags = mergedTags
         item.type = type
         item.detail = detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : detail.trimmingCharacters(in: .whitespacesAndNewlines)
         item.pickupCode = pickupCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : pickupCode.trimmingCharacters(in: .whitespacesAndNewlines)

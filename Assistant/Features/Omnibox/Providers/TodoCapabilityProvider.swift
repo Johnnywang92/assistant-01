@@ -46,9 +46,12 @@ struct TodoCapabilityProvider: CapabilityProvider {
             return date
         }()
 
+        let (extractedCleanTitle, extractedTags) = TagExtractor.extractTags(from: title)
+        let finalTitle = extractedCleanTitle.isEmpty ? title : extractedCleanTitle
+
         let todo = TodoItem(
             type: type,
-            title: title,
+            title: finalTitle,
             detail: detail,
             pickupCode: action.params["pickupCode"],
             station: action.params["station"],
@@ -57,7 +60,8 @@ struct TodoCapabilityProvider: CapabilityProvider {
             sourceText: action.params["sourceText"] ?? "Omnibox投喂",
             qrCodePayload: action.params["qrCodePayload"],
             arrivalReminderAt: arrivalReminderAt,
-            arrivalTransportRaw: action.params["arrivalTransport"]
+            arrivalTransportRaw: action.params["arrivalTransport"],
+            tags: extractedTags
         )
         context.insert(todo)
         TodoNotificationManager.shared.scheduleNotification(for: todo)

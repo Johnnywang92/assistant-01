@@ -49,6 +49,7 @@ struct TodoListView: View {
     @State private var showPeriodicReport = false
     @State private var showSeniorSettings = false
     @State private var selectedFilter: TodoFilterCategory = .all
+    @State private var selectedTagFilter: String? = nil
     @State private var highlightedTodoID: UUID?
     @State private var homeCategories: [TodoFilterCategory] = TodoCategoryPreferences.load()
     @State private var showCategoryCustomization = false
@@ -216,7 +217,26 @@ struct TodoListView: View {
         }
     }
 
-    private var activeTodos: [TodoItem] { classified.active }
+    private var allActiveTags: [String] {
+        var set: Set<String> = []
+        var result: [String] = []
+        for todo in classified.active {
+            for tag in todo.tags {
+                if !set.contains(tag) {
+                    set.insert(tag)
+                    result.append(tag)
+                }
+            }
+        }
+        return result.sorted()
+    }
+
+    private var activeTodos: [TodoItem] {
+        if let tag = selectedTagFilter {
+            return classified.active.filter { $0.tags.contains(tag) }
+        }
+        return classified.active
+    }
 
     /// 逾期事项：由分类器单次 O(N) 遍历统一收集，无需重复全表 filter + sort
     private var overdueTodos: [TodoItem] { classified.overdue }
@@ -304,6 +324,12 @@ struct TodoListView: View {
                 // 顶部固定横向分类 Tab 栏（带指示胶囊与角标）
                 filterTabBar
                     .wallpaperReadableText()
+
+                // 标签快速筛选栏：仅在库内存在标签时自适应展示，支持按项目/客户/标签聚焦
+                if !isSearching && !allActiveTags.isEmpty {
+                    tagFilterBar
+                        .wallpaperReadableText()
+                }
 
                 // 时间聚合条：按时间组织的逾期/今天/本周入口 + 逾期一键整理
                 // （与类型分类正交；三桶互斥，chip 计数即详情列表长度）
@@ -1366,6 +1392,56 @@ struct TodoListView: View {
             }
         }
         .background(isCustomBackgroundActive ? Color.clear : Color(.systemBackground))
+    }
+
+    @ViewBuilder
+    private var tagFilterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Button {
+                    AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        selectedTagFilter = nil
+                    }
+                    Haptic.selection()
+                } label: {
+                    Text("全部")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(selectedTagFilter == nil ? Color.accentColor : Color(.secondarySystemBackground)))
+                        .foregroundStyle(selectedTagFilter == nil ? Color.white : Color.primary)
+                }
+                .buttonStyle(.plain)
+
+                ForEach(allActiveTags, id: \.self) { tag in
+                    let isSelected = selectedTagFilter == tag
+                    let count = classified.active.filter { $0.tags.contains(tag) }.count
+                    Button {
+                        AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.82)) {
+                            selectedTagFilter = (selectedTagFilter == tag ? nil : tag)
+                        }
+                        Haptic.selection()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("#\(tag)")
+                                .font(.caption2.bold())
+                            if count > 0 {
+                                Text("\(count)")
+                                    .font(.caption2)
+                                    .opacity(0.8)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(isSelected ? Color.indigo : Color.indigo.opacity(0.12)))
+                        .foregroundStyle(isSelected ? Color.white : Color.indigo)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+        }
     }
 
     @ViewBuilder
