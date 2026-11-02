@@ -8,28 +8,18 @@ struct SettingsSystemPage: View {
     var body: some View {
         Form {
             // MARK: - 核心权限健康度检查
-            Section {
+            Section("系统权限") {
                 Button {
                     showingPermissionOnboarding = true
                 } label: {
                     HStack(spacing: 12) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                                .fill(PermissionManager.shared.areAllCorePermissionsReady ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
-                                .frame(width: 36, height: 36)
+                        SettingsIconBadge(
+                            icon: PermissionManager.shared.areAllCorePermissionsReady ? "checkmark.shield.fill" : "exclamationmark.shield.fill",
+                            color: PermissionManager.shared.areAllCorePermissionsReady ? .green : .orange
+                        )
 
-                            Image(systemName: PermissionManager.shared.areAllCorePermissionsReady ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                                .foregroundStyle(PermissionManager.shared.areAllCorePermissionsReady ? Color.green : Color.orange)
-                        }
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("权限检查与配置")
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.primary)
-                            Text("集中检查与一键开启所有系统功能权限")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text("权限检查与配置")
+                            .foregroundStyle(.primary)
 
                         Spacer()
 
@@ -46,29 +36,57 @@ struct SettingsSystemPage: View {
                     }
                 }
                 .buttonStyle(.plain)
-            } header: {
-                Text("系统权限")
-            } footer: {
-                Text("局域网模型启用后，生活摘要会发送至指定端点。")
             }
 
             Section("快捷方式与多端协同") {
                 NavigationLink {
                     WatchIntegrationGuideView()
                 } label: {
-                    Label("Apple Watch 腕上协同指南", systemImage: "applewatch")
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "applewatch", color: .orange)
+                        Text("Apple Watch 腕上协同")
+                            .foregroundStyle(.primary)
+                    }
                 }
                 NavigationLink {
                     ShortcutsGuideView()
                 } label: {
-                    Label("快捷方式指南", systemImage: "bolt.badge.clock.fill")
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "bolt.fill", color: .purple)
+                        Text("快捷指令指南")
+                            .foregroundStyle(.primary)
+                    }
                 }
-                NavigationLink("短信同步向导") { SetupGuideView() }
+                NavigationLink {
+                    SetupGuideView()
+                } label: {
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "message.fill", color: .green)
+                        Text("短信同步向导")
+                            .foregroundStyle(.primary)
+                    }
+                }
             }
 
             Section("系统信息") {
-                LabeledContent("证书签名有效期", value: ExpiryReminder.displayDescription)
-                NavigationLink("最近收到的原生消息") { RawMessagesView() }
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "signature", color: .blue)
+                    Text("证书签名有效期")
+                    Spacer()
+                    Text(ExpiryReminder.displayDescription)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                NavigationLink {
+                    RawMessagesView()
+                } label: {
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "tray.full.fill", color: .gray)
+                        Text("最近收到的原生消息")
+                            .foregroundStyle(.primary)
+                    }
+                }
             }
         }
         .themedScrollContentBackground()

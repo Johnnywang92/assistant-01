@@ -16,17 +16,18 @@ struct SettingsAppearancePage: View {
 
     var body: some View {
         Form {
-            // MARK: - 应用语言切换 (支持跟随系统 / 简体中文 / English)
+            // MARK: - 应用语言切换
             Section {
                 NavigationLink {
                     AppLanguageSettingsView()
                 } label: {
-                    HStack {
-                        Label("语言 / Language", systemImage: "globe")
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "globe", color: .blue)
+                        Text("语言 / Language")
                             .foregroundStyle(.primary)
                         Spacer()
                         Text(langManager.selectedLanguage.displayName)
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -46,22 +47,20 @@ struct SettingsAppearancePage: View {
             } header: {
                 Text("语言 / Language")
             } footer: {
-                Text(L10n.choose(
-                    "切换后界面、通知与语音助手将立即生效，无需重启 App。",
-                    "Interface, notifications, and voice assistant update immediately without restarting."
-                ))
+                Text(L10n.choose("切换后界面与通知立即生效。", "Takes effect immediately."))
             }
 
             Section {
                 NavigationLink {
                     AppBackgroundSettingsView()
                 } label: {
-                    HStack {
-                        Label("主题与背景", systemImage: "paintpalette.fill")
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "paintpalette.fill", color: .teal)
+                        Text("主题与背景")
                             .foregroundStyle(.primary)
                         Spacer()
                         Text(L10n.tr(AppBackgroundManager.shared.currentStyle.rawValue))
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -69,37 +68,41 @@ struct SettingsAppearancePage: View {
                 NavigationLink {
                     TabBarCustomizationView()
                 } label: {
-                    HStack {
-                        Label("底部导航栏", systemImage: "rectangle.bottomthird.inset.filled")
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "rectangle.bottomthird.inset.filled", color: .indigo)
+                        Text("底部导航栏")
                             .foregroundStyle(.primary)
                         Spacer()
                         Text("\(TabBarManager.shared.activeTabs.count) / 5 个板块")
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }
 
-                Toggle(isOn: Binding(
-                    get: { tabManager.isTabActive(.lifeEvents) },
-                    set: { enabled in
-                        if enabled {
-                            let result = tabManager.addTab(.lifeEvents)
-                            if !result.success {
-                                lifeEventTabAlertMessage = L10n.tr(result.message ?? "无法开启人生大事入口")
-                                showingLifeEventTabAlert = true
-                            }
-                        } else {
-                            let result = tabManager.removeTab(.lifeEvents)
-                            if !result.success {
-                                lifeEventTabAlertMessage = L10n.tr(result.message ?? "无法关闭人生大事入口")
-                                showingLifeEventTabAlert = true
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "sparkles", color: .pink)
+                    Toggle(isOn: Binding(
+                        get: { tabManager.isTabActive(.lifeEvents) },
+                        set: { enabled in
+                            if enabled {
+                                let result = tabManager.addTab(.lifeEvents)
+                                if !result.success {
+                                    lifeEventTabAlertMessage = L10n.tr(result.message ?? "无法开启人生大事入口")
+                                    showingLifeEventTabAlert = true
+                                }
+                            } else {
+                                let result = tabManager.removeTab(.lifeEvents)
+                                if !result.success {
+                                    lifeEventTabAlertMessage = L10n.tr(result.message ?? "无法关闭人生大事入口")
+                                    showingLifeEventTabAlert = true
+                                }
                             }
                         }
+                    )) {
+                        Text("人生大事入口")
                     }
-                )) {
-                    Label("人生大事入口", systemImage: "sparkles")
+                    .tint(.pink)
                 }
-                .tint(.pink)
             } header: {
                 Text("界面")
             }
@@ -110,40 +113,21 @@ struct SettingsAppearancePage: View {
                     SeniorModeSettingsView()
                 } label: {
                     HStack(spacing: 12) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                                .fill(seniorManager.isSeniorModeEnabled ? Color.orange.opacity(0.2) : Color.orange.opacity(0.12))
-                                .frame(width: 36, height: 36)
+                        SettingsIconBadge(icon: "figure.walk.motion", color: .orange)
 
-                            Image(systemName: "figure.walk.motion")
-                                .font(.title3)
-                                .foregroundStyle(.orange)
-                        }
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text("大字关怀模式")
-                                    .font(.body.bold())
-                                    .foregroundStyle(.primary)
-
-                                if seniorManager.isSeniorModeEnabled {
-                                    Text("已开启")
-                                        .font(.caption2.bold())
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Capsule().fill(Color.orange.opacity(0.2)))
-                                        .foregroundStyle(.orange)
-                                }
-                            }
-
-                            if seniorManager.isSeniorModeEnabled {
-                                Text(seniorManager.fontScale.title)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        Text("大字关怀模式")
+                            .foregroundStyle(.primary)
 
                         Spacer()
+
+                        if seniorManager.isSeniorModeEnabled {
+                            Text("已开启")
+                                .font(.caption.bold())
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.orange.opacity(0.18)))
+                                .foregroundStyle(.orange)
+                        }
                     }
                 }
 
@@ -161,14 +145,17 @@ struct SettingsAppearancePage: View {
             }
 
             Section {
-                Picker("助手模式", selection: $selectedMode) {
-                    ForEach(AssistantMode.allCases, id: \.self) { mode in
-                        Label(L10n.tr(mode.rawValue), systemImage: mode.icon).tag(mode)
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "person.badge.shield.checkmark.fill", color: .blue)
+                    Picker("助手模式", selection: $selectedMode) {
+                        ForEach(AssistantMode.allCases, id: \.self) { mode in
+                            Label(L10n.tr(mode.rawValue), systemImage: mode.icon).tag(mode)
+                        }
                     }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: selectedMode) { _, newMode in
-                    AppSettings.currentMode = newMode
+                    .pickerStyle(.menu)
+                    .onChange(of: selectedMode) { _, newMode in
+                        AppSettings.currentMode = newMode
+                    }
                 }
 
                 Text(L10n.tr(selectedMode.description))
@@ -179,12 +166,18 @@ struct SettingsAppearancePage: View {
             }
 
             Section {
-                Toggle("语音悬浮球", isOn: $floatingVoiceEnabled)
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "circle.circle.fill", color: .cyan)
+                    Toggle("语音悬浮球", isOn: $floatingVoiceEnabled)
+                }
 
-                Toggle("朗读语音回答", isOn: $voiceReplyEnabled)
-                    .onChange(of: voiceReplyEnabled) { _, val in
-                        AppSettings.voiceReplyEnabled = val
-                    }
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "speaker.wave.2.fill", color: .green)
+                    Toggle("朗读语音回答", isOn: $voiceReplyEnabled)
+                        .onChange(of: voiceReplyEnabled) { _, val in
+                            AppSettings.voiceReplyEnabled = val
+                        }
+                }
 
                 if floatingVoiceEnabled {
                     Button {
@@ -194,12 +187,12 @@ struct SettingsAppearancePage: View {
                         }
                         Haptic.light()
                     } label: {
-                        HStack {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(icon: "arrow.counterclockwise", color: .gray)
                             Text("重置悬浮球位置")
+                                .foregroundStyle(.primary)
                             Spacer()
-                            Image(systemName: "arrow.counterclockwise")
                         }
-                        .font(.subheadline)
                     }
                 }
             } header: {

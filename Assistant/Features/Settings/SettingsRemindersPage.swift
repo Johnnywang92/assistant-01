@@ -101,8 +101,10 @@ struct SettingsRemindersPage: View {
         Form {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("作息习惯与身份")
-                        .font(.body)
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "person.crop.circle.badge.clock", color: .indigo)
+                        Text("作息习惯与身份")
+                    }
 
                     Picker("作息习惯与身份", selection: Binding(
                         get: { lifestyleProfile },
@@ -119,83 +121,106 @@ struct SettingsRemindersPage: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 2)
 
                 if lifestyleProfile == .officeWorker {
-                    DatePicker("常规下班时间", selection: offWorkTimeBinding, displayedComponents: .hourAndMinute)
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "clock.fill", color: .blue)
+                        DatePicker("常规下班时间", selection: offWorkTimeBinding, displayedComponents: .hourAndMinute)
+                    }
                 }
 
-                Toggle("情境动态排序", isOn: $isAdaptiveSortingEnabled)
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "arrow.up.arrow.down.circle.fill", color: .teal)
+                    Toggle("情境动态排序", isOn: $isAdaptiveSortingEnabled)
+                }
 
-                Toggle("天气突变与降温预警", isOn: $weatherAlertsEnabled)
-                    .onChange(of: weatherAlertsEnabled) { _, enabled in
-                        if enabled {
-                            Task {
-                                await NotificationService.requestAuthorization()
-                                await WeatherAlertService.shared.checkAlertsIfNeeded()
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "cloud.sun.bolt.fill", color: .blue)
+                    Toggle("天气突变与降温预警", isOn: $weatherAlertsEnabled)
+                        .onChange(of: weatherAlertsEnabled) { _, enabled in
+                            if enabled {
+                                Task {
+                                    await NotificationService.requestAuthorization()
+                                    await WeatherAlertService.shared.checkAlertsIfNeeded()
+                                }
+                            } else {
+                                WeatherAlertService.shared.cancelAllAlertNotifications()
                             }
-                        } else {
-                            WeatherAlertService.shared.cancelAllAlertNotifications()
                         }
-                    }
+                }
 
                 if weatherAlertsEnabled {
-                    DatePicker("早间推送时间", selection: weatherMorningPushTimeBinding, displayedComponents: .hourAndMinute)
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "bell.badge.fill", color: .orange)
+                        DatePicker("早间推送时间", selection: weatherMorningPushTimeBinding, displayedComponents: .hourAndMinute)
+                    }
                 }
 
-                Toggle("在锁屏通知中显示待办详情", isOn: $showSensitiveTodoNotifications)
-                    .onChange(of: showSensitiveTodoNotifications) { _, _ in
-                        TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
-                    }
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "lock.shield.fill", color: .purple)
+                    Toggle("在锁屏通知中显示待办详情", isOn: $showSensitiveTodoNotifications)
+                        .onChange(of: showSensitiveTodoNotifications) { _, _ in
+                            TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
+                        }
+                }
             } header: {
                 Text("生活习惯")
-            } footer: {
-                if weatherAlertsEnabled {
-                    Text("开启后，若检测到气温骤降（≥6°C）、突发恶劣天气或雨雪变化，将在早间设定时间直接推送到 iPhone 与 Apple Watch；即使早晨未打开 App，也能准时抬腕收到添衣或带伞提醒。")
-                }
             }
 
             // MARK: - 睡前提醒
             Section {
-                Toggle("睡前提醒", isOn: Binding(
-                    get: { sleepScheduler.isEnabled },
-                    set: { newValue in
-                        sleepScheduler.isEnabled = newValue
-                        if newValue {
-                            Task { await sleepScheduler.requestAuthorization() }
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "moon.stars.fill", color: .indigo)
+                    Toggle("睡前提醒", isOn: Binding(
+                        get: { sleepScheduler.isEnabled },
+                        set: { newValue in
+                            sleepScheduler.isEnabled = newValue
+                            if newValue {
+                                Task { await sleepScheduler.requestAuthorization() }
+                            }
+                            scheduleSleepResync()
                         }
-                        scheduleSleepResync()
-                    }
-                ))
-                .tint(.indigo)
+                    ))
+                    .tint(.indigo)
+                }
 
                 if sleepScheduler.isEnabled {
-                    DatePicker("期望就寝时间", selection: desiredBedtimeBinding, displayedComponents: .hourAndMinute)
-
-                    Picker("提前缓冲", selection: Binding(
-                        get: { sleepScheduler.windDownMinutes },
-                        set: { newValue in
-                            sleepScheduler.windDownMinutes = newValue
-                            scheduleSleepResync()
-                        }
-                    )) {
-                        Text("提前 15 分钟").tag(15)
-                        Text("提前 30 分钟").tag(30)
-                        Text("提前 45 分钟").tag(45)
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "bed.double.fill", color: .purple)
+                        DatePicker("期望就寝时间", selection: desiredBedtimeBinding, displayedComponents: .hourAndMinute)
                     }
 
-                    Picker("睡眠目标", selection: Binding(
-                        get: { sleepScheduler.sleepGoalMinutes },
-                        set: { newValue in
-                            sleepScheduler.sleepGoalMinutes = newValue
-                            scheduleSleepResync()
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "hourglass", color: .teal)
+                        Picker("提前缓冲", selection: Binding(
+                            get: { sleepScheduler.windDownMinutes },
+                            set: { newValue in
+                                sleepScheduler.windDownMinutes = newValue
+                                scheduleSleepResync()
+                            }
+                        )) {
+                            Text("提前 15 分钟").tag(15)
+                            Text("提前 30 分钟").tag(30)
+                            Text("提前 45 分钟").tag(45)
                         }
-                    )) {
-                        Text("6 小时").tag(360)
-                        Text("6.5 小时").tag(390)
-                        Text("7 小时").tag(420)
-                        Text("7.5 小时").tag(450)
-                        Text("8 小时").tag(480)
+                    }
+
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "target", color: .green)
+                        Picker("睡眠目标", selection: Binding(
+                            get: { sleepScheduler.sleepGoalMinutes },
+                            set: { newValue in
+                                sleepScheduler.sleepGoalMinutes = newValue
+                                scheduleSleepResync()
+                            }
+                        )) {
+                            Text("6 小时").tag(360)
+                            Text("6.5 小时").tag(390)
+                            Text("7 小时").tag(420)
+                            Text("7.5 小时").tag(450)
+                            Text("8 小时").tag(480)
+                        }
                     }
 
                     if sleepScheduler.notificationDenied {
@@ -210,37 +235,41 @@ struct SettingsRemindersPage: View {
             } header: {
                 Text("睡前提醒")
             } footer: {
-                Text("""
-                每晚综合你的历史作息习惯、睡眠债、运动负荷、晚餐与咖啡因摄入、天气与气温、四季时令、睡前待服药物、身体活力分以及手机屏幕使用时长动态建议就寝时刻与准备缓冲；单晚调整不超过 45 分钟，提醒范围 21:30–01:30。
-                """)
+                Text("根据日常作息、运动与生理指标动态建议今晚就寝时刻。")
             }
 
             // MARK: - 手机屏幕使用时间感知
             Section {
-                Stepper(value: Binding(
-                    get: { screenTracker.todayScreenTimeMinutes },
-                    set: { newValue in
-                        screenTracker.recordScreenTime(minutes: newValue)
-                        scheduleSleepResync()
-                    }
-                ), in: 0...960, step: 30) {
-                    HStack {
-                        Text("今日屏幕使用时长")
-                        Spacer()
-                        Text("\(screenTracker.todayScreenTimeMinutes / 60) 小时 \(screenTracker.todayScreenTimeMinutes % 60) 分钟")
-                            .foregroundStyle(AppColor.secondaryText)
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "hourglass.bottomhalf.filled", color: .cyan)
+                    Stepper(value: Binding(
+                        get: { screenTracker.todayScreenTimeMinutes },
+                        set: { newValue in
+                            screenTracker.recordScreenTime(minutes: newValue)
+                            scheduleSleepResync()
+                        }
+                    ), in: 0...960, step: 30) {
+                        HStack {
+                            Text("今日屏幕使用时长")
+                            Spacer()
+                            Text("\(screenTracker.todayScreenTimeMinutes / 60) 小时 \(screenTracker.todayScreenTimeMinutes % 60) 分钟")
+                                .foregroundStyle(AppColor.secondaryText)
+                        }
                     }
                 }
             } header: {
                 Text("屏幕使用时间")
             } footer: {
-                Text("可在 iOS「快捷指令」中通过「上报屏幕使用时间」动作配置每日定时自动化上报，亦可在此查看与微调。用机过久蓝光会抑制褪黑素释放，助手将自动提前提醒放下手机。")
+                Text("用于动态评估睡前蓝光负荷，支持快捷指令自动化上报。")
             }
 
-            // MARK: - 定期复盘报告 (日报开关；报告正文入口在首页与语音)
+            // MARK: - 定期复盘报告
             Section {
-                Toggle("每日日报提醒", isOn: $reportManager.isDailyReportEnabled)
-                    .tint(.green)
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "chart.bar.doc.horizontal.fill", color: .green)
+                    Toggle("每日日报提醒", isOn: $reportManager.isDailyReportEnabled)
+                        .tint(.green)
+                }
             } header: {
                 Text("定期报告")
             }
@@ -251,8 +280,10 @@ struct SettingsRemindersPage: View {
                     showingBudgetSheet = true
                     Haptic.light()
                 } label: {
-                    HStack {
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "yensign.circle.fill", color: .orange)
                         Text("月预算")
+                            .foregroundStyle(.primary)
                         Spacer()
                         Text(monthlyBudget > 0
                              ? "¥\(String(format: "%.0f", monthlyBudget))"
@@ -260,7 +291,7 @@ struct SettingsRemindersPage: View {
                             .font(.subheadline)
                             .foregroundStyle(monthlyBudget > 0 ? .secondary : Color.orange)
                         Image(systemName: "chevron.right")
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -271,7 +302,7 @@ struct SettingsRemindersPage: View {
             } header: {
                 Text("消费预算")
             } footer: {
-                Text("设置后每天在「智能记账」页顶部计算今日安心花额度，房租、订阅等固定支出自动扣除。")
+                Text("用于智能记账页计算每日安心花额度。")
             }
         }
         .themedScrollContentBackground()

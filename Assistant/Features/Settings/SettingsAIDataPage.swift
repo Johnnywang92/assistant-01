@@ -18,14 +18,16 @@ struct SettingsAIDataPage: View {
                 NavigationLink {
                     LLMModelManagementView()
                 } label: {
-                    HStack {
-                        Label("端侧大模型", systemImage: "brain.head.profile")
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "brain.head.profile", color: .purple)
+                        Text("端侧大模型")
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
                         Spacer()
                         Text(LLMModelManager.shared.isModelDownloaded
                              ? "\(LLMModelManager.shared.selectedPreset.shortName) · \(L10n.tr("已就绪"))"
                              : "\(LLMModelManager.shared.selectedPreset.shortName) · \(L10n.tr("可下载"))")
-                            .font(.caption2)
+                            .font(.subheadline)
                             .foregroundStyle(LLMModelManager.shared.isModelDownloaded ? .green : .secondary)
                             .lineLimit(1)
                     }
@@ -33,46 +35,62 @@ struct SettingsAIDataPage: View {
                 NavigationLink {
                     IntentThresholdCalibrationView()
                 } label: {
-                    Label("判别阈值校准", systemImage: "slider.horizontal.3")
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "slider.horizontal.3", color: .indigo)
+                        Text("判别阈值校准")
+                            .foregroundStyle(.primary)
+                    }
                 }
             }
 
             // MARK: - 万能投喂口
-            Section {
-                Toggle("剪贴板检测自动打开投喂口", isOn: $autoIngest)
-                Picker("剪贴板唤起后无操作自动退出", selection: $clipboardAutoDismissSeconds) {
-                    Text("不自动退出").tag(0)
-                    Text("3 秒（默认）").tag(3)
-                    Text("5 秒").tag(5)
-                    Text("8 秒").tag(8)
-                    Text("10 秒").tag(10)
+            Section("万能投喂口") {
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "doc.on.clipboard.fill", color: .blue)
+                    Toggle("剪贴板检测自动打开投喂口", isOn: $autoIngest)
                 }
-                Picker("确认执行后自动关闭弹窗", selection: $autoDismissSeconds) {
-                    Text("不自动关闭").tag(0)
-                    Text("1 秒").tag(1)
-                    Text("2 秒").tag(2)
-                    Text("3 秒（默认）").tag(3)
-                    Text("5 秒").tag(5)
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "clock.arrow.circlepath", color: .teal)
+                    Picker("无操作自动退出", selection: $clipboardAutoDismissSeconds) {
+                        Text("不自动退出").tag(0)
+                        Text("3 秒（默认）").tag(3)
+                        Text("5 秒").tag(5)
+                        Text("8 秒").tag(8)
+                        Text("10 秒").tag(10)
+                    }
                 }
-            } header: {
-                Text("万能投喂口")
-            } footer: {
-                Text("检测到剪贴板有内容自动唤起投喂口时，若您无意添加到 App，无需任何操作，弹窗将在指定秒数后自动关闭退出；期间轻点页面查看或操作将保留内容并不再自动关闭。")
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "checkmark.circle.fill", color: .green)
+                    Picker("确认执行后自动关闭", selection: $autoDismissSeconds) {
+                        Text("不自动关闭").tag(0)
+                        Text("1 秒").tag(1)
+                        Text("2 秒").tag(2)
+                        Text("3 秒（默认）").tag(3)
+                        Text("5 秒").tag(5)
+                    }
+                }
             }
 
             Section("安全") {
                 NavigationLink {
                     AppLockSettingsView()
                 } label: {
-                    Label("应用锁", systemImage: "lock.shield.fill")
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "lock.shield.fill", color: .green)
+                        Text("应用锁与安全密码")
+                            .foregroundStyle(.primary)
+                    }
                 }
             }
 
             // MARK: - 对话记录与自动滚动留存 (7天 / 30天)
             Section {
-                Picker("记录保留时间", selection: $retentionPolicy) {
-                    ForEach(DialogueRetentionPolicy.allCases) { policy in
-                        Text(L10n.tr(policy.displayName)).tag(policy)
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "bubble.left.and.bubble.right.fill", color: .teal)
+                    Picker("记录保留时间", selection: $retentionPolicy) {
+                        ForEach(DialogueRetentionPolicy.allCases) { policy in
+                            Text(L10n.tr(policy.displayName)).tag(policy)
+                        }
                     }
                 }
                 .onChange(of: retentionPolicy) { _, newValue in
@@ -82,7 +100,8 @@ struct SettingsAIDataPage: View {
                     Haptic.light()
                 }
 
-                HStack {
+                HStack(spacing: 12) {
+                    SettingsIconBadge(icon: "tray.fill", color: .gray)
                     Text("本地对话")
                     Spacer()
                     Text("\(savedDialogueCount) 条")
@@ -94,8 +113,10 @@ struct SettingsAIDataPage: View {
                     Button(role: .destructive) {
                         showingClearDialogueAlert = true
                     } label: {
-                        HStack {
-                            Label("清空对话记录", systemImage: "trash")
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(icon: "trash.fill", color: .red)
+                            Text("清空对话记录")
+                                .foregroundStyle(.red)
                             Spacer()
                         }
                     }
@@ -110,13 +131,21 @@ struct SettingsAIDataPage: View {
                 NavigationLink {
                     WebDAVSyncView()
                 } label: {
-                    Label("NAS 与私有云同步 (WebDAV)", systemImage: "externaldrive.badge.icloud")
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "externaldrive.fill", color: .orange)
+                        Text("私有云同步 (WebDAV)")
+                            .foregroundStyle(.primary)
+                    }
                 }
 
                 NavigationLink {
                     DataMigrationView()
                 } label: {
-                    Label("备份、迁移与导入", systemImage: "arrow.triangle.2.circlepath.circle.fill")
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "arrow.triangle.2.circlepath", color: .blue)
+                        Text("备份、迁移与导入")
+                            .foregroundStyle(.primary)
+                    }
                 }
             }
         }

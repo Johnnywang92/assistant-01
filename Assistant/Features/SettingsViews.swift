@@ -58,6 +58,27 @@ struct ManualImportView: View {
     }
 }
 
+/// 简洁美观的 iOS 原生风格圆角方形设置图标
+struct SettingsIconBadge: View {
+    let icon: String
+    let color: Color
+    var size: CGFloat = 30
+    var iconSize: CGFloat = 16
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(color.gradient)
+                .frame(width: size, height: size)
+
+            Image(systemName: icon)
+                .font(.system(size: iconSize, weight: .medium))
+                .foregroundStyle(.white)
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var router = NavigationRouter.shared
@@ -80,29 +101,30 @@ struct SettingsView: View {
         NavigationStack(path: $navPath) {
             Form {
                 Section {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         Image("AssistantAppIcon")
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                            .frame(width: 42, height: 42)
-                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
+                            .frame(width: 44, height: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                                    .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
                             )
-                            .shadow(color: .black.opacity(0.12), radius: 5, y: 2)
+                            .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
 
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 3) {
                             Text((assistantName.isEmpty || assistantName == "小助") ? L10n.tr("小助") : assistantName)
-                                .font(.subheadline.weight(.semibold))
-                            Text("称呼：\((userTitle.isEmpty || userTitle == "你") ? L10n.tr("你") : userTitle)")
+                                .font(.headline)
+                            Text("助手设定与个人偏好")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    .padding(.vertical, 0)
+                    .padding(.vertical, 2)
 
-                    HStack {
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "sparkles", color: .blue)
                         Text("助手命名")
                         Spacer()
                         HStack(spacing: 6) {
@@ -127,7 +149,8 @@ struct SettingsView: View {
                     }
 
                     // 对我的称呼
-                    HStack {
+                    HStack(spacing: 12) {
+                        SettingsIconBadge(icon: "person.fill", color: .purple)
                         Text("对我的称呼")
                         Spacer()
                         HStack(spacing: 6) {
@@ -158,52 +181,44 @@ struct SettingsView: View {
                     NavigationLink {
                         SettingsAppearancePage()
                     } label: {
-                        HStack {
-                            Label("个性化与界面", systemImage: "paintpalette.fill")
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(icon: "paintpalette.fill", color: .indigo)
+                            Text("个性化与界面")
+                                .font(.body)
                                 .foregroundStyle(.primary)
-                            Spacer()
-                            Text("语言、主题、大字模式、语音")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
 
                     NavigationLink {
                         SettingsRemindersPage()
                     } label: {
-                        HStack {
-                            Label("提醒与报告", systemImage: "bell.badge.fill")
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(icon: "bell.badge.fill", color: .red)
+                            Text("提醒与报告")
+                                .font(.body)
                                 .foregroundStyle(.primary)
-                            Spacer()
-                            Text("作息、睡前提醒、日报、月预算")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
 
                     NavigationLink {
                         SettingsAIDataPage()
                     } label: {
-                        HStack {
-                            Label("AI 与数据", systemImage: "brain.head.profile")
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(icon: "brain.head.profile", color: .blue)
+                            Text("AI 与数据")
+                                .font(.body)
                                 .foregroundStyle(.primary)
-                            Spacer()
-                            Text("模型、投喂口、应用锁、备份")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
 
                     NavigationLink {
                         SettingsSystemPage()
                     } label: {
-                        HStack {
-                            Label("系统", systemImage: "gearshape.2.fill")
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(icon: "gearshape.fill", color: .gray)
+                            Text("系统与协同")
+                                .font(.body)
                                 .foregroundStyle(.primary)
-                            Spacer()
-                            Text("权限、快捷方式、多端协同")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
