@@ -26,10 +26,17 @@ struct ExpenseTrendCard: View {
 
             HStack(spacing: 8) {
                 changeBadge
-                Text("月均 \(formatted(trend.averageExpense))")
+                Text(trend.isCurrentMonthPartial
+                     ? "历史月均 \(formatted(trend.averageExpense))"
+                     : "月均 \(formatted(trend.averageExpense))")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer()
+                if trend.isCurrentMonthPartial {
+                    Text("本月截至\(trend.currentMonthDay)日")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
 
             Chart {
@@ -37,7 +44,7 @@ struct ExpenseTrendCard: View {
                     .foregroundStyle(Color.secondary.opacity(0.45))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                     .annotation(position: .top, alignment: .leading) {
-                        Text("月均")
+                        Text(trend.isCurrentMonthPartial ? "历史月均" : "月均")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
@@ -51,6 +58,13 @@ struct ExpenseTrendCard: View {
                     )
                     .foregroundStyle(isCurrent ? AppColor.danger : AppColor.danger.opacity(0.42))
                     .cornerRadius(AppRadius.badge)
+                    .annotation(position: .top) {
+                        if isCurrent && trend.isCurrentMonthPartial {
+                            Text("进行中")
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(AppColor.danger.opacity(0.85))
+                        }
+                    }
                 }
             }
             .chartXAxis {
@@ -91,15 +105,16 @@ struct ExpenseTrendCard: View {
         Group {
             if let ratio = trend.changeRatio {
                 let pct = Int((abs(ratio) * 100).rounded())
+                let prefix = trend.isCurrentMonthPartial ? "同期" : "环比"
                 if ratio >= 0 {
-                    Label("环比 +\(pct)%", systemImage: "arrow.up.right")
+                    Label("\(prefix) +\(pct)%", systemImage: "arrow.up.right")
                         .foregroundStyle(AppColor.danger)
                 } else {
-                    Label("环比 -\(pct)%", systemImage: "arrow.down.right")
+                    Label("\(prefix) -\(pct)%", systemImage: "arrow.down.right")
                         .foregroundStyle(AppColor.success)
                 }
             } else {
-                Text("环比 —")
+                Text(trend.isCurrentMonthPartial ? "同期 —" : "环比 —")
                     .foregroundStyle(.secondary)
             }
         }
@@ -110,11 +125,14 @@ struct ExpenseTrendCard: View {
     }
 
     private func categoryShiftRow(shift: TrendAnalytics.CategoryShift, isGrowing: Bool) -> some View {
-        HStack(spacing: 6) {
+        let label = trend.isCurrentMonthPartial
+            ? (isGrowing ? "同期增长最快" : "同期降温最明显")
+            : (isGrowing ? "增长最快" : "降温最明显")
+        return HStack(spacing: 6) {
             Image(systemName: isGrowing ? "chart.line.uptrend.xyaxis" : "chart.line.downtrend.xyaxis")
                 .font(.caption2.bold())
                 .foregroundStyle(isGrowing ? AppColor.danger : AppColor.success)
-            Text("\(isGrowing ? "增长最快" : "降温最明显")：\(categoryName(shift.categoryRaw))")
+            Text("\(label)：\(categoryName(shift.categoryRaw))")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             Text("\(formatted(shift.from)) → \(formatted(shift.to))")

@@ -30,7 +30,8 @@ final class TrendAnalyticsTests: XCTestCase {
         XCTAssertEqual(trend.months[0].expense, 300)
         XCTAssertEqual(trend.months[1].expense, 0) // 无记录月补 0
         XCTAssertEqual(trend.months[5].expense, 100)
-        XCTAssertEqual(trend.averageExpense, 400.0 / 6.0, accuracy: 0.0001)
+        // 历史已结完整月（1月~5月共5个月）平均支出 = 300 / 5 = 60
+        XCTAssertEqual(trend.averageExpense, 300.0 / 5.0, accuracy: 0.0001)
     }
 
     func testExpenseTrendChangeRatioAndCategoryShift() {
@@ -86,7 +87,7 @@ final class TrendAnalyticsTests: XCTestCase {
     func testExpenseTrendYearBoundaryWindow() {
         let now = date(2026, 1, 10)
         let entries = [
-            TrendAnalytics.ExpenseEntry(date: date(2025, 12, 31), amount: 120, isIncome: false, categoryRaw: "居家日用"),
+            TrendAnalytics.ExpenseEntry(date: date(2025, 12, 5), amount: 120, isIncome: false, categoryRaw: "居家日用"),
             TrendAnalytics.ExpenseEntry(date: date(2026, 1, 1), amount: 60, isIncome: false, categoryRaw: "居家日用"),
         ]
         let trend = TrendAnalytics.expenseTrend(entries: entries, now: now, calendar: calendar, monthCount: 3)
@@ -96,6 +97,39 @@ final class TrendAnalyticsTests: XCTestCase {
         XCTAssertEqual(trend.months[1].expense, 120)
         XCTAssertEqual(trend.months[2].expense, 60)
         XCTAssertEqual(trend.changeRatio ?? 0, -0.5, accuracy: 0.0001)
+    }
+
+    func testCurrentMonthBeginningComparesOnlySamePeriodInPreviousMonth() {
+        // 模拟当前为 11 月 2 日（月初前几天）
+        let now = date(2026, 11, 2)
+        let entries = [
+            // 10 月前 2 天花了 200，10 月中下旬又花了 5800（10 月全月累计 6000）
+            TrendAnalytics.ExpenseEntry(date: date(2026, 10, 1), amount: 150, isIncome: false, categoryRaw: "餐饮美食"),
+            TrendAnalytics.ExpenseEntry(date: date(2026, 10, 2), amount: 50, isIncome: false, categoryRaw: "交通出行"),
+            TrendAnalytics.ExpenseEntry(date: date(2026, 10, 15), amount: 5800, isIncome: false, categoryRaw: "数码电子"),
+
+            // 11 月前 2 天累计花了 120
+            TrendAnalytics.ExpenseEntry(date: date(2026, 11, 1), amount: 80, isIncome: false, categoryRaw: "餐饮美食"),
+            TrendAnalytics.ExpenseEntry(date: date(2026, 11, 2), amount: 40, isIncome: false, categoryRaw: "交通出行"),
+        ]
+
+        let trend = TrendAnalytics.expenseTrend(entries: entries, now: now, calendar: calendar, monthCount: 2)
+
+        XCTAssertTrue(trend.isCurrentMonthPartial)
+        XCTAssertEqual(trend.currentMonthDay, 2)
+        XCTAssertEqual(trend.months.last?.expense, 120)
+
+        // 核心验证：绝不能拿 11 月 2 天的 120 去比 10 月全月 6000（那会导致 -98% 的荒谬判定）
+        // 正确同口径为：11 月前 2 天 (120) vs 10 月前 2 天 (200) → (120 - 200) / 200 = -40%
+        XCTAssertEqual(trend.previousMonthSamePeriodExpense ?? 0, 200, accuracy: 0.0001)
+        XCTAssertEqual(trend.changeRatio ?? 0, -0.4, accuracy: 0.0001)
+
+        // 历史月均应基于已结完整月（10 月的 6000），而不是被 11 月 2 天的 120 强行拉低
+        XCTAssertEqual(trend.averageExpense, 6000, accuracy: 0.0001)
+
+        // 类别异动也应按同期对比（前 2 天餐饮 150 → 80 降温，交通 50 → 40 降温）
+        XCTAssertEqual(trend.shrinkingCategory?.categoryRaw, "餐饮美食")
+        XCTAssertEqual(trend.shrinkingCategory?.delta ?? 0, -70, accuracy: 0.0001)
     }
 
     func testExpenseTrendSingleMonthHasNoComparison() {

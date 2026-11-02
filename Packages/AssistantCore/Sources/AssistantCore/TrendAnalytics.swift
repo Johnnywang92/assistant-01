@@ -60,14 +60,45 @@ public enum TrendAnalytics {
     public struct ExpenseTrend: Equatable, Sendable {
         /// 由旧到新的月序列（含当月；窗口内无记录的月份补 0）
         public let months: [MonthlyExpensePoint]
-        /// 当月支出相对上月的环比；上月为 0 时无基线，为 nil
+        /// 环比变化率（当月进行中时为同口径「同期（1日~当前日）环比」，避免以全月对几天造成虚假骤降；上期基线为 0 时为 nil）
         public let changeRatio: Double?
-        /// 窗口内月均支出
+        /// 历史月均支出（优先以已结算的完整月份为基准，避免当月初拉低月均基线）
         public let averageExpense: Double
-        /// 当月相对上月支出增长最多的类别（delta > 0 才有值）
+        /// 相对上期同期支出增长最多的类别（delta > 0 才有值）
         public let growingCategory: CategoryShift?
-        /// 当月相对上月降温最多的类别（delta < 0 才有值）
+        /// 相对上期同期降温最多的类别（delta < 0 才有值）
         public let shrinkingCategory: CategoryShift?
+
+        /// 当前月是否为进行中（尚未到达月末最后一天）
+        public let isCurrentMonthPartial: Bool
+        /// 当前月份已过天数（1...31）
+        public let currentMonthDay: Int
+        /// 当月按当前日均速率推算的全月预估支出
+        public let projectedCurrentMonthExpense: Double
+        /// 上月同期的支出（前 N 天对比基线）
+        public let previousMonthSamePeriodExpense: Double?
+
+        public init(
+            months: [MonthlyExpensePoint],
+            changeRatio: Double?,
+            averageExpense: Double,
+            growingCategory: CategoryShift?,
+            shrinkingCategory: CategoryShift?,
+            isCurrentMonthPartial: Bool = false,
+            currentMonthDay: Int = 30,
+            projectedCurrentMonthExpense: Double = 0,
+            previousMonthSamePeriodExpense: Double? = nil
+        ) {
+            self.months = months
+            self.changeRatio = changeRatio
+            self.averageExpense = averageExpense
+            self.growingCategory = growingCategory
+            self.shrinkingCategory = shrinkingCategory
+            self.isCurrentMonthPartial = isCurrentMonthPartial
+            self.currentMonthDay = currentMonthDay
+            self.projectedCurrentMonthExpense = projectedCurrentMonthExpense
+            self.previousMonthSamePeriodExpense = previousMonthSamePeriodExpense
+        }
     }
 
     /// 近 N 个自然月（含当月）的消费趋势。
@@ -80,9 +111,13 @@ public enum TrendAnalytics {
         monthCount: Int = 6
     ) -> ExpenseTrend {
         let count = max(1, monthCount)
-        let comps = calendar.dateComponents([.year, .month], from: now)
+        let comps = calendar.dateComponents([.year, .month, .day], from: now)
         let currentYear = comps.year ?? 1970
         let currentMonth = comps.month ?? 1
+        let currentDay = comps.day ?? 1
+
+        let daysInCurrentMonth = calendar.range(of: .day, in: .month, for: now)?.count ?? 30
+        let isCurrentMonthPartial = (currentDay < daysInCurrentMonth)
 
         // 由旧到新的 (year, month) 窗口
         var window: [(year: Int, month: Int)] = []
@@ -97,12 +132,31 @@ public enum TrendAnalytics {
         var expenseByMonth = [String: Double](minimumCapacity: count)
         var incomeByMonth = [String: Double](minimumCapacity: count)
         var countByMonth = [String: Int](minimumCapacity: count)
+
+        // 类别统计：当月全额、当月同期（Day <= currentDay）、上月同期（Day <= currentDay）、上月全额
         var curCategory = [String: Double]()
-        var prevCategory = [String: Double]()
+        var prevCategorySamePeriod = [String: Double]()
+        var prevCategoryFull = [String: Double]()
+        var prevMonthSamePeriodExpense: Double = 0
+
+        // 上月的年份和月份
+        let prevYM = count >= 2 ? window[count - 2] : nil
+        let prevDaysInMonth: Int = {
+            guard let prevYM else { return 30 }
+            var c = DateComponents()
+            c.year = prevYM.year
+            c.month = prevYM.month
+            c.day = 1
+            if let d = calendar.date(from: c) {
+                return calendar.range(of: .day, in: .month, for: d)?.count ?? 30
+            }
+            return 30
+        }()
+        let prevCutoffDay = min(currentDay, prevDaysInMonth)
 
         for entry in entries {
-            let ec = calendar.dateComponents([.year, .month], from: entry.date)
-            guard let y = ec.year, let m = ec.month else { continue }
+            let ec = calendar.dateComponents([.year, .month, .day], from: entry.date)
+            guard let y = ec.year, let m = ec.month, let d = ec.day else { continue }
             let k = key(y, m)
             guard windowKeys.contains(k) else { continue }
 
@@ -110,13 +164,14 @@ public enum TrendAnalytics {
                 incomeByMonth[k, default: 0] += entry.amount
             } else {
                 expenseByMonth[k, default: 0] += entry.amount
-                // 类别结构只比较当月与上月的支出
-                if count >= 2, y == currentYear, m == currentMonth {
+
+                if y == currentYear, m == currentMonth {
                     curCategory[entry.categoryRaw, default: 0] += entry.amount
-                } else if count >= 2 {
-                    let prev = window[count - 2]
-                    if y == prev.year, m == prev.month {
-                        prevCategory[entry.categoryRaw, default: 0] += entry.amount
+                } else if let prev = prevYM, y == prev.year, m == prev.month {
+                    prevCategoryFull[entry.categoryRaw, default: 0] += entry.amount
+                    if d <= prevCutoffDay {
+                        prevCategorySamePeriod[entry.categoryRaw, default: 0] += entry.amount
+                        prevMonthSamePeriodExpense += entry.amount
                     }
                 }
             }
@@ -134,24 +189,57 @@ public enum TrendAnalytics {
             )
         }
 
-        let totalExpense = months.reduce(0.0) { $0 + $1.expense }
-        let averageExpense = months.isEmpty ? 0 : totalExpense / Double(months.count)
+        // 月均计算：
+        // 若当前月尚未结算且有已结历史月，以历史已结算完整月的月均作为基线，避免当月前几天拉低均线；
+        // 若全部只有当前月，则按当前已发生金额计算。
+        let currentMonthExpense = months.last?.expense ?? 0
+        let currentMonthDailyRate = currentMonthExpense / Double(max(currentDay, 1))
+        let projectedCurrentMonthExpense = currentMonthDailyRate * Double(daysInCurrentMonth)
 
+        let averageExpense: Double
+        if isCurrentMonthPartial && months.count >= 2 {
+            let pastMonths = months.dropLast()
+            let pastTotal = pastMonths.reduce(0.0) { $0 + $1.expense }
+            averageExpense = pastTotal / Double(pastMonths.count)
+        } else {
+            let total = months.reduce(0.0) { $0 + $1.expense }
+            averageExpense = months.isEmpty ? 0 : total / Double(months.count)
+        }
+
+        // 环比计算：
+        // 1. 若当前月未结 (isCurrentMonthPartial)：优先采用同口径「同期（1日~当前日）环比」，
+        //    比较本月至今 vs 上月同期（前 N 天）支出；
+        //    若上月前 N 天支出为 0 但全月有支出，则采用日均消费速率环比。
+        // 2. 若当前月已完整结算，则采用全月对全月环比。
         var changeRatio: Double? = nil
+        let targetPrevCategory = isCurrentMonthPartial ? prevCategorySamePeriod : prevCategoryFull
+
         if count >= 2 {
-            let prevExpense = months[count - 2].expense
-            if prevExpense > 0 {
-                changeRatio = (months[count - 1].expense - prevExpense) / prevExpense
+            let prevFullExpense = months[count - 2].expense
+            if isCurrentMonthPartial {
+                if prevMonthSamePeriodExpense > 0 {
+                    changeRatio = (currentMonthExpense - prevMonthSamePeriodExpense) / prevMonthSamePeriodExpense
+                } else if prevFullExpense > 0 {
+                    let prevDailyRate = prevFullExpense / Double(prevDaysInMonth)
+                    if prevDailyRate > 0 {
+                        changeRatio = (currentMonthDailyRate - prevDailyRate) / prevDailyRate
+                    }
+                }
+            } else {
+                if prevFullExpense > 0 {
+                    changeRatio = (currentMonthExpense - prevFullExpense) / prevFullExpense
+                }
             }
         }
 
+        // 类别异动：当月未结时对比上月同期类别；当月结时对比上月全额类别
         var growing: CategoryShift? = nil
         var shrinking: CategoryShift? = nil
         if count >= 2 {
             var allKeys = Set(curCategory.keys)
-            allKeys.formUnion(prevCategory.keys)
+            allKeys.formUnion(targetPrevCategory.keys)
             for cat in allKeys {
-                let from = prevCategory[cat] ?? 0
+                let from = targetPrevCategory[cat] ?? 0
                 let to = curCategory[cat] ?? 0
                 let shift = CategoryShift(categoryRaw: cat, from: from, to: to)
                 if shift.delta > 0, growing == nil || shift.delta > growing!.delta {
@@ -168,7 +256,11 @@ public enum TrendAnalytics {
             changeRatio: changeRatio,
             averageExpense: averageExpense,
             growingCategory: growing,
-            shrinkingCategory: shrinking
+            shrinkingCategory: shrinking,
+            isCurrentMonthPartial: isCurrentMonthPartial,
+            currentMonthDay: currentDay,
+            projectedCurrentMonthExpense: projectedCurrentMonthExpense,
+            previousMonthSamePeriodExpense: isCurrentMonthPartial && prevMonthSamePeriodExpense > 0 ? prevMonthSamePeriodExpense : nil
         )
     }
 

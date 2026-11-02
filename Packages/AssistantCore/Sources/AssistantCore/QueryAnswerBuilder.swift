@@ -70,21 +70,34 @@ public enum QueryAnswerBuilder {
             return "还没有消费数据，记几笔账后就能看到趋势。"
         }
         var parts: [String] = []
-        parts.append("近\(trend.months.count)个月月均支出 \(formatAmount(trend.averageExpense)) 元")
-        parts.append("\(current.month)月 \(formatAmount(current.expense)) 元")
+        let avgLabel = trend.isCurrentMonthPartial ? "近\(trend.months.count)个月历史月均" : "近\(trend.months.count)个月月均"
+        parts.append("\(avgLabel)支出 \(formatAmount(trend.averageExpense)) 元")
 
-        if let ratio = trend.changeRatio {
-            let pct = Int((ratio * 100).rounded())
-            parts.append("环比\(ratio >= 0 ? "上涨" : "下降") \(abs(pct))%")
+        if trend.isCurrentMonthPartial {
+            parts.append("\(current.month)月截至\(trend.currentMonthDay)日已支出 \(formatAmount(current.expense)) 元")
+            if let ratio = trend.changeRatio {
+                let pct = Int((ratio * 100).rounded())
+                parts.append("较上月同期（前\(trend.currentMonthDay)天）环比\(ratio >= 0 ? "上涨" : "下降") \(abs(pct))%")
+            } else {
+                parts.append("上月同期暂无基线")
+            }
         } else {
-            parts.append("上月无支出基线，暂无环比")
+            parts.append("\(current.month)月 \(formatAmount(current.expense)) 元")
+            if let ratio = trend.changeRatio {
+                let pct = Int((ratio * 100).rounded())
+                parts.append("环比\(ratio >= 0 ? "上涨" : "下降") \(abs(pct))%")
+            } else {
+                parts.append("上月无支出基线，暂无环比")
+            }
         }
 
         if let growing = trend.growingCategory {
-            parts.append("增长最快的是\(displayCategory(growing.categoryRaw))（\(formatAmount(growing.from))→\(formatAmount(growing.to)) 元）")
+            let label = trend.isCurrentMonthPartial ? "同期增长最快" : "增长最快"
+            parts.append("\(label)的是\(displayCategory(growing.categoryRaw))（\(formatAmount(growing.from))→\(formatAmount(growing.to)) 元）")
         }
         if let shrinking = trend.shrinkingCategory {
-            parts.append("降温最明显的是\(displayCategory(shrinking.categoryRaw))（\(formatAmount(shrinking.from))→\(formatAmount(shrinking.to)) 元）")
+            let label = trend.isCurrentMonthPartial ? "同期降温最明显" : "降温最明显"
+            parts.append("\(label)的是\(displayCategory(shrinking.categoryRaw))（\(formatAmount(shrinking.from))→\(formatAmount(shrinking.to)) 元）")
         }
         return parts.joined(separator: "，") + "。"
     }
