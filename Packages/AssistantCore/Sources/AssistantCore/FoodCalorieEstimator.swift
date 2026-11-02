@@ -92,6 +92,12 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
     public let nameEn: String
     /// 每 100 克可食部分的千卡数
     public let caloriesPer100g: Double
+    /// 每 100 克蛋白质（克）
+    public let proteinPer100g: Double
+    /// 每 100 克脂肪（克）
+    public let fatPer100g: Double
+    /// 每 100 克碳水化合物（克）
+    public let carbsPer100g: Double
     /// 食物分类
     public let category: FoodCategory
     /// Vision 通用分类里可能命中的类目标识符（小写）
@@ -109,6 +115,9 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
                 name: String,
                 nameEn: String,
                 caloriesPer100g: Double,
+                proteinPer100g: Double = 0,
+                fatPer100g: Double = 0,
+                carbsPer100g: Double = 0,
                 category: FoodCategory = .staple,
                 visionIdentifiers: [String] = [],
                 aliases: [String] = [],
@@ -119,6 +128,9 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
         self.name = name
         self.nameEn = nameEn
         self.caloriesPer100g = caloriesPer100g
+        self.proteinPer100g = proteinPer100g
+        self.fatPer100g = fatPer100g
+        self.carbsPer100g = carbsPer100g
         self.category = category
         self.visionIdentifiers = visionIdentifiers
         self.aliases = aliases
@@ -137,6 +149,9 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
             name: displayName,
             nameEn: "Custom Food",
             caloriesPer100g: max(1, calories),
+            proteinPer100g: 0,
+            fatPer100g: 0,
+            carbsPer100g: 0,
             category: category,
             visionIdentifiers: [],
             aliases: [displayName]
@@ -151,6 +166,9 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
             name: name ?? self.name,
             nameEn: nameEn,
             caloriesPer100g: caloriesPer100g ?? self.caloriesPer100g,
+            proteinPer100g: proteinPer100g,
+            fatPer100g: fatPer100g,
+            carbsPer100g: carbsPer100g,
             category: category,
             visionIdentifiers: visionIdentifiers,
             aliases: aliases,
@@ -167,6 +185,9 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
             name: name,
             nameEn: nameEn,
             caloriesPer100g: reference.per100g.kcal,
+            proteinPer100g: proteinPer100g,
+            fatPer100g: fatPer100g,
+            carbsPer100g: carbsPer100g,
             category: category,
             visionIdentifiers: visionIdentifiers,
             aliases: aliases,
@@ -191,7 +212,8 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
         case "breakfast_cereal": return 50
         case "pastry": return 80
         case "chinese_fastfood": return 300
-        case "steamed_bun": return 150
+        case "steamed_bun": return 90
+        case "shengjian_xiaolong": return 150
         case "mantou": return 120
         case "youtiao": return 80
         case "pancake_roll": return 220
@@ -224,7 +246,9 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
         case "seaweed_dish": return 150
         case "salad": return 200
         case "tofu": return 150
-        case "egg": return 50
+        case "egg": return 55
+        case "fried_egg": return 55
+        case "tomato_scrambled_egg": return 200
         case "mapo_tofu": return 200
         case "sour_potato_shreds": return 200
         case "stir_fry_cabbage": return 200
@@ -281,12 +305,30 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
         caloriesPer100g * standardServingGrams / 100.0
     }
 
+    /// 单件（单个/单只/单块/单串/单颗/单贯/单片）的参考克数。
+    /// 专为「整份由多个小件组成」的食物（水饺、生煎、小笼包、烧麦、烤串、寿司、臭豆腐、曲奇饼干、虾等）提供单件换算。
+    public var pieceGrams: Double? {
+        switch id {
+        case "dumpling": return 20.0             // 单个水饺/馄饨约 20g (整份 200g 约 10 个)
+        case "shengjian_xiaolong": return 35.0   // 单个生煎/小笼约 35g (整份 150g 约 4-5 个)
+        case "shaomai": return 38.0              // 单个烧麦约 38g (整份 150g 约 4 个)
+        case "sushi": return 30.0                // 单贯寿司约 30g (整份 180g 约 6 贯)
+        case "barbecue": return 35.0             // 单串烤串约 35g (整盘 300g 约 8-10 串)
+        case "stinky_tofu": return 30.0          // 单块臭豆腐约 30g (整份 150g 约 5 块)
+        case "fried_chicken": return 70.0        // 单块/单翅炸鸡约 70g (整份 180g 约 2-3 块)
+        case "cookie": return 10.0               // 单片曲奇约 10g (整包 30g 约 3 片)
+        case "shrimp": return 20.0               // 单只大虾约 20g (整盘 180g 约 9 只)
+        case "oden": return 40.0                 // 单串关东煮约 40g (整份 250g 约 6 串)
+        default: return nil
+        }
+    }
+
     /// 是否属于主食（用于套餐/托盘多菜组合判别）。
     public var isStaple: Bool {
         if category == .staple { return true }
         switch id {
         case "rice", "fried_rice", "noodles", "sushi", "dumpling", "congee", "bread", "breakfast_cereal", "pastry",
-             "chinese_fastfood", "steamed_bun", "mantou", "youtiao", "pancake_roll", "roujiamo",
+             "chinese_fastfood", "steamed_bun", "shengjian_xiaolong", "mantou", "youtiao", "pancake_roll", "roujiamo",
              "rice_noodles", "zhajiangmian", "changfen", "shaomai", "zongzi", "niangao", "corn_sweetpotato":
             return true
         default:
@@ -337,29 +379,44 @@ public enum FoodCatalog {
     /// 食物库条目（收录高频中餐主食、早点、荤菜、素菜、汤品、特色小吃、水果饮品）。
     private static let baseItems: [FoodItem] = [
         // MARK: - 主食与早点 (Staple)
-        FoodItem(id: "rice", name: "米饭", nameEn: "Steamed Rice", caloriesPer100g: 116, category: .staple,
+        FoodItem(id: "rice", name: "米饭", nameEn: "Steamed Rice", caloriesPer100g: 116,
+                 proteinPer100g: 2.6, fatPer100g: 0.3, carbsPer100g: 25.9, category: .staple,
                  visionIdentifiers: ["rice"], aliases: ["米饭", "白饭", "白米饭", "大米饭", "rice", "steamed rice"]),
-        FoodItem(id: "fried_rice", name: "炒饭", nameEn: "Fried Rice", caloriesPer100g: 180, category: .staple,
+        FoodItem(id: "fried_rice", name: "炒饭", nameEn: "Fried Rice", caloriesPer100g: 180,
+                 proteinPer100g: 4.8, fatPer100g: 6.5, carbsPer100g: 25.0, category: .staple,
                  visionIdentifiers: ["fried_rice", "pilaf"], aliases: ["炒饭", "蛋炒饭", "扬州炒饭", "酱油炒饭", "牛肉炒饭", "fried rice"]),
-        FoodItem(id: "noodles", name: "面条", nameEn: "Noodles", caloriesPer100g: 110, category: .staple,
-                 visionIdentifiers: ["noodle", "ramen", "pasta", "spaghetti", "carbonara"], aliases: ["面条", "拉面", "汤面", "拌面", "牛肉面", "刀削面", "面", "noodles", "ramen", "pasta"]),
-        FoodItem(id: "steamed_bun", name: "包子/生煎/小笼", nameEn: "Steamed Stuffed Bun", caloriesPer100g: 230, category: .staple,
-                 visionIdentifiers: ["bun", "steamed_bun", "baozi", "dim_sum", "roll", "dumpling"], aliases: ["包子", "肉包", "菜包", "生煎包", "小笼包", "生煎", "灌汤包", "叉烧包", "水煎包", "baozi", "bun"]),
-        FoodItem(id: "mantou", name: "馒头/花卷", nameEn: "Steamed Bread", caloriesPer100g: 210, category: .staple,
+        FoodItem(id: "noodles", name: "面条", nameEn: "Noodles", caloriesPer100g: 110,
+                 proteinPer100g: 4.0, fatPer100g: 0.5, carbsPer100g: 22.0, category: .staple,
+                 visionIdentifiers: ["noodle", "ramen", "pasta", "spaghetti", "carbonara"], aliases: ["面条", "拉面", "汤面", "拌面", "牛肉面", "刀削面", "清汤面", "热汤面", "面", "noodles", "ramen", "pasta"]),
+        FoodItem(id: "steamed_bun", name: "包子/肉包/菜包", nameEn: "Steamed Bun", caloriesPer100g: 230,
+                 proteinPer100g: 7.0, fatPer100g: 6.5, carbsPer100g: 36.0, category: .staple,
+                 visionIdentifiers: ["bun", "steamed_bun", "baozi", "dim_sum", "roll", "dumpling"], aliases: ["包子", "肉包", "菜包", "大包", "鲜肉包", "猪肉包", "猪肉包子", "小肉包", "大肉包", "肉大包", "baozi", "bun"]),
+        FoodItem(id: "shengjian_xiaolong", name: "生煎包/小笼包/汤包", nameEn: "Pan-fried & Xiaolong Buns", caloriesPer100g: 230,
+                 proteinPer100g: 8.5, fatPer100g: 10.0, carbsPer100g: 26.5, category: .staple,
+                 visionIdentifiers: ["dim_sum", "dumpling"], aliases: ["生煎包", "生煎", "小笼包", "小笼", "灌汤包", "小笼汤包", "水煎包", "xiaolongbao"]),
+        FoodItem(id: "mantou", name: "馒头/花卷", nameEn: "Steamed Bread", caloriesPer100g: 210,
+                 proteinPer100g: 7.0, fatPer100g: 1.1, carbsPer100g: 44.0, category: .staple,
                  visionIdentifiers: ["bun", "steamed_bun", "bread_roll", "roll"], aliases: ["馒头", "花卷", "白馒头", "刀切馒头", "窝窝头", "杂粮馒头", "mantou"]),
-        FoodItem(id: "youtiao", name: "油条/油饼", nameEn: "Fried Dough Stick", caloriesPer100g: 380, category: .staple,
+        FoodItem(id: "youtiao", name: "油条/油饼", nameEn: "Fried Dough Stick", caloriesPer100g: 380,
+                 proteinPer100g: 6.9, fatPer100g: 17.6, carbsPer100g: 50.0, category: .staple,
                  visionIdentifiers: ["fritter", "churro", "doughnut", "cruller"], aliases: ["油条", "油饼", "炸油条", "麻花", "youtiao"]),
-        FoodItem(id: "pancake_roll", name: "煎饼果子/手抓饼", nameEn: "Pancake Roll", caloriesPer100g: 240, category: .staple,
+        FoodItem(id: "pancake_roll", name: "煎饼果子/手抓饼", nameEn: "Pancake Roll", caloriesPer100g: 240,
+                 proteinPer100g: 6.5, fatPer100g: 9.0, carbsPer100g: 33.0, category: .staple,
                  visionIdentifiers: ["crepe", "burrito", "wrap", "pancake", "tortilla"], aliases: ["煎饼果子", "手抓饼", "鸡蛋灌饼", "葱油饼", "煎饼", "卷饼", "肉卷", "jianbing"]),
-        FoodItem(id: "roujiamo", name: "肉夹馍", nameEn: "Roujiamo", caloriesPer100g: 260, category: .staple,
+        FoodItem(id: "roujiamo", name: "肉夹馍", nameEn: "Roujiamo", caloriesPer100g: 260,
+                 proteinPer100g: 9.5, fatPer100g: 11.0, carbsPer100g: 30.0, category: .staple,
                  visionIdentifiers: ["sandwich", "burger", "slider"], aliases: ["肉夹馍", "陕西肉夹馍", "腊汁肉夹馍", "白吉馍", "roujiamo"]),
-        FoodItem(id: "rice_noodles", name: "米粉/米线/螺蛳粉", nameEn: "Rice Noodles", caloriesPer100g: 120, category: .staple,
+        FoodItem(id: "rice_noodles", name: "米粉/米线/螺蛳粉", nameEn: "Rice Noodles", caloriesPer100g: 120,
+                 proteinPer100g: 2.5, fatPer100g: 0.8, carbsPer100g: 26.0, category: .staple,
                  visionIdentifiers: ["noodle", "vermicelli", "ramen"], aliases: ["米粉", "米线", "螺蛳粉", "酸辣粉", "桂林米粉", "过桥米线", "牛肉粉", "河粉", "炒河粉", "rice noodles"]),
-        FoodItem(id: "zhajiangmian", name: "炸酱面/热干面", nameEn: "Noodles with Paste", caloriesPer100g: 200, category: .staple,
+        FoodItem(id: "zhajiangmian", name: "炸酱面/热干面", nameEn: "Noodles with Paste", caloriesPer100g: 200,
+                 proteinPer100g: 6.0, fatPer100g: 7.5, carbsPer100g: 27.0, category: .staple,
                  visionIdentifiers: ["noodle", "spaghetti", "pasta", "ramen"], aliases: ["炸酱面", "热干面", "油泼面", "葱油拌面", "担担面", "武汉热干面", "zhajiangmian"]),
-        FoodItem(id: "dumpling", name: "饺子/馄饨", nameEn: "Dumplings", caloriesPer100g: 240, category: .staple,
+        FoodItem(id: "dumpling", name: "饺子/馄饨", nameEn: "Dumplings", caloriesPer100g: 240,
+                 proteinPer100g: 8.0, fatPer100g: 8.5, carbsPer100g: 32.0, category: .staple,
                  visionIdentifiers: ["dumpling", "wonton", "pierogi", "potsticker", "dim_sum"], aliases: ["饺子", "水饺", "煎饺", "馄饨", "抄手", "云吞", "dumpling", "wonton"]),
-        FoodItem(id: "congee", name: "粥/稀饭", nameEn: "Congee", caloriesPer100g: 50, category: .staple,
+        FoodItem(id: "congee", name: "粥/稀饭", nameEn: "Congee", caloriesPer100g: 50,
+                 proteinPer100g: 1.1, fatPer100g: 0.2, carbsPer100g: 10.8, category: .staple,
                  visionIdentifiers: ["oatmeal", "porridge", "gruel", "broth"], aliases: ["粥", "白粥", "稀饭", "皮蛋瘦肉粥", "小米粥", "八宝粥", "南瓜粥", "congee", "porridge"]),
         FoodItem(id: "sushi", name: "寿司", nameEn: "Sushi", caloriesPer100g: 150, category: .staple,
                  visionIdentifiers: ["sushi"], aliases: ["寿司", "手握寿司", "军舰寿司", "加州卷", "sushi"]),
@@ -395,21 +452,29 @@ public enum FoodCatalog {
                  visionIdentifiers: ["fish"], aliases: ["酸菜鱼", "烤鱼", "剁椒鱼头", "沸腾鱼", "清蒸鲈鱼", "suancai fish"]),
         FoodItem(id: "roast_duck", name: "烤鸭/卤鸭", nameEn: "Roast & Braised Duck", caloriesPer100g: 240, category: .meat,
                  visionIdentifiers: ["duck", "poultry", "roast"], aliases: ["烤鸭", "北京烤鸭", "卤鸭", "南京盐水鸭", "烧鸭", "roast duck"]),
-        FoodItem(id: "steak", name: "牛排", nameEn: "Steak", caloriesPer100g: 250, category: .meat,
+        FoodItem(id: "steak", name: "牛排", nameEn: "Steak", caloriesPer100g: 250,
+                 proteinPer100g: 25.0, fatPer100g: 17.0, carbsPer100g: 0.0, category: .meat,
                  visionIdentifiers: ["steak", "meat", "beef"], aliases: ["牛排", "煎牛排", "steak"]),
-        FoodItem(id: "fried_chicken", name: "炸鸡/鸡排", nameEn: "Fried Chicken", caloriesPer100g: 280, category: .meat,
+        FoodItem(id: "fried_chicken", name: "炸鸡/鸡排", nameEn: "Fried Chicken", caloriesPer100g: 280,
+                 proteinPer100g: 18.0, fatPer100g: 18.0, carbsPer100g: 10.0, category: .meat,
                  visionIdentifiers: ["fried_chicken", "chicken", "tempura"], aliases: ["炸鸡", "鸡排", "辣子鸡", "鸡米花", "原味鸡", "炸鸡翅", "fried chicken"]),
-        FoodItem(id: "chicken_breast", name: "鸡胸肉/白切鸡", nameEn: "Chicken", caloriesPer100g: 165, category: .meat,
+        FoodItem(id: "chicken_breast", name: "鸡胸肉/白切鸡", nameEn: "Chicken", caloriesPer100g: 165,
+                 proteinPer100g: 31.0, fatPer100g: 3.6, carbsPer100g: 0.0, category: .meat,
                  visionIdentifiers: ["grilled_chicken", "chicken", "poultry"], aliases: ["鸡胸肉", "鸡肉", "白切鸡", "口水鸡", "鸡腿", "白斩鸡", "chicken breast", "chicken"]),
-        FoodItem(id: "beef", name: "牛肉/酱牛肉", nameEn: "Beef", caloriesPer100g: 190, category: .meat,
+        FoodItem(id: "beef", name: "牛肉/酱牛肉", nameEn: "Beef", caloriesPer100g: 190,
+                 proteinPer100g: 26.0, fatPer100g: 9.0, carbsPer100g: 0.0, category: .meat,
                  visionIdentifiers: ["meat", "beef", "meatball"], aliases: ["牛肉", "卤牛肉", "酱牛肉", "小炒牛肉", "黑椒牛肉粒", "beef"]),
-        FoodItem(id: "pork", name: "猪肉/叉烧", nameEn: "Pork", caloriesPer100g: 210, category: .meat,
+        FoodItem(id: "pork", name: "猪肉/叉烧", nameEn: "Pork", caloriesPer100g: 210,
+                 proteinPer100g: 20.0, fatPer100g: 14.0, carbsPer100g: 0.0, category: .meat,
                  visionIdentifiers: ["meat", "pork", "ham", "bacon", "sausage"], aliases: ["猪肉", "叉烧", "香肠", "培根", "烤肠", "pork"]),
-        FoodItem(id: "lamb", name: "羊肉/羊肉串", nameEn: "Lamb & Mutton", caloriesPer100g: 200, category: .meat,
+        FoodItem(id: "lamb", name: "羊肉/羊肉串", nameEn: "Lamb & Mutton", caloriesPer100g: 200,
+                 proteinPer100g: 19.0, fatPer100g: 13.0, carbsPer100g: 0.0, category: .meat,
                  visionIdentifiers: ["lamb", "mutton", "kebab"], aliases: ["羊肉", "烤羊肉串", "羊肉汤", "手抓羊肉", "葱爆羊肉", "lamb", "mutton"]),
-        FoodItem(id: "shrimp", name: "虾/白灼虾/小龙虾", nameEn: "Shrimp & Prawns", caloriesPer100g: 100, category: .meat,
+        FoodItem(id: "shrimp", name: "虾/白灼虾/小龙虾", nameEn: "Shrimp & Prawns", caloriesPer100g: 100,
+                 proteinPer100g: 21.0, fatPer100g: 1.0, carbsPer100g: 0.5, category: .meat,
                  visionIdentifiers: ["shellfish", "shellfish_prepared", "crab", "lobster", "shrimp", "prawn"], aliases: ["虾", "大虾", "白灼虾", "油焖大虾", "小龙虾", "麻辣小龙虾", "虾仁", "shrimp", "prawn"]),
-        FoodItem(id: "fish", name: "鱼肉/海鲜", nameEn: "Fish & Seafood", caloriesPer100g: 130, category: .meat,
+        FoodItem(id: "fish", name: "鱼肉/海鲜", nameEn: "Fish & Seafood", caloriesPer100g: 130,
+                 proteinPer100g: 20.0, fatPer100g: 5.0, carbsPer100g: 0.0, category: .meat,
                  visionIdentifiers: ["fish", "seafood", "oyster", "clam", "salmon"], aliases: ["鱼", "海鲜", "清蒸鱼", "红烧鱼", "三文鱼", "鳕鱼", "fish", "seafood"]),
         FoodItem(id: "curry_chicken_beef", name: "咖喱鸡/咖喱牛肉", nameEn: "Curry", caloriesPer100g: 160, category: .meat,
                  visionIdentifiers: ["curry"], aliases: ["咖喱鸡", "咖喱牛肉", "咖喱饭", "日式咖喱", "curry"]),
@@ -430,10 +495,18 @@ public enum FoodCatalog {
                  visionIdentifiers: ["spinach", "greens"], aliases: ["蒜蓉空心菜", "空心菜", "生菜", "白灼生菜", "菜心", "广东菜心", "油麦菜", "菠菜", "油菜", "garlic greens"]),
         FoodItem(id: "mapo_tofu", name: "麻婆豆腐/家常豆腐", nameEn: "Mapo Tofu", caloriesPer100g: 130, category: .veggie,
                  visionIdentifiers: ["tofu"], aliases: ["麻婆豆腐", "家常豆腐", "肉沫豆腐", "麻辣豆腐", "mapo tofu"]),
-        FoodItem(id: "tofu", name: "豆制品/豆干", nameEn: "Tofu", caloriesPer100g: 80, category: .veggie,
+        FoodItem(id: "tofu", name: "豆制品/豆干", nameEn: "Tofu", caloriesPer100g: 80,
+                 proteinPer100g: 8.0, fatPer100g: 4.0, carbsPer100g: 2.0, category: .veggie,
                  visionIdentifiers: ["tofu", "bean_curd"], aliases: ["豆腐", "豆干", "腐竹", "豆皮", "千张", "tofu"]),
-        FoodItem(id: "egg", name: "西红柿炒鸡蛋/荷包蛋", nameEn: "Egg Dish", caloriesPer100g: 155, category: .veggie,
-                 visionIdentifiers: ["egg", "fried_egg", "scrambled_eggs", "omelet", "poached_egg"], aliases: ["鸡蛋", "煎蛋", "炒蛋", "番茄炒蛋", "西红柿炒鸡蛋", "荷包蛋", "卤蛋", "茶叶蛋", "水煮蛋", "蛋", "egg"]),
+        FoodItem(id: "egg", name: "鸡蛋/茶叶蛋/水煮蛋", nameEn: "Boiled & Tea Egg", caloriesPer100g: 145,
+                 proteinPer100g: 13.0, fatPer100g: 10.0, carbsPer100g: 1.0, category: .veggie,
+                 visionIdentifiers: ["egg", "poached_egg"], aliases: ["鸡蛋", "茶叶蛋", "水煮蛋", "卤蛋", "煮鸡蛋", "白煮蛋", "煮蛋", "蛋", "egg", "tea egg", "boiled egg"]),
+        FoodItem(id: "fried_egg", name: "荷包蛋/煎蛋", nameEn: "Fried Egg", caloriesPer100g: 185,
+                 proteinPer100g: 12.0, fatPer100g: 15.0, carbsPer100g: 1.5, category: .veggie,
+                 visionIdentifiers: ["fried_egg", "omelet"], aliases: ["荷包蛋", "煎蛋", "煎鸡蛋", "太阳蛋", "fried egg"]),
+        FoodItem(id: "tomato_scrambled_egg", name: "西红柿炒鸡蛋/番茄炒蛋", nameEn: "Tomato Scrambled Eggs", caloriesPer100g: 110,
+                 proteinPer100g: 5.5, fatPer100g: 7.0, carbsPer100g: 6.5, category: .veggie,
+                 visionIdentifiers: ["scrambled_eggs"], aliases: ["西红柿炒鸡蛋", "番茄炒蛋", "番茄炒鸡蛋", "西红柿炒蛋", "炒鸡蛋", "炒蛋"]),
         FoodItem(id: "steamed_egg_custard", name: "水蒸蛋/鸡蛋羹", nameEn: "Steamed Egg Custard", caloriesPer100g: 70, category: .veggie,
                  visionIdentifiers: ["custard", "pudding"], aliases: ["水蒸蛋", "鸡蛋羹", "蒸蛋", "炖蛋", "蒸水蛋", "steamed egg"]),
         FoodItem(id: "mushroom_dish", name: "炒菌菇/香菇油菜", nameEn: "Mushroom Dish", caloriesPer100g: 70, category: .veggie,
@@ -458,7 +531,7 @@ public enum FoodCatalog {
         FoodItem(id: "hotpot", name: "火锅/麻辣烫", nameEn: "Hot Pot", caloriesPer100g: 150, category: .snack,
                  visionIdentifiers: ["hotpot", "hot_pot", "stew", "fondue"], aliases: ["火锅", "麻辣烫", "冒菜", "麻辣香锅", "hotpot"]),
         FoodItem(id: "barbecue", name: "烧烤/烤串", nameEn: "Barbecue", caloriesPer100g: 260, category: .snack,
-                 visionIdentifiers: ["grill", "barbecue", "kebab", "skewer"], aliases: ["烧烤", "烤串", "烤肉", "串串", "barbecue", "bbq"]),
+                 visionIdentifiers: ["grill", "barbecue", "kebab", "skewer"], aliases: ["烧烤", "烤串", "烤肉", "串串", "羊肉串", "牛肉串", "烤羊肉串", "烤肉串", "barbecue", "bbq"]),
         FoodItem(id: "braised_duck_neck", name: "卤鸭脖/鸡爪", nameEn: "Braised Duck Neck & Claw", caloriesPer100g: 220, category: .snack,
                  visionIdentifiers: ["duck", "poultry", "meat"], aliases: ["鸭脖", "卤鸭脖", "周黑鸭", "绝味", "鸡爪", "卤鸡爪", "鸭锁骨", "鸭翅", "duck neck"]),
         FoodItem(id: "oden", name: "关东煮/串串", nameEn: "Oden", caloriesPer100g: 80, category: .snack,
@@ -484,7 +557,7 @@ public enum FoodCatalog {
         FoodItem(id: "cake", name: "蛋糕", nameEn: "Cake", caloriesPer100g: 350, category: .dessert,
                  visionIdentifiers: ["cake", "cake_regular", "cheesecake", "cupcake", "birthday_cake", "fruitcake"], aliases: ["蛋糕", "甜点", "提拉米苏", "芝士蛋糕", "cake"]),
         FoodItem(id: "cookie", name: "饼干/曲奇", nameEn: "Cookie", caloriesPer100g: 480, category: .dessert,
-                 visionIdentifiers: ["cookie", "chocolate_chip"], aliases: ["饼干", "曲奇", "威化", "cookie"]),
+                 visionIdentifiers: ["cookie", "chocolate_chip"], aliases: ["饼干", "曲奇", "威化", "曲奇饼干", "cookie"]),
         FoodItem(id: "ice_cream", name: "冰淇淋/雪糕", nameEn: "Ice Cream", caloriesPer100g: 200, category: .dessert,
                  visionIdentifiers: ["ice_cream", "frozen_dessert", "dessert"], aliases: ["冰淇淋", "雪糕", "甜筒", "冰棒", "ice cream"]),
         FoodItem(id: "yogurt", name: "酸奶", nameEn: "Yogurt", caloriesPer100g: 90, category: .dessert,
@@ -498,17 +571,17 @@ public enum FoodCatalog {
 
         // MARK: - 饮品与水果 (Drink & Fruit)
         FoodItem(id: "coffee", name: "黑咖啡/美式", nameEn: "Black Coffee", caloriesPer100g: 2, category: .drink,
-                 visionIdentifiers: ["coffee", "coffee_bean"], aliases: ["咖啡", "美式", "黑咖啡", "浓缩咖啡", "冷萃", "coffee", "americano"]),
+                 visionIdentifiers: ["coffee", "coffee_bean"], aliases: ["咖啡", "美式", "黑咖啡", "浓缩咖啡", "冷萃", "冰美式", "热美式", "coffee", "americano"]),
         FoodItem(id: "latte", name: "拿铁/卡布奇诺", nameEn: "Latte", caloriesPer100g: 40, category: .drink,
-                 visionIdentifiers: ["latte", "cappuccino"], aliases: ["拿铁", "卡布奇诺", "摩卡", "焦糖玛奇朵", "生椰拿铁", "星巴克", "瑞幸", "库迪", "latte", "cappuccino", "mocha"]),
+                 visionIdentifiers: ["latte", "cappuccino"], aliases: ["拿铁", "卡布奇诺", "摩卡", "焦糖玛奇朵", "生椰拿铁", "冰拿铁", "热拿铁", "星巴克", "瑞幸", "库迪", "latte", "cappuccino", "mocha"]),
         FoodItem(id: "milk_tea", name: "奶茶/果茶", nameEn: "Milk Tea", caloriesPer100g: 70, category: .drink,
-                 visionIdentifiers: ["bubble_tea", "juice", "drink"], aliases: ["奶茶", "珍珠奶茶", "喜茶", "奈雪", "蜜雪冰城", "霸王茶姬", "茶颜悦色", "古茗", "一点点", "milk tea", "bubble tea"]),
+                 visionIdentifiers: ["bubble_tea", "juice", "drink"], aliases: ["奶茶", "珍珠奶茶", "喜茶", "奈雪", "蜜雪冰城", "霸王茶姬", "茶颜悦色", "古茗", "一点点", "半糖奶茶", "无糖奶茶", "milk tea", "bubble tea"]),
         FoodItem(id: "lemon_tea", name: "手打柠檬茶", nameEn: "Lemon Tea", caloriesPer100g: 35, category: .drink,
                  visionIdentifiers: ["juice", "drink"], aliases: ["柠檬茶", "手打柠檬茶", "暴打柠檬茶", "鸭屎香柠檬茶", "lemon tea"]),
         FoodItem(id: "sugar_free_tea", name: "无糖纯茶/乌龙茶", nameEn: "Sugar-free Tea", caloriesPer100g: 1, category: .drink,
                  visionIdentifiers: ["drink"], aliases: ["无糖纯茶", "乌龙茶", "东方树叶", "三得利乌龙茶", "绿茶", "普洱茶", "红茶", "sugar free tea"]),
         FoodItem(id: "soy_milk", name: "豆浆", nameEn: "Soy Milk", caloriesPer100g: 35, category: .drink,
-                 visionIdentifiers: ["drink"], aliases: ["豆浆", "现磨豆浆", "原味豆浆", "甜豆浆", "soy milk"]),
+                 visionIdentifiers: ["drink"], aliases: ["豆浆", "现磨豆浆", "原味豆浆", "甜豆浆", "热豆浆", "冰豆浆", "soy milk"]),
         FoodItem(id: "pure_milk", name: "纯牛奶/鲜牛奶", nameEn: "Whole Milk", caloriesPer100g: 65, category: .drink,
                  visionIdentifiers: ["milk"], aliases: ["牛奶", "鲜牛奶", "纯牛奶", "热牛奶", "温牛奶", "全脂牛奶", "脱脂牛奶", "一袋牛奶", "一杯牛奶", "盒装牛奶", "milk", "whole milk"]),
         FoodItem(id: "cola", name: "可乐/含糖汽水", nameEn: "Cola", caloriesPer100g: 42, category: .drink,
@@ -644,27 +717,64 @@ public enum FoodCatalog {
             ?? items.first(where: { $0.aliases.contains(where: { $0.lowercased() == lowerStripped }) })
     }
 
-    /// 剥离中文菜名前的量词与修饰词（如「一份」「小份」「这个」）。
-    private static func stripPortionModifiers(_ name: String) -> String {
-        let modifiers: Set<Character> = [
-            "一", "二", "两", "三", "四", "五", "六", "七", "八", "九", "十", "半",
-            "份", "个", "只", "块", "片", "条", "根", "碗", "盘", "杯", "碟", "袋", "盒", "瓶", "串", "颗", "包", "听", "勺",
-            "小", "中", "大", "这", "那", "的"
-        ]
-        var result = name
-        var changed = true
-        while changed {
-            changed = false
-            while let first = result.first, modifiers.contains(first) {
-                result.removeFirst()
-                changed = true
-            }
-            while let last = result.last, modifiers.contains(last) {
-                result.removeLast()
-                changed = true
-            }
+    /// 剥离中文菜名前后的量词与修饰词（如「一份」「小份」「这个」「一个」「200g」「二两」「半糖」「冰美式」）。
+    public static func stripPortionModifiers(_ name: String) -> String {
+        var text = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return "" }
+
+        // 移除括号内注释文字，如 "(1个，约80g)" 或 "（大包）"
+        text = text.replacingOccurrences(of: "\\([^)]*\\)", with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: "（[^）]*）", with: "", options: .regularExpression)
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 剥离前缀指示代词与修饰（这、那、的）
+        text = text.replacingOccurrences(of: "^[这那的]+", with: "", options: .regularExpression)
+
+        // 剥离重量/体积单位前缀（如「200g」「200克」「500ml」「二两」「半斤」）
+        let weightPattern = "^([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(?:g|克|千克|kg|ml|毫升|升|L|两|斤)\\s*"
+        text = text.replacingOccurrences(of: weightPattern, with: "", options: .regularExpression)
+
+        // 剥离前缀数量与量词（如「一个」「2个」「两只」「半碗」「1碗」「一杯」）
+        let prefixQtyPattern = "^([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客)\\s*"
+        text = text.replacingOccurrences(of: prefixQtyPattern, with: "", options: .regularExpression)
+
+        // 剥离前缀份量级别（如「大份」「小份」「中份」「标准份」「大碗」「小碗」「大盘」「小盘」「大杯」「小杯」）
+        let prefixPortionPattern = "^(大份|小份|中份|标准份|大碗|小碗|中碗|大盘|小盘|大杯|小杯|中杯|大罐|小罐|大瓶|小瓶)\\s*"
+        text = text.replacingOccurrences(of: prefixPortionPattern, with: "", options: .regularExpression)
+
+        // 剥离糖度修饰（如「无糖」「微糖」「三分糖」「3分糖」「半糖」「五分糖」「少糖」「全糖」）
+        let sugarPattern = "^(无糖|0糖|零糖|不加糖|微糖|三分糖|3分糖|半糖|五分糖|5分糖|少糖|七分糖|7分糖|全糖|正常糖|多糖)\\s*"
+        text = text.replacingOccurrences(of: sugarPattern, with: "", options: .regularExpression)
+
+        // 剥离温度/冰度修饰（如「冰镇」「去冰」「少冰」「常温」），并安全剥离「冰」「热」「温」「冷」
+        let iceModifierPattern = "^(冰镇|去冰|少冰|常温)\\s*"
+        text = text.replacingOccurrences(of: iceModifierPattern, with: "", options: .regularExpression)
+        if text.hasPrefix("冰") && !text.hasPrefix("冰淇淋") && !text.hasPrefix("冰棒") && !text.hasPrefix("冰粉") && !text.hasPrefix("冰糖") {
+            text = String(text.dropFirst())
         }
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("热") && !text.hasPrefix("热干面") && !text.hasPrefix("热狗") {
+            text = String(text.dropFirst())
+        }
+        if text.hasPrefix("温") || (text.hasPrefix("冷") && !text.hasPrefix("冷面")) {
+            text = String(text.dropFirst())
+        }
+
+        // 剥离后缀糖度修饰
+        let suffixSugarPattern = "\\s*(无糖|0糖|零糖|不加糖|微糖|三分糖|3分糖|半糖|五分糖|5分糖|少糖|七分糖|7分糖|全糖|正常糖|多糖)$"
+        text = text.replacingOccurrences(of: suffixSugarPattern, with: "", options: .regularExpression)
+
+        // 剥离后缀数量与量词（如「一份」「2碗」「1只」）
+        let suffixQtyPattern = "\\s*([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|斤|g|克|ml|毫升)$"
+        text = text.replacingOccurrences(of: suffixQtyPattern, with: "", options: .regularExpression)
+
+        // 剥离后缀份量级别（如「大份」「小份」「大碗」）
+        let suffixPortionPattern = "\\s*(大份|小份|中份|标准份|大碗|小碗|中碗|大盘|小盘|大杯|小杯|中杯|大罐|小罐|大瓶|小瓶)$"
+        text = text.replacingOccurrences(of: suffixPortionPattern, with: "", options: .regularExpression)
+
+        // 剥离末尾的「的」
+        text = text.replacingOccurrences(of: "[的]+$", with: "", options: .regularExpression)
+
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -699,9 +809,9 @@ public enum MealTimePeriod: String, CaseIterable, Sendable {
 
     /// 对食物项的时段先验调节乘数 (0.5 ~ 1.4)
     public func priorMultiplier(for item: FoodItem) -> Double {
-        let isBreakfastStaple = item.id == "steamed_bun" || item.id == "mantou" || item.id == "youtiao" ||
+        let isBreakfastStaple = item.id == "steamed_bun" || item.id == "shengjian_xiaolong" || item.id == "mantou" || item.id == "youtiao" ||
             item.id == "pancake_roll" || item.id == "congee" || item.id == "breakfast_cereal" ||
-            item.id == "bread" || item.id == "soy_milk" || item.id == "pure_milk" || item.id == "egg"
+            item.id == "bread" || item.id == "soy_milk" || item.id == "pure_milk" || item.id == "egg" || item.id == "fried_egg"
         let isHeavyDish = item.id == "hotpot" || item.id == "barbecue" || item.id == "boiled_pork_fish" ||
             item.id == "suancai_fish" || item.id == "roast_duck" || item.id == "pig_trotter"
 
@@ -715,7 +825,7 @@ public enum MealTimePeriod: String, CaseIterable, Sendable {
 
         case .lunch:
             if item.category == .staple || item.category == .meat || item.category == .veggie {
-                return isBreakfastStaple && item.id != "steamed_bun" ? 0.75 : 1.15
+                return isBreakfastStaple && item.id != "steamed_bun" && item.id != "shengjian_xiaolong" ? 0.75 : 1.15
             }
             if item.id == "coffee" || item.id == "latte" { return 1.10 }
             return 1.0
@@ -832,6 +942,21 @@ public struct FoodDishEstimate: Equatable, Sendable, Identifiable {
     public var consumedCalories: Double {
         fullPortionCalories * consumedRatio
     }
+    /// 实际摄入蛋白质（克）
+    public var protein: Double {
+        let grams = (fullPortionCalories / max(1, food.caloriesPer100g)) * 100.0
+        return (grams / 100.0) * food.proteinPer100g * consumedRatio
+    }
+    /// 实际摄入脂肪（克）
+    public var fat: Double {
+        let grams = (fullPortionCalories / max(1, food.caloriesPer100g)) * 100.0
+        return (grams / 100.0) * food.fatPer100g * consumedRatio
+    }
+    /// 实际摄入碳水化合物（克）
+    public var carbs: Double {
+        let grams = (fullPortionCalories / max(1, food.caloriesPer100g)) * 100.0
+        return (grams / 100.0) * food.carbsPer100g * consumedRatio
+    }
 
     public init(id: String? = nil,
                 food: FoodItem,
@@ -941,6 +1066,29 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
 
     public var confidenceLevel: FoodConfidenceLevel {
         FoodConfidenceLevel(confidence: confidence)
+    }
+
+    /// 整餐实际摄入蛋白质合计（克）
+    public var totalProtein: Double {
+        dishes.reduce(0.0) { $0 + $1.protein }
+    }
+
+    /// 整餐实际摄入脂肪合计（克）
+    public var totalFat: Double {
+        dishes.reduce(0.0) { $0 + $1.fat }
+    }
+
+    /// 整餐实际摄入碳水化合物合计（克）
+    public var totalCarbs: Double {
+        dishes.reduce(0.0) { $0 + $1.carbs }
+    }
+
+    /// 宏量营养素简报（如「碳水 55g · 蛋白质 18g · 脂肪 12g」）
+    public var macroNutrientSummary: String {
+        let p = Int(totalProtein.rounded())
+        let f = Int(totalFat.rounded())
+        let c = Int(totalCarbs.rounded())
+        return "碳水 \(c)g · 蛋白质 \(p)g · 脂肪 \(f)g"
     }
 
     public init(food: FoodItem,
@@ -1297,51 +1445,389 @@ public enum FoodCalorieEstimator {
             }
         }
 
-        // 先尝试按常见分隔符拆分为多道菜
-        let pattern = "[，,、+＋/；;\\s]|(?:还有|加上|以及|配|加|和)"
-        let rawParts: [String]
-        if let regex = try? NSRegularExpression(pattern: pattern) {
-            let nsRange = NSRange(cleaned.startIndex..., in: cleaned)
-            let replaced = regex.stringByReplacingMatches(in: cleaned, range: nsRange, withTemplate: "|")
-            rawParts = replaced.split(separator: "|").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        } else {
-            rawParts = [cleaned]
+        // 1. 先检查是否包含未用标点分隔的多菜口语表述（如「两个包子一碗粥」「一个肉包一杯豆浆」「两个鸡蛋一碗小米粥」）
+        var preprocessed = cleaned
+        let spokenBoundaryPattern = "(?<=[^\\s|，,、+＋/；;0-9一二两三四五六七八九十百千万半])(?=(?:[0-9]+|[一二两三四五六七八九十半]+)\\s*(?:个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|g|克|ml|毫升))"
+        if let boundaryRegex = try? NSRegularExpression(pattern: spokenBoundaryPattern) {
+            let range = NSRange(preprocessed.startIndex..., in: preprocessed)
+            preprocessed = boundaryRegex.stringByReplacingMatches(in: preprocessed, range: range, withTemplate: "|")
         }
 
-        var matchedFoods: [FoodItem] = []
+        // 2. 先尝试按常见分隔符拆分为多道菜
+        let pattern = "[，,、+＋/；;\\s\n\r|]|(?:还有|加上|以及|配|加|和)"
+        let rawParts: [String]
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            let nsRange = NSRange(preprocessed.startIndex..., in: preprocessed)
+            let replaced = regex.stringByReplacingMatches(in: preprocessed, range: nsRange, withTemplate: "|")
+            rawParts = replaced.split(separator: "|").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        } else {
+            rawParts = [preprocessed]
+        }
+
+        var matchedDishes: [FoodDishEstimate] = []
         var seen = Set<String>()
         for part in rawParts {
-            if let strict = FoodCatalog.item(matchingNameStrict: part) ?? FoodCatalog.items(matchingName: part).first {
-                if !seen.contains(strict.id) {
-                    seen.insert(strict.id)
-                    matchedFoods.append(strict)
+            let parsed = parseDetailedQuantity(from: part)
+            let queryName = parsed.cleanName.isEmpty ? part : parsed.cleanName
+            guard let food = FoodCatalog.item(matchingNameStrict: queryName)
+                ?? FoodCatalog.items(matchingName: queryName).first
+                ?? FoodCatalog.item(matchingNameStrict: part)
+                ?? FoodCatalog.items(matchingName: part).first else {
+                continue
+            }
+
+            if !seen.contains(food.id) {
+                seen.insert(food.id)
+                let baseCal: Double
+                if let grams = parsed.explicitGrams, grams > 0 {
+                    baseCal = (grams / 100.0) * food.caloriesPer100g
+                } else if let pieceGrams = food.pieceGrams, let unit = parsed.unit, isPieceUnit(unit) {
+                    let totalGrams = pieceGrams * parsed.multiplier
+                    baseCal = (totalGrams / 100.0) * food.caloriesPer100g
+                } else {
+                    let dishPortion = parsed.portion != .regular ? parsed.portion : portion
+                    baseCal = food.standardServingCalories * dishPortion.multiplier * parsed.multiplier
+                }
+
+                let finalCal: Double
+                if let sugarFactor = parsed.sugarFactor, food.category == .drink || food.id == "milk_tea" || food.id == "lemon_tea" {
+                    finalCal = baseCal * sugarFactor
+                } else {
+                    finalCal = baseCal
+                }
+
+                let dishPortion = parsed.portion != .regular ? parsed.portion : portion
+                let dish = FoodDishEstimate(
+                    food: food,
+                    portion: dishPortion,
+                    confidence: confidence,
+                    consumedRatio: clampedRatio,
+                    fullPortionCaloriesOverride: finalCal
+                )
+                matchedDishes.append(dish)
+            }
+        }
+
+        if matchedDishes.isEmpty {
+            let parsed = parseDetailedQuantity(from: trimmed)
+            let fallbackName = parsed.cleanName.isEmpty ? trimmed : parsed.cleanName
+            guard let fallback = FoodCatalog.items(matchingName: fallbackName).first ?? FoodCatalog.items(matchingName: trimmed).first else {
+                return nil
+            }
+            let baseCal: Double
+            if let grams = parsed.explicitGrams, grams > 0 {
+                baseCal = (grams / 100.0) * fallback.caloriesPer100g
+            } else if let pieceGrams = fallback.pieceGrams, let unit = parsed.unit, isPieceUnit(unit) {
+                let totalGrams = pieceGrams * parsed.multiplier
+                baseCal = (totalGrams / 100.0) * fallback.caloriesPer100g
+            } else {
+                let dishPortion = parsed.portion != .regular ? parsed.portion : portion
+                baseCal = fallback.standardServingCalories * dishPortion.multiplier * parsed.multiplier
+            }
+
+            let finalCal: Double
+            if let sugarFactor = parsed.sugarFactor, fallback.category == .drink || fallback.id == "milk_tea" || fallback.id == "lemon_tea" {
+                finalCal = baseCal * sugarFactor
+            } else {
+                finalCal = baseCal
+            }
+
+            let dishPortion = parsed.portion != .regular ? parsed.portion : portion
+            matchedDishes = [
+                FoodDishEstimate(
+                    food: fallback,
+                    portion: dishPortion,
+                    confidence: confidence,
+                    consumedRatio: clampedRatio,
+                    fullPortionCaloriesOverride: finalCal
+                )
+            ]
+        }
+
+        if matchedDishes.count == 1, let single = matchedDishes.first {
+            return FoodCalorieEstimate(
+                food: single.food,
+                portion: single.portion,
+                confidence: single.confidence,
+                consumedRatio: single.consumedRatio,
+                fullPortionCaloriesOverride: single.fullPortionCalories
+            )
+        }
+
+        return FoodCalorieEstimate(dishes: matchedDishes, portion: portion)
+    }
+
+    /// 结构化解析后的菜品数量信息
+    public struct ParsedFoodQuantity: Equatable, Sendable {
+        public var cleanName: String
+        public var multiplier: Double
+        public var portion: FoodPortion
+        public var unit: String?
+        public var explicitGrams: Double?
+        public var sugarFactor: Double?
+        public var temperature: String?
+
+        public init(cleanName: String,
+                    multiplier: Double = 1.0,
+                    portion: FoodPortion = .regular,
+                    unit: String? = nil,
+                    explicitGrams: Double? = nil,
+                    sugarFactor: Double? = nil,
+                    temperature: String? = nil) {
+            self.cleanName = cleanName
+            self.multiplier = multiplier
+            self.portion = portion
+            self.unit = unit
+            self.explicitGrams = explicitGrams
+            self.sugarFactor = sugarFactor
+            self.temperature = temperature
+        }
+    }
+
+    private static func isPieceUnit(_ unit: String) -> Bool {
+        let pieceUnits: Set<String> = ["个", "只", "串", "块", "片", "颗", "贯", "粒", "根"]
+        return pieceUnits.contains(unit)
+    }
+
+    /// 解析单个菜品片段中的数量倍数、份量级别与纯菜名（兼容旧接口）
+    public static func parsePortionAndQuantity(from rawPart: String) -> (cleanName: String, multiplier: Double, portion: FoodPortion) {
+        let detailed = parseDetailedQuantity(from: rawPart)
+        return (detailed.cleanName, detailed.multiplier, detailed.portion)
+    }
+
+    /// 深入解析单个菜品片段中的纯菜名、数量倍数、显式克数/毫升数、量词、份量级别、糖度与冰度
+    public static func parseDetailedQuantity(from rawPart: String) -> ParsedFoodQuantity {
+        var text = rawPart.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return ParsedFoodQuantity(cleanName: text) }
+
+        // 移除括号内的补充文字，如 "(1个，约80–100g)" 或 "（约80g）"
+        text = text.replacingOccurrences(of: "\\([^)]*\\)", with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: "（[^）]*）", with: "", options: .regularExpression)
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var portion: FoodPortion = .regular
+        var multiplier: Double = 1.0
+        var unit: String?
+        var explicitGrams: Double?
+        var sugarFactor: Double?
+        var temperature: String?
+
+        // 1. 检查份量修饰（大份/小份/中份/大碗/小碗/大盘/小盘/大杯/小杯/大罐/小罐/大瓶/小瓶）
+        if text.hasPrefix("大份") || text.hasPrefix("大碗") || text.hasPrefix("大盘") || text.hasPrefix("大杯") || text.hasPrefix("大罐") || text.hasPrefix("大瓶") {
+            portion = .large
+            text = String(text.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+        } else if text.hasPrefix("小份") || text.hasPrefix("小碗") || text.hasPrefix("小盘") || text.hasPrefix("小杯") || text.hasPrefix("小罐") || text.hasPrefix("小瓶") {
+            portion = .small
+            text = String(text.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+        } else if text.hasPrefix("中份") || text.hasPrefix("标准份") || text.hasPrefix("中碗") || text.hasPrefix("中杯") {
+            portion = .regular
+            text = String(text.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+        } else if text.hasSuffix("大份") || text.hasSuffix("大碗") || text.hasSuffix("大盘") || text.hasSuffix("大杯") || text.hasSuffix("大罐") || text.hasSuffix("大瓶") {
+            portion = .large
+            text = String(text.dropLast(2)).trimmingCharacters(in: .whitespaces)
+        } else if text.hasSuffix("小份") || text.hasSuffix("小碗") || text.hasSuffix("小盘") || text.hasSuffix("小杯") || text.hasSuffix("小罐") || text.hasSuffix("小瓶") {
+            portion = .small
+            text = String(text.dropLast(2)).trimmingCharacters(in: .whitespaces)
+        }
+
+        // 2. 检查糖度修饰（支持前缀、中缀、后缀，如「一杯半糖奶茶」「大杯无糖可乐」「少糖奶茶」）
+        let sugarList: [(pattern: String, factor: Double)] = [
+            ("无糖|0糖|零糖|不加糖", 0.65),
+            ("三分糖|3分糖|微糖", 0.75),
+            ("五分糖|5分糖|半糖", 0.85),
+            ("七分糖|7分糖|少糖", 0.95),
+            ("全糖|正常糖|多糖", 1.10)
+        ]
+        for item in sugarList {
+            let regexStr = "(?:\(item.pattern))"
+            if let regex = try? NSRegularExpression(pattern: regexStr),
+               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
+                sugarFactor = item.factor
+                if let r = Range(match.range, in: text) {
+                    text.removeSubrange(r)
+                    text = text.trimmingCharacters(in: .whitespaces)
+                }
+                break
+            }
+        }
+
+        // 3. 检查冰度/温度修饰（支持前缀、中缀、后缀）
+        let iceModifierPattern = "(?:冰镇|去冰|少冰|多冰|常温)"
+        if let regex = try? NSRegularExpression(pattern: iceModifierPattern),
+           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let r = Range(match.range, in: text) {
+            text.removeSubrange(r)
+            text = text.trimmingCharacters(in: .whitespaces)
+        }
+        if text.hasPrefix("冰") && !text.hasPrefix("冰淇淋") && !text.hasPrefix("冰棒") && !text.hasPrefix("冰粉") && !text.hasPrefix("冰糖") {
+            temperature = "冰"
+            text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+        if text.hasPrefix("热") && !text.hasPrefix("热干面") && !text.hasPrefix("热狗") {
+            temperature = "热"
+            text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+        if text.hasPrefix("温") || (text.hasPrefix("冷") && !text.hasPrefix("冷面")) {
+            text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+
+        // 4. 检查显式重量/容量单位（前缀如 "200g", "150克", "500ml", "二两", "半斤"）
+        let weightPattern = "^([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(g|克|千克|kg|ml|毫升|升|L|两|斤)\\s*"
+        if let regex = try? NSRegularExpression(pattern: weightPattern),
+           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let numRange = Range(match.range(at: 1), in: text),
+           let unitRange = Range(match.range(at: 2), in: text) {
+            let numStr = String(text[numRange])
+            let u = String(text[unitRange])
+            let numVal = parseChineseQuantity(numStr)
+            unit = u
+            switch u {
+            case "g", "克", "ml", "毫升":
+                explicitGrams = numVal
+            case "kg", "千克", "升", "L":
+                explicitGrams = numVal * 1000.0
+            case "两":
+                explicitGrams = numVal * 50.0
+            case "斤":
+                explicitGrams = numVal * 500.0
+            default:
+                explicitGrams = numVal
+            }
+            if let fullRange = Range(match.range(at: 0), in: text) {
+                text = String(text[fullRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+            }
+        }
+
+        // 5. 若未匹配到显式重量，检查复合半量词（如 "一个半", "两碗半", "1个半", "2碗半"）
+        if explicitGrams == nil {
+            let compoundHalfPattern = "^([0-9]+|[一二两三四五六七八九十]+)\\s*(个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两)半\\s*"
+            if let regex = try? NSRegularExpression(pattern: compoundHalfPattern),
+               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+               let numRange = Range(match.range(at: 1), in: text),
+               let uRange = Range(match.range(at: 2), in: text) {
+                multiplier = parseChineseQuantity(String(text[numRange])) + 0.5
+                unit = String(text[uRange])
+                if let fullRange = Range(match.range(at: 0), in: text) {
+                    text = String(text[fullRange.upperBound...]).trimmingCharacters(in: .whitespaces)
                 }
             }
         }
 
-        if matchedFoods.isEmpty {
-            guard let fallback = FoodCatalog.items(matchingName: trimmed).first else { return nil }
-            matchedFoods = [fallback]
+        // 6. 检查前缀数量量词（如 "2个", "两个", "半个", "1颗", "一颗", "3只", "一根", "一杯", "10个", "十五个"）
+        if explicitGrams == nil && multiplier == 1.0 && unit == nil {
+            let qtyPattern = "^([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两)\\s*"
+            if let regex = try? NSRegularExpression(pattern: qtyPattern),
+               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
+                if let numRange = Range(match.range(at: 1), in: text) {
+                    multiplier = parseChineseQuantity(String(text[numRange]))
+                }
+                if let uRange = Range(match.range(at: 2), in: text) {
+                    unit = String(text[uRange])
+                }
+                if let fullRange = Range(match.range(at: 0), in: text) {
+                    text = String(text[fullRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+                }
+            } else {
+                // 检查纯数字空格前缀（如 "2 肉包", "10 饺子"）
+                let digitOnlyPattern = "^([0-9]+(?:\\.[0-9]+)?)\\s+"
+                if let regex = try? NSRegularExpression(pattern: digitOnlyPattern),
+                   let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+                   let numRange = Range(match.range(at: 1), in: text) {
+                    if let val = Double(String(text[numRange])), val > 0 {
+                        multiplier = val
+                    }
+                    if let fullRange = Range(match.range(at: 0), in: text) {
+                        text = String(text[fullRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+                    }
+                }
+            }
         }
 
-        if matchedFoods.count == 1, let single = matchedFoods.first {
-            return FoodCalorieEstimate(
-                food: single,
-                portion: portion,
-                confidence: confidence,
-                consumedRatio: clampedRatio
-            )
+        // 7. 检查后缀数量量词（如 "肉包2个", "水饺10个", "面条二两"）
+        if explicitGrams == nil && multiplier == 1.0 {
+            let trailingQtyPattern = "\\s*([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|斤|g|克|ml|毫升)$"
+            if let regex = try? NSRegularExpression(pattern: trailingQtyPattern),
+               let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+               let numRange = Range(match.range(at: 1), in: text),
+               let uRange = Range(match.range(at: 2), in: text) {
+                let numStr = String(text[numRange])
+                let u = String(text[uRange])
+                unit = u
+                let numVal = parseChineseQuantity(numStr)
+                if u == "g" || u == "克" || u == "ml" || u == "毫升" {
+                    explicitGrams = numVal
+                } else if u == "两" {
+                    explicitGrams = numVal * 50.0
+                } else if u == "斤" {
+                    explicitGrams = numVal * 500.0
+                } else {
+                    multiplier = numVal
+                }
+                if let fullRange = Range(match.range(at: 0), in: text) {
+                    text = String(text[..<fullRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+                }
+            }
         }
 
-        let dishes = matchedFoods.map {
-            FoodDishEstimate(
-                food: $0,
-                portion: portion,
-                confidence: confidence,
-                consumedRatio: clampedRatio
-            )
+        if temperature == nil {
+            if text.hasPrefix("冰") && !text.hasPrefix("冰淇淋") && !text.hasPrefix("冰棒") && !text.hasPrefix("冰粉") && !text.hasPrefix("冰糖") {
+                temperature = "冰"
+                text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
+            } else if text.hasPrefix("热") && !text.hasPrefix("热干面") && !text.hasPrefix("热狗") {
+                temperature = "热"
+                text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
+            } else if text.hasPrefix("温") || (text.hasPrefix("冷") && !text.hasPrefix("冷面")) {
+                text = String(text.dropFirst()).trimmingCharacters(in: .whitespaces)
+            }
         }
-        return FoodCalorieEstimate(dishes: dishes, portion: portion)
+
+        text = text.replacingOccurrences(of: "^[这那的]+", with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: "[的]+$", with: "", options: .regularExpression)
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return ParsedFoodQuantity(
+            cleanName: text,
+            multiplier: multiplier,
+            portion: portion,
+            unit: unit,
+            explicitGrams: explicitGrams,
+            sugarFactor: sugarFactor,
+            temperature: temperature
+        )
+    }
+
+    /// 解析中文数字表达与常见数量（如「半」「一」「两」「十」「十一」「二十五」）
+    public static func parseChineseQuantity(_ str: String) -> Double {
+        if let d = Double(str), d > 0 { return d }
+        if str == "半" { return 0.5 }
+        let digits: [Character: Double] = [
+            "零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+            "五": 5, "六": 6, "七": 7, "八": 8, "九": 9
+        ]
+        if str.count == 1, let char = str.first, let single = digits[char] { return single }
+
+        if str == "十" { return 10.0 }
+        if str.hasPrefix("十") {
+            if let secondChar = str.dropFirst().first {
+                return 10.0 + (digits[secondChar] ?? 0)
+            }
+            return 10.0
+        }
+        if str.contains("十") {
+            let parts = str.split(separator: "十", omittingEmptySubsequences: false)
+            let tensChar = parts[0].first
+            let tens = tensChar.flatMap { digits[$0] } ?? 1.0
+            let ones = parts.count > 1 && !parts[1].isEmpty
+                ? (parts[1].first.flatMap { digits[$0] } ?? 0.0)
+                : 0.0
+            return tens * 10.0 + ones
+        }
+
+        return 1.0
+    }
+
+    private static func parseQuantityNumber(_ str: String) -> Double {
+        parseChineseQuantity(str)
     }
 
     /// 计算「整份」热量（不含吃剩比例）。
@@ -1355,11 +1841,14 @@ public enum FoodCalorieEstimator {
     }
 
     /// 生成一句可读的摘要，供卡片与语音播报。
-    public static func summary(for estimate: FoodCalorieEstimate) -> String {
+    public static func summary(for estimate: FoodCalorieEstimate, includeMacros: Bool = false) -> String {
         let portionText = estimate.portion == .regular ? "" : "（\(estimate.portion.displayName)）"
         var text = "\(estimate.displayName)\(portionText)约 \(formatCalories(estimate.consumedCalories))"
         if estimate.consumedRatio < 0.999 {
             text += "，吃了 \(Int((estimate.consumedRatio * 100).rounded()))%"
+        }
+        if includeMacros && (estimate.totalProtein > 0 || estimate.totalCarbs > 0 || estimate.totalFat > 0) {
+            text += "（\(estimate.macroNutrientSummary)）"
         }
         return text
     }

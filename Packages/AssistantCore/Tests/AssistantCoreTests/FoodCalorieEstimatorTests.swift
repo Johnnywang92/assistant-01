@@ -436,4 +436,267 @@ final class FoodCalorieEstimatorTests: XCTestCase {
 
         XCTAssertEqual(candidates.first?.food.id, "rice", "用户常吃菜品加权后应浮现至首位")
     }
+
+    // MARK: - 早餐包子与鸡蛋热量标定及量词解析测试
+
+    /// 回归测试：早餐输入「包子，鸡蛋」必须估算为合理的 260~300 千卡区间（约 287 千卡），
+    /// 不能虚高达 423 千卡（之前包子按 150g 算 345 卡，且鸡蛋名称错误混杂西红柿炒鸡蛋）。
+    func testBreakfastBunAndEggRealisticCalories() {
+        let meal = FoodCalorieEstimator.estimateMeal(fromHint: "包子，鸡蛋")
+        XCTAssertNotNil(meal)
+        guard let m = meal else { return }
+
+        XCTAssertEqual(m.dishes.count, 2)
+        let dishNames = m.dishes.map(\.food.name)
+        XCTAssertTrue(dishNames.contains(where: { $0.contains("包子") }))
+        XCTAssertTrue(dishNames.contains(where: { $0.contains("鸡蛋") || $0.contains("茶叶蛋") }))
+
+        // 单个标准肉包约 200~250 千卡 (90g * 2.3 = 207 千卡)
+        let bunDish = m.dishes.first(where: { $0.food.id == "steamed_bun" })
+        XCTAssertNotNil(bunDish)
+        XCTAssertEqual(bunDish?.fullPortionCalories ?? 0, 207, accuracy: 5.0)
+
+        // 单颗水煮蛋/茶叶蛋约 70~80 千卡 (55g * 1.45 = 79.75 千卡)
+        let eggDish = m.dishes.first(where: { $0.food.id == "egg" })
+        XCTAssertNotNil(eggDish)
+        XCTAssertEqual(eggDish?.fullPortionCalories ?? 0, 80, accuracy: 5.0)
+
+        // 整餐总热量落在 260~300 千卡合理区间
+        XCTAssertGreaterThanOrEqual(m.fullPortionCalories, 260.0)
+        XCTAssertLessThanOrEqual(m.fullPortionCalories, 300.0)
+    }
+
+    /// 回归测试：口语「一个肉包加一颗茶叶蛋」能正确解析数量并落在 260~300 千卡
+    func testBreakfastOneMeatBunAndOneTeaEgg() {
+        let meal = FoodCalorieEstimator.estimateMeal(fromHint: "一个肉包加一颗茶叶蛋")
+        XCTAssertNotNil(meal)
+        guard let m = meal else { return }
+
+        XCTAssertEqual(m.dishes.count, 2)
+        XCTAssertGreaterThanOrEqual(m.fullPortionCalories, 260.0)
+        XCTAssertLessThanOrEqual(m.fullPortionCalories, 300.0)
+    }
+
+    /// 回归测试：输入多个量词时能够正确翻倍计算热量
+    func testQuantityMultipliersAndPortions() {
+        // 2 个肉包 + 1 颗茶叶蛋 -> 207 * 2 + 80 = 494 千卡
+        let doubleBunMeal = FoodCalorieEstimator.estimateMeal(fromHint: "2个肉包加一颗茶叶蛋")
+        XCTAssertNotNil(doubleBunMeal)
+        guard let db = doubleBunMeal else { return }
+
+        XCTAssertEqual(db.dishes.count, 2)
+        let bunDish = db.dishes.first(where: { $0.food.id == "steamed_bun" })
+        XCTAssertEqual(bunDish?.fullPortionCalories ?? 0, 414.0, accuracy: 10.0)
+        XCTAssertEqual(db.fullPortionCalories, 494.0, accuracy: 15.0)
+
+        // 半碗米饭 -> 150g / 2 = 75g -> 195 * 0.5 = 97.5 千卡
+        let halfRiceMeal = FoodCalorieEstimator.estimateMeal(fromHint: "半碗米饭")
+        XCTAssertNotNil(halfRiceMeal)
+        XCTAssertEqual(halfRiceMeal?.fullPortionCalories ?? 0, 97.5, accuracy: 5.0)
+    }
+
+    /// 回归测试：量词修饰剥离不能误伤词尾为量词的食物名（如「肉包」被误切为「肉」、「油条」被误切为「油」）
+    func testStripPortionModifiersPreservesFoodWordsEndingInMeasureChars() {
+        XCTAssertEqual(FoodCatalog.stripPortionModifiers("一个肉包"), "肉包")
+        XCTAssertEqual(FoodCatalog.stripPortionModifiers("一根油条"), "油条")
+        XCTAssertEqual(FoodCatalog.stripPortionModifiers("一包薯片"), "薯片")
+        XCTAssertEqual(FoodCatalog.stripPortionModifiers("两串羊肉串"), "羊肉串")
+        XCTAssertEqual(FoodCatalog.stripPortionModifiers("肉包（1个，约80–100g）"), "肉包")
+        XCTAssertEqual(FoodCatalog.stripPortionModifiers("大份牛肉面"), "牛肉面")
+        XCTAssertEqual(FoodCatalog.stripPortionModifiers("米饭一份"), "米饭")
+
+        let bun = FoodCatalog.item(matchingNameStrict: "一个肉包")
+        XCTAssertEqual(bun?.id, "steamed_bun")
+
+        let youtiao = FoodCatalog.item(matchingNameStrict: "一根油条")
+        XCTAssertTrue(youtiao?.name.contains("油条") ?? false)
+    }
+
+    /// 回归测试：鸡蛋与蛋类菜品细分，不再将茶叶蛋/水煮蛋混为「西红柿炒鸡蛋/荷包蛋」
+    func testEggCategorySeparation() {
+        let teaEgg = FoodCatalog.item(matchingNameStrict: "茶叶蛋")
+        XCTAssertEqual(teaEgg?.id, "egg")
+        XCTAssertTrue(teaEgg?.name.contains("茶叶蛋") ?? false)
+        XCTAssertFalse(teaEgg?.name.contains("西红柿") ?? false)
+        XCTAssertEqual(teaEgg?.standardServingCalories ?? 0, 79.75, accuracy: 2.0)
+
+        let friedEgg = FoodCatalog.item(matchingNameStrict: "荷包蛋")
+        XCTAssertEqual(friedEgg?.id, "fried_egg")
+        XCTAssertEqual(friedEgg?.standardServingCalories ?? 0, 101.75, accuracy: 2.0)
+
+        let tomatoEgg = FoodCatalog.item(matchingNameStrict: "西红柿炒鸡蛋")
+        XCTAssertEqual(tomatoEgg?.id, "tomato_scrambled_egg")
+        XCTAssertEqual(tomatoEgg?.standardServingCalories ?? 0, 220.0, accuracy: 5.0)
+
+        let shengjian = FoodCatalog.item(matchingNameStrict: "生煎包")
+        XCTAssertEqual(shengjian?.id, "shengjian_xiaolong")
+        XCTAssertEqual(shengjian?.standardServingCalories ?? 0, 345.0, accuracy: 5.0)
+
+        let xiaolong = FoodCatalog.item(matchingNameStrict: "小笼包")
+        XCTAssertTrue(xiaolong?.name.contains("小笼包") ?? false)
+    }
+
+    /// 回归测试：件数换算与防热量膨胀（如「10个水饺」应为单件约20g累加，而不是整份200g翻10倍变成4800卡）
+    func testDumplingAndSkewerPieceUnitsRealisticCalories() {
+        // 10 个水饺 -> 10 * 20g = 200g -> 480 千卡
+        let dumplings10 = FoodCalorieEstimator.estimateMeal(fromHint: "10个水饺")
+        XCTAssertNotNil(dumplings10)
+        XCTAssertEqual(dumplings10?.fullPortionCalories ?? 0, 480.0, accuracy: 20.0)
+
+        // 5 个水饺 -> 5 * 20g = 100g -> 240 千卡
+        let dumplings5 = FoodCalorieEstimator.estimateMeal(fromHint: "5个水饺")
+        XCTAssertEqual(dumplings5?.fullPortionCalories ?? 0, 240.0, accuracy: 15.0)
+
+        // 1 个水饺 -> 20g -> 48 千卡
+        let dumpling1 = FoodCalorieEstimator.estimateMeal(fromHint: "1个水饺")
+        XCTAssertEqual(dumpling1?.fullPortionCalories ?? 0, 48.0, accuracy: 5.0)
+
+        // 一份水饺 / 一盘水饺 -> 整份 200g -> 480 千卡
+        let dumplingServing = FoodCalorieEstimator.estimateMeal(fromHint: "一份水饺")
+        XCTAssertEqual(dumplingServing?.fullPortionCalories ?? 0, 480.0, accuracy: 10.0)
+
+        // 5 串羊肉串 -> 5 * 35g = 175g -> (175/100) * 260 = 455 千卡
+        let skewers = FoodCalorieEstimator.estimateMeal(fromHint: "5串羊肉串")
+        XCTAssertNotNil(skewers)
+        XCTAssertEqual(skewers?.fullPortionCalories ?? 0, 455.0, accuracy: 20.0)
+
+        // 4 个生煎 -> 4 * 35g = 140g -> (140/100) * 230 = 322 千卡
+        let shengjian4 = FoodCalorieEstimator.estimateMeal(fromHint: "4个生煎")
+        XCTAssertNotNil(shengjian4)
+        XCTAssertEqual(shengjian4?.fullPortionCalories ?? 0, 322.0, accuracy: 15.0)
+
+        // 2 片饼干 -> 2 * 10g = 20g -> (20/100) * 480 = 96 千卡
+        let cookies2 = FoodCalorieEstimator.estimateMeal(fromHint: "2片饼干")
+        XCTAssertNotNil(cookies2)
+        XCTAssertEqual(cookies2?.fullPortionCalories ?? 0, 96.0, accuracy: 10.0)
+    }
+
+    /// 回归测试：显式输入克数/毫升数/两（如 200g米饭、二两面条、500ml牛奶）能够精准计算热量
+    func testExplicitGramsAndWeightUnits() {
+        // 200g 米饭 -> 200 * 1.30 = 260 千卡 (USDA f001 override)
+        let rice200g = FoodCalorieEstimator.estimateMeal(fromHint: "200g米饭")
+        XCTAssertNotNil(rice200g)
+        XCTAssertEqual(rice200g?.fullPortionCalories ?? 0, 260.0, accuracy: 5.0)
+
+        // 150克 鸡胸肉 -> 150 * 1.65 = 247.5 千卡
+        let chicken150g = FoodCalorieEstimator.estimateMeal(fromHint: "150克鸡胸肉")
+        XCTAssertNotNil(chicken150g)
+        XCTAssertEqual(chicken150g?.fullPortionCalories ?? 0, 247.5, accuracy: 5.0)
+
+        // 二两面条 -> 100g -> 100 * 1.38 = 138 千卡 (USDA f007 override)
+        let noodles2liang = FoodCalorieEstimator.estimateMeal(fromHint: "二两面条")
+        XCTAssertNotNil(noodles2liang)
+        XCTAssertEqual(noodles2liang?.fullPortionCalories ?? 0, 138.0, accuracy: 5.0)
+
+        // 500ml 纯牛奶 -> 500g -> 500 * 0.61 = 305 千卡 (USDA f052 override)
+        let milk500ml = FoodCalorieEstimator.estimateMeal(fromHint: "500ml纯牛奶")
+        XCTAssertNotNil(milk500ml)
+        XCTAssertEqual(milk500ml?.fullPortionCalories ?? 0, 305.0, accuracy: 10.0)
+
+        // 330ml 可乐 -> 330 * 0.42 = 138.6 千卡
+        let cola330ml = FoodCalorieEstimator.estimateMeal(fromHint: "330ml可乐")
+        XCTAssertNotNil(cola330ml)
+        XCTAssertEqual(cola330ml?.fullPortionCalories ?? 0, 138.6, accuracy: 5.0)
+    }
+
+    /// 回归测试：复合数量（一个半、两碗半）及大于十的中文数字解析
+    func testCompoundAndExtendedChineseNumbers() {
+        // 一个半肉包 -> 207 * 1.5 = 310.5 千卡
+        let bunOneAndHalf = FoodCalorieEstimator.estimateMeal(fromHint: "一个半肉包")
+        XCTAssertNotNil(bunOneAndHalf)
+        XCTAssertEqual(bunOneAndHalf?.fullPortionCalories ?? 0, 310.5, accuracy: 10.0)
+
+        // 两碗半米饭 -> 195 * 2.5 = 487.5 千卡 (USDA f001 override)
+        let riceTwoAndHalf = FoodCalorieEstimator.estimateMeal(fromHint: "两碗半米饭")
+        XCTAssertNotNil(riceTwoAndHalf)
+        XCTAssertEqual(riceTwoAndHalf?.fullPortionCalories ?? 0, 487.5, accuracy: 15.0)
+
+        // 十二个水饺 -> 12 * 20g = 240g -> 576 千卡
+        let dumplings12 = FoodCalorieEstimator.estimateMeal(fromHint: "十二个水饺")
+        XCTAssertNotNil(dumplings12)
+        XCTAssertEqual(dumplings12?.fullPortionCalories ?? 0, 576.0, accuracy: 25.0)
+
+        // 十五个生煎 -> 15 * 35g = 525g -> (525/100) * 230 = 1207.5 千卡
+        let shengjian15 = FoodCalorieEstimator.estimateMeal(fromHint: "十五个生煎")
+        XCTAssertNotNil(shengjian15)
+        XCTAssertEqual(shengjian15?.fullPortionCalories ?? 0, 1207.5, accuracy: 30.0)
+    }
+
+    /// 回归测试：无标点自然口语连贯输入多菜（如「两个包子一碗粥」「一个肉包一杯豆浆」）能无缝切分
+    func testSpokenMultiDishPhrasesWithoutDelimiters() {
+        let bunAndCongee = FoodCalorieEstimator.estimateMeal(fromHint: "两个包子一碗粥")
+        XCTAssertNotNil(bunAndCongee)
+        XCTAssertEqual(bunAndCongee?.dishes.count, 2)
+        let dishNames = bunAndCongee?.dishes.map(\.food.name) ?? []
+        XCTAssertTrue(dishNames.contains(where: { $0.contains("包子") }))
+        XCTAssertTrue(dishNames.contains(where: { $0.contains("粥") }))
+
+        let bunAndSoyMilk = FoodCalorieEstimator.estimateMeal(fromHint: "一个肉包一杯豆浆")
+        XCTAssertNotNil(bunAndSoyMilk)
+        XCTAssertEqual(bunAndSoyMilk?.dishes.count, 2)
+
+        let eggAndCongee = FoodCalorieEstimator.estimateMeal(fromHint: "两个鸡蛋一碗小米粥")
+        XCTAssertNotNil(eggAndCongee)
+        XCTAssertEqual(eggAndCongee?.dishes.count, 2)
+
+        let riceAndCola = FoodCalorieEstimator.estimateMeal(fromHint: "一份炒饭一瓶可乐")
+        XCTAssertNotNil(riceAndCola)
+        XCTAssertEqual(riceAndCola?.dishes.count, 2)
+    }
+
+    /// 回归测试：饮品糖度系数与温度前缀安全剥离
+    func testSugarAndTemperatureModifiers() {
+        // 半糖奶茶 -> 350 * 0.85 = 297.5 千卡
+        let halfSugar = FoodCalorieEstimator.estimateMeal(fromHint: "一杯半糖奶茶")
+        XCTAssertNotNil(halfSugar)
+        XCTAssertEqual(halfSugar?.fullPortionCalories ?? 0, 297.5, accuracy: 10.0)
+
+        // 大杯无糖奶茶 -> 350 * 1.8 * 0.65 = 409.5 千卡
+        let largeZeroSugar = FoodCalorieEstimator.estimateMeal(fromHint: "大杯无糖奶茶")
+        XCTAssertNotNil(largeZeroSugar)
+        XCTAssertEqual(largeZeroSugar?.fullPortionCalories ?? 0, 409.5, accuracy: 15.0)
+
+        // 冰美式 -> coffee
+        let icedAmericano = FoodCatalog.item(matchingNameStrict: "冰美式")
+        XCTAssertEqual(icedAmericano?.id, "coffee")
+
+        // 热拿铁 -> latte
+        let hotLatte = FoodCatalog.item(matchingNameStrict: "热拿铁")
+        XCTAssertEqual(hotLatte?.id, "latte")
+
+        // 去冰奶茶 -> milk_tea
+        let destirredMilkTea = FoodCatalog.item(matchingNameStrict: "去冰奶茶")
+        XCTAssertEqual(destirredMilkTea?.id, "milk_tea")
+
+        // 热干面不能误剥离「热」而变成「干面」
+        let reganmian = FoodCatalog.item(matchingNameStrict: "热干面")
+        XCTAssertEqual(reganmian?.id, "cn_n019")
+        XCTAssertTrue(reganmian?.name.contains("热干面") ?? false)
+
+        // 热狗不能误剥离「热」
+        let hotdog = FoodCatalog.item(matchingNameStrict: "热狗")
+        XCTAssertEqual(hotdog?.id, "hotdog")
+
+        // 冰淇淋不能误剥离「冰」
+        let iceCream = FoodCatalog.item(matchingNameStrict: "冰淇淋")
+        XCTAssertEqual(iceCream?.id, "ice_cream")
+    }
+
+    /// 回归测试：三大宏量营养素（蛋白质、脂肪、碳水化合物）自动汇总与简报
+    func testMacronutrientCalculations() {
+        let meal = FoodCalorieEstimator.estimateMeal(fromHint: "200g米饭加150克鸡胸肉")
+        XCTAssertNotNil(meal)
+        guard let m = meal else { return }
+
+        // 米饭 200g: 碳水 ~51.8g, 蛋白 ~5.2g
+        // 鸡胸肉 150g: 蛋白 ~46.5g, 脂肪 ~5.4g
+        XCTAssertGreaterThan(m.totalProtein, 45.0)
+        XCTAssertGreaterThan(m.totalCarbs, 45.0)
+        XCTAssertGreaterThan(m.totalFat, 4.0)
+
+        let summary = FoodCalorieEstimator.summary(for: m, includeMacros: true)
+        XCTAssertTrue(summary.contains("碳水"))
+        XCTAssertTrue(summary.contains("蛋白质"))
+        XCTAssertTrue(summary.contains("脂肪"))
+    }
 }
