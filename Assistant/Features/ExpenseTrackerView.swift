@@ -40,12 +40,15 @@ fileprivate struct ExpenseSummary {
             } else {
                 false
             }
-            let recYear = calendar.component(.year, from: record.date)
-            let recMonth = calendar.component(.month, from: record.date)
-            let isThisMonth = (recYear == currentYear && recMonth == currentMonth)
+            let isThisPeriod = BudgetCycleWindow.isInSameCycle(
+                recordDate: record.date,
+                as: now,
+                startDay: BudgetSettings.budgetStartDay,
+                calendar: calendar
+            )
 
             if record.isIncome {
-                if isThisMonth {
+                if isThisPeriod {
                     monthInc += record.amount
                 }
             } else {
@@ -58,7 +61,7 @@ fileprivate struct ExpenseSummary {
                 } else if isYesterday, !isFixed {
                     yesterdayFlex += record.amount
                 }
-                if isThisMonth {
+                if isThisPeriod {
                     monthExp += record.amount
                     categoryMap[record.category, default: 0] += record.amount
                     if isFixed {
@@ -434,14 +437,14 @@ struct ExpenseTrackerView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 16) {
                             statCard(title: "今日支出", amount: currentSummary.todayExpenses, color: AppColor.warning)
-                            statCard(title: "本月支出", amount: currentSummary.currentMonthExpenses, color: AppColor.danger)
-                            statCard(title: "本月收入", amount: currentSummary.currentMonthIncome, color: AppColor.success)
+                            statCard(title: BudgetSettings.budgetStartDay == 1 ? "本月支出" : "本期支出", amount: currentSummary.currentMonthExpenses, color: AppColor.danger)
+                            statCard(title: BudgetSettings.budgetStartDay == 1 ? "本月收入" : "本期收入", amount: currentSummary.currentMonthIncome, color: AppColor.success)
                         }
 
                         if !currentMonthCategoryBreakdown.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
-                                    Text("本月支出构成")
+                                    Text(BudgetSettings.budgetStartDay == 1 ? "本月支出构成" : "本期支出构成")
                                         .font(.caption.bold())
                                         .foregroundStyle(.secondary)
                                     Spacer()
@@ -1285,6 +1288,7 @@ struct BudgetEditSheet: View {
     @Environment(\.modelContext) private var context
     @ObservedObject private var recurringManager = RecurringExpenseManager.shared
     @AppStorage("safe_to_spend_rhythm_mode") private var rhythmModeRaw: String = SpendingRhythmMode.weekendLeisure.rawValue
+    @AppStorage("expense_budget_start_day") private var startDay: Int = 1
     @State private var budgetText: String = ""
     /// 正在编辑的固定支出；nil 表示当前处于「新增」流程。
     @State private var editingItem: RecurringExpenseItem?
@@ -1347,6 +1351,19 @@ struct BudgetEditSheet: View {
                     }
                 } header: {
                     Text("消费节奏分配模式")
+                }
+
+                Section {
+                    Picker("起始日", selection: $startDay) {
+                        ForEach(1...28, id: \.self) { day in
+                            Text(day == 1 ? "每月 1 日（自然月）" : "每月 \(day) 日（生活费/发薪日）").tag(day)
+                        }
+                    }
+                    Text("若在特定日期（如每月 10 日或 15 日）收到生活费或薪资，可设为该日，预算和安心花将以该周期动态核算。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("生活费 / 预算周期起始日")
                 }
 
                 Section {

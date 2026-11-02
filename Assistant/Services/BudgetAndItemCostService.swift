@@ -10,6 +10,18 @@ public enum BudgetSettings {
         get { UserDefaults.standard.object(forKey: "expense_monthly_budget") as? Double ?? 0 }
         set { UserDefaults.standard.set(max(0, newValue), forKey: "expense_monthly_budget") }
     }
+
+    /// 每月生活费/预算重置起始日（1~28，默认 1 表示自然月首日）
+    public static var budgetStartDay: Int {
+        get {
+            let day = UserDefaults.standard.integer(forKey: "expense_budget_start_day")
+            return (day >= 1 && day <= 28) ? day : 1
+        }
+        set {
+            let clamped = min(max(1, newValue), 28)
+            UserDefaults.standard.set(clamped, forKey: "expense_budget_start_day")
+        }
+    }
 }
 
 // MARK: - 今日安心花（Safe-to-Spend）数据归集扩展（依赖 ExpenseRecord 模型）
@@ -20,6 +32,7 @@ extension SafeToSpendCalculator {
         records: [ExpenseRecord],
         fixedMonthlyTotal: Double,
         monthlyBudget: Double = BudgetSettings.monthlyBudget,
+        budgetStartDay: Int = BudgetSettings.budgetStartDay,
         rhythmMode: SpendingRhythmMode = .weekendLeisure,
         calendar: Calendar = .current,
         now: Date = .now
@@ -42,7 +55,7 @@ extension SafeToSpendCalculator {
 
         for record in records where !record.isIncome && !record.isPending {
             let isFixed = isFixedExpenseRecord(record.rawText)
-            if calendar.isDate(record.date, equalTo: now, toGranularity: .month) {
+            if BudgetCycleWindow.isInSameCycle(recordDate: record.date, as: now, startDay: budgetStartDay, calendar: calendar) {
                 if isFixed { fixedMonth += record.amount } else { flexibleMonth += record.amount }
             }
             if calendar.isDate(record.date, inSameDayAs: now) {
@@ -63,9 +76,8 @@ extension SafeToSpendCalculator {
         _ = fixedMonth // 本月固定入账仅作展示参考，预算池由 fixedMonthlyTotal 统一扣除
 
         // 估算本周工作日蓄水池节余：以粗略日均额度为基准评估每个过去工作日省下的钱
-        let daysInMonth = calendar.range(of: .day, in: .month, for: now)?.count ?? 30
-        let dayOfMonth = calendar.component(.day, from: now)
-        let daysLeft = max(1, daysInMonth - dayOfMonth + 1)
+        let cycle = BudgetCycleWindow.window(for: now, startDay: budgetStartDay, calendar: calendar)
+        let daysLeft = cycle.daysLeft
         let disposable = max(0, monthlyBudget - fixedMonthlyTotal)
         let currentPool = max(0, disposable - flexibleMonth + flexibleToday)
         let approxDailyAllowance = daysLeft > 0 ? (currentPool / Double(daysLeft)) : 0
@@ -85,7 +97,8 @@ extension SafeToSpendCalculator {
             yesterdayFlexibleSpend: flexibleYesterday,
             todayFlexibleSpend: flexibleToday,
             rhythmMode: rhythmMode,
-            weekdaySavedSoFarThisWeek: weekdaySavingsTotal
+            weekdaySavedSoFarThisWeek: weekdaySavingsTotal,
+            budgetStartDay: budgetStartDay
         )
     }
 }
