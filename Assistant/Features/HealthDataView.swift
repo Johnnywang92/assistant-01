@@ -126,10 +126,11 @@ struct HealthDataView: View {
     // MARK: - 加载
 
     private func loadIfNeeded() async {
-        // 首次进入且系统认为需要授权时，先弹授权面板；
-        // 已经做过选择（无论同意与否）则直接拉数据。
-        if await health.needsAuthorizationRequest() {
-            await health.requestAuthorization()
+        // 首次进入且从未请求过授权时，检查系统是否需要弹窗；已经做过选择则直接拉数据
+        if !health.hasRequestedAuthorization {
+            if await health.needsAuthorizationRequest() {
+                await health.requestAuthorization()
+            }
         }
         await health.refreshToday()
         // 睡眠夜样本刷新后重算今晚建议（幂等，顺带对齐通知注册状态）
@@ -474,15 +475,26 @@ struct HealthDataView: View {
                 .buttonStyle(.borderedProminent)
 
             case .requestedNoData:
-                Text("已向系统请求过读取权限，但没有读到数据。可能是你拒绝了读取权限，或「健康」里今天还没有记录。可前往「健康」App 确认权限与数据。")
-                    .font(.footnote)
-                    .foregroundStyle(AppColor.secondaryText)
+                if health.isLoading {
+                    Text("正在从 Apple「健康」同步今日数据…")
+                        .font(.footnote)
+                        .foregroundStyle(AppColor.secondaryText)
+                } else if health.hasEverConnected {
+                    Text("已连接 Apple 健康，今日暂未同步到新记录（随身携带 iPhone 或佩戴 Apple Watch 即可自动产生步数与活力指标）。")
+                        .font(.footnote)
+                        .foregroundStyle(AppColor.secondaryText)
+                } else {
+                    Text("已向系统申请健康权限。若刚刚已在系统弹窗中允许，稍后产生步数或佩戴手表后将自动同步；若此前未开启，可前往系统「健康」或「设置」确认授权。")
+                        .font(.footnote)
+                        .foregroundStyle(AppColor.secondaryText)
+                }
                 HStack(spacing: AppSpacing.sm) {
-                    Button("重新请求") {
+                    Button {
                         Task {
-                            await health.requestAuthorization()
                             await health.refreshToday()
                         }
+                    } label: {
+                        Label("立即刷新", systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(.bordered)
                     Button("打开「健康」") { openHealthApp() }
@@ -508,9 +520,11 @@ struct HealthDataView: View {
     }
 
     private var currentState: DisplayState {
-        guard health.hasRequestedAuthorization || health.snapshot != nil else { return .notDetermined }
         if health.snapshot?.readState == .hasData { return .hasData }
-        return .requestedNoData
+        if health.hasEverConnected || health.hasRequestedAuthorization || health.snapshot != nil {
+            return .requestedNoData
+        }
+        return .notDetermined
     }
 
     private var unavailableCard: some View {

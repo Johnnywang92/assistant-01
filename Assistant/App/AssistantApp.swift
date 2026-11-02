@@ -226,6 +226,12 @@ private final class ForegroundAuditCoordinator {
             await SleepReminderScheduler.shared.syncSleepReminders()
             StartupMetrics.mark("audit.sleepReminders")
 
+            // 3.6 健康数据前台巡检（若此前已连接过则静默拉取今日最新指标）
+            if HealthKitService.isAvailable && HealthKitService.shared.hasEverConnected {
+                await HealthKitService.shared.refreshToday()
+                StartupMetrics.mark("audit.healthToday")
+            }
+
             // 4. 执行对话记录超期自动滚动清理 (7天/30天自动保留)
             DialogueHistoryManager.shared.cleanExpiredRecords(context: context)
             StartupMetrics.mark("audit.dialogueCleanup")

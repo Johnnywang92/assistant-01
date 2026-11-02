@@ -1,6 +1,7 @@
 import AssistantCore
 import Foundation
 import HealthKit
+import SwiftData
 
 /// Apple 健康（HealthKit）只读接入服务。
 ///
@@ -37,8 +38,30 @@ final class HealthKitService: ObservableObject {
     @Published private(set) var lastError: String?
     /// 是否正在拉取。
     @Published private(set) var isLoading = false
-    /// 是否已向用户发起过授权请求。
-    @Published private(set) var hasRequestedAuthorization = false
+
+    private static let keyHasRequestedAuth = "healthkit_has_requested_authorization"
+    private static let keyHasEverConnected = "healthkit_has_ever_connected"
+    private static let keyLastSyncTimestamp = "healthkit_last_successful_sync"
+
+    /// 是否已向用户发起过授权请求（持久化存储，冷启动不丢失）。
+    @Published public private(set) var hasRequestedAuthorization: Bool {
+        didSet {
+            UserDefaults.standard.set(hasRequestedAuthorization, forKey: Self.keyHasRequestedAuth)
+        }
+    }
+
+    /// 是否曾成功连接并读取过健康数据（持久化存储，冷启动不丢失）。
+    @Published public private(set) var hasEverConnected: Bool {
+        didSet {
+            UserDefaults.standard.set(hasEverConnected, forKey: Self.keyHasEverConnected)
+        }
+    }
+
+    /// 上次成功同步时间戳（0 表示从未同步）。
+    public var lastSyncTimestamp: Double {
+        get { UserDefaults.standard.double(forKey: Self.keyLastSyncTimestamp) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.keyLastSyncTimestamp) }
+    }
 
     private let store = HKHealthStore()
     private let calendar = Calendar.current
@@ -46,7 +69,44 @@ final class HealthKitService: ObservableObject {
     /// 便于定位是「全部读不到」还是「只有某一项失败」。
     private var errors: [String] = []
 
-    private init() {}
+    private init() {
+        self.hasRequestedAuthorization = UserDefaults.standard.bool(forKey: Self.keyHasRequestedAuth)
+        self.hasEverConnected = UserDefaults.standard.bool(forKey: Self.keyHasEverConnected)
+        restoreLatestSnapshotFromStorage()
+    }
+
+    /// 在冷启动时从本地 SwiftData 恢复最近的健康快照，避免启动瞬间因异步拉取显示「未连接」或空白。
+    private func restoreLatestSnapshotFromStorage() {
+        guard Self.isAvailable else { return }
+        let context = Persistence.shared.mainContext
+        let startOfToday = calendar.startOfDay(for: .now)
+
+        // 1. 优先尝试加载今日已有快照
+        var todayDescriptor = SwiftData.FetchDescriptor<HealthDaySnapshotRecord>(
+            predicate: #Predicate { $0.day == startOfToday }
+        )
+        todayDescriptor.fetchLimit = 1
+        if let todayRecord = (try? context.fetch(todayDescriptor))?.first {
+            let snap = todayRecord.toSnapshot()
+            if snap.readState == .hasData {
+                self.snapshot = snap
+                self.hasEverConnected = true
+                self.hasRequestedAuthorization = true
+                self.pleasureEvaluation = PleasureIndexEvaluator.evaluate(snapshot: snap, baseline: self.userBaseline)
+                return
+            }
+        }
+
+        // 2. 若今日暂无记录，检查历史中是否存在任何有效快照记录（证明此前已连接并授权）
+        var anyDescriptor = SwiftData.FetchDescriptor<HealthDaySnapshotRecord>(
+            sortBy: [SortDescriptor(\.day, order: .reverse)]
+        )
+        anyDescriptor.fetchLimit = 1
+        if let _ = (try? context.fetch(anyDescriptor))?.first {
+            self.hasEverConnected = true
+            self.hasRequestedAuthorization = true
+        }
+    }
 
     // MARK: - 能力可用性
 
@@ -118,12 +178,26 @@ final class HealthKitService: ObservableObject {
         }
     }
 
+    /// 核心读类型（步数、能量、饮水、心率与睡眠），用于判断是否需要首次弹出授权提示。
+    private var coreReadTypes: Set<HKObjectType> {
+        var types = Set<HKObjectType>()
+        if let step = HKObjectType.quantityType(forIdentifier: .stepCount) { types.insert(step) }
+        if let energy = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) { types.insert(energy) }
+        if let water = HKObjectType.quantityType(forIdentifier: .dietaryWater) { types.insert(water) }
+        if let hr = HKObjectType.quantityType(forIdentifier: .heartRate) { types.insert(hr) }
+        if let sleep = sleepType { types.insert(sleep) }
+        return types
+    }
+
     /// 当前是否需要向用户展示授权面板。
     /// `unnecessary` 表示系统认为已做出过选择（无论同意还是拒绝），此时不该再弹面板。
+    /// 若曾经授权过或已发起过请求，直接返回 false，避免外围指标在不同硬件上的差异导致虚假 shouldRequest。
     func needsAuthorizationRequest() async -> Bool {
         guard Self.isAvailable else { return false }
-        var types = readTypes
-        if let sleep = sleepType { types.insert(sleep) }
+        if hasRequestedAuthorization || hasEverConnected {
+            return false
+        }
+        let types = coreReadTypes
         do {
             let status = try await store.statusForAuthorizationRequest(toShare: shareTypes, read: types)
             return status == .shouldRequest
@@ -222,11 +296,24 @@ final class HealthKitService: ObservableObject {
             workoutSummary: workoutResult?.summary,
             sleepOnset: sleepResult.onset
         )
-        // 读到空结果时保留旧快照，避免抖动把已有数据抹掉
-        if newSnapshot.readState == .hasData || snapshot == nil {
-            snapshot = newSnapshot
-        } else if let existing = snapshot {
-            snapshot = HealthMetrics.mergeSnapshot(existing, newSnapshot)
+
+        // 读到数据时，明确置为已连接并记录时间戳；空结果时保留今日已有数据，避免设备锁屏抖动抹掉已有记录
+        if newSnapshot.readState == .hasData {
+            self.hasEverConnected = true
+            self.hasRequestedAuthorization = true
+            self.lastSyncTimestamp = Date().timeIntervalSince1970
+
+            if let existing = snapshot, calendar.isDateInToday(existing.day) {
+                snapshot = HealthMetrics.mergeForStorage(previous: existing, new: newSnapshot)
+            } else {
+                snapshot = newSnapshot
+            }
+        } else {
+            if let existing = snapshot, calendar.isDateInToday(existing.day), existing.readState == .hasData {
+                // 今日已有有效快照，锁屏或偶发空查询不抹去数据
+            } else if snapshot == nil {
+                snapshot = newSnapshot
+            }
         }
 
         // 当日快照落库：睡眠/健康分数趋势的唯一数据源。

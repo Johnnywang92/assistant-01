@@ -772,16 +772,19 @@ struct LifeVaultView: View {
     /// 健康数据入口的状态摘要。
     private var healthStatusSummary: String {
         guard HealthKitService.isAvailable else { return "此设备不支持健康数据" }
-        switch health.snapshot?.readState {
-        case .hasData:
+        if let snapshot = health.snapshot, snapshot.readState == .hasData {
             return "今日步数、能量、饮水与睡眠可查看"
-        case .requestedNoData:
-            return "已请求读取，暂未读到数据"
-        case .notDetermined:
-            return "未连接 · 可读取步数与睡眠"
-        case nil:
-            return "未连接 · 可读取步数与睡眠"
         }
+        if health.isLoading {
+            return health.hasEverConnected ? "已连接 · 数据同步中..." : "正在同步健康数据..."
+        }
+        if health.hasEverConnected {
+            return "已连接 · 今日暂无新记录"
+        }
+        if health.hasRequestedAuthorization {
+            return "已连接 · 等待数据同步"
+        }
+        return "未连接 · 可读取步数与睡眠"
     }
 
     private var nearestAnniversarySummary: String {

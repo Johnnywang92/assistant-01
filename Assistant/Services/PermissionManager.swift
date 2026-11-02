@@ -181,20 +181,26 @@ public final class PermissionManager: NSObject, ObservableObject, @preconcurrenc
             return
         }
 
+        // 1. 如果此前已成功连接过、或已发起过授权请求，直接视为已授权，避免冷启动时异步判定闪烁
+        if HealthKitService.shared.hasEverConnected || HealthKitService.shared.hasRequestedAuthorization {
+            self.healthStatus = .authorized
+            return
+        }
+
         if let snapshot = HealthKitService.shared.snapshot, snapshot.readState == .hasData {
             self.healthStatus = .authorized
             return
         }
 
-        if HealthKitService.shared.hasRequestedAuthorization {
-            self.healthStatus = .authorized
-            return
-        }
-
+        // 2. 检查系统状态：是否需要初次申请
         Task {
             let needs = await HealthKitService.shared.needsAuthorizationRequest()
             DispatchQueue.main.async {
-                self.healthStatus = needs ? .notDetermined : .authorized
+                if HealthKitService.shared.hasEverConnected || HealthKitService.shared.hasRequestedAuthorization {
+                    self.healthStatus = .authorized
+                } else {
+                    self.healthStatus = needs ? .notDetermined : .authorized
+                }
             }
         }
     }
