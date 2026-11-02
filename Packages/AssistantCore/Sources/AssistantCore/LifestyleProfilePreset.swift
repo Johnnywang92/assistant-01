@@ -6,7 +6,7 @@ import Foundation
 /// 用 `allCases` 的顺序作展示顺序，并按 case 补本地化行名。
 public enum LifestylePresetField: String, CaseIterable, Sendable, Hashable {
     /// 时间轴起床锚点（当天分钟数）
-    case dayTimelineWake = "day_timeline_wake_minute"
+    case dayTimelineWake = "day_timeline_wake_minutes"
     /// 时间轴收工锚点（当天分钟数）
     case dayTimelineOff = "day_timeline_off_minutes"
     /// 早间天气推送时间（"HH:mm"）
