@@ -156,6 +156,18 @@ extension TodoRecurrenceRule {
     }
 }
 
+/// 身份枚举本体已下沉到 AssistantCore.UserLifestyleProfile（可脱离 app 单测）；
+/// 这里只补依赖本地化的展示名。
+extension UserLifestyleProfile {
+    public var shortTitle: String {
+        switch self {
+        case .officeWorker: return L10n.tr("上班族")
+        case .flexible: return L10n.tr("自由职业")
+        case .student: return L10n.tr("学生")
+        }
+    }
+}
+
 @Model
 final class TodoItem {
     var id: UUID

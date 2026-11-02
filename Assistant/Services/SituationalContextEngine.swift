@@ -1,31 +1,6 @@
 import Foundation
 import SwiftUI
-
-/// 用户生活方式与作息身份
-public enum UserLifestyleProfile: String, CaseIterable, Identifiable, Codable {
-    case officeWorker = "上班族 (周一至周五通勤)"
-    case flexible = "自由职业 / 弹性作息"
-    case student = "学生 (周中上课/周末假期)"
-
-    public var id: String { rawValue }
-    public var displayName: String { L10n.tr(rawValue) }
-
-    public var shortTitle: String {
-        switch self {
-        case .officeWorker: return L10n.tr("上班族")
-        case .flexible: return L10n.tr("自由职业")
-        case .student: return L10n.tr("学生")
-        }
-    }
-
-    public var icon: String {
-        switch self {
-        case .officeWorker: return "briefcase.fill"
-        case .flexible: return "laptopcomputer"
-        case .student: return "graduationcap.fill"
-        }
-    }
-}
+import AssistantCore
 
 /// 当前推断出的生活时空情境
 public enum SituationalState: Equatable {
