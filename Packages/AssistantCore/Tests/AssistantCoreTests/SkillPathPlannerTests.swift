@@ -23,6 +23,15 @@ final class SkillPathPlannerTests: XCTestCase {
         XCTAssertEqual(SkillPathPlanner.detectCategory(in: "学会游泳"), .fitness)
     }
 
+    func testDetectsExamCategory() {
+        XCTAssertEqual(SkillPathPlanner.detectCategory(in: "我想备战考研政治"), .exam)
+        XCTAssertEqual(SkillPathPlanner.detectCategory(in: "期末复习微积分"), .exam)
+        XCTAssertEqual(SkillPathPlanner.detectCategory(in: "备考英语六级"), .exam)
+        XCTAssertEqual(SkillPathPlanner.detectCategory(in: "准备教师资格证考试"), .exam)
+        XCTAssertTrue(SkillPathPlanner.isLearningQuery("备考六级"))
+        XCTAssertTrue(SkillPathPlanner.isLearningQuery("期末复习高数"))
+    }
+
     func testNonSkillQueryIsNotLearning() {
         XCTAssertNil(SkillPathPlanner.detectCategory(in: "帮我规划一下周末露营"))
         XCTAssertFalse(SkillPathPlanner.isLearningQuery("帮我规划一下周末露营"))
@@ -172,5 +181,38 @@ final class SkillPathPlannerTests: XCTestCase {
         let draft = SkillPathPlanner.build(skillName: "Python", category: .programming, weeklyMinutes: 150, weeks: 12)
         XCTAssertTrue(draft.goal.contains("独立"))
         XCTAssertFalse(draft.goal.contains("学会Python"))
+    }
+
+    func testExtractsExamSkillName() {
+        XCTAssertEqual(
+            SkillPathPlanner.extractSkillName(from: "我想备考教师资格证", category: .exam),
+            "教师资格证"
+        )
+        XCTAssertEqual(
+            SkillPathPlanner.extractSkillName(from: "期末复习微积分", category: .exam),
+            "微积分"
+        )
+        XCTAssertEqual(
+            SkillPathPlanner.extractSkillName(from: "备考", category: .exam),
+            "备考复习"
+        )
+    }
+
+    func testBuildsExamStages() {
+        let draft = SkillPathPlanner.build(
+            skillName: "考研数学",
+            category: .exam,
+            weeklyMinutes: 280,
+            weeks: 16
+        )
+        XCTAssertEqual(draft.stages.count, 4)
+        XCTAssertEqual(draft.title, "搞定考研数学")
+        XCTAssertTrue(draft.goal.contains("考研数学"))
+        XCTAssertEqual(draft.stages[0].name, "考纲摸底期")
+        XCTAssertEqual(draft.stages[1].name, "考点深耕期")
+        XCTAssertEqual(draft.stages[2].name, "真题专题攻坚期")
+        XCTAssertEqual(draft.stages[3].name, "全真冲刺验收期")
+        XCTAssertTrue(draft.stages.allSatisfy { $0.milestones.count >= 3 })
+        XCTAssertTrue(draft.stages.allSatisfy { $0.practices.count == 1 })
     }
 }

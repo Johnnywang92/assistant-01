@@ -5,6 +5,7 @@ public enum SkillCategory: String, Codable, CaseIterable, Sendable, Identifiable
     case programming
     case language
     case fitness
+    case exam
     case generic
 
     public var id: String { rawValue }
@@ -14,6 +15,7 @@ public enum SkillCategory: String, Codable, CaseIterable, Sendable, Identifiable
         case .programming: "编程与技术"
         case .language: "外语学习"
         case .fitness: "运动与健身"
+        case .exam: "考试与备考"
         case .generic: "通用技能"
         }
     }
@@ -23,6 +25,7 @@ public enum SkillCategory: String, Codable, CaseIterable, Sendable, Identifiable
         case .programming: "chevron.left.forwardslash.chevron.right"
         case .language: "character.book.closed.fill"
         case .fitness: "figure.run"
+        case .exam: "graduationcap.fill"
         case .generic: "sparkles"
         }
     }
@@ -152,21 +155,31 @@ public enum SkillPathPlanner {
 
     private static let learningVerbs = [
         "学会", "学一下", "学一学", "学习", "想学", "要学", "开始学", "自学", "入门", "零基础", "从零",
-        "掌握", "练会", "练成", "怎么学", "如何学", "上手", "精通", "提高我的", "提升我的"
+        "掌握", "练会", "练成", "怎么学", "如何学", "上手", "精通", "提高我的", "提升我的",
+        "备战", "备考", "复习", "准备考", "打算考", "想考", "要考", "冲刺", "怎么备考", "如何备考"
     ]
 
-    /// 判断输入是否表达「学习某项技能」的意图
+    /// 判断输入是否表达「学习某项技能」或「备考某科目」的意图
     public static func isLearningQuery(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         if detectCategory(in: trimmed) == nil { return false }
         return learningVerbs.contains { trimmed.contains($0) }
             || trimmed.contains("学") && trimmed.count <= 24
+            || trimmed.contains("考") && trimmed.count <= 24
+            || trimmed.contains("复习") && trimmed.count <= 24
     }
 
     /// 依据关键词识别技能类别；识别不出返回 nil，避免把普通规划误判为学习
     public static func detectCategory(in text: String) -> SkillCategory? {
         let lower = text.lowercased()
+
+        let examKeys = [
+            "考试", "期末", "考研", "四级", "六级", "教资", "教师资格", "资格证", "考公", "公务员", "国考", "省考",
+            "专四", "专八", "法考", "cpa", "注会", "考证", "软考", "中级经济师", "建造师",
+            "备考", "真题", "冲刺", "高考", "中考", "期中", "考编"
+        ]
+        if examKeys.contains(where: { lower.contains($0) }) { return .exam }
 
         let programmingKeys = [
             "编程", "写代码", "代码", "程序", "开发", "前端", "后端", "全栈", "算法", "数据结构",
@@ -199,7 +212,9 @@ public enum SkillPathPlanner {
         let prefixes = [
             "我想学习", "我想学", "我要学习", "我要学", "帮我学", "帮我拆解一下", "帮我拆解", "帮我规划一下", "帮我规划",
             "怎么学好", "怎么学", "如何学好", "如何学", "从零开始学", "零基础学", "开始学", "学会", "掌握", "学习", "学",
-            "我想练会", "我想练成", "练会", "练成", "想练", "练好"
+            "我想练会", "我想练成", "练会", "练成", "想练", "练好",
+            "期末复习", "期末准备", "备战期末", "我想备考", "我要备考", "帮我备考", "准备备考", "备战备考", "我想备战", "我要备战",
+            "准备考", "打算考", "我想考", "我要考", "备战", "备考", "复习"
         ]
         for p in prefixes where clean.hasPrefix(p) {
             clean = String(clean.dropFirst(p.count))
@@ -525,6 +540,57 @@ public enum SkillPathPlanner {
                     practice: ("保持训练频次", "目标达成后维持比冲刺更难")
                 )
             ]
+        case .exam:
+            [
+                StageTemplate(
+                    weight: 15,
+                    name: "考纲摸底期",
+                    acceptance: "考纲与参考书锁定，摸底试卷完成并建立弱项档案",
+                    milestones: [
+                        ("锁定考纲范围、分值结构与参考用书", "不贪多，各模块选定唯一权威备考资料"),
+                        ("找一套前年真题做限时闭卷摸底测试", "不查资料做完，标记所有蒙对或答错的题"),
+                        ("梳理出个人知识盲区与薄弱章节清单", "知己知彼，把主力时间分给高分值薄弱点"),
+                        ("制定各阶段复习节奏表与打卡习惯", "固定每天复习时段，远离手机干扰")
+                    ],
+                    practice: ("每日核心考点梳理", "每天精读一小节考点并记录疑问")
+                ),
+                StageTemplate(
+                    weight: 35,
+                    name: "考点深耕期",
+                    acceptance: "考纲知识点全覆盖过完一遍，核心公式/法条/概念无死角",
+                    milestones: [
+                        ("全量覆盖一轮知识点，逐章产出思维导图或框架笔记", "合上书能画出该章知识树"),
+                        ("完成各章节配套习题，分类整理第一轮错题", "错题标注属于概念不清还是计算粗心"),
+                        ("提炼高频必背考点、公式或法条卡片", "随时随地抽查自测，强化瞬时提取能力"),
+                        ("完成一次阶段性中期综合测试", "检验一轮复习吸收率，及时调整节奏")
+                    ],
+                    practice: ("每日章节刷题 + 订正", "刷题后必须弄懂每一道错题的考点与反思")
+                ),
+                StageTemplate(
+                    weight: 35,
+                    name: "真题专题攻坚期",
+                    acceptance: "近 5~10 年真题全部吃透，高频题型解题套路形成肌肉记忆",
+                    milestones: [
+                        ("近 5~10 年真题分题型专项刷透", "横向对比命题规律与出题陷阱"),
+                        ("建立深度错题本，归纳典型解题模板与答题规范", "规范采分点语言，避免会做却扣分"),
+                        ("针对高频失分题型做二次专项强化训练", "短板补齐，总分才能质的跃迁"),
+                        ("开展每周一次全真限时模考训练", "按考场真实时间作答，培养时间把控感")
+                    ],
+                    practice: ("每日真题强化训练", "限时精做 + 深度对比标准答案采分点")
+                ),
+                StageTemplate(
+                    weight: 15,
+                    name: "全真冲刺验收期",
+                    acceptance: "完成两套全真模拟卷，错题本清零，考前物资与心态就绪",
+                    milestones: [
+                        ("严格考场作息完成最后两套高质量预测卷或最新真题", "提前调整生物钟至考试兴奋时段"),
+                        ("集中重温全部错题本与高频背诵清单，查漏补缺", "考前看错题比刷大量新题性价比高得多"),
+                        ("准备考场物资清单：准考证、身份证、考试文具与路线确认", "考前一天整理停当，避免临阵慌乱"),
+                        ("考前心态调适与考场答题策略预演", "遇到难题先跳过，确保基础分全部拿满")
+                    ],
+                    practice: ("每日保温复习", "轻量刷题保持题感，温习易错点")
+                )
+            ]
         case .generic:
             [
                 StageTemplate(
@@ -625,6 +691,7 @@ public enum SkillPathPlanner {
 extension SkillCategory {
     public var verbPrefix: String {
         switch self {
+        case .exam: return "搞定"
         case .programming, .language, .fitness, .generic: return "学"
         }
     }
@@ -634,6 +701,7 @@ extension SkillCategory {
         case .programming: "编程"
         case .language: "外语"
         case .fitness: "健身"
+        case .exam: "备考复习"
         case .generic: "新技能"
         }
     }
@@ -647,6 +715,8 @@ extension SkillCategory {
             return "能用 \(skill) 完成一次真实场景的听与说，不依赖字幕与翻译"
         case .fitness:
             return "在 \(skill) 上达成一个可测量的指标（基线提升可复测）"
+        case .exam:
+            return "系统攻克 \(skill)，完成全轮次知识梳理与真题模考，胸有成竹上考场"
         case .generic:
             return "拿出一件 \(skill) 方面可被他人检验的成品或表现"
         }
