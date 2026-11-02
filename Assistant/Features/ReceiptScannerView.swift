@@ -47,7 +47,7 @@ struct ReceiptScannerView: View {
                         .buttonStyle(.bordered)
                     }
 
-                    Text("小票较长时，请按顺序分段拍摄或选择多张照片。识别会合并所有页面。")
+                    Text("支持小票、发票以及淘宝、京东等购物订单截图。小票较长时，请分段拍摄或选多张。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -377,7 +377,7 @@ enum ReceiptScanParser {
 
 // MARK: - 相机取景控制器
 
-private struct ReceiptCameraView: UIViewControllerRepresentable {
+struct ReceiptCameraView: UIViewControllerRepresentable {
     let onImage: (UIImage) -> Void
     @Environment(\.dismiss) private var dismiss
 

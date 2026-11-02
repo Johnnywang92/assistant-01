@@ -109,6 +109,74 @@ final class ReceiptTextParserTests: XCTestCase {
 
     func testHasLabeledTotal() {
         XCTAssertTrue(ReceiptTextParser.hasLabeledTotal("实付金额 55"))
+        XCTAssertTrue(ReceiptTextParser.hasLabeledTotal("实付款 ¥128.00"))
         XCTAssertFalse(ReceiptTextParser.hasLabeledTotal("今天开会讨论金额上限55"))
+    }
+
+    // MARK: - 电商订单截图解析（淘宝、京东、支付宝等）
+
+    func testTaobaoOrderParsing() {
+        let text = """
+        淘宝
+        订单详情
+        交易成功
+        Apple Store 官方旗舰店 >
+        iPhone 16 Pro 256GB 原色钛金属
+        官方正品 现货速发
+        ¥7999.00
+        x1
+        商品总价 ¥7999.00
+        店铺优惠 -¥200.00
+        红包抵扣 -¥100.00
+        实付款 ¥7699.00
+        订单编号: 123456789012345
+        创建时间: 2026-10-28 10:15:30
+        付款时间: 2026-10-28 10:16:02
+        """
+        let result = ReceiptTextParser.parse(text)
+        XCTAssertEqual(result.amount, 7699.0, "实付款必须优先于商品总价被提取")
+        XCTAssertTrue(result.hasLabeledTotal)
+        XCTAssertTrue(result.title.contains("Apple") || result.title.contains("iPhone"))
+        XCTAssertEqual(result.categoryRaw, "数码家电")
+    }
+
+    func testJDOrderParsing() {
+        let text = """
+        京东
+        订单详情
+        已完成
+        京东自营
+        罗技 (Logitech) M330 静音无线鼠标
+        ¥79.00
+        数量: 1
+        商品总额 ¥79.00
+        运费 ¥6.00
+        运费券 -¥6.00
+        实付款 ¥69.00
+        在线支付
+        订单编号: 28938472918
+        下单时间: 2026-10-30 20:45:10
+        """
+        let result = ReceiptTextParser.parse(text)
+        XCTAssertEqual(result.amount, 69.0, "实付款必须优先于商品总额被提取")
+        XCTAssertTrue(result.hasLabeledTotal)
+        XCTAssertTrue(result.title.contains("罗技") || result.title.contains("鼠标") || result.title.contains("自营"))
+        XCTAssertEqual(result.categoryRaw, "数码家电")
+    }
+
+    func testAlipayPaymentScreenshot() {
+        let text = """
+        账单详情
+        支付成功
+        扫二维码付款-给**店
+        -128.00
+        商户全称 优衣库官方旗舰店
+        实付金额 ¥128.00
+        支付时间 2026-10-25 15:30:22
+        """
+        let result = ReceiptTextParser.parse(text)
+        XCTAssertEqual(result.amount, 128.0)
+        XCTAssertEqual(result.title, "优衣库官方旗舰店")
+        XCTAssertEqual(result.categoryRaw, "购物消费")
     }
 }
