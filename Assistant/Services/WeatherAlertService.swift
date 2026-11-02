@@ -2,17 +2,26 @@ import CoreLocation
 import Foundation
 import SwiftData
 import SwiftUI
+import UserNotifications
 import WeatherKit
 
-/// 气象局严重天气预警与气温骤降突变检测器（极低开销，0 额外耗电，随前台激活或情景触发被动执行）
+/// 气象局严重天气预警、气温骤降与天气突变检测器
+/// 支持首页横幅胶囊展示、即时推送、以及前瞻预排期次日早间主动推送到 iPhone 与 Apple Watch（解决早晨未打开 App 查看的问题）
 @MainActor
 public final class WeatherAlertService: NSObject, ObservableObject, CLLocationManagerDelegate {
     public static let shared = WeatherAlertService()
 
+    public static let categoryIdentifier = "WEATHER_ALERT"
+    public static let actionDismiss = "WEATHER_ACTION_DISMISS"
+    public static let actionView = "WEATHER_ACTION_VIEW"
+    public static let immediateNotificationId = "weather-alert-active"
+    public static let morningNotificationId = "weather-alert-morning"
+
     public struct AlertBanner: Identifiable, Equatable {
-        public enum AlertType: Equatable {
-            case severeWeather // 气象局严重预警（暴雨、大风、台风、冰雹、雷电等）
-            case tempDrop      // 气温骤降突变（降温 >= 6°C）
+        public enum AlertType: String, Equatable, Sendable {
+            case severeWeather = "severeWeather" // 气象局严重预警（暴雨、大风、台风、冰雹、雷电等）
+            case tempDrop = "tempDrop"           // 气温骤降突变（降温 >= 6°C）
+            case rainSnow = "rainSnow"           // 雨雪天气与出门带伞
         }
 
         public let id = UUID()
@@ -29,13 +38,20 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
 
     /// 设置项：是否开启气象突变与降温预警
     @AppStorage("weather_alerts_enabled") public var isAlertsEnabled: Bool = true
+    /// 早间主动推送时间设置（默认 07:30，格式 "HH:mm"）
+    @AppStorage("weather_morning_push_time") public var morningPushTime: String = "07:30"
 
     // 防打扰与历史温差对比数据（持久化在 UserDefaults）
     @AppStorage("weather_last_dismissed_date") private var lastDismissedDateString: String = ""
     @AppStorage("weather_yesterday_max_temp") private var yesterdayMaxTemp: Double = -999.0
     @AppStorage("weather_last_recorded_date") private var lastRecordedDateString: String = ""
-    /// 最近一次评估停在哪一步。真机排查「为什么没提醒」时唯一可见的证据，
-    /// 早退分支若不落盘就永远只是猜测。
+    /// 今日已记录的最高温与日期（用于跨次评估，避免日内二次查询破坏前一日基准）
+    @AppStorage("weather_today_recorded_date") private var todayRecordedDateString: String = ""
+    @AppStorage("weather_today_max_temp") private var todayRecordedMaxTemp: Double = -999.0
+    /// 记录最后一次推送通知的日期与类型，避免同一天内重复打扰
+    @AppStorage("weather_last_notified_date") private var lastNotifiedDateString: String = ""
+    @AppStorage("weather_last_notified_type") private var lastNotifiedType: String = ""
+    /// 最近一次评估停在哪一步。真机排查「为什么没提醒」时唯一可见的证据
     @AppStorage("weather_last_check_status") private var lastCheckStatus: String = ""
 
     private let locationManager = CLLocationManager()
@@ -52,9 +68,29 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
         public let conditionDescription: String
         public let isRainyOrSnowy: Bool
         public let todayMaxCelsius: Double?
+        public let tomorrowMaxCelsius: Double?
+        public let tomorrowConditionDescription: String?
 
         public var formattedTemperature: String {
             "\(Int(temperatureCelsius.rounded()))°C"
+        }
+
+        public init(
+            temperatureCelsius: Double,
+            symbolName: String,
+            conditionDescription: String,
+            isRainyOrSnowy: Bool,
+            todayMaxCelsius: Double?,
+            tomorrowMaxCelsius: Double? = nil,
+            tomorrowConditionDescription: String? = nil
+        ) {
+            self.temperatureCelsius = temperatureCelsius
+            self.symbolName = symbolName
+            self.conditionDescription = conditionDescription
+            self.isRainyOrSnowy = isRainyOrSnowy
+            self.todayMaxCelsius = todayMaxCelsius
+            self.tomorrowMaxCelsius = tomorrowMaxCelsius
+            self.tomorrowConditionDescription = tomorrowConditionDescription
         }
     }
 
@@ -85,12 +121,22 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
             let isRainy = symbol.contains("rain") || symbol.contains("snow") || symbol.contains("drizzle")
             let todayMax = weather.dailyForecast.first?.highTemperature.converted(to: .celsius).value
 
+            var tomorrowMax: Double? = nil
+            var tomorrowDesc: String? = nil
+            if weather.dailyForecast.count > 1 {
+                let tomorrow = weather.dailyForecast[1]
+                tomorrowMax = tomorrow.highTemperature.converted(to: .celsius).value
+                tomorrowDesc = L10n.tr(tomorrow.condition.description)
+            }
+
             let snapshot = CurrentWeatherSnapshot(
                 temperatureCelsius: tempC,
                 symbolName: symbol,
                 conditionDescription: L10n.tr(desc),
                 isRainyOrSnowy: isRainy,
-                todayMaxCelsius: todayMax
+                todayMaxCelsius: todayMax,
+                tomorrowMaxCelsius: tomorrowMax,
+                tomorrowConditionDescription: tomorrowDesc
             )
             saveCache(snapshot)
             return snapshot
@@ -112,7 +158,7 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
     private func fetchOpenMeteoWeather(for location: CLLocation) async -> CurrentWeatherSnapshot? {
         let lat = location.coordinate.latitude
         let lon = location.coordinate.longitude
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max&timezone=auto&forecast_days=1"
+        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,weather_code&timezone=auto&forecast_days=3"
         guard let url = URL(string: urlString) else { return nil }
 
         var request = URLRequest(url: url)
@@ -132,10 +178,18 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
             let isDay = ((current["is_day"] as? Int) ?? 1) == 1
 
             var todayMax: Double? = nil
-            if let daily = json["daily"] as? [String: Any],
-               let maxArr = daily["temperature_2m_max"] as? [Double],
-               let firstMax = maxArr.first {
-                todayMax = firstMax
+            var tomorrowMax: Double? = nil
+            var tomorrowDesc: String? = nil
+            if let daily = json["daily"] as? [String: Any] {
+                if let maxArr = daily["temperature_2m_max"] as? [Double], !maxArr.isEmpty {
+                    todayMax = maxArr.first
+                    if maxArr.count > 1 {
+                        tomorrowMax = maxArr[1]
+                    }
+                }
+                if let codeArr = daily["weather_code"] as? [Int], codeArr.count > 1 {
+                    tomorrowDesc = Self.mapWMOWeatherCode(codeArr[1], isDay: true).description
+                }
             }
 
             let mapped = Self.mapWMOWeatherCode(code, isDay: isDay)
@@ -144,7 +198,9 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
                 symbolName: mapped.symbol,
                 conditionDescription: mapped.description,
                 isRainyOrSnowy: mapped.isRainyOrSnowy,
-                todayMaxCelsius: todayMax
+                todayMaxCelsius: todayMax,
+                tomorrowMaxCelsius: tomorrowMax,
+                tomorrowConditionDescription: tomorrowDesc
             )
         } catch {
             return nil
@@ -176,10 +232,11 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
         }
     }
 
-    /// 检查突发气象预警与骤降温差（在 App 启动、进入前台、或情景触发时调用）
+    /// 检查突发气象预警、骤降温差与雨雪突变（在 App 启动、进入前台、后台巡检或情景触发时调用）
     public func checkAlertsIfNeeded(location: CLLocation? = nil) async {
         guard isAlertsEnabled else {
             currentBanner = nil
+            cancelAllAlertNotifications()
             return
         }
 
@@ -187,12 +244,7 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
         isChecking = true
         defer { isChecking = false }
 
-        // 今日若已被用户手动划掉关闭，遵循防打扰机制，今天不再弹出
         let todayStr = currentDateString()
-        if lastDismissedDateString == todayStr && currentBanner == nil {
-            recordCheckStatus("dismissed-today")
-            return
-        }
 
         // 位置三级回退。本服务自己的 CLLocationManager 只设过 delegate、从未启动更新，
         // 不能当唯一来源；真正在跑 GPS 的是 LocationReminderService（地理围栏与单次采样）。
@@ -207,13 +259,28 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
             let weather = try await WeatherService.shared.weather(for: loc)
             recordCheckStatus("weatherkit-ok")
 
+            let current = weather.currentWeather
+            let symbol = current.symbolName
+            let isRainyOrSnowy = symbol.contains("rain") || symbol.contains("snow") || symbol.contains("drizzle")
+            let desc = L10n.tr(current.condition.description)
+
+            let todayMax = weather.dailyForecast.first?.highTemperature.converted(to: .celsius).value ?? current.temperature.converted(to: .celsius).value
+            var tomorrowMax: Double? = nil
+            var tomorrowDesc: String? = nil
+            if weather.dailyForecast.count > 1 {
+                let tomorrow = weather.dailyForecast[1]
+                tomorrowMax = tomorrow.highTemperature.converted(to: .celsius).value
+                tomorrowDesc = L10n.tr(tomorrow.condition.description)
+            }
+
             // 1. 优先检测：气象局严重天气预警 (weather.weatherAlerts)
+            var hasSevereAlert = false
             if let alerts = weather.weatherAlerts, !alerts.isEmpty {
                 let firstAlert = alerts[0]
                 let summary = firstAlert.summary
                 let detail = firstAlert.region ?? L10n.tr("官方发布严重气象警报，外出请注意安全！")
 
-                self.currentBanner = AlertBanner(
+                let banner = AlertBanner(
                     type: .severeWeather,
                     title: L10n.choose("气象预警 · \(summary)", "Weather Alert · \(summary)"),
                     detail: detail,
@@ -221,52 +288,314 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
                     color: Color.orange,
                     timestamp: .now
                 )
-                return
+                self.currentBanner = banner
+                postAlertNotificationIfNeeded(banner: banner, todayStr: todayStr)
+                hasSevereAlert = true
             }
 
-            // 2. 检测：气温骤降突变（对比今日最高温 vs 昨日记录最高温）
-            if let todayForecast = weather.dailyForecast.first {
-                let todayMax = todayForecast.highTemperature.converted(to: .celsius).value
-                evaluateTempDrop(todayMax: todayMax, todayStr: todayStr)
+            // 2. 评估今日气温骤降与雨雪天气（若未命中严重预警）
+            if !hasSevereAlert {
+                evaluateTodayWeather(
+                    todayMax: todayMax,
+                    isRainyOrSnowy: isRainyOrSnowy,
+                    conditionDesc: desc,
+                    todayStr: todayStr
+                )
             }
+
+            // 3. 次日前瞻预排期：若明天将骤降（≥6°C）或雨雪，直接预先排期到明早设定时间（推送到手机与 Watch）
+            scheduleMorningNotificationIfNeeded(
+                todayMax: todayMax,
+                tomorrowMax: tomorrowMax,
+                tomorrowDesc: tomorrowDesc
+            )
         } catch {
-            // WeatherKit 不可用时使用 Open-Meteo 最高温降级检测降温预警
+            // WeatherKit 不可用时使用 Open-Meteo 降级检测
             if let fallback = await fetchOpenMeteoWeather(for: loc),
                let todayMax = fallback.todayMaxCelsius {
                 recordCheckStatus("open-meteo-ok")
-                evaluateTempDrop(todayMax: todayMax, todayStr: todayStr)
+                evaluateTodayWeather(
+                    todayMax: todayMax,
+                    isRainyOrSnowy: fallback.isRainyOrSnowy,
+                    conditionDesc: fallback.conditionDescription,
+                    todayStr: todayStr
+                )
+                scheduleMorningNotificationIfNeeded(
+                    todayMax: todayMax,
+                    tomorrowMax: fallback.tomorrowMaxCelsius,
+                    tomorrowDesc: fallback.tomorrowConditionDescription
+                )
             } else {
                 recordCheckStatus("weatherkit-failed-and-no-fallback")
             }
         }
     }
 
-    private func evaluateTempDrop(todayMax: Double, todayStr: String) {
-        if yesterdayMaxTemp > -100 && lastRecordedDateString != todayStr {
+    private func evaluateTodayWeather(
+        todayMax: Double,
+        isRainyOrSnowy: Bool,
+        conditionDesc: String,
+        todayStr: String
+    ) {
+        // 更新温差基准跟踪：跨天切换时将上一天的最后测值滚动为基准
+        if todayRecordedDateString != todayStr {
+            if !todayRecordedDateString.isEmpty && todayRecordedMaxTemp > -100 {
+                yesterdayMaxTemp = todayRecordedMaxTemp
+                lastRecordedDateString = todayRecordedDateString
+            }
+            todayRecordedDateString = todayStr
+            todayRecordedMaxTemp = todayMax
+        } else {
+            todayRecordedMaxTemp = todayMax
+        }
+
+        // 今日若已被用户手动划掉关闭，遵循防打扰机制，不展示横幅也不弹窗
+        if lastDismissedDateString == todayStr {
+            recordCheckStatus("dismissed-today")
+            return
+        }
+
+        // 1. 优先检测：气温骤降突变（对比今日最高温 vs 上次记录最高温）
+        if yesterdayMaxTemp > -100 {
             let drop = yesterdayMaxTemp - todayMax
             if drop >= 6.0 {
                 let dropInt = Int(round(drop))
                 let todayMaxInt = Int(round(todayMax))
                 let yesterdayMaxInt = Int(round(yesterdayMaxTemp))
 
-                self.currentBanner = AlertBanner(
-                    type: .tempDrop,
-                    title: L10n.choose("气温骤降 \(dropInt)°C · 出门建议添衣", "Temp Drop \(dropInt)°C · Dress Warmly"),
-                    detail: L10n.choose(
+                let title: String
+                let detail: String
+                let icon: String
+
+                if isRainyOrSnowy {
+                    title = L10n.choose("气温骤降 \(dropInt)°C · 伴有雨雪", "Temp Drop \(dropInt)°C · Rainy/Snowy")
+                    detail = L10n.choose(
+                        "今日最高仅 \(todayMaxInt)°C（\(baselineLabel())记录最高 \(yesterdayMaxInt)°C）且伴有\(conditionDesc)，温差突变明显，请添衣并携带雨具！",
+                        "Today's high is only \(todayMaxInt)°C vs \(yesterdayMaxInt)°C on \(baselineLabel()) with \(conditionDesc). Please dress warmly and take an umbrella!"
+                    )
+                    icon = "thermometer.snowflake"
+                } else {
+                    title = L10n.choose("气温骤降 \(dropInt)°C · 出门建议添衣", "Temp Drop \(dropInt)°C · Dress Warmly")
+                    detail = L10n.choose(
                         "今日最高仅 \(todayMaxInt)°C（\(baselineLabel())记录最高 \(yesterdayMaxInt)°C），温差突变明显，预防受凉感冒！",
                         "Today's high is only \(todayMaxInt)°C vs \(yesterdayMaxInt)°C on \(baselineLabel()). Stay warm!"
-                    ),
-                    icon: "thermometer.snowflake",
+                    )
+                    icon = "thermometer.snowflake"
+                }
+
+                let banner = AlertBanner(
+                    type: .tempDrop,
+                    title: title,
+                    detail: detail,
+                    icon: icon,
                     color: Color.blue,
                     timestamp: .now
                 )
+                self.currentBanner = banner
+                postAlertNotificationIfNeeded(banner: banner, todayStr: todayStr)
+                return
             }
         }
 
-        if lastRecordedDateString != todayStr {
-            yesterdayMaxTemp = todayMax
-            lastRecordedDateString = todayStr
+        // 2. 次级检测：今日雨雪天气与带伞防滑提醒
+        if isRainyOrSnowy {
+            let banner = AlertBanner(
+                type: .rainSnow,
+                title: L10n.choose("今日有雨雪 · 出门建议带伞", "Rain/Snow Today · Take Umbrella"),
+                detail: L10n.choose(
+                    "预计今日有\(conditionDesc)，出门请携带雨具并注意路滑防跌倒！",
+                    "Expected \(conditionDesc) today. Please take an umbrella and watch your step!"
+                ),
+                icon: "cloud.rain.fill",
+                color: Color.teal,
+                timestamp: .now
+            )
+            self.currentBanner = banner
+            postAlertNotificationIfNeeded(banner: banner, todayStr: todayStr)
+            return
         }
+
+        // 若今天既无气象预警、也无骤降与雨雪，清空当前的非严重预警横幅
+        if currentBanner?.type != .severeWeather {
+            self.currentBanner = nil
+        }
+    }
+
+    /// 即时向系统通知中心（iPhone 与 Apple Watch）投递提醒
+    private func postAlertNotificationIfNeeded(banner: AlertBanner, todayStr: String) {
+        guard isAlertsEnabled else { return }
+
+        // 今日若已被用户手动划掉关闭，遵循防打扰机制
+        if lastDismissedDateString == todayStr {
+            return
+        }
+
+        // 避免同一天内重复推送同一类通知（但如果此前是降温/雨雪，现在来了气象局严重预警，允许升级推送）
+        let typeKey = banner.type.rawValue
+        if lastNotifiedDateString == todayStr {
+            if lastNotifiedType == typeKey || (lastNotifiedType == AlertBanner.AlertType.severeWeather.rawValue && banner.type != .severeWeather) {
+                return
+            }
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = banner.title
+        content.body = banner.detail
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.categoryIdentifier = Self.categoryIdentifier
+        content.threadIdentifier = "weather-alert"
+        content.userInfo = [
+            "type": "weatherAlert",
+            "date": todayStr,
+            "alertType": typeKey
+        ]
+
+        let request = UNNotificationRequest(
+            identifier: Self.immediateNotificationId,
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        )
+
+        UNUserNotificationCenter.current().add(request) { [weak self] error in
+            if error == nil {
+                Task { @MainActor [weak self] in
+                    self?.lastNotifiedDateString = todayStr
+                    self?.lastNotifiedType = typeKey
+                    // 既然今天已经即时提醒并生效，移除今日可能遗留的早间待触发通知
+                    UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.morningNotificationId])
+                }
+            }
+        }
+    }
+
+    /// 前瞻预排期：将次日早晨的天气变化预先注册至系统调度，即使用户早晨未打开 App，也准时推送到手机与手表
+    private func scheduleMorningNotificationIfNeeded(
+        todayMax: Double,
+        tomorrowMax: Double?,
+        tomorrowDesc: String?
+    ) {
+        guard isAlertsEnabled, let tomorrowMax else {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.morningNotificationId])
+            return
+        }
+
+        let drop = todayMax - tomorrowMax
+        let conditionDesc = tomorrowDesc ?? L10n.tr("雨雪")
+        let isRainyTomorrow = conditionDesc.contains("雨") || conditionDesc.contains("雪") || conditionDesc.contains("rain") || conditionDesc.contains("snow")
+
+        // 仅在明日有骤降（>=6°C）或雨雪天气时进行次日早间预排期
+        guard drop >= 6.0 || isRainyTomorrow else {
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.morningNotificationId])
+            return
+        }
+
+        let dropInt = Int(round(drop))
+        let tomorrowMaxInt = Int(round(tomorrowMax))
+        let todayMaxInt = Int(round(todayMax))
+
+        let title: String
+        let detail: String
+
+        // 早间触发时，对用户而言已经是「今日」
+        if drop >= 6.0 && isRainyTomorrow {
+            title = L10n.choose("气温骤降 \(dropInt)°C · 伴有雨雪", "Temp Drop \(dropInt)°C · Rainy/Snowy")
+            detail = L10n.choose(
+                "今日最高仅 \(tomorrowMaxInt)°C（昨日记录最高 \(todayMaxInt)°C）且伴有\(conditionDesc)，早晨出门请务必添衣防寒并携带雨具！",
+                "Today's high is only \(tomorrowMaxInt)°C (vs \(todayMaxInt)°C yesterday) with \(conditionDesc). Please dress warmly and take an umbrella!"
+            )
+        } else if drop >= 6.0 {
+            title = L10n.choose("气温骤降 \(dropInt)°C · 出门建议添衣", "Temp Drop \(dropInt)°C · Dress Warmly")
+            detail = L10n.choose(
+                "今日最高仅 \(tomorrowMaxInt)°C（昨日记录最高 \(todayMaxInt)°C），温差突变明显，早晨出门请注意添衣防寒！",
+                "Today's high is only \(tomorrowMaxInt)°C vs \(todayMaxInt)°C yesterday. Significant temp drop, stay warm!"
+            )
+        } else {
+            title = L10n.choose("今日有雨雪 · 出门建议带伞", "Rain/Snow Today · Take Umbrella")
+            detail = L10n.choose(
+                "预计今日有\(conditionDesc)，早晨出门请带好雨具并注意路滑防跌倒！",
+                "Expected \(conditionDesc) today. Please take an umbrella and watch your step!"
+            )
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = detail
+        content.sound = .default
+        content.interruptionLevel = .timeSensitive
+        content.categoryIdentifier = Self.categoryIdentifier
+        content.threadIdentifier = "weather-alert"
+
+        let calendar = Calendar.current
+        guard let tomorrowDate = calendar.date(byAdding: .day, value: 1, to: Date()) else { return }
+        var comps = calendar.dateComponents([.year, .month, .day], from: tomorrowDate)
+
+        let timeParts = morningPushTime.split(separator: ":").compactMap { Int($0) }
+        comps.hour = timeParts.count == 2 ? timeParts[0] : 7
+        comps.minute = timeParts.count == 2 ? timeParts[1] : 30
+        comps.second = 0
+
+        content.userInfo = [
+            "type": "weatherAlert",
+            "date": Self.dayFormatter.string(from: tomorrowDate),
+            "alertType": drop >= 6.0 ? AlertBanner.AlertType.tempDrop.rawValue : AlertBanner.AlertType.rainSnow.rawValue,
+            "isPreScheduled": true
+        ]
+
+        if let scheduledDate = calendar.date(from: comps), scheduledDate > Date() {
+            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+            let request = UNNotificationRequest(
+                identifier: Self.morningNotificationId,
+                content: content,
+                trigger: trigger
+            )
+
+            UNUserNotificationCenter.current().add(request) { error in
+                if let error {
+                    print("⚠️ [WeatherAlert] 预排期明早天气提醒失败: \(error)")
+                } else {
+                    print("🌤 [WeatherAlert] 已成功预排期明早 \(comps.hour ?? 7):\(comps.minute ?? 30) 天气变化提醒至 iPhone 与 Apple Watch")
+                }
+            }
+        }
+    }
+
+    /// 取消所有天气预警相关的通知排期
+    public func cancelAllAlertNotifications() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [
+            Self.immediateNotificationId,
+            Self.morningNotificationId
+        ])
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [
+            Self.immediateNotificationId,
+            Self.morningNotificationId
+        ])
+    }
+
+    /// 异步向系统注册天气预警通知交互分类（对齐 Apple Watch 原生按钮与精简交互）
+    public static func registerCategory() async {
+        let dismiss = UNNotificationAction(
+            identifier: actionDismiss,
+            title: L10n.choose("我知道了", "Dismiss"),
+            options: [],
+            icon: UNNotificationActionIcon(systemImageName: "checkmark")
+        )
+        let view = UNNotificationAction(
+            identifier: actionView,
+            title: L10n.choose("查看详情", "View Details"),
+            options: [.foreground],
+            icon: UNNotificationActionIcon(systemImageName: "arrow.up.forward.app")
+        )
+        let category = UNNotificationCategory(
+            identifier: categoryIdentifier,
+            actions: [view, dismiss],
+            intentIdentifiers: [],
+            options: []
+        )
+        let center = UNUserNotificationCenter.current()
+        var updated = await center.notificationCategories()
+        updated.insert(category)
+        center.setNotificationCategories(updated)
     }
 
     /// 用户主动忽略关闭当前横幅
@@ -276,6 +605,10 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
             currentBanner = nil
         }
         Haptic.light()
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [
+            Self.immediateNotificationId,
+            Self.morningNotificationId
+        ])
     }
 
     /// 温差基准的措辞必须反映快照的真实记录日：App 可能隔好几天才成功评估一次，

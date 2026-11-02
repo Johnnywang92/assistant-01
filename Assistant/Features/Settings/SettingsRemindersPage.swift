@@ -6,6 +6,7 @@ import SwiftUI
 /// 「生活报告」功能大卡片已移除（首页与语音均有入口），只保留日报提醒开关。
 struct SettingsRemindersPage: View {
     @AppStorage("weather_alerts_enabled") private var weatherAlertsEnabled: Bool = true
+    @AppStorage("weather_morning_push_time") private var weatherMorningPushTime: String = "07:30"
     @AppStorage("todo_notification_show_sensitive_details") private var showSensitiveTodoNotifications: Bool = true
     @AppStorage("user_lifestyle_profile") private var lifestyleProfile: UserLifestyleProfile = .officeWorker
     @AppStorage("user_off_work_minutes") private var offWorkMinutes: Int = 18 * 60
@@ -31,6 +32,27 @@ struct SettingsRemindersPage: View {
                 let hour = calendar.component(.hour, from: newValue)
                 let minute = calendar.component(.minute, from: newValue)
                 offWorkMinutes = hour * 60 + minute
+            }
+        )
+    }
+
+    /// 早间天气变化提醒推送时间（"HH:mm"）↔ DatePicker
+    private var weatherMorningPushTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                let parts = weatherMorningPushTime.split(separator: ":").compactMap { Int($0) }
+                let hour = parts.count == 2 ? parts[0] : 7
+                let minute = parts.count == 2 ? parts[1] : 30
+                return Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: .now) ?? .now
+            },
+            set: { newDate in
+                let calendar = Calendar.current
+                let hour = calendar.component(.hour, from: newDate)
+                let minute = calendar.component(.minute, from: newDate)
+                weatherMorningPushTime = String(format: "%02d:%02d", hour, minute)
+                Task {
+                    await WeatherAlertService.shared.checkAlertsIfNeeded()
+                }
             }
         )
     }
@@ -105,13 +127,32 @@ struct SettingsRemindersPage: View {
 
                 Toggle("情境动态排序", isOn: $isAdaptiveSortingEnabled)
 
-                Toggle("天气预警与添衣提醒", isOn: $weatherAlertsEnabled)
+                Toggle("天气突变与降温预警", isOn: $weatherAlertsEnabled)
+                    .onChange(of: weatherAlertsEnabled) { _, enabled in
+                        if enabled {
+                            Task {
+                                await NotificationService.requestAuthorization()
+                                await WeatherAlertService.shared.checkAlertsIfNeeded()
+                            }
+                        } else {
+                            WeatherAlertService.shared.cancelAllAlertNotifications()
+                        }
+                    }
+
+                if weatherAlertsEnabled {
+                    DatePicker("早间推送时间", selection: weatherMorningPushTimeBinding, displayedComponents: .hourAndMinute)
+                }
+
                 Toggle("在锁屏通知中显示待办详情", isOn: $showSensitiveTodoNotifications)
                     .onChange(of: showSensitiveTodoNotifications) { _, _ in
                         TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
                     }
             } header: {
                 Text("生活习惯")
+            } footer: {
+                if weatherAlertsEnabled {
+                    Text("开启后，若检测到气温骤降（≥6°C）、突发恶劣天气或雨雪变化，将在早间设定时间直接推送到 iPhone 与 Apple Watch；即使早晨未打开 App，也能准时抬腕收到添衣或带伞提醒。")
+                }
             }
 
             // MARK: - 睡前提醒

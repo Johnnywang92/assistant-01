@@ -397,6 +397,15 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
             Task { @MainActor in
                 NavigationRouter.shared.selectedTab = .todos
             }
+        } else if let type = userInfo["type"] as? String, type == "weatherAlert" {
+            // 点击天气变化与降温预警：手腕/锁屏点「我知道了」关闭横幅，点击正文或「查看详情」定位到首页横幅
+            Task { @MainActor in
+                if response.actionIdentifier == WeatherAlertService.actionDismiss {
+                    WeatherAlertService.shared.dismissCurrentBanner()
+                } else {
+                    NavigationRouter.shared.selectedTab = .todos
+                }
+            }
         } else if let type = userInfo["type"] as? String, type == "todo" {
             if let idString = userInfo["todoId"] as? String, let id = UUID(uuidString: idString) {
                 Task { @MainActor in NavigationRouter.shared.focusTodo(id) }

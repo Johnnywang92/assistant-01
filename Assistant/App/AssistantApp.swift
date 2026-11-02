@@ -105,6 +105,9 @@ struct AssistantApp: App {
                 // 到站/落地清点提醒的「开始清点」按钮，锁屏上点一下就进清单
                 await TripArrivalService.shared.registerCategory()
                 StartupMetrics.mark("category.tripArrival")
+                // 天气变化与降温预警的「查看详情 / 我知道了」按钮，抬腕轻点直接处理
+                await WeatherAlertService.registerCategory()
+                StartupMetrics.mark("category.weatherAlert")
                 StartupMetrics.mark("notifyCategories ready")
                 // 优先对账扩展侧（小组件/手表卡片）指令并刷新共享快照
                 StartupMetrics.measure("refreshSnapshot") { WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext) }
