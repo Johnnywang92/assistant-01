@@ -71,6 +71,7 @@ public enum AssistantSettingsKeys {
         "safe_to_spend_rhythm_mode",           // 安心花节奏模式
         "sleepReminder.desiredBedtime",        // 期望入睡时间 HH:mm
         "sleepReminder.pseudoDesiredBedtime",  // 由作息推算出的入睡时间
+        "weather_morning_push_time",           // 早间天气推送时间 HH:mm
         ExpenseCurrency.preferredCurrencyKey   // 记账默认币种（出国游偏好）
     ]
 
