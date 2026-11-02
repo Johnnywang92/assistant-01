@@ -72,6 +72,9 @@ public final class ExpenseRecord {
     public var currencyCode: String?        // 记账原币种代码（nil 或 "CNY" 表示人民币，如 "JPY"、"USD"）
     public var foreignAmount: Double?       // 外币原币金额（amount 始终存折算后的人民币金额）
     public var exchangeRateToCNY: Double?   // 记账时使用的汇率（1 外币 = x 人民币）
+    public var isPending: Bool = false      // 是否为待到账/待结算（如报销待到账、借出待还、项目尾款待收）
+    public var pendingDueDate: Date?        // 预期到账/交割日期
+    public var projectTag: String?          // 关联的项目/业务标签（如 "客户A"）
     @Transient public var receiptImageData: Data?
     // Kept out of the legacy ExpenseRecord schema so old stores can open safely.
     @Transient public var splitCount: Int = 1
@@ -86,7 +89,10 @@ public final class ExpenseRecord {
         date: Date = .now,
         currencyCode: String? = nil,
         foreignAmount: Double? = nil,
-        exchangeRateToCNY: Double? = nil
+        exchangeRateToCNY: Double? = nil,
+        isPending: Bool = false,
+        pendingDueDate: Date? = nil,
+        projectTag: String? = nil
     ) {
         self.id = UUID()
         self.amount = abs(amount)
@@ -100,6 +106,9 @@ public final class ExpenseRecord {
         self.currencyCode = currencyCode
         self.foreignAmount = foreignAmount
         self.exchangeRateToCNY = exchangeRateToCNY
+        self.isPending = isPending
+        self.pendingDueDate = pendingDueDate
+        self.projectTag = projectTag
         self.receiptImageData = nil
         self.splitCount = 1
         self.splitParticipants = ""

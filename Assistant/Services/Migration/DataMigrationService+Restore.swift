@@ -171,6 +171,7 @@ extension DataMigrationService {
             item.completedAt = t.completedAt
             item.reminderOverrideAt = t.reminderOverrideAt
             item.arrivalCheckFiredAt = t.arrivalCheckFiredAt
+            item.tags = t.tags ?? []
             context.insert(item)
             restoredTodos += 1
         }
@@ -348,6 +349,9 @@ extension DataMigrationService {
             item.id = ex.id
             item.linkedItemID = ex.linkedItemID
             item.createdAt = ex.createdAt
+            item.isPending = ex.isPending ?? false
+            item.pendingDueDate = ex.pendingDueDate
+            item.projectTag = ex.projectTag
             context.insert(item)
             restoredExpenses += 1
         }

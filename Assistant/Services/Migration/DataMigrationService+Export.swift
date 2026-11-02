@@ -70,7 +70,8 @@ extension DataMigrationService {
                 calendarItemIdentifier: $0.calendarItemIdentifier,
                 arrivalReminderAt: $0.arrivalReminderAt,
                 arrivalTransportRaw: $0.arrivalTransportRaw,
-                arrivalCheckFiredAt: $0.arrivalCheckFiredAt
+                arrivalCheckFiredAt: $0.arrivalCheckFiredAt,
+                tags: $0.tags
             )
         }
 
@@ -152,7 +153,10 @@ extension DataMigrationService {
                 linkedItemID: $0.linkedItemID,
                 currencyCode: $0.currencyCode,
                 foreignAmount: $0.foreignAmount,
-                exchangeRateToCNY: $0.exchangeRateToCNY
+                exchangeRateToCNY: $0.exchangeRateToCNY,
+                isPending: $0.isPending,
+                pendingDueDate: $0.pendingDueDate,
+                projectTag: $0.projectTag
             )
         }
 

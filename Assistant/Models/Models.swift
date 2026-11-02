@@ -208,6 +208,8 @@ final class TodoItem {
     var arrivalTransportRaw: String?
     /// 本次行程到站提醒的已触发时间，用于去重，避免一次行程反复弹窗
     var arrivalCheckFiredAt: Date?
+    /// 任务标签列表（如 ["客户A", "原型交付"]，不含 # 前缀）
+    var tags: [String] = []
 
     init(type: TodoType, status: TodoStatus = .active, title: String, detail: String? = nil,
          pickupCode: String? = nil, courier: String? = nil, station: String? = nil, location: String? = nil,
@@ -219,7 +221,8 @@ final class TodoItem {
          isSkillPractice: Bool = false, skillPracticeMinutes: Int = 0,
          lifeEventTaskID: UUID? = nil,
          calendarItemIdentifier: String? = nil,
-         arrivalReminderAt: Date? = nil, arrivalTransportRaw: String? = nil) {
+         arrivalReminderAt: Date? = nil, arrivalTransportRaw: String? = nil,
+         tags: [String] = []) {
         self.id = UUID()
         self.typeRaw = type.rawValue
         self.statusRaw = status.rawValue
@@ -247,6 +250,7 @@ final class TodoItem {
         self.calendarItemIdentifier = calendarItemIdentifier
         self.arrivalReminderAt = arrivalReminderAt
         self.arrivalTransportRaw = arrivalTransportRaw
+        self.tags = tags
     }
 
     /// 到站提醒的交通方式；未知时按 unknown 走时间兜底，不会丢提醒

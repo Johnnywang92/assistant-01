@@ -101,6 +101,7 @@ public struct TodoDTO: Codable {
     public var arrivalReminderAt: Date?
     public var arrivalTransportRaw: String?
     public var arrivalCheckFiredAt: Date?
+    public var tags: [String]?
 }
 
 public struct SubscriptionDTO: Codable {
@@ -202,6 +203,9 @@ public struct ExpenseDTO: Codable {
     public var currencyCode: String?
     public var foreignAmount: Double?
     public var exchangeRateToCNY: Double?
+    public var isPending: Bool?
+    public var pendingDueDate: Date?
+    public var projectTag: String?
 }
 
 public struct IDDocumentDTO: Codable {
