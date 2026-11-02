@@ -72,6 +72,11 @@ struct TodoListView: View {
         AppBackgroundStyle(rawValue: bgStyleRaw) != .system
     }
 
+    /// 当前是否处于搜索输入状态
+    private var isSearching: Bool {
+        !crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     // MARK: - 单次 O(N) 极速分类缓存（彻底消除视图树重复全表遍历）
     /// 分类结果引用缓存：视图树内 200+ 处转发属性访问在同一次渲染中只真正计算一次。
     /// 增加渲染脉冲（50ms）节流保护，单次视图树评估内只哈希校验一次，消除卡顿。
@@ -287,12 +292,14 @@ struct TodoListView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 顶部快捷卡片支持左右滑动，避免欢迎信息和投喂入口同时占用首页高度。
-                HomeTopCardsCarousel(activeCount: activeTodos.count) {
-                    Haptic.light()
-                    router.activeSheet = .omnibox
+                if !isSearching {
+                    // 顶部快捷卡片支持左右滑动，避免欢迎信息和投喂入口同时占用首页高度。
+                    HomeTopCardsCarousel(activeCount: activeTodos.count) {
+                        Haptic.light()
+                        router.activeSheet = .omnibox
+                    }
+                    LifeEventHomeBanner()
                 }
-                LifeEventHomeBanner()
 
                 // 顶部固定横向分类 Tab 栏（带指示胶囊与角标）
                 filterTabBar
@@ -300,74 +307,76 @@ struct TodoListView: View {
 
                 // 时间聚合条：按时间组织的逾期/今天/本周入口 + 逾期一键整理
                 // （与类型分类正交；三桶互斥，chip 计数即详情列表长度）
-                if !timeBuckets.isEmpty {
+                if !isSearching && !timeBuckets.isEmpty {
                     timeAggregationBar
                         .wallpaperReadableText()
                 }
 
                 // 搜索词非空时，展示全域索引实时匹配卡片，支持直接跳转任意模块/设置或进入全景搜索
-                if !crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if isSearching {
                     homeSearchIndexPreview(query: crossModuleSearchText)
                 }
 
-                // 上下滑动排序模式开启提示横幅
-                if isReordering {
-                    TodoReorderingBanner {
-                        AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.8)) {
-                            isReordering = false
-                        }
-                        Haptic.medium()
-                    }
-                }
-
-                // 长辈关怀大字模式顶部状态微胶囊（支持一键调整字号）
-                if seniorManager.isSeniorModeEnabled {
-                    TodoSeniorModeBanner(fontScaleTitle: seniorManager.fontScale.title) {
-                        showSeniorSettings = true
-                        Haptic.light()
-                    }
-                }
-
-                // 突发气象预警或气温骤降轻巧胶囊（若有则展示，支持手动划掉关闭）
-                if let banner = weatherAlerts.currentBanner {
-                    TodoWeatherAlertBanner(banner: banner) {
-                        weatherAlerts.dismissCurrentBanner()
-                    }
-                }
-
-                // 临近 5~7 天纪念日浪漫筹备备忘横幅（支持一键加入待办与不再提醒）
-                if let upcoming = anniversaryReminder.activeUpcoming {
-                    TodoAnniversaryPrepBanner(
-                        upcoming: upcoming,
-                        onDismiss: {
-                            AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                anniversaryReminder.dismiss(for: upcoming)
-                                showToast("已设置本周期不再提醒该纪念日")
+                if !isSearching {
+                    // 上下滑动排序模式开启提示横幅
+                    if isReordering {
+                        TodoReorderingBanner {
+                            AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.8)) {
+                                isReordering = false
                             }
-                        },
-                        onAddTodos: {
-                            AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                anniversaryReminder.addPreparationTodos(for: upcoming, in: context)
-                                showToast("已一键将准备鲜花、订蛋糕与订餐厅加入待办！🎉")
-                            }
+                            Haptic.medium()
                         }
-                    )
-                }
+                    }
 
-                // 临近节假日或出差旅游出行前购票提醒横幅（火车票提前15天、机票提前15-30天）
-                if let ticketInfo = ticketReminder.activeUpcomingTicket {
-                    TodoTravelTicketPrepBanner(
-                        info: ticketInfo,
-                        onDismiss: {
-                            AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                ticketReminder.dismiss(for: ticketInfo)
-                                showToast("已设置本周期不再提醒该出行购票")
-                            }
-                        },
-                        onConfirm: {
-                            confirmingTicketInfo = ticketInfo
+                    // 长辈关怀大字模式顶部状态微胶囊（支持一键调整字号）
+                    if seniorManager.isSeniorModeEnabled {
+                        TodoSeniorModeBanner(fontScaleTitle: seniorManager.fontScale.title) {
+                            showSeniorSettings = true
+                            Haptic.light()
                         }
-                    )
+                    }
+
+                    // 突发气象预警或气温骤降轻巧胶囊（若有则展示，支持手动划掉关闭）
+                    if let banner = weatherAlerts.currentBanner {
+                        TodoWeatherAlertBanner(banner: banner) {
+                            weatherAlerts.dismissCurrentBanner()
+                        }
+                    }
+
+                    // 临近 5~7 天纪念日浪漫筹备备忘横幅（支持一键加入待办与不再提醒）
+                    if let upcoming = anniversaryReminder.activeUpcoming {
+                        TodoAnniversaryPrepBanner(
+                            upcoming: upcoming,
+                            onDismiss: {
+                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    anniversaryReminder.dismiss(for: upcoming)
+                                    showToast("已设置本周期不再提醒该纪念日")
+                                }
+                            },
+                            onAddTodos: {
+                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    anniversaryReminder.addPreparationTodos(for: upcoming, in: context)
+                                    showToast("已一键将准备鲜花、订蛋糕与订餐厅加入待办！🎉")
+                                }
+                            }
+                        )
+                    }
+
+                    // 临近节假日或出差旅游出行前购票提醒横幅（火车票提前15天、机票提前15-30天）
+                    if let ticketInfo = ticketReminder.activeUpcomingTicket {
+                        TodoTravelTicketPrepBanner(
+                            info: ticketInfo,
+                            onDismiss: {
+                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    ticketReminder.dismiss(for: ticketInfo)
+                                    showToast("已设置本周期不再提醒该出行购票")
+                                }
+                            },
+                            onConfirm: {
+                                confirmingTicketInfo = ticketInfo
+                            }
+                        )
+                    }
                 }
 
                 Divider()
@@ -547,26 +556,6 @@ struct TodoListView: View {
             // 统一搜索/深链命中待办：在滚动定位之外直达详情弹层
             .onChange(of: router.requestedTodoDetailID) { _, id in
                 presentTodoDetail(for: id)
-            }
-            .overlay {
-                if activeTodos.isEmpty && review.isEmpty && done.isEmpty {
-                    if !crossModuleSearchText.isEmpty {
-                        ContentUnavailableView.search(text: crossModuleSearchText)
-                    } else {
-                        ContentUnavailableView {
-                        Label("暂无待办事项", systemImage: "list.bullet.clipboard")
-                        } description: {
-                        Text("待办不仅支持快递，还涵盖日常日程、服药提醒、周期家务与防扣款预警。\n点击右上角 ➕ 快速添加。")
-                        } actions: {
-                        Button {
-                            showAddTodo = true
-                        } label: {
-                            Label("新建待办", systemImage: "plus")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        }
-                    }
-                }
             }
             .task {
                 StartupMetrics.markOnce("todoList.task begin", "n=\(todos.count)")
@@ -769,21 +758,37 @@ struct TodoListView: View {
     private func renderAllSections() -> some View {
         if activeTodos.isEmpty {
             Section {
-                HStack(spacing: 12) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.title2)
-                        .foregroundStyle(.green)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("当前待办已全部搞定！")
+                if isSearching {
+                    VStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 28))
+                            .foregroundStyle(.secondary)
+                        Text("待办中未找到与「\(crossModuleSearchText.trimmingCharacters(in: .whitespacesAndNewlines))」匹配的事项")
                             .font(.subheadline.bold())
                             .foregroundStyle(.primary)
-                        Text("暂无未完成事项，可点击下方查看已完成明细，或点击右上角 ➕ 快速添加。")
+                        Text("可轻点上方全景搜索卡片直达全景搜索大厅查找")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    Spacer()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                } else {
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.title2)
+                            .foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("当前待办已全部搞定！")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+                            Text("暂无未完成事项，可点击下方查看已完成明细，或点击右上角 ➕ 快速添加。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
             }
             .themedRow()
         } else {
@@ -967,19 +972,23 @@ struct TodoListView: View {
     private func renderGeneralSection() -> some View {
         Section(todayTodos.isEmpty ? "今日待办" : "今日待办（\(todayTodos.count)）") {
             if todayTodos.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.system(size: 38))
-                        .foregroundStyle(Color.accentColor.opacity(0.7))
-                    Text("今日暂无待办事项")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.primary)
-                    Text("点击右上角 ➕ 即可快速添加今日待办。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if isSearching {
+                    searchEmptyRow(for: "今日待办")
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 38))
+                            .foregroundStyle(Color.accentColor.opacity(0.7))
+                        Text("今日暂无待办事项")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.primary)
+                        Text("点击右上角 ➕ 即可快速添加今日待办。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
             } else {
                 ForEach(todayTodos) { item in
                     todoRow(item, within: todayTodos)
@@ -993,8 +1002,12 @@ struct TodoListView: View {
     private func renderWorkSection() -> some View {
         Section(works.isEmpty ? "工作待办" : "💼 工作待办（\(works.count)）") {
             if works.isEmpty {
-                Text("暂无工作待办，点击右上角 ➕ 即可快速添加会议、周报或项目事项。")
-                    .foregroundStyle(.secondary)
+                if isSearching {
+                    searchEmptyRow(for: "工作待办")
+                } else {
+                    Text("暂无工作待办，点击右上角 ➕ 即可快速添加会议、周报或项目事项。")
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 ForEach(works) { item in
                     todoRow(item, within: works)
@@ -1008,20 +1021,24 @@ struct TodoListView: View {
     private func renderRecurringSection() -> some View {
         if recurring.isEmpty {
             Section("周期性待办") {
-                VStack(spacing: 8) {
-                    Image(systemName: "repeat.circle")
-                        .font(.system(size: 38))
-                        .foregroundStyle(Color.accentColor.opacity(0.7))
-                    Text("暂无周期重复事项")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.primary)
-                    Text("可在新建或编辑待办时，设置每天、隔天、每3天或每周等重复周期。\n待办完成后将自动生成下一期事项。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                if isSearching {
+                    searchEmptyRow(for: "周期性待办")
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "repeat.circle")
+                            .font(.system(size: 38))
+                            .foregroundStyle(Color.accentColor.opacity(0.7))
+                        Text("暂无周期重复事项")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.primary)
+                        Text("可在新建或编辑待办时，设置每天、隔天、每3天或每周等重复周期。\n待办完成后将自动生成下一期事项。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
             }
         } else {
             Section("🔁 周期性待办（\(recurring.count)）") {
@@ -1038,8 +1055,12 @@ struct TodoListView: View {
         let totalCount = parcels.count + returnParcels.count
         if totalCount == 0 {
             Section("快递与退货") {
-                Text("暂无待取快递或待退货事项，点击右上角 ➕ 可快速添加。")
-                    .foregroundStyle(.secondary)
+                if isSearching {
+                    searchEmptyRow(for: "快递与退货")
+                } else {
+                    Text("暂无待取快递或待退货事项，点击右上角 ➕ 可快速添加。")
+                        .foregroundStyle(.secondary)
+                }
             }
         } else {
             if !parcels.isEmpty {
@@ -1066,7 +1087,11 @@ struct TodoListView: View {
         let count = medications.count + houseworks.count + chargings.count
         if count == 0 {
             Section("生活与健康") {
-                Text("暂无生活提醒（服药、家务或充电预警）").foregroundStyle(.secondary)
+                if isSearching {
+                    searchEmptyRow(for: "生活与健康")
+                } else {
+                    Text("暂无生活提醒（服药、家务或充电预警）").foregroundStyle(.secondary)
+                }
             }
         } else {
             if !medications.isEmpty {
@@ -1101,7 +1126,11 @@ struct TodoListView: View {
         let count = subscriptions.count + expiries.count + anniversaries.count + passwordTodos.count + vehicleTodos.count
         if count == 0 {
             Section("提醒与预警") {
-                Text("暂无预警事项（爱车守护、自动续费、物品临期或密码轮换）").foregroundStyle(.secondary)
+                if isSearching {
+                    searchEmptyRow(for: "提醒与预警")
+                } else {
+                    Text("暂无预警事项（爱车守护、自动续费、物品临期或密码轮换）").foregroundStyle(.secondary)
+                }
             }
         } else {
             if !vehicleTodos.isEmpty {
@@ -1151,8 +1180,12 @@ struct TodoListView: View {
     private func renderParentingSection() -> some View {
         Section("亲子育儿（\(parentingTodos.count)）") {
             if parentingTodos.isEmpty {
-                Text("暂无育儿待办，可添加疫苗、成长测量或健康随访提醒。")
-                    .foregroundStyle(.secondary)
+                if isSearching {
+                    searchEmptyRow(for: "亲子育儿")
+                } else {
+                    Text("暂无育儿待办，可添加疫苗、成长测量或健康随访提醒。")
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 ForEach(parentingTodos) { item in
                     todoRow(item, within: parentingTodos)
@@ -1166,8 +1199,12 @@ struct TodoListView: View {
     private func renderPetSection() -> some View {
         Section("宠物照护（\(petTodos.count)）") {
             if petTodos.isEmpty {
-                Text("暂无宠物待办，可添加喂食、驱虫、洗护或就医提醒。")
-                    .foregroundStyle(.secondary)
+                if isSearching {
+                    searchEmptyRow(for: "宠物照护")
+                } else {
+                    Text("暂无宠物待办，可添加喂食、驱虫、洗护或就医提醒。")
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 ForEach(petTodos) { item in
                     todoRow(item, within: petTodos)
@@ -1181,8 +1218,12 @@ struct TodoListView: View {
     private func renderOtherSection() -> some View {
         Section(otherActive.isEmpty ? "其它事项" : "其它事项（\(otherActive.count)）") {
             if otherActive.isEmpty {
-                Text("暂无其它事项，点击右上角 ➕ 即可快速添加。")
-                    .foregroundStyle(.secondary)
+                if isSearching {
+                    searchEmptyRow(for: "其它事项")
+                } else {
+                    Text("暂无其它事项，点击右上角 ➕ 即可快速添加。")
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 ForEach(otherActive) { item in
                     todoRow(item, within: otherActive)
@@ -1328,10 +1369,23 @@ struct TodoListView: View {
     }
 
     @ViewBuilder
+    private func searchEmptyRow(for categoryName: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            Text("未在「\(categoryName)」中找到匹配事项")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder
     private func renderPageContent(for category: TodoFilterCategory) -> some View {
         List {
-            // 放进列表头部，使“今日安排”可以随首页内容向上滚动，仅在全部总览页挂载以大幅减少后台多页面重复查询
-            if category == .all {
+            // 放进列表头部，使“今日安排”可以随首页内容向上滚动，仅在全部总览页且非搜索状态下挂载
+            if category == .all && !isSearching {
                 Section {
                     EmptyView()
                 } header: {
