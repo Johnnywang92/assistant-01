@@ -15,6 +15,18 @@ public struct WaterTrackerView: View {
     @State private var isShowingShareSheet = false
     @State private var isFAQExpanded = false
     @State private var toastMessage: String?
+    @State private var activeHydrationMotion: HydrationMotionData? = nil
+
+    private func triggerHydrationMotion(beverage: HydrationBeverageType, volumeML: Double, effectiveML: Double, isGoalAchieved: Bool) {
+        AppMotion.animate {
+            activeHydrationMotion = HydrationMotionData(
+                beverage: beverage,
+                volumeML: volumeML,
+                effectiveML: effectiveML,
+                isGoalAchieved: isGoalAchieved
+            )
+        }
+    }
 
     // 过滤出今天的记录
     private var todayRecords: [WaterIntakeRecord] {
@@ -80,10 +92,24 @@ public struct WaterTrackerView: View {
             )
         }
         .sheet(isPresented: $isShowingCustomSheet) {
-            AddCustomWaterSheet(defaultBeverage: selectedBeverage)
+            AddCustomWaterSheet(defaultBeverage: selectedBeverage) { beverage, volumeML, effectiveML in
+                let wasAchievedBefore = summary.effectiveHydrationML >= dailyGoalML
+                let isNowAchieved = (summary.effectiveHydrationML + effectiveML) >= dailyGoalML
+                let firstAchieved = !wasAchievedBefore && isNowAchieved
+
+                triggerHydrationMotion(
+                    beverage: beverage,
+                    volumeML: volumeML,
+                    effectiveML: effectiveML,
+                    isGoalAchieved: firstAchieved
+                )
+            }
         }
         .sheet(isPresented: $isShowingGoalSheet) {
             EditWaterGoalSheet(currentGoal: $dailyGoalML)
+        }
+        .overlay {
+            HydrationLogOverlay(motionData: $activeHydrationMotion)
         }
         .overlay(alignment: .bottom) {
             if let toast = toastMessage {
@@ -113,6 +139,7 @@ public struct WaterTrackerView: View {
                         Text("\(Int(summary.effectiveHydrationML))")
                             .font(.system(size: 38, weight: .bold, design: .rounded))
                             .foregroundStyle(AppColor.primary)
+                            .contentTransition(.numericText())
                         Text("/ \(Int(summary.targetML)) ml")
                             .font(.headline)
                             .foregroundStyle(AppColor.secondaryText)
@@ -121,6 +148,7 @@ public struct WaterTrackerView: View {
                     Text("达标率 \(Int(summary.progressRatio * 100))%")
                         .font(.caption.bold())
                         .foregroundStyle(summary.isGoalAchieved ? AppColor.success : AppColor.info)
+                        .contentTransition(.numericText())
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(
@@ -134,26 +162,12 @@ public struct WaterTrackerView: View {
 
                 Spacer()
 
-                // 圆环进度展示
-                ZStack {
-                    Circle()
-                        .stroke(AppColor.fillTertiary, lineWidth: 10)
-                        .frame(width: 76, height: 76)
-
-                    Circle()
-                        .trim(from: 0, to: CGFloat(min(summary.progressRatio, 1.0)))
-                        .stroke(
-                            summary.isGoalAchieved ? AppColor.success : AppColor.info,
-                            style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                        )
-                        .rotationEffect(.degrees(-90))
-                        .frame(width: 76, height: 76)
-                        .animation(.easeInOut, value: summary.progressRatio)
-
-                    Image(systemName: summary.isGoalAchieved ? "checkmark" : "drop.fill")
-                        .font(.title2)
-                        .foregroundStyle(summary.isGoalAchieved ? AppColor.success : AppColor.info)
-                }
+                // 流体水波注水进度球
+                FluidWaveCircleProgress(
+                    progressRatio: summary.progressRatio,
+                    isGoalAchieved: summary.isGoalAchieved,
+                    diameter: 76
+                )
             }
 
             Divider()
@@ -344,6 +358,7 @@ public struct WaterTrackerView: View {
 
     private func quickAddVolumeButton(volumeML: Double, title: String) -> some View {
         Button {
+            Haptic.impact(style: .light)
             logWater(beverage: selectedBeverage, volumeML: volumeML)
         } label: {
             VStack(spacing: 2) {
@@ -485,8 +500,19 @@ public struct WaterTrackerView: View {
             beverageType: beverage,
             volumeML: volumeML
         )
+        let wasAchievedBefore = summary.effectiveHydrationML >= dailyGoalML
         context.insert(record)
         try? context.save()
+
+        let isNowAchieved = (summary.effectiveHydrationML + record.effectiveHydrationML) >= dailyGoalML
+        let firstAchieved = !wasAchievedBefore && isNowAchieved
+
+        triggerHydrationMotion(
+            beverage: beverage,
+            volumeML: volumeML,
+            effectiveML: record.effectiveHydrationML,
+            isGoalAchieved: firstAchieved
+        )
 
         // 异步尝试同步到 Apple 健康（写入有效补水量）
         Task {
@@ -528,13 +554,19 @@ struct AddCustomWaterSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
 
+    var onSaved: ((_ beverage: HydrationBeverageType, _ volumeML: Double, _ effectiveML: Double) -> Void)? = nil
+
     @State private var beverageType: HydrationBeverageType
     @State private var customName: String = ""
     @State private var volumeText: String = "300"
     @State private var date: Date = .now
     @State private var note: String = ""
 
-    init(defaultBeverage: HydrationBeverageType = .plainWater) {
+    init(
+        defaultBeverage: HydrationBeverageType = .plainWater,
+        onSaved: ((_ beverage: HydrationBeverageType, _ volumeML: Double, _ effectiveML: Double) -> Void)? = nil
+    ) {
+        self.onSaved = onSaved
         _beverageType = State(initialValue: defaultBeverage)
     }
 
@@ -629,6 +661,7 @@ struct AddCustomWaterSheet: View {
             _ = await HealthKitService.shared.recordWaterIntake(amountML: record.effectiveHydrationML, date: record.date)
         }
 
+        onSaved?(beverageType, vol, record.effectiveHydrationML)
         dismiss()
     }
 }

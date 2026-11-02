@@ -67,7 +67,7 @@ struct SettingsIconBadge: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 7, style: .continuous) // gate:radius-literal 设置页小图标特定视觉规范
                 .fill(color.gradient)
                 .frame(width: size, height: size)
 
@@ -106,9 +106,9 @@ struct SettingsView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .frame(width: 44, height: 44)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
                                     .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
                             )
                             .shadow(color: .black.opacity(0.08), radius: 4, y: 1)

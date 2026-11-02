@@ -28,6 +28,21 @@ struct ItemStorageVaultView: View {
     @State private var reminderTarget: ReminderMedicineTarget? = nil
     @State private var selectedSymptom: MedicineSymptomFilter = .all
     @State private var actionFeedbackToast: String? = nil
+    @State private var activeStorageMotion: StoredItemMotionData? = nil
+
+    private func triggerStorageMotion(name: String, roomArea: String, location: String, isEditing: Bool) {
+        // 稍作微小延迟让弹窗开始收起，使动效落在主界面中央
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            AppMotion.animate {
+                activeStorageMotion = StoredItemMotionData(
+                    itemName: name,
+                    roomArea: roomArea,
+                    location: location,
+                    isEditing: isEditing
+                )
+            }
+        }
+    }
 
     private let roomAreas = ["全部", "玄关", "主卧", "次卧", "客厅", "书房", "阳台", "储物间", "厨房"]
 
@@ -403,6 +418,7 @@ struct ItemStorageVaultView: View {
                             Text("\(costTrackedSummaries.count) 件")
                                 .font(.system(.subheadline, design: .rounded).bold())
                                 .foregroundStyle(.indigo)
+                                .contentTransition(.numericText())
                         }
                         VStack(alignment: .leading, spacing: 3) {
                             Text("累计投入")
@@ -411,6 +427,7 @@ struct ItemStorageVaultView: View {
                             Text(String(format: "¥%.0f", totalValue))
                                 .font(.system(.subheadline, design: .rounded).bold())
                                 .foregroundStyle(.indigo)
+                                .contentTransition(.numericText())
                         }
                         if totalResale > 0 {
                             VStack(alignment: .leading, spacing: 3) {
@@ -420,6 +437,7 @@ struct ItemStorageVaultView: View {
                                 Text(String(format: "¥%.0f", totalResale))
                                     .font(.system(.subheadline, design: .rounded).bold())
                                     .foregroundStyle(.green)
+                                    .contentTransition(.numericText())
                             }
                         }
                         VStack(alignment: .leading, spacing: 3) {
@@ -432,6 +450,7 @@ struct ItemStorageVaultView: View {
                             Text(String(format: "¥%.1f/天", topItem.summary.dailyCost))
                                 .font(.system(.subheadline, design: .rounded).bold())
                                 .foregroundStyle(.orange)
+                                .contentTransition(.numericText())
                         }
                         Spacer()
                     }
@@ -611,6 +630,9 @@ struct ItemStorageVaultView: View {
         .navigationTitle("物品收纳找物")
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: Text(L10n.tr("搜索物品名称、存放位置、常备药或适应症…")))
+        .overlay {
+            StorageItemMotionOverlay(motionData: $activeStorageMotion)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -633,10 +655,14 @@ struct ItemStorageVaultView: View {
             }
         }
         .sheet(isPresented: $showingAddSheet) {
-            AddOrEditStoredItemSheet(itemToEdit: nil)
+            AddOrEditStoredItemSheet(itemToEdit: nil) { name, area, loc, isEdit in
+                triggerStorageMotion(name: name, roomArea: area, location: loc, isEditing: isEdit)
+            }
         }
         .sheet(item: $itemToEdit) { item in
-            AddOrEditStoredItemSheet(itemToEdit: item)
+            AddOrEditStoredItemSheet(itemToEdit: item) { name, area, loc, isEdit in
+                triggerStorageMotion(name: name, roomArea: area, location: loc, isEditing: isEdit)
+            }
         }
         .sheet(isPresented: $showingAddMedicineSheet) {
             MedicineEditorSheet(medicine: nil, prefillFrom: medicinePrefillSource)
@@ -800,6 +826,7 @@ struct AddOrEditStoredItemSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let itemToEdit: StoredItem?
+    var onSaved: ((_ name: String, _ roomArea: String, _ location: String, _ isEditing: Bool) -> Void)? = nil
 
     @State private var name: String = ""
     @State private var roomArea: String = "主卧"
@@ -856,8 +883,12 @@ struct AddOrEditStoredItemSheet: View {
     private let commonItemSuggestions = ["备用钥匙", "冬季羽绒服", "露营户外帐篷", "发票与保修卡", "五金工具箱", "重要证件原件", "换季床单被罩", "行李箱"]
     private let commonLocationSuggestions = ["衣柜顶层收纳箱", "床底储物抽屉", "鞋柜抽屉木盒", "书柜底层内侧", "玄关托盘", "阳台金属架"]
 
-    init(itemToEdit: StoredItem?) {
+    init(
+        itemToEdit: StoredItem?,
+        onSaved: ((_ name: String, _ roomArea: String, _ location: String, _ isEditing: Bool) -> Void)? = nil
+    ) {
         self.itemToEdit = itemToEdit
+        self.onSaved = onSaved
         if let item = itemToEdit {
             self._name = State(initialValue: item.name)
             self._roomArea = State(initialValue: item.roomArea)
@@ -1207,6 +1238,7 @@ struct AddOrEditStoredItemSheet: View {
 
         try? context.save()
         Haptic.success()
+        onSaved?(trimmedName, roomArea, trimmedLocation, itemToEdit != nil)
         dismiss()
     }
 }

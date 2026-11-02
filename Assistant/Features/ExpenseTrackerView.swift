@@ -114,6 +114,16 @@ struct ExpenseTrackerView: View {
     /// AI 洞察生成时所依据的「本月账本数据指纹」，数据未变时复用缓存结果、避免重复推理
     @State private var aiInsightDataFingerprint: Int? = nil
     @State private var recordToShare: ExpenseRecord?
+    @State private var activeTransactionMotion: FinancialMotionType? = nil
+
+    private func triggerTransactionMotion(isIncome: Bool, amount: Double) {
+        // 稍作微小延迟让可能弹出的弹窗开始收起，使动效落在主界面中央，视觉反馈最为连贯
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            AppMotion.animate {
+                activeTransactionMotion = isIncome ? .income(amount: amount) : .expense(amount: amount)
+            }
+        }
+    }
 
     private var calendar: Calendar { .current }
 
@@ -666,10 +676,14 @@ struct ExpenseTrackerView: View {
                 }
             }
             .sheet(isPresented: $showingManualAddSheet) {
-                AddOrEditExpenseSheet(recordToEdit: nil)
+                AddOrEditExpenseSheet(recordToEdit: nil) { isIncome, amount in
+                    triggerTransactionMotion(isIncome: isIncome, amount: amount)
+                }
             }
             .sheet(item: $recordToEdit) { record in
-                AddOrEditExpenseSheet(recordToEdit: record)
+                AddOrEditExpenseSheet(recordToEdit: record) { isIncome, amount in
+                    triggerTransactionMotion(isIncome: isIncome, amount: amount)
+                }
             }
             .sheet(item: $recordToShare) { record in
                 ExpenseCardShareSheet(record: record)
@@ -709,7 +723,11 @@ struct ExpenseTrackerView: View {
                     } else {
                         showFeedback("已从小票记入 ¥\(String(format: "%.2f", result.amount))")
                     }
+                    triggerTransactionMotion(isIncome: result.isIncome, amount: result.amount)
                 }
+            }
+            .overlay {
+                FinancialTransactionOverlay(motion: $activeTransactionMotion)
             }
             .overlay(alignment: .bottom) {
                 if let feedback = feedbackBanner {
@@ -738,7 +756,8 @@ struct ExpenseTrackerView: View {
     }
 
     // MARK: - 统计卡片辅助视图
-    private func statCard(title: String, amount: Double, color: Color) -> some View {        VStack(alignment: .leading, spacing: 4) {
+    private func statCard(title: String, amount: Double, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text(L10n.tr(title))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -747,6 +766,7 @@ struct ExpenseTrackerView: View {
                 .foregroundStyle(color)
                 .minimumScaleFactor(0.8)
                 .lineLimit(1)
+                .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
@@ -807,9 +827,11 @@ struct ExpenseTrackerView: View {
                 ? "已记入入账 ¥\(amountStr)\(foreignSuffix)"
                 : "已记入 ¥\(amountStr)（\(result.category.rawValue)\(foreignSuffix)）"
             showFeedback(desc)
+            triggerTransactionMotion(isIncome: result.isIncome, amount: result.amount)
         } else {
             let totalStr = String(format: "%.2f", totalExpense)
             showFeedback("已记入 \(results.count) 笔 · 合计 ¥\(totalStr)（\(titles.joined(separator: " / "))）")
+            triggerTransactionMotion(isIncome: false, amount: totalExpense)
         }
     }
 
@@ -1693,6 +1715,7 @@ struct AddOrEditExpenseSheet: View {
     @Query(sort: \StoredItem.name) private var storedItems: [StoredItem]
 
     var recordToEdit: ExpenseRecord? = nil
+    var onSaved: ((_ isIncome: Bool, _ amount: Double) -> Void)? = nil
 
     @State private var isIncome: Bool = false
     @State private var amountString: String = ""
@@ -1754,11 +1777,14 @@ struct AddOrEditExpenseSheet: View {
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: isIncome) { _, income in
-                        if income {
-                            selectedCategory = .income
-                        } else {
-                            if selectedCategory.isIncome {
-                                selectedCategory = availableCategories.first ?? .food
+                        Haptic.selection()
+                        AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.75)) {
+                            if income {
+                                selectedCategory = .income
+                            } else {
+                                if selectedCategory.isIncome {
+                                    selectedCategory = availableCategories.first ?? .food
+                                }
                             }
                         }
                     }
@@ -1810,6 +1836,7 @@ struct AddOrEditExpenseSheet: View {
                                 Text(String(format: "¥%.2f", convertedCNYAmount))
                                     .font(.system(.headline, design: .rounded).bold())
                                     .foregroundStyle(isIncome ? Color.green : Color.orange)
+                                    .contentTransition(.numericText())
                             }
 
                             HStack(spacing: 8) {
@@ -2047,6 +2074,7 @@ struct AddOrEditExpenseSheet: View {
             )
             ExpenseWaterService.handleSaved(record, context: context)
             Haptic.success()
+            onSaved?(isIncome, cnyAmount)
         } else {
             let record = ExpenseRecord(
                 amount: cnyAmount,
@@ -2067,6 +2095,7 @@ struct AddOrEditExpenseSheet: View {
             ExpenseCalorieService.handleSaved(record, propose: true, context: context)
             ExpenseWaterService.handleSaved(record, context: context)
             Haptic.success()
+            onSaved?(isIncome, cnyAmount)
         }
         dismiss()
     }
