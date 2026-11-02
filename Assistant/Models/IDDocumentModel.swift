@@ -13,6 +13,8 @@ public enum IDDocumentType: String, Codable, CaseIterable, Sendable {
     case residencePermit = "港澳台/居住证"
     case socialSecurity = "社保卡/医保卡"
     case bankCard = "银行卡"
+    case studentCard = "学生证/校园卡"
+    case examAdmission = "准考证/考试凭证"
     case businessLicense = "营业执照"
     case realEstate = "房产/不动产权证"
     case degree = "毕业证/学位证"
@@ -27,6 +29,8 @@ public enum IDDocumentType: String, Codable, CaseIterable, Sendable {
         case .residencePermit: return "globe.asia.australia.fill"
         case .socialSecurity: return "cross.case.fill"
         case .bankCard: return "creditcard.fill"
+        case .studentCard: return "person.crop.rectangle.badge.plus"
+        case .examAdmission: return "list.bullet.clipboard.fill"
         case .businessLicense: return "building.2.fill"
         case .realEstate: return "house.fill"
         case .degree: return "graduationcap.fill"
@@ -43,6 +47,8 @@ public enum IDDocumentType: String, Codable, CaseIterable, Sendable {
         case .driverLicense, .vehicleLicense: "正本/正页"
         case .passport: "个人信息页"
         case .bankCard: "卡号正面"
+        case .studentCard: "学生证/校园卡正面"
+        case .examAdmission: "准考证/考试信息页"
         case .realEstate, .businessLicense: "执照/证书页"
         default: "正面照片"
         }
@@ -56,6 +62,8 @@ public enum IDDocumentType: String, Codable, CaseIterable, Sendable {
         case .driverLicense, .vehicleLicense: "副页"
         case .passport: "签证/签名页"
         case .bankCard: "反面（含签名条）"
+        case .studentCard: "注册章/条码反面"
+        case .examAdmission: "考场规则/背面"
         default: "反面/补充页"
         }
         return L10n.tr(raw)
