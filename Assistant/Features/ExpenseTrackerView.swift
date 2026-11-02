@@ -33,6 +33,7 @@ fileprivate struct ExpenseSummary {
         let startOfYesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday)
 
         for record in records {
+            if record.isPending { continue }
             let isToday = calendar.isDate(record.date, inSameDayAs: now)
             let isYesterday = if let startOfYesterday {
                 calendar.isDate(record.date, inSameDayAs: startOfYesterday)
@@ -585,13 +586,7 @@ struct ExpenseTrackerView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .swipeActions(edge: .leading) {
-                                        Button {
-                                            recordToEdit = item
-                                            Haptic.light()
-                                        } label: {
-                                            Label("编辑", systemImage: "pencil")
-                                        }
-                                        .tint(.indigo)
+                                        rowLeadingSwipeActions(for: item)
                                     }
                                     .swipeActions(edge: .trailing) {
                                         Button {
@@ -602,17 +597,7 @@ struct ExpenseTrackerView: View {
                                         .tint(.blue)
                                     }
                                     .contextMenu {
-                                        Button {
-                                            recordToEdit = item
-                                        } label: {
-                                            Label("编辑这笔账目", systemImage: "pencil")
-                                        }
-
-                                        Button(role: .destructive) {
-                                            deleteRecord(item)
-                                        } label: {
-                                            Label("删除这笔账目", systemImage: "trash")
-                                        }
+                                        rowContextMenu(for: item)
                                         Button {
                                             recordToShare = item
                                         } label: {
@@ -996,6 +981,58 @@ struct ExpenseTrackerView: View {
         AppMotion.animate { feedbackBanner = text }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             AppMotion.animate { feedbackBanner = nil }
+        }
+    }
+
+    private func confirmPendingRecord(_ item: ExpenseRecord) {
+        AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+            item.isPending = false
+            try? context.save()
+        }
+        Haptic.success()
+        showFeedback(item.isIncome ? "已确认到账" : "已确认交割")
+    }
+
+    @ViewBuilder
+    private func rowLeadingSwipeActions(for item: ExpenseRecord) -> some View {
+        if item.isPending {
+            Button {
+                confirmPendingRecord(item)
+            } label: {
+                Label(item.isIncome ? "已到账" : "已报销", systemImage: "checkmark.circle.fill")
+            }
+            .tint(.green)
+        }
+
+        Button {
+            recordToEdit = item
+            Haptic.light()
+        } label: {
+            Label("编辑", systemImage: "pencil")
+        }
+        .tint(.indigo)
+    }
+
+    @ViewBuilder
+    private func rowContextMenu(for item: ExpenseRecord) -> some View {
+        if item.isPending {
+            Button {
+                confirmPendingRecord(item)
+            } label: {
+                Label(item.isIncome ? "确认已到账" : "确认已报销/交割", systemImage: "checkmark.circle.fill")
+            }
+        }
+
+        Button {
+            recordToEdit = item
+        } label: {
+            Label("编辑这笔账目", systemImage: "pencil")
+        }
+
+        Button(role: .destructive) {
+            deleteRecord(item)
+        } label: {
+            Label("删除这笔账目", systemImage: "trash")
         }
     }
 
@@ -1678,6 +1715,22 @@ struct ExpenseRow: View {
                             .padding(.vertical, 1)
                             .background(Capsule().fill(Color.orange.opacity(0.14)))
                             .foregroundStyle(.orange)
+                    }
+                    if item.isPending {
+                        Text(item.isIncome ? "待到账" : "待报销")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.purple.opacity(0.14)))
+                            .foregroundStyle(.purple)
+                    }
+                    if let project = item.projectTag, !project.isEmpty {
+                        Text("#\(project)")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.indigo.opacity(0.12)))
+                            .foregroundStyle(.indigo)
                     }
                     Text(item.date.formatted(date: .omitted, time: .shortened))
                         .font(.caption2)

@@ -40,7 +40,7 @@ extension SafeToSpendCalculator {
         // 统计本周前几个工作日的支出，用于计算蓄水池
         var workdaySpendsByDay: [Date: Double] = [:]
 
-        for record in records where !record.isIncome {
+        for record in records where !record.isIncome && !record.isPending {
             let isFixed = isFixedExpenseRecord(record.rawText)
             if calendar.isDate(record.date, equalTo: now, toGranularity: .month) {
                 if isFixed { fixedMonth += record.amount } else { flexibleMonth += record.amount }
@@ -189,7 +189,7 @@ public enum ItemCostCalculator {
     /// 归集关联记账投入：itemID -> 该物品累计后继投入金额
     public static func linkedExpenseTotals(records: [ExpenseRecord]) -> [UUID: Double] {
         var totals: [UUID: Double] = [:]
-        for record in records where !record.isIncome {
+        for record in records where !record.isIncome && !record.isPending {
             if let itemID = record.linkedItemID {
                 totals[itemID, default: 0] += record.amount
             }

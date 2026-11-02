@@ -37,17 +37,25 @@ struct ExpenseCapabilityProvider: CapabilityProvider {
         }()
         let foreignAmount = currencyCode != nil ? Double(action.params["foreignAmount"] ?? "") : nil
         let exchangeRate = currencyCode != nil ? Double(action.params["exchangeRate"] ?? "") : nil
+        let isPending = action.params["isPending"] == "true"
+        let pendingDueDate = action.params["pendingDueDateISO"].flatMap { OmniboxPlanner.parseParamDate($0) }
+        let (cleanTitle, tags) = TagExtractor.extractTags(from: title)
+        let finalTitle = cleanTitle.isEmpty ? title : cleanTitle
+        let projectTag = action.params["projectTag"] ?? tags.first
 
         let record = ExpenseRecord(
             amount: amountValue,
             isIncome: isIncome,
             category: category,
-            title: title,
+            title: finalTitle,
             rawText: action.summary,
             date: transactionDate,
             currencyCode: currencyCode,
             foreignAmount: foreignAmount,
-            exchangeRateToCNY: exchangeRate
+            exchangeRateToCNY: exchangeRate,
+            isPending: isPending,
+            pendingDueDate: pendingDueDate,
+            projectTag: projectTag
         )
         context.insert(record)
         try context.save()
