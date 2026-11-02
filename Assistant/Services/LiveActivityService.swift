@@ -155,7 +155,7 @@ enum LiveActivityControlNotifications {
     private static let travelNotificationIdentifier = "travel-escort-session"
     private static let departureNotificationIdentifier = "departure-check-session"
 
-    static func registerCategories() async {
+    static func makeCategories() -> [UNNotificationCategory] {
         let endTravel = UNNotificationAction(
             identifier: travelActionEnd,
             title: "已出发，收起卡片",
@@ -180,10 +180,16 @@ enum LiveActivityControlNotifications {
             intentIdentifiers: [],
             options: .customDismissAction
         )
+        return [travelCategory, departureCategory]
+    }
+
+    static func registerCategories() async {
+        let categories = makeCategories()
         let center = UNUserNotificationCenter.current()
         var updated = await center.notificationCategories()
-        updated.insert(travelCategory)
-        updated.insert(departureCategory)
+        for cat in categories {
+            updated.insert(cat)
+        }
         center.setNotificationCategories(updated)
     }
 

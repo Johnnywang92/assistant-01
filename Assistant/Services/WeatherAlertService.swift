@@ -572,8 +572,8 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
         ])
     }
 
-    /// 异步向系统注册天气预警通知交互分类（对齐 Apple Watch 原生按钮与精简交互）
-    public static func registerCategory() async {
+    /// 构造天气预警通知交互分类对象
+    public static func makeCategory() -> UNNotificationCategory {
         let dismiss = UNNotificationAction(
             identifier: actionDismiss,
             title: L10n.choose("我知道了", "Dismiss"),
@@ -586,12 +586,17 @@ public final class WeatherAlertService: NSObject, ObservableObject, CLLocationMa
             options: [.foreground],
             icon: UNNotificationActionIcon(systemImageName: "arrow.up.forward.app")
         )
-        let category = UNNotificationCategory(
+        return UNNotificationCategory(
             identifier: categoryIdentifier,
             actions: [view, dismiss],
             intentIdentifiers: [],
             options: []
         )
+    }
+
+    /// 异步向系统注册天气预警通知交互分类（对齐 Apple Watch 原生按钮与精简交互）
+    public static func registerCategory() async {
+        let category = makeCategory()
         let center = UNUserNotificationCenter.current()
         var updated = await center.notificationCategories()
         updated.insert(category)

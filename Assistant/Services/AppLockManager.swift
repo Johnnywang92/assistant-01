@@ -51,22 +51,25 @@ public final class AppLockManager: ObservableObject {
         self.timeoutOption = LockTimeoutOption(rawValue: timeoutRaw) ?? .immediately
 
         let enabled = UserDefaults.standard.bool(forKey: keyEnabled)
-        // 从 Keychain 安全读取密码标记
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: keyPasscodeHash,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var item: CFTypeRef?
-        let hasCode: Bool
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
-            hasCode = !data.isEmpty
+        let valid: Bool
+        if enabled {
+            // 从 Keychain 安全读取密码标记（仅在启用锁时才查 Keychain，避免每次启动甚至首次启动无意义 IPC）
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrAccount as String: keyPasscodeHash,
+                kSecReturnData as String: true,
+                kSecMatchLimit as String: kSecMatchLimitOne
+            ]
+            var item: CFTypeRef?
+            if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
+                valid = !data.isEmpty
+            } else {
+                valid = UserDefaults.standard.string(forKey: keyPasscodeHash)?.isEmpty == false
+            }
         } else {
-            hasCode = UserDefaults.standard.string(forKey: keyPasscodeHash)?.isEmpty == false
+            valid = false
         }
 
-        let valid = enabled && hasCode
         self.isAppLockEnabled = valid
         self.isLocked = valid
     }

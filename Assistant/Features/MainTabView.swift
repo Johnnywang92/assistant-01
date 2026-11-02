@@ -22,6 +22,7 @@ struct MainTabView: View {
     @State private var isDirectVoiceConversation = false
     @AppStorage("has_completed_permission_onboarding_v1") private var hasCompletedPermissionOnboarding: Bool = false
     @State private var showPermissionOnboarding = false
+    @ObservedObject private var pinManager = MigrationPinManager.shared
 
     var body: some View {
         ZStack {
@@ -145,9 +146,9 @@ struct MainTabView: View {
         }
         .onAppear {
             StartupMetrics.markOnce("mainTab.onAppear", "activeTodos=\(activeTodos.count) tab=\(router.selectedTab)")
-            // 首次启动时引导用户在前置阶段完成核心权限配置，避免后续功能因权限受阻
-            if !hasCompletedPermissionOnboarding {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            // 首次启动时引导用户完成核心权限配置：仅在已配置 PIN 门禁后才触发，避免与首次安全设置页冲突
+            if !hasCompletedPermissionOnboarding && pinManager.isConfigured {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                     showPermissionOnboarding = true
                 }
             }
@@ -155,6 +156,13 @@ struct MainTabView: View {
             // 确保当前选中的 Tab 存在于活跃列表中
             if !tabManager.activeTabs.contains(router.selectedTab) {
                 router.selectedTab = tabManager.activeTabs.first ?? .todos
+            }
+        }
+        .onChange(of: pinManager.isConfigured) { _, isConfigured in
+            if isConfigured && !hasCompletedPermissionOnboarding {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    showPermissionOnboarding = true
+                }
             }
         }
         .onChange(of: scenePhase) { _, phase in

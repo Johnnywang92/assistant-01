@@ -91,31 +91,16 @@ struct AssistantApp: App {
                 // 密码迁移不再在冷启动主线程执行：全表拉取 + 可触发 SQLite VACUUM，
                 // 改由打开保险箱时（PasswordVaultView.onAppear）惰性地按需迁移。
                 StartupMetrics.measure("registerDynamicShortcuts") { router.registerDynamicShortcuts() }
-                await TodoNotificationManager.shared.registerCategoriesAsync()
-                StartupMetrics.mark("category.todo")
-                // 睡前提醒的「推迟 20 分钟」按钮，锁屏上点一下就再眯 20 分钟
-                await SleepReminderScheduler.registerCategoryAsync()
-                StartupMetrics.mark("category.sleep")
-                // 取件销号通知的「已取件 / 全部取齐」按钮，抬腕即可点
-                await PickupCheckoutService.registerCategory()
-                StartupMetrics.mark("category.pickup")
-                // 护航/清点伴随通知的「关闭卡片」按钮，手表与 Mac 上都能一键收卡
-                await LiveActivityControlNotifications.registerCategories()
-                StartupMetrics.mark("category.liveActivity")
-                // 到站/落地清点提醒的「开始清点」按钮，锁屏上点一下就进清单
-                await TripArrivalService.shared.registerCategory()
-                StartupMetrics.mark("category.tripArrival")
-                // 天气变化与降温预警的「查看详情 / 我知道了」按钮，抬腕轻点直接处理
-                await WeatherAlertService.registerCategory()
-                StartupMetrics.mark("category.weatherAlert")
+                // 合并注册全部模块的通知交互分类：将 6 次独立 XPC 读写合并为单次，消除冷启动 IPC 堆叠
+                await NotificationCategoryRegistry.registerAllCategoriesAsync()
                 StartupMetrics.mark("notifyCategories ready")
                 // 优先对账扩展侧（小组件/手表卡片）指令并刷新共享快照
                 StartupMetrics.measure("refreshSnapshot") { WidgetSnapshotSyncController.shared.refreshSnapshot(context: Persistence.shared.mainContext) }
                 StartupMetrics.mark("root.task end")
 
-                // 冷启动首帧已处于 active 时 onChange(of: scenePhase) 可能不补触发，统一走防抖前台巡检
+                // 冷启动首帧渲染优先：延后非关键巡检，给主线程留出充分的渲染与首帧动画窗口
                 if scenePhase == .active {
-                    ForegroundAuditCoordinator.shared.scheduleAudit(delayNanoseconds: 250_000_000)
+                    ForegroundAuditCoordinator.shared.scheduleAudit(delayNanoseconds: 1_200_000_000)
                 }
             }
             .onOpenURL { url in
@@ -130,7 +115,7 @@ struct AssistantApp: App {
                 ScreenTimeTracker.shared.appWillEnterForeground()
                 // 回前台第一时间对账小组件/手表指令，确保 UI 立即反映用户在组件上的打勾/记账操作
                 WidgetSnapshotSyncController.shared.processPendingCommands(context: Persistence.shared.mainContext)
-                ForegroundAuditCoordinator.shared.scheduleAudit(delayNanoseconds: 350_000_000)
+                ForegroundAuditCoordinator.shared.scheduleAudit(delayNanoseconds: 600_000_000)
             } else if phase == .background {
                 lockManager.appDidEnterBackground()
                 ScreenTimeTracker.shared.appDidEnterBackground()

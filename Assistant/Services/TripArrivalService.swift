@@ -42,8 +42,7 @@ final class TripArrivalService {
 
     // MARK: - 通知分类
 
-    /// 「开始清点」立刻拉起到灵动岛/Mac 都能点的动作，默认点横幅也进清点页
-    func registerCategory() async {
+    func makeCategory() -> UNNotificationCategory {
         let startCheck = UNNotificationAction(
             identifier: Self.actionStartCheck,
             title: L10n.tr("开始清点"),
@@ -56,12 +55,17 @@ final class TripArrivalService {
             options: [],
             icon: UNNotificationActionIcon(systemImageName: "clock.arrow.circlepath")
         )
-        let category = UNNotificationCategory(
+        return UNNotificationCategory(
             identifier: Self.categoryIdentifier,
             actions: [startCheck, snooze],
             intentIdentifiers: [],
             options: []
         )
+    }
+
+    /// 「开始清点」立刻拉起到灵动岛/Mac 都能点的动作，默认点横幅也进清点页
+    func registerCategory() async {
+        let category = makeCategory()
         let center = UNUserNotificationCenter.current()
         var updated = await center.notificationCategories()
         updated.insert(category)

@@ -58,6 +58,14 @@ enum Persistence {
         #if DEBUG
         Self.assertSchemaCoverage()
         #endif
+        // 全新安装 / 重新安装优化：若底层 store 文件尚不存在，直接按最新 Schema 初始化。
+        // 彻底省去 SwiftData 在冷启动主线程反射 V1~V7 历史 7 个版本及 230+ 模型描述符的巨大耗时。
+        let isFreshStore = storeFiles.isEmpty
+        if isFreshStore {
+            return try StartupMetrics.measure("openStore(fresh)") {
+                try ModelContainer(for: schema, configurations: config)
+            }
+        }
         return try StartupMetrics.measure("openStore(versioned)") {
             try ModelContainer(for: schema, migrationPlan: AssistantMigrationPlan.self, configurations: config)
         }

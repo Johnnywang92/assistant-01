@@ -27,7 +27,7 @@ public final class TodoNotificationManager {
     }
 
     /// 构造通知交互分类（对齐 Apple Watch 原生「提醒事项」图标按钮与精简文案）
-    private func makeCategory() -> UNNotificationCategory {
+    func makeCategory() -> UNNotificationCategory {
         let markDoneAction = UNNotificationAction(
             identifier: Self.actionMarkDone,
             title: L10n.choose("完成", "Complete"),

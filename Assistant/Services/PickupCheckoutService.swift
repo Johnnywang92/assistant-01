@@ -29,9 +29,7 @@ enum PickupCheckoutService {
 
     // MARK: - 通知分类注册
 
-    // 采用 async/await 而非 getNotificationCategories 的 @Sendable 回调：
-    // category/center 均为非 Sendable 类型，在回调里跨隔离捕获会报并发警告
-    static func registerCategory() async {
+    static func makeCategory() -> UNNotificationCategory {
         let takeOne = UNNotificationAction(
             identifier: actionTakeOne,
             title: "已取件",
@@ -50,7 +48,7 @@ enum PickupCheckoutService {
             options: [],
             icon: UNNotificationActionIcon(systemImageName: "xmark.circle")
         )
-        let category = UNNotificationCategory(
+        return UNNotificationCategory(
             identifier: categoryIdentifier,
             // 手表上只展示前两个 action，把「收起卡片」排在第二：
             // 不想逐件销号时，抬腕就能一眼看到并点中收卡入口。
@@ -58,6 +56,12 @@ enum PickupCheckoutService {
             intentIdentifiers: [],
             options: .customDismissAction
         )
+    }
+
+    // 采用 async/await 而非 getNotificationCategories 的 @Sendable 回调：
+    // category/center 均为非 Sendable 类型，在回调里跨隔离捕获会报并发警告
+    static func registerCategory() async {
+        let category = makeCategory()
         let center = UNUserNotificationCenter.current()
         var updated = await center.notificationCategories()
         updated.insert(category)

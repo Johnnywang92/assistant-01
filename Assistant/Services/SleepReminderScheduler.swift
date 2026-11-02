@@ -93,20 +93,25 @@ final class SleepReminderScheduler: ObservableObject {
 
     // MARK: 通知分类与交互
 
-    /// 异步注册睡前提醒的通知分类（「推迟 20 分钟」），避免冷启动并发覆盖
-    static func registerCategoryAsync() async {
+    /// 构造睡前提醒的通知分类对象
+    static func makeCategory() -> UNNotificationCategory {
         let snooze = UNNotificationAction(
             identifier: actionSnooze20M,
             title: "20 分钟后",
             options: [],
             icon: UNNotificationActionIcon(systemImageName: "clock.arrow.circlepath")
         )
-        let category = UNNotificationCategory(
+        return UNNotificationCategory(
             identifier: categoryIdentifier,
             actions: [snooze],
             intentIdentifiers: [],
             options: []
         )
+    }
+
+    /// 异步注册睡前提醒的通知分类（「推迟 20 分钟」），避免冷启动并发覆盖
+    static func registerCategoryAsync() async {
+        let category = makeCategory()
         let center = UNUserNotificationCenter.current()
         var updated = await center.notificationCategories()
         updated.insert(category)
