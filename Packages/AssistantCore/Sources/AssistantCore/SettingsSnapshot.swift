@@ -107,7 +107,8 @@ public enum AssistantSettingsKeys {
         "omnibox_auto_dismiss_seconds",           // 投喂口执行后自动关闭
         "omnibox_clipboard_auto_dismiss_seconds", // 投喂口剪贴板自动关闭
         "sleepReminder.windDownMinutes",          // 睡前缓冲提前量
-        "sleepReminder.sleepGoalMinutes"          // 睡眠目标时长
+        "sleepReminder.sleepGoalMinutes",         // 睡眠目标时长
+        "expense_budget_start_day"                // 预算/生活费重置起始日（1~28）
     ]
 
     public static let doubleKeys: [String] = [

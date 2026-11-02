@@ -27,6 +27,7 @@ public struct SafeToSpendInput: Equatable, Sendable {
     public var todayFlexibleSpend: Double        // 今日已花弹性支出
     public var rhythmMode: SpendingRhythmMode    // 消费节奏模式
     public var weekdaySavedSoFarThisWeek: Double // 本周一至昨日在工作日省下的累计金额
+    public var budgetStartDay: Int               // 预算/生活费周期重置起始日（1~28，默认 1）
 
     public init(
         monthlyBudget: Double,
@@ -36,7 +37,8 @@ public struct SafeToSpendInput: Equatable, Sendable {
         yesterdayFlexibleSpend: Double = 0,
         todayFlexibleSpend: Double = 0,
         rhythmMode: SpendingRhythmMode = .flat,
-        weekdaySavedSoFarThisWeek: Double = 0
+        weekdaySavedSoFarThisWeek: Double = 0,
+        budgetStartDay: Int = 1
     ) {
         self.monthlyBudget = monthlyBudget
         self.fixedMonthlyTotal = fixedMonthlyTotal
@@ -46,6 +48,7 @@ public struct SafeToSpendInput: Equatable, Sendable {
         self.todayFlexibleSpend = todayFlexibleSpend
         self.rhythmMode = rhythmMode
         self.weekdaySavedSoFarThisWeek = weekdaySavedSoFarThisWeek
+        self.budgetStartDay = budgetStartDay
     }
 }
 
@@ -157,10 +160,9 @@ public enum SafeToSpendCalculator {
         let isEnabled = input.monthlyBudget > 0
         let disposable = max(0, input.monthlyBudget - input.fixedMonthlyTotal)
 
-        let components = calendar.dateComponents([.year, .month, .day], from: now)
-        let daysInMonth = calendar.range(of: .day, in: .month, for: now)?.count ?? 30
-        let dayOfMonth = components.day ?? 1
-        let daysLeft = max(1, daysInMonth - dayOfMonth + 1)
+        let cycle = BudgetCycleWindow.window(for: now, startDay: input.budgetStartDay, calendar: calendar)
+        let daysInMonth = cycle.totalDays
+        let daysLeft = cycle.daysLeft
 
         let remaining = disposable - input.flexibleSpentThisMonth
 
@@ -217,7 +219,7 @@ public enum SafeToSpendCalculator {
         // 4. 昨日节余滚入计算
         let remainingBeforeYesterday = remaining + input.todayFlexibleSpend + input.yesterdayFlexibleSpend
         let yesterdayAllowance = max(0, remainingBeforeYesterday) / Double(daysLeft + 1)
-        let savedYesterday = dayOfMonth >= 2 ? max(0, yesterdayAllowance - input.yesterdayFlexibleSpend) : 0
+        let savedYesterday = (daysInMonth - daysLeft) >= 1 ? max(0, yesterdayAllowance - input.yesterdayFlexibleSpend) : 0
 
         // 5. 节奏建议与蓄水池激励文案
         let rhythmAdviceText: String?
