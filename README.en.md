@@ -19,6 +19,8 @@ An offline life-assistant app that runs entirely on your iPhone. It wires togeth
 | Parcel & Departure Scenarios | Geofence arrival reminders; pickup codes surfaced on the Dynamic Island / lock screen / Watch — tap "Picked up" on your wrist to dismiss |
 | Life Archive | ID document vault (Face ID-protected), encrypted password vault, item storage with daily holding cost, vehicle / pet / child / anniversary / life-event management |
 | Habits & Medication | Periodic habit check-ins, medication schedule evaluation and reminders |
+| Mental & Emotional State | 10-second daily mood micro check-in (mood / energy / stress), PHQ-9 & GAD-7 screening, 3-line emotional resonance trend chart (7/14/30-day view), 3-channel cross-reading (questionnaire / daily / physiology), LLM export & social share cards |
+| Health Dual-Index | Real-time Vitality & Pleasure Index estimation (integrating ANS HRV, resting HR, sleep recovery stages, activity, and emotional check-in modulations), hydration & calorie tracking, health share cards |
 | Contextual Intelligence | Autonomous learning of frequent places, daily pain-point audit (low battery, expiring documents, auto-renewal prevention), periodic review reports |
 | Model Management | Download and manage local GGUF models; can also connect to Ollama on the LAN |
 | System Integration | App Shortcuts, Action Button, Back Tap, interactive home-screen widgets, Live Activities, completing to-dos directly from widgets |
