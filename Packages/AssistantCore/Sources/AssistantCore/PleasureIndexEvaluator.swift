@@ -219,13 +219,22 @@ public enum PleasureIndexEvaluator {
     /// - Parameters:
     ///   - snapshot: Apple 健康当日快照（包含 HRV、睡眠分期、心率等）
     ///   - baseline: 个人动态基线（若为 nil 则采用标准经验基线）
+    ///   - recentMoodEntries: 近期情绪微记录（可选，融合真实情绪表达）
+    ///   - recentScaleScores: 近期心理量表筛查结果（可选，PHQ-9/GAD-7）
     public static func evaluate(
         snapshot: HealthDaySnapshot?,
-        baseline: HealthBaseline = .standard
+        baseline: HealthBaseline = .standard,
+        recentMoodEntries: [MoodCheckInEntry] = [],
+        recentScaleScores: [PsychScaleScore] = []
     ) -> PleasureIndexEvaluation {
-        // 1. 无数据时的保底稳健处理
+        // 1. 无生理数据时的保底稳健处理（若有心理状态，融合心理维度推断）
         guard let snapshot, snapshot.readState == .hasData else {
-            return defaultEvaluation(baseline: baseline, reason: "尚无足够手环生理数据，保持作息规律，佩戴手环入睡后将自动生成精准指数。")
+            return defaultEvaluation(
+                baseline: baseline,
+                reason: "尚无足够手环生理数据，保持作息规律，佩戴手环入睡后将自动生成精准指数。",
+                recentMoodEntries: recentMoodEntries,
+                recentScaleScores: recentScaleScores
+            )
         }
 
         var details: [PleasureDetailMetric] = []
@@ -247,28 +256,42 @@ public enum PleasureIndexEvaluator {
         // 4. 活动能量与身体激活奖励/调节（0 ~ 100）
         let activityScore = evaluateActivity(snapshot: snapshot)
 
-        // 5. 综合加权计算「愉悦指数」
+        // 5. 心理状态与情绪微记录考量（Psych / Emotional Factor）
+        let psychModifier = calculatePsychModifier(
+            recentMoodEntries: recentMoodEntries,
+            recentScaleScores: recentScaleScores
+        )
+        if let psychDetail = psychModifier.detailMetric {
+            details.append(psychDetail)
+        }
+
+        // 6. 综合加权计算「愉悦指数」
         // 若同时有自律神经与睡眠：权重 45% 自主神经 + 45% 睡眠储备 + 10% 活动激活
         // 若无 HRV（如用户只在白天摘新手表）：平滑降权
         let hasHRV = snapshot.heartRateVariability != nil
         let hasSleep = snapshot.sleepHours != nil
 
-        let finalScore: Double
+        var baseScore: Double
         if hasHRV && hasSleep {
-            finalScore = (Double(autonomicScore) * 0.45) + (Double(sleepScore) * 0.45) + (Double(activityScore) * 0.10)
+            baseScore = (Double(autonomicScore) * 0.45) + (Double(sleepScore) * 0.45) + (Double(activityScore) * 0.10)
         } else if hasHRV {
-            finalScore = (Double(autonomicScore) * 0.70) + (Double(sleepScore) * 0.20) + (Double(activityScore) * 0.10)
+            baseScore = (Double(autonomicScore) * 0.70) + (Double(sleepScore) * 0.20) + (Double(activityScore) * 0.10)
         } else if hasSleep {
-            finalScore = (Double(sleepScore) * 0.65) + (Double(autonomicScore) * 0.25) + (Double(activityScore) * 0.10)
+            baseScore = (Double(sleepScore) * 0.65) + (Double(autonomicScore) * 0.25) + (Double(activityScore) * 0.10)
         } else {
-            finalScore = (Double(autonomicScore) * 0.50) + (Double(sleepScore) * 0.30) + (Double(activityScore) * 0.20)
+            baseScore = (Double(autonomicScore) * 0.50) + (Double(sleepScore) * 0.30) + (Double(activityScore) * 0.20)
         }
+
+        // 融合心理状态修正分（范围 -15 ~ +10）
+        let finalScore = baseScore + psychModifier.pleasureOffset
+        // 压力指数相应受心理压力反馈微调（范围 -8 ~ +12）
+        let finalStress = min(max(stressScore + psychModifier.stressOffset, 0), 100)
 
         let clampedPleasure = min(max(Int(finalScore.rounded()), 0), 100)
         let state = pleasureState(for: clampedPleasure)
-        let stressLvl = stressLevel(for: stressScore)
+        let stressLvl = stressLevel(for: finalStress)
 
-        // 6. 生成核心文案与调养建议
+        // 7. 生成核心文案与调养建议
         let (summary, advice) = generateSummaryAndAdvice(
             state: state,
             stressLevel: stressLvl,
@@ -281,7 +304,7 @@ public enum PleasureIndexEvaluator {
         return PleasureIndexEvaluation(
             pleasureScore: clampedPleasure,
             state: state,
-            stressScore: stressScore,
+            stressScore: finalStress,
             stressLevel: stressLvl,
             autonomicScore: autonomicScore,
             autonomicBalance: balanceState,
@@ -535,18 +558,113 @@ public enum PleasureIndexEvaluator {
         }
     }
 
-    private static func defaultEvaluation(baseline: HealthBaseline, reason: String) -> PleasureIndexEvaluation {
-        PleasureIndexEvaluation(
-            pleasureScore: 70,
-            state: .serene,
-            stressScore: 30,
-            stressLevel: .moderate,
+    // MARK: - 心理与情绪状态修正推断
+
+    private struct PsychModifierResult {
+        let pleasureOffset: Double
+        let stressOffset: Int
+        let detailMetric: PleasureDetailMetric?
+    }
+
+    private static func calculatePsychModifier(
+        recentMoodEntries: [MoodCheckInEntry],
+        recentScaleScores: [PsychScaleScore]
+    ) -> PsychModifierResult {
+        var pleasureDelta: Double = 0
+        var stressDelta: Double = 0
+        var statusParts: [String] = []
+
+        // 1. 考量每日情绪微记录（最近 3 天）
+        let recentMoods = Array(recentMoodEntries.prefix(3))
+        if !recentMoods.isEmpty {
+            let avgMood = Double(recentMoods.map(\.moodScore).reduce(0, +)) / Double(recentMoods.count)
+            let avgStress = Double(recentMoods.map(\.stressScore).reduce(0, +)) / Double(recentMoods.count)
+
+            // 情绪分 1~5（基准 3.0）：>3 产生正向促进，<3 产生负向减分
+            pleasureDelta += (avgMood - 3.0) * 4.0 // 范围约 -8 ~ +8
+            // 压力分 1~5（基准 2.0）：>2 增加压力感
+            stressDelta += (avgStress - 2.0) * 3.5
+
+            if avgMood >= 4.0 {
+                statusParts.append("自评心情愉悦")
+            } else if avgMood <= 2.2 {
+                statusParts.append("近期自评偏低落")
+            }
+        }
+
+        // 2. 考量心理量表结果（PHQ-9 或 GAD-7）
+        if let latestScale = recentScaleScores.first, let band = latestScale.band {
+            switch band {
+            case .none:
+                pleasureDelta += 3.0
+            case .mild:
+                pleasureDelta -= 2.0
+                stressDelta += 3.0
+            case .moderate:
+                pleasureDelta -= 6.0
+                stressDelta += 6.0
+                statusParts.append("量表显示中度情绪负荷")
+            case .moderatelySevere, .severe:
+                pleasureDelta -= 10.0
+                stressDelta += 10.0
+                statusParts.append("量表显示较高情绪负荷")
+            }
+        }
+
+        let clampedPleasureOffset = min(max(pleasureDelta, -15.0), 10.0)
+        let clampedStressOffset = Int(min(max(stressDelta.rounded(), -8.0), 12.0))
+
+        let detail: PleasureDetailMetric?
+        if !statusParts.isEmpty || !recentMoods.isEmpty {
+            let statusText = statusParts.isEmpty ? "情绪表达平稳" : statusParts.joined(separator: " · ")
+            detail = PleasureDetailMetric(
+                title: "心理与情绪自评",
+                valueText: recentMoods.first.map { "心情 \($0.moodScore)/5 · 压力 \($0.stressScore)/5" } ?? "已综合考量",
+                statusText: statusText,
+                isPositive: clampedPleasureOffset >= -1.0
+            )
+        } else {
+            detail = nil
+        }
+
+        return PsychModifierResult(
+            pleasureOffset: clampedPleasureOffset,
+            stressOffset: clampedStressOffset,
+            detailMetric: detail
+        )
+    }
+
+    private static func defaultEvaluation(
+        baseline: HealthBaseline,
+        reason: String,
+        recentMoodEntries: [MoodCheckInEntry] = [],
+        recentScaleScores: [PsychScaleScore] = []
+    ) -> PleasureIndexEvaluation {
+        let modifier = calculatePsychModifier(
+            recentMoodEntries: recentMoodEntries,
+            recentScaleScores: recentScaleScores
+        )
+        let score = min(max(70 + Int(modifier.pleasureOffset.rounded()), 0), 100)
+        let stress = min(max(30 + modifier.stressOffset, 0), 100)
+        let state = pleasureState(for: score)
+        let stressLvl = stressLevel(for: stress)
+
+        var details: [PleasureDetailMetric] = []
+        if let metric = modifier.detailMetric {
+            details.append(metric)
+        }
+
+        return PleasureIndexEvaluation(
+            pleasureScore: score,
+            state: state,
+            stressScore: stress,
+            stressLevel: stressLvl,
             autonomicScore: 70,
             autonomicBalance: .balanced,
             sleepRecoveryScore: 70,
             summary: "身心稳态基准良好",
             advice: reason,
-            details: []
+            details: details
         )
     }
 }

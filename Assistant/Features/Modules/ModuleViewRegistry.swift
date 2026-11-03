@@ -52,7 +52,7 @@ enum ModuleViewRegistry {
             return AnyView(SettingsView(isSheet: false))
         // vault-only 模块不出现在 Tab 栏上，走到这里属于路由错误
         case .anniversaries, .painPoints, .skillPaths, .storage, .learnedPlaces,
-             .foodCalorie, .healthData, .habits, .pets, .children, .vehicles:
+             .foodCalorie, .healthData, .habits, .pets, .children, .vehicles, .mentalHealth:
             return AnyView(EmptyView())
         }
     }
@@ -91,6 +91,8 @@ enum ModuleViewRegistry {
             return AnyView(ChildManagementView())
         case .vehicles:
             return AnyView(VehicleManagementView())
+        case .mentalHealth:
+            return AnyView(MentalHealthView())
         // tab-only 模块不出现在生活档案里
         case .todos, .expenses, .vault, .settings:
             return AnyView(EmptyView())

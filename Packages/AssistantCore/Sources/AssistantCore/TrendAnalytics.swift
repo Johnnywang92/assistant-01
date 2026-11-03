@@ -264,6 +264,253 @@ public enum TrendAnalytics {
         )
     }
 
+    // MARK: - 消费日趋势
+
+    /// 消费趋势时间范围切片（支持日维度与月维度切片）
+    public enum ExpenseTrendScope: Int, CaseIterable, Identifiable, Sendable {
+        case days7 = 7
+        case days14 = 14
+        case days30 = 30
+        case months6 = -6
+
+        public var id: Int { rawValue }
+
+        public var title: String {
+            switch self {
+            case .days7: return "近7天"
+            case .days14: return "近14天"
+            case .days30: return "近30天"
+            case .months6: return "近6月"
+            }
+        }
+
+        public var shortTitle: String {
+            switch self {
+            case .days7: return "7天"
+            case .days14: return "14天"
+            case .days30: return "30天"
+            case .months6: return "6月"
+            }
+        }
+
+        public var isDaily: Bool {
+            self != .months6
+        }
+
+        public var dayCount: Int {
+            max(1, rawValue)
+        }
+    }
+
+    /// 单日消费汇总点（图表直接消费）
+    public struct DailyExpensePoint: Equatable, Sendable, Identifiable {
+        public var id: Date { dayStart }
+        /// 当日起点（00:00:00）
+        public let dayStart: Date
+        /// 当日总支出
+        public let expense: Double
+        /// 当日总收入
+        public let income: Double
+        /// 当日支出笔数
+        public let expenseCount: Int
+        /// 当日总笔数（含收入）
+        public let totalCount: Int
+        /// 当日支出最高类别（raw value，若无支出则为 nil）
+        public let topExpenseCategoryRaw: String?
+        /// 当日支出最高类别的金额
+        public let topExpenseCategoryAmount: Double
+        /// 当日是否有支出记录
+        public var hasExpense: Bool { expense > 0 }
+        /// 当日是否有任何记录（含收入）
+        public var hasRecords: Bool { totalCount > 0 }
+
+        public init(
+            dayStart: Date,
+            expense: Double,
+            income: Double = 0,
+            expenseCount: Int = 0,
+            totalCount: Int = 0,
+            topExpenseCategoryRaw: String? = nil,
+            topExpenseCategoryAmount: Double = 0
+        ) {
+            self.dayStart = dayStart
+            self.expense = expense
+            self.income = income
+            self.expenseCount = expenseCount
+            self.totalCount = totalCount
+            self.topExpenseCategoryRaw = topExpenseCategoryRaw
+            self.topExpenseCategoryAmount = topExpenseCategoryAmount
+        }
+    }
+
+    public struct DailyExpenseTrend: Equatable, Sendable {
+        /// 由旧到新的日序列（含今天；无记录日补 0）
+        public let days: [DailyExpensePoint]
+        /// 窗口期总支出
+        public let totalExpense: Double
+        /// 窗口期总收入
+        public let totalIncome: Double
+        /// 窗口期全周期日均支出（总支出 / 天数）
+        public let dailyAverageExpense: Double
+        /// 仅有支出天的日均支出（总支出 / 有支出天数；无支出时为 0）
+        public let activeDayAverageExpense: Double
+        /// 有支出天数
+        public let activeExpenseDaysCount: Int
+        /// 零支出天数（无消费日打卡）
+        public var zeroExpenseDaysCount: Int { days.count - activeExpenseDaysCount }
+        /// 支出最高单日（若全期 0 支出则为 nil）
+        public let peakDay: DailyExpensePoint?
+        /// 后半段相对前半段日均支出的环比变化率（前半段均值为 0 时为 nil）
+        public let changeRatio: Double?
+        /// 后半段日均支出
+        public let recentDailyAverage: Double
+        /// 前半段日均支出
+        public let earlierDailyAverage: Double
+        /// 窗口期支出占比最高的分类 (raw value)
+        public let topCategoryRaw: String?
+        /// 窗口期支出最高分类总额
+        public let topCategoryAmount: Double
+
+        public init(
+            days: [DailyExpensePoint],
+            totalExpense: Double,
+            totalIncome: Double,
+            dailyAverageExpense: Double,
+            activeDayAverageExpense: Double,
+            activeExpenseDaysCount: Int,
+            peakDay: DailyExpensePoint?,
+            changeRatio: Double?,
+            recentDailyAverage: Double,
+            earlierDailyAverage: Double,
+            topCategoryRaw: String?,
+            topCategoryAmount: Double
+        ) {
+            self.days = days
+            self.totalExpense = totalExpense
+            self.totalIncome = totalIncome
+            self.dailyAverageExpense = dailyAverageExpense
+            self.activeDayAverageExpense = activeDayAverageExpense
+            self.activeExpenseDaysCount = activeExpenseDaysCount
+            self.peakDay = peakDay
+            self.changeRatio = changeRatio
+            self.recentDailyAverage = recentDailyAverage
+            self.earlierDailyAverage = earlierDailyAverage
+            self.topCategoryRaw = topCategoryRaw
+            self.topCategoryAmount = topCategoryAmount
+        }
+    }
+
+    /// 近 N 天（含今天）的每日消费趋势。
+    /// - Parameters:
+    ///   - dayCount: 窗口天数（如 7、14、30 天；至少 1）
+    public static func dailyExpenseTrend(
+        entries: [ExpenseEntry],
+        now: Date = .now,
+        calendar: Calendar = .current,
+        dayCount: Int = 7
+    ) -> DailyExpenseTrend {
+        let count = max(1, dayCount)
+        let todayStart = calendar.startOfDay(for: now)
+
+        var dayStarts: [Date] = []
+        for step in stride(from: count - 1, through: 0, by: -1) {
+            dayStarts.append(calendar.date(byAdding: .day, value: -step, to: todayStart) ?? todayStart)
+        }
+
+        let firstDayStart = dayStarts[0]
+        let nextDayAfterLast = calendar.date(byAdding: .day, value: 1, to: dayStarts[count - 1]) ?? now
+
+        var expenseByDay = [Date: Double](minimumCapacity: count)
+        var incomeByDay = [Date: Double](minimumCapacity: count)
+        var expenseCountByDay = [Date: Int](minimumCapacity: count)
+        var totalCountByDay = [Date: Int](minimumCapacity: count)
+        var categoryExpensesByDay = [Date: [String: Double]](minimumCapacity: count)
+        var globalCategoryExpenses = [String: Double]()
+
+        for entry in entries {
+            let start = calendar.startOfDay(for: entry.date)
+            guard start >= firstDayStart, start < nextDayAfterLast else { continue }
+
+            totalCountByDay[start, default: 0] += 1
+            if entry.isIncome {
+                incomeByDay[start, default: 0] += entry.amount
+            } else {
+                expenseByDay[start, default: 0] += entry.amount
+                expenseCountByDay[start, default: 0] += 1
+                categoryExpensesByDay[start, default: [:]][entry.categoryRaw, default: 0] += entry.amount
+                globalCategoryExpenses[entry.categoryRaw, default: 0] += entry.amount
+            }
+        }
+
+        let days: [DailyExpensePoint] = dayStarts.map { start in
+            let exp = expenseByDay[start] ?? 0
+            let inc = incomeByDay[start] ?? 0
+            let expCount = expenseCountByDay[start] ?? 0
+            let totCount = totalCountByDay[start] ?? 0
+            let catMap = categoryExpensesByDay[start] ?? [:]
+            let topCat = catMap.max(by: { $0.value < $1.value })
+
+            return DailyExpensePoint(
+                dayStart: start,
+                expense: exp,
+                income: inc,
+                expenseCount: expCount,
+                totalCount: totCount,
+                topExpenseCategoryRaw: topCat?.key,
+                topExpenseCategoryAmount: topCat?.value ?? 0
+            )
+        }
+
+        let totalExpense = days.reduce(0.0) { $0 + $1.expense }
+        let totalIncome = days.reduce(0.0) { $0 + $1.income }
+        let dailyAverageExpense = days.isEmpty ? 0 : totalExpense / Double(days.count)
+
+        let activeDays = days.filter { $0.expense > 0 }
+        let activeExpenseDaysCount = activeDays.count
+        let activeDayAverageExpense = activeExpenseDaysCount > 0 ? totalExpense / Double(activeExpenseDaysCount) : 0
+
+        let peakDay: DailyExpensePoint? = {
+            guard let maxDay = days.max(by: { $0.expense < $1.expense }), maxDay.expense > 0 else {
+                return nil
+            }
+            return maxDay
+        }()
+
+        // 前半 = 前 floor(N/2) 天，后半 = 剩余天（含今天）
+        let earlierCount = count / 2
+        let earlierDays = Array(days.prefix(earlierCount))
+        let recentDays = Array(days.dropFirst(earlierCount))
+
+        let earlierAverage = earlierDays.isEmpty
+            ? 0
+            : earlierDays.reduce(0.0) { $0 + $1.expense } / Double(earlierDays.count)
+        let recentAverage = recentDays.isEmpty
+            ? 0
+            : recentDays.reduce(0.0) { $0 + $1.expense } / Double(recentDays.count)
+
+        var changeRatio: Double? = nil
+        if earlierAverage > 0 {
+            changeRatio = (recentAverage - earlierAverage) / earlierAverage
+        }
+
+        let topGlobalCat = globalCategoryExpenses.max(by: { $0.value < $1.value })
+
+        return DailyExpenseTrend(
+            days: days,
+            totalExpense: totalExpense,
+            totalIncome: totalIncome,
+            dailyAverageExpense: dailyAverageExpense,
+            activeDayAverageExpense: activeDayAverageExpense,
+            activeExpenseDaysCount: activeExpenseDaysCount,
+            peakDay: peakDay,
+            changeRatio: changeRatio,
+            recentDailyAverage: recentAverage,
+            earlierDailyAverage: earlierAverage,
+            topCategoryRaw: topGlobalCat?.key,
+            topCategoryAmount: topGlobalCat?.value ?? 0
+        )
+    }
+
     // MARK: - 饮食趋势
 
     /// 一条饮食摄入快照

@@ -12,7 +12,8 @@ public enum NotificationCategoryRegistry {
             SleepReminderScheduler.makeCategory(),
             PickupCheckoutService.makeCategory(),
             TripArrivalService.shared.makeCategory(),
-            WeatherAlertService.makeCategory()
+            WeatherAlertService.makeCategory(),
+            PsychReminderScheduler.makeCategory()
         ]
         for cat in LiveActivityControlNotifications.makeCategories() {
             categories.insert(cat)

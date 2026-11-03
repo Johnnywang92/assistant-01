@@ -145,6 +145,104 @@ final class TrendAnalyticsTests: XCTestCase {
         XCTAssertNil(trend.shrinkingCategory)
     }
 
+    // MARK: - 消费日趋势
+
+    func testDailyExpenseTrendPaddingAndZeroDays() {
+        let now = date(2026, 6, 15, 20)
+        let entries = [
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 15, 8), amount: 50, isIncome: false, categoryRaw: "餐饮美食"),
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 15, 12), amount: 100, isIncome: false, categoryRaw: "餐饮美食"),
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 13, 18), amount: 200, isIncome: false, categoryRaw: "交通出行"),
+        ]
+        let trend = TrendAnalytics.dailyExpenseTrend(entries: entries, now: now, calendar: calendar, dayCount: 7)
+
+        XCTAssertEqual(trend.days.count, 7)
+        // 最后一天是今天 6/15
+        XCTAssertTrue(calendar.isDate(trend.days.last!.dayStart, inSameDayAs: now))
+        // 6/15 累计 150，2 笔
+        XCTAssertEqual(trend.days.last!.expense, 150)
+        XCTAssertEqual(trend.days.last!.expenseCount, 2)
+        XCTAssertEqual(trend.days.last!.topExpenseCategoryRaw, "餐饮美食")
+        // 有记录天数 2 天，零支出天数 5 天
+        XCTAssertEqual(trend.activeExpenseDaysCount, 2)
+        XCTAssertEqual(trend.zeroExpenseDaysCount, 5)
+        // 总支出 350
+        XCTAssertEqual(trend.totalExpense, 350)
+        // 7 天全周期日均 350 / 7 = 50
+        XCTAssertEqual(trend.dailyAverageExpense, 50, accuracy: 0.0001)
+        // 仅有支出天日均 350 / 2 = 175
+        XCTAssertEqual(trend.activeDayAverageExpense, 175, accuracy: 0.0001)
+    }
+
+    func testDailyExpenseTrendPeakDayAndCategory() {
+        let now = date(2026, 6, 15, 10)
+        let entries = [
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 10), amount: 30, isIncome: false, categoryRaw: "日常用品"),
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 12), amount: 800, isIncome: false, categoryRaw: "数码数码"),
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 14), amount: 150, isIncome: false, categoryRaw: "餐饮美食"),
+        ]
+        let trend = TrendAnalytics.dailyExpenseTrend(entries: entries, now: now, calendar: calendar, dayCount: 7)
+
+        XCTAssertNotNil(trend.peakDay)
+        XCTAssertEqual(trend.peakDay?.expense, 800)
+        XCTAssertEqual(trend.peakDay?.topExpenseCategoryRaw, "数码数码")
+        XCTAssertEqual(trend.topCategoryRaw, "数码数码")
+        XCTAssertEqual(trend.topCategoryAmount, 800)
+    }
+
+    func testDailyExpenseTrendChangeRatioHalfSplit() {
+        // 7天窗口：前半 3 天（6/9 ~ 6/11），后半 4 天（6/12 ~ 6/15）
+        let now = date(2026, 6, 15, 12)
+        let entries = [
+            // 前半段 3 天：总支出 300，日均 100
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 9), amount: 100, isIncome: false, categoryRaw: "餐饮美食"),
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 10), amount: 200, isIncome: false, categoryRaw: "交通出行"),
+            // 后半段 4 天：总支出 600，日均 150
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 13), amount: 300, isIncome: false, categoryRaw: "购物消费"),
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 14), amount: 300, isIncome: false, categoryRaw: "餐饮美食"),
+        ]
+        let trend = TrendAnalytics.dailyExpenseTrend(entries: entries, now: now, calendar: calendar, dayCount: 7)
+
+        XCTAssertEqual(trend.earlierDailyAverage, 100, accuracy: 0.0001)
+        XCTAssertEqual(trend.recentDailyAverage, 150, accuracy: 0.0001)
+        // 环比增长 (150 - 100) / 100 = +50%
+        XCTAssertEqual(trend.changeRatio ?? 0, 0.5, accuracy: 0.0001)
+    }
+
+    func testDailyExpenseTrendIgnoresOutOfWindowAndSeparatesIncome() {
+        let now = date(2026, 6, 15, 12)
+        let entries = [
+            // 7天窗口外（6/8）
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 8), amount: 9999, isIncome: false, categoryRaw: "数码电子"),
+            // 窗口内收入：不计入支出
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 15), amount: 5000, isIncome: true, categoryRaw: "职业收入"),
+            TrendAnalytics.ExpenseEntry(date: date(2026, 6, 15), amount: 60, isIncome: false, categoryRaw: "餐饮美食"),
+        ]
+        let trend = TrendAnalytics.dailyExpenseTrend(entries: entries, now: now, calendar: calendar, dayCount: 7)
+
+        XCTAssertEqual(trend.totalExpense, 60)
+        XCTAssertEqual(trend.totalIncome, 5000)
+        XCTAssertEqual(trend.days.last?.expense, 60)
+        XCTAssertEqual(trend.days.last?.income, 5000)
+        XCTAssertEqual(trend.days.last?.totalCount, 2)
+        XCTAssertEqual(trend.days.last?.expenseCount, 1)
+    }
+
+    func testDailyExpenseTrendEmpty() {
+        let now = date(2026, 6, 15, 12)
+        let trend = TrendAnalytics.dailyExpenseTrend(entries: [], now: now, calendar: calendar, dayCount: 7)
+
+        XCTAssertEqual(trend.days.count, 7)
+        XCTAssertEqual(trend.totalExpense, 0)
+        XCTAssertEqual(trend.totalIncome, 0)
+        XCTAssertEqual(trend.dailyAverageExpense, 0)
+        XCTAssertEqual(trend.activeDayAverageExpense, 0)
+        XCTAssertEqual(trend.activeExpenseDaysCount, 0)
+        XCTAssertEqual(trend.zeroExpenseDaysCount, 7)
+        XCTAssertNil(trend.peakDay)
+        XCTAssertNil(trend.changeRatio)
+    }
+
     // MARK: - 饮食趋势
 
     func testDietTrendFillsMissingDaysAndAveragesOverRecordedDays() {

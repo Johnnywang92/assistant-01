@@ -129,6 +129,11 @@ public enum ModuleRegistry {
             vaultCard: .init(title: "爱车管理", icon: "car.fill", category: "出行"),
             promptBlockIDs: [.family]
         ),
+        ModuleDescriptor(
+            id: .mentalHealth,
+            tabBar: nil,
+            vaultCard: .init(title: "心理状态", icon: "heart.text.square.fill", category: "健康与习惯")
+        ),
     ]
 
     /// 默认启用的 5 个 Tab 板块（`NavigationRouter.defaultTabs` 的真相源）。

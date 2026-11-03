@@ -186,8 +186,7 @@ public enum L10n {
     }
 
     /// 针对运行时拼接/插值字符串的动态模式翻译兜底
-    private static func translateDynamic(_ text: String) -> String? {
-        // 1. 常见前缀/后缀动态拼接
+    private static func translateDynamic(_ text: String) -> String? {        // 1. 常见前缀/后缀动态拼接
         if text.hasPrefix("称呼：") {
             let val = String(text.dropFirst(3))
             return "Title: \(tr(val))"
@@ -235,6 +234,27 @@ public enum L10n {
         if text.hasPrefix("日报时间：") {
             return "Daily Report: \(text.dropFirst(5))"
         }
+        // 心理状态提醒：分数是运行时插值，无法作为固定 key 查表，
+        // 因此走前缀兜底（从 "最近一次评估是 13 分，…" 里取出分数）。
+        let psychTrendPrefix = "最近一次评估是 "
+        let psychTrendSuffix = " 分，比之前高些。可能是最近的事，也可能只是没睡好 —— 值得你自己看一眼。"
+        if text.hasPrefix(psychTrendPrefix) && text.hasSuffix(psychTrendSuffix) {
+            let scoreText = String(text.dropFirst(psychTrendPrefix.count).dropLast(psychTrendSuffix.count))
+            return "Your latest score was \(scoreText), a bit higher than before. It could be what has been going on, or just poor sleep — worth a look yourself."
+        }
+        // 心理趋势卡的变化文案（分数是插值）：
+        // 「比上次高 3 分（最新 13 分）」/「比上次低 3 分（最新 13 分）」/「与上次持平（最新 13 分）」
+        // 这类文案含两个数字，用正则一次性提取，避免手工数 dropFirst/dropLast 出错。
+        if let psychDelta = PsychTrendDeltaPattern.firstMatch(in: text) {
+            switch psychDelta.direction {
+            case .up:
+                return "Up \(psychDelta.deltaValue) points from last time (latest \(psychDelta.latestValue))"
+            case .down:
+                return "Down \(psychDelta.deltaValue) points from last time (latest \(psychDelta.latestValue))"
+            case .flat:
+                return "Unchanged from last time (latest \(psychDelta.latestValue))"
+            }
+        }
 
         // 2. 周期规则 "每X天"
         if text.hasPrefix("每") && text.hasSuffix("天") {
@@ -242,6 +262,23 @@ public enum L10n {
             if let days = Int(mid) {
                 return days == 1 ? "Every day" : "Every \(days) days"
             }
+        }
+
+        // 2.5 心理量表相关：题号进度、预计耗时、拨打热线。
+        //     都是运行时拼接的数字，查表必然失败，走前缀/后缀兜底。
+        if text.hasPrefix("第 ") && text.contains(" / ") && text.hasSuffix(" 题") {
+            let digits = text.dropFirst(2).prefix { $0.isNumber || $0 == " " }
+            let total = text.split(separator: "/").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+            let totalDigits = total.prefix { $0.isNumber }
+            return "Question \(digits) of \(totalDigits)"
+        }
+        if text.hasPrefix("约 ") && text.hasSuffix(" 分钟") {
+            let minutes = text.dropFirst(2).dropLast(3).trimmingCharacters(in: .whitespaces)
+            return "About \(minutes) min"
+        }
+        if text.hasPrefix("拨打 ") {
+            let phone = text.dropFirst(3).trimmingCharacters(in: .whitespaces)
+            return "Call \(phone)"
         }
 
         // 3. 剩余/逾期天数
@@ -297,5 +334,75 @@ public extension String {
     /// 返回当前语言环境下的本地化字符串
     var localized: String {
         L10n.tr(self)
+    }
+}
+
+// MARK: - 心理趋势卡变化文案的正则匹配
+
+/// 心理趋势卡「比上次高/低/持平」文案的匹配器。
+///
+/// 这类文案形如「比上次高 3 分（最新 13 分）」，**含两个数字**。
+/// 手工用 `dropFirst`/`dropLast` 切片极易数错位数（这正是它容易出错的原因），
+/// 所以用带捕获组的正则一次性把两个数字与方向都取出来。
+enum PsychTrendDeltaPattern {
+    /// 变化方向。
+    enum Direction {
+        case up
+        case down
+        case flat
+    }
+
+    /// 匹配结果：方向 + 两个数字。
+    struct Match {
+        let direction: Direction
+        /// 变化量（持平时为 0）。
+        let deltaValue: String
+        /// 最新分数。
+        let latestValue: String
+
+        /// 取指定位置的数字（1 = 变化量，2 = 最新分）。
+        func value(at index: Int) -> String? {
+            switch index {
+            case 1: return deltaValue
+            case 2: return latestValue
+            default: return nil
+            }
+        }
+    }
+
+    /// 匹配「比上次高 N 分（最新 M 分）」/「比上次低 N 分（最新 M 分）」/「与上次持平（最新 M 分）」。
+    static func match(_ text: String) -> Match? {
+        let range = NSRange(text.startIndex..., in: text)
+        if let result = upPattern.firstMatch(in: text, range: range),
+           let delta = capture(result, in: text, at: 1),
+           let latest = capture(result, in: text, at: 2) {
+            return Match(direction: .up, deltaValue: delta, latestValue: latest)
+        }
+        if let result = downPattern.firstMatch(in: text, range: range),
+           let delta = capture(result, in: text, at: 1),
+           let latest = capture(result, in: text, at: 2) {
+            return Match(direction: .down, deltaValue: delta, latestValue: latest)
+        }
+        if let result = flatPattern.firstMatch(in: text, range: range),
+           let latest = capture(result, in: text, at: 1) {
+            return Match(direction: .flat, deltaValue: "0", latestValue: latest)
+        }
+        return nil
+    }
+
+    /// 便捷入口：匹配成功时返回指定位置的数字。
+    static func firstMatch(in text: String) -> Match? {
+        match(text)
+    }
+
+    private static let upPattern = try! NSRegularExpression(pattern: "^比上次高 (\\d+) 分（最新 (\\d+) 分）$")
+    private static let downPattern = try! NSRegularExpression(pattern: "^比上次低 (\\d+) 分（最新 (\\d+) 分）$")
+    private static let flatPattern = try! NSRegularExpression(pattern: "^与上次持平（最新 (\\d+) 分）$")
+
+    private static func capture(_ result: NSTextCheckingResult, in text: String, at index: Int) -> String? {
+        guard index < result.numberOfRanges else { return nil }
+        let range = result.range(at: index)
+        guard range.location != NSNotFound else { return nil }
+        return (text as NSString).substring(with: range)
     }
 }

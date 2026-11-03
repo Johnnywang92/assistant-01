@@ -96,12 +96,16 @@ public enum AssistantSettingsKeys {
         "voice_memo_auto_transcribe",              // 语音备忘自动转写
         "voice_use_llm_engine",                    // 语音对话用 LLM 引擎
         "sleepReminder.enabled",                   // 睡前提醒总开关
+        "psych_reminder_enabled",                  // 心理状态提醒总开关
+        "psych_reminder_assessment_enabled",       // 每周复评提醒开关
+        "psych_reminder_trend_enabled",            // 趋势上行提醒开关
         "life_vault_card_dynamic_sort_enabled_v2"  // 人生档案卡片按使用频率排序
     ]
 
     public static let intKeys: [String] = [
         "user_off_work_minutes",                  // 下班时间（分钟）
         "periodic_report_weekly_weekday",         // 周报星期
+        "psych_reminder_weekday",                 // 心理复评提醒星期
         "day_timeline_wake_minutes",              // 日程轴起床时间（分钟）
         "day_timeline_off_minutes",               // 日程轴下班时间（分钟）
         "omnibox_auto_dismiss_seconds",           // 投喂口执行后自动关闭
@@ -121,6 +125,8 @@ public enum AssistantSettingsKeys {
         "periodic_report_monthly_time_interval", // 月报推送时间
         "periodic_report_quarterly_time_interval", // 季报推送时间
         "periodic_report_yearly_time_interval",  // 年报推送时间
+        "psych_reminder_time_interval",          // 心理复评提醒时间
+        "psych_reminder_trend_time_interval",     // 心理趋势提醒时间
         // 场景选择的「上次选择时间」——与已登记的 departure_selected_scene_raw 成对：
         // 只迁移 raw 不迁移时间戳会让还原后的场景被当成不是今天选的（见 SituationalContextEngine 的当日判定）。
         "departure_selected_scene_timestamp",

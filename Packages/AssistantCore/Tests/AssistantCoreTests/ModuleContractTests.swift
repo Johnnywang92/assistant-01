@@ -16,6 +16,7 @@ final class ModuleContractTests: XCTestCase {
             .lifeEvents, .departure, .passwords, .documents, .voiceMemos,
             .anniversaries, .painPoints, .skillPaths, .storage, .learnedPlaces,
             .foodCalorie, .healthData, .habits, .pets, .children, .vehicles,
+            .mentalHealth,
         ]
         XCTAssertEqual(ModuleRegistry.builtIn.map(\.id), expected)
         XCTAssertEqual(ModuleRegistry.builtIn.count, ModuleID.allCases.count)
@@ -44,6 +45,7 @@ final class ModuleContractTests: XCTestCase {
             "skillPaths": "skillPaths", "storage": "storage", "learnedPlaces": "learnedPlaces",
             "foodCalorie": "foodCalorie", "healthData": "healthData", "habits": "habits",
             "pets": "pets", "children": "children", "vehicles": "vehicles",
+            "mentalHealth": "mentalHealth",
         ]
         for id in ModuleID.allCases {
             XCTAssertEqual(id.rawValue, expected[id.rawValue], "\(id.rawValue) 的 rawValue 漂移")
@@ -58,7 +60,7 @@ final class ModuleContractTests: XCTestCase {
         let dualSurface: Set<ModuleID> = [.lifeEvents, .departure, .passwords, .documents, .voiceMemos]
         let vaultOnly: Set<ModuleID> = [
             .anniversaries, .painPoints, .skillPaths, .storage, .learnedPlaces,
-            .foodCalorie, .healthData, .habits, .pets, .children, .vehicles,
+            .foodCalorie, .healthData, .habits, .pets, .children, .vehicles, .mentalHealth,
         ]
 
         for descriptor in ModuleRegistry.builtIn {

@@ -1005,6 +1005,51 @@ extension DataMigrationService {
             totalRestored += restoredHealth
         }
 
+        // 21.5 心理量表与情绪微记录（备份格式 V8 新增）。
+        // 心理追踪的价值在**纵向历史**——趋势断了就没意义了，所以必须还原。
+        let existingPsychIDs = Set(try context.fetch(FetchDescriptor<PsychScaleRecord>()).map(\.id))
+        var restoredPsych = 0
+        for r in package.psychScaleRecords ?? [] {
+            if strategy == .merge && existingPsychIDs.contains(r.id) { continue }
+            let record = PsychScaleRecord(
+                scaleID: PsychScaleID(rawValue: r.scaleIDRaw) ?? .phq9,
+                completedAt: r.completedAt,
+                itemScores: r.itemScores,
+                hasAcknowledgedCrisis: r.hasAcknowledgedCrisis
+            )
+            record.id = r.id
+            record.answeredCount = r.answeredCount
+            record.createdAt = r.createdAt
+            context.insert(record)
+            restoredPsych += 1
+        }
+
+        let existingMoodIDs = Set(try context.fetch(FetchDescriptor<MoodCheckInRecord>()).map(\.id))
+        var restoredMood = 0
+        for r in package.moodCheckIns ?? [] {
+            if strategy == .merge && existingMoodIDs.contains(r.id) { continue }
+            let record = MoodCheckInRecord(
+                day: r.day,
+                moodScore: r.moodScore,
+                energyScore: r.energyScore,
+                stressScore: r.stressScore,
+                note: r.note
+            )
+            record.id = r.id
+            record.createdAt = r.createdAt
+            record.updatedAt = r.updatedAt
+            context.insert(record)
+            restoredMood += 1
+        }
+        if restoredPsych > 0 || package.psychScaleRecords != nil {
+            details.append("心理量表: \(restoredPsych) 次")
+            totalRestored += restoredPsych
+        }
+        if restoredMood > 0 || package.moodCheckIns != nil {
+            details.append("情绪记录: \(restoredMood) 天")
+            totalRestored += restoredMood
+        }
+
         // 22. 偏好设置（仅覆盖策略：合并策略只搬数据，不改本机行为）。
         // 放在 context.save() 之后：UserDefaults 无法随 context.rollback() 回滚，
         // 必须等数据库落库成功再动设置，避免「库回滚了、偏好却已写盘」的不一致。

@@ -31,28 +31,42 @@ def escape(text):
     return json.dumps(text, ensure_ascii=False)
 
 
-def build_entry(key, en, zh_hans, indent):
+def build_entry(key, en, zh_hans, indent, auto_extracted=False):
     """生成一个键的完整文本块。缩进层级与文件其余部分一致，**不带尾逗号**。
 
     逗号一律跟在**值后面**（行尾），与 Xcode 原生风格一致。
+
+    `en` 为 None 时**不写英文块**——项目里中文先上、英文后补是常态，
+    不能因为缺英文就拒绝新增这个键（否则整个批次都加不进去）。
+
+    `auto_extracted` 为 True 时按 **Xcode 自动提取**的形态输出：
+    不写 `extractionState`，`state` 用 `new`，并保留位置参数形式
+    （`%1$@ %2$lld`）。这类串是 Xcode 从源码里抓的，
+    位置参数保证参数重排时不错乱——手写成 `%@ %lld` 会丢掉这个保证。
     """
     pad = "    " * indent
     inner = "    " * (indent + 1)
     inner2 = "    " * (indent + 2)
     inner3 = "    " * (indent + 3)
     inner4 = "    " * (indent + 4)
+    pairs = [("en", en), ("zh-Hans", zh_hans)]
+    pairs = [(loc, value) for loc, value in pairs if value is not None]
+    if not pairs:
+        # 没有任何语言值 → 输出 Xcode 风格的空对象（闭合括号在行首、缩进为空）。
+        return f"{pad}{escape(key)} : {{\n\n{pad}}}"
     lines = []
     lines.append(f"{pad}{escape(key)} : {{")
-    lines.append(f'{inner}"extractionState" : "manual",')
+    if not auto_extracted:
+        lines.append(f'{inner}"extractionState" : "manual",')
     lines.append(f'{inner}"localizations" : {{')
-    for idx, (loc, value) in enumerate((("en", en), ("zh-Hans", zh_hans))):
+    for idx, (loc, value) in enumerate(pairs):
         lines.append(f'{inner2}{escape(loc)} : {{')
         lines.append(f'{inner3}"stringUnit" : {{')
-        lines.append(f'{inner4}"state" : "translated",')
+        lines.append(f'{inner4}"state" : {"new" if auto_extracted else "translated"},')
         lines.append(f'{inner4}"value" : {escape(value)}')
         lines.append(f'{inner3}}}')
         # localizations 内各语言之间用行尾逗号分隔
-        lines.append(f'{inner2}}}' + ("," if idx == 0 else ""))
+        lines.append(f'{inner2}}}' + ("," if idx < len(pairs) - 1 else ""))
     lines.append(f"{inner}}}")
     lines.append(f"{pad}}}")
     return "\n".join(lines)
@@ -92,10 +106,19 @@ def main():
     blocks = []
     for key in to_add:
         item = new_entries[key]
-        locs = item["localizations"]
-        en = locs["en"]["stringUnit"]["value"]
-        zh = locs["zh-Hans"]["stringUnit"]["value"]
-        blocks.append(build_entry(key, en, zh, 1))
+        locs = item.get("localizations")
+        if not locs:
+            # 空定义（Xcode 的「已声明但未翻译」状态）：原样保留空对象。
+            # Xcode 自己写的就是 `{\n\n    }`（闭合括号在行首、缩进为空）。
+            blocks.append(f'    {escape(key)} : {{\n\n    }}')
+            continue
+        # 缺英文时用 None（不写英文块），而不是报错拒绝新增
+        en = locs.get("en", {}).get("stringUnit", {}).get("value")
+        zh = locs.get("zh-Hans", {}).get("stringUnit", {}).get("value")
+        # 值里带位置参数（`%1$@`）说明是 Xcode 从源码自动提取的，
+        # 要按自动提取的形态输出（`state: "new"`、无 extractionState）。
+        auto = any(v and "%1$" in v for v in (en, zh))
+        blocks.append(build_entry(key, en, zh, 1, auto_extracted=auto))
 
     # 块之间用行尾逗号分隔；最后一块也带逗号，接回原有个键
     insertion = ",\n".join(blocks) + ",\n"

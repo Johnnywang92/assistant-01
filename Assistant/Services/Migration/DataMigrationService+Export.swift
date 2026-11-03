@@ -46,6 +46,8 @@ extension DataMigrationService {
         let waterIntakeRecords = try context.fetch(FetchDescriptor<WaterIntakeRecord>())
         let judgmentFeedbacks = try context.fetch(FetchDescriptor<OmniboxJudgmentFeedback>())
         let healthSnapshots = try context.fetch(FetchDescriptor<HealthDaySnapshotRecord>())
+        let psychScaleRecords = try context.fetch(FetchDescriptor<PsychScaleRecord>())
+        let moodCheckIns = try context.fetch(FetchDescriptor<MoodCheckInRecord>())
 
         let todoDTOs = todos.map {
             TodoDTO(
@@ -489,6 +491,30 @@ extension DataMigrationService {
                 )
             }
 
+        // 心理量表记录：保留**题目级分数**（itemScores），还原后才能做题目级告警。
+        let psychScaleDTOs = psychScaleRecords
+            .sorted { ($0.completedAt, $0.id.uuidString) < ($1.completedAt, $1.id.uuidString) }
+            .map { r in
+                PsychScaleRecordDTO(
+                    id: r.id, completedAt: r.completedAt,
+                    scaleIDRaw: r.scaleIDRaw, itemScores: r.itemScores,
+                    answeredCount: r.answeredCount,
+                    hasAcknowledgedCrisis: r.hasAcknowledgedCrisis,
+                    createdAt: r.createdAt
+                )
+            }
+
+        let moodCheckInDTOs = moodCheckIns
+            .sorted { ($0.day, $0.id.uuidString) < ($1.day, $1.id.uuidString) }
+            .map { r in
+                MoodCheckInRecordDTO(
+                    id: r.id, day: r.day,
+                    moodScore: r.moodScore, energyScore: r.energyScore,
+                    stressScore: r.stressScore, note: r.note,
+                    createdAt: r.createdAt, updatedAt: r.updatedAt
+                )
+            }
+
         let metadata = BackupPackage.Metadata(
             schemaVersion: 4,
             appVersion: "0.1.0",
@@ -538,6 +564,8 @@ extension DataMigrationService {
             waterIntakeRecords: waterIntakeDTOs,
             judgmentFeedbacks: judgmentFeedbackDTOs,
             healthSnapshots: healthSnapshotDTOs,
+            psychScaleRecords: psychScaleDTOs,
+            moodCheckIns: moodCheckInDTOs,
             settings: collectSettingsSnapshot()
         )
     }

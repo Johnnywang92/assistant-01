@@ -67,6 +67,9 @@ EXEMPT = {
     "overdue_triage_last_date": "逾期分诊的当日节流日期",
     "expense_exchange_rate_updated_at": "汇率同步时间戳",
     "sleepReminder.lastRemindedNightKey": "「本夜已提醒」节流标记",
+    "psych_reminder_last_notified_at": "心理提醒最近通知时间戳，本地冷却窗口节流标记；"
+                                       "换机后应重新按新数据判定，不该把「已提醒过」搬过去",
+    "psych_reminder_last_kind": "心理提醒最近通知类型，同属本地节流标记",
     "clipboard_last_handled_change_count": "剪贴板设备状态",
     "clipboard_rejected_content_keys": "被拒绝内容的去重集",
     # --- 提醒去重/会话状态：新设备本就该重新生成一遍 ---

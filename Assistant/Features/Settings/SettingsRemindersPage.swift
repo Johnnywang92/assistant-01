@@ -17,6 +17,8 @@ struct SettingsRemindersPage: View {
     @ObservedObject private var screenTracker = ScreenTimeTracker.shared
     @Environment(\.modelContext) private var context
     @State private var showingBudgetSheet: Bool = false
+    /// 刚切换到的身份；非空即弹出该身份的建议清单（上班族建议集为空，不弹）
+    @State private var pendingPresetProfile: UserLifestyleProfile?
 
     private var offWorkTimeBinding: Binding<Date> {
         Binding(
@@ -112,6 +114,10 @@ struct SettingsRemindersPage: View {
                             Haptic.selection()
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                                 lifestyleProfile = newProfile
+                            }
+                            // 身份本身立即生效（情境推断靠它），配套的节奏建议要人确认才落笔
+                            if !LifestyleProfilePreset.fields(for: newProfile).isEmpty {
+                                pendingPresetProfile = newProfile
                             }
                         }
                     )) {
@@ -312,6 +318,9 @@ struct SettingsRemindersPage: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             migrateLegacyOffWorkTimeIfNeeded()
+        }
+        .sheet(item: $pendingPresetProfile) { profile in
+            LifestylePresetDiffSheet(profile: profile)
         }
     }
 }

@@ -209,6 +209,12 @@ public final class NavigationRouter: ObservableObject {
             requestedSkillPathList = true
         case "food", "calorie", "calories", "meal":
             navigateTo(tab: .vault, vaultDestination: "foodCalorie")
+        case "psych", "mental", "mental-health", "mentalHealth", "wellbeing":
+            // 心理状态（在生活档案里）：问卷、情绪微记录、导出。
+            navigateTo(tab: .vault, vaultDestination: "mentalHealth")
+        case "psych-scale", "psychScale", "scale", "check-in", "phq9", "gad7":
+            // 直接进量表入口页。
+            navigateTo(tab: .vault, vaultDestination: "mentalHealth")
         case "passwords", "password":
             navigateTo(tab: .passwords, vaultDestination: "passwords")
         case "documents", "document", "cards":
@@ -405,6 +411,12 @@ public final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificat
                 } else {
                     NavigationRouter.shared.selectedTab = .todos
                 }
+            }
+        } else if let type = userInfo["type"] as? String, type == "psych-reminder" {
+            // 心理状态提醒：点「现在去测」直接进心理状态页
+            Task { @MainActor in
+                NavigationRouter.shared.selectedTab = .vault
+                NavigationRouter.shared.requestedVaultDestination = "mentalHealth"
             }
         } else if let type = userInfo["type"] as? String, type == "todo" {
             if let idString = userInfo["todoId"] as? String, let id = UUID(uuidString: idString) {

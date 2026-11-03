@@ -22,6 +22,7 @@ public enum LifeVaultCardType: String, CaseIterable, Identifiable, Codable, Hash
     case children = "children"             // 亲子育儿
     case vehicles = "vehicles"             // 爱车管理
     case departure = "departure"           // 出门清单
+    case mentalHealth = "mentalHealth"     // 心理状态
 
     public var id: String { rawValue }
 
@@ -44,6 +45,7 @@ public enum LifeVaultCardType: String, CaseIterable, Identifiable, Codable, Hash
         case .children: return .children
         case .vehicles: return .vehicles
         case .departure: return .departure
+        case .mentalHealth: return .mentalHealth
         }
     }
 
@@ -88,6 +90,7 @@ public enum LifeVaultCardType: String, CaseIterable, Identifiable, Codable, Hash
         case .children: return .pink
         case .vehicles: return .indigo
         case .departure: return .teal
+        case .mentalHealth: return .purple
         }
     }
 }
@@ -267,6 +270,7 @@ struct LifeVaultView: View {
     @Query(sort: [SortDescriptor(\LifeEventProject.targetDate, order: .forward)]) private var lifeProjects: [LifeEventProject]
     @Query private var skillPaths: [SkillPath]
     @Query(sort: \FoodIntakeRecord.date, order: .reverse) private var foodRecords: [FoodIntakeRecord]
+    @Query private var psychScaleRecords: [PsychScaleRecord]
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var selectedDestination: LifeVaultCardType?
@@ -331,6 +335,9 @@ struct LifeVaultView: View {
 
     // 随身防丢未清点核心件（统计来自 stats 快照）
     private var uncheckedDepartureCount: Int { stats.uncheckedDeparture }
+
+    /// 心理量表已评估次数。
+    private var psychScaleCount: Int { psychScaleRecords.count }
 
     // 爱车需要关注补能或保养/保险/年检的数量
     private var needCareVehicleCount: Int { stats.needCareVehicles }
@@ -710,6 +717,7 @@ struct LifeVaultView: View {
                 case "foodCalorie", "food": navigateTo(.foodCalorie)
                 case "painPoints", "subscriptions": navigateTo(.painPoints)
                 case "health", "healthData": navigateTo(.healthData)
+                case "mentalHealth", "psych", "mental-health": navigateTo(.mentalHealth)
                 case "places", "learnedPlaces": navigateTo(.learnedPlaces)
                 case "report", "reports", "periodicReport", "periodic-report", "dailyReport":
                     showPeriodicReport = true
@@ -935,6 +943,9 @@ struct LifeVaultView: View {
         case .departure:
             let departureStatus = uncheckedDepartureCount > 0 ? "\(uncheckedDepartureCount) 件未确认" : "\(departureItems.count) 件随身物品"
             return (card.title, departureStatus, uncheckedDepartureCount > 0)
+        case .mentalHealth:
+            let psychStatus = psychScaleCount > 0 ? "已评估 \(psychScaleCount) 次" : "尚未评估 · 追踪情绪状态"
+            return (card.title, psychStatus, false)
         }
     }
 }

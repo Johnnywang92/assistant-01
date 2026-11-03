@@ -103,4 +103,48 @@ final class PleasureIndexEvaluatorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(eval.autonomicScore, 55)
         XCTAssertLessThanOrEqual(eval.stressScore, 50)
     }
+
+    func testPsychAndMoodEntriesModulatePleasureScore() {
+        let day = Date()
+        let values: [HealthMetricKind: HealthMetricValue] = [
+            .sleep: HealthMetricValue(kind: .sleep, value: 7.5, day: day),
+            .stepCount: HealthMetricValue(kind: .stepCount, value: 6000, day: day)
+        ]
+        let snapshot = HealthDaySnapshot(day: day, values: values)
+
+        // 1. 无心理数据输入的基础评估
+        let baseEval = PleasureIndexEvaluator.evaluate(snapshot: snapshot)
+
+        // 2. 融入正向愉悦微记录（连续 5 分心情、1 分低压）
+        let positiveMoods = [
+            MoodCheckInEntry(day: day, moodScore: 5, energyScore: 5, stressScore: 1)
+        ]
+        let positiveEval = PleasureIndexEvaluator.evaluate(
+            snapshot: snapshot,
+            recentMoodEntries: positiveMoods
+        )
+        XCTAssertGreaterThan(positiveEval.pleasureScore, baseEval.pleasureScore)
+        XCTAssertLessThanOrEqual(positiveEval.stressScore, baseEval.stressScore)
+        XCTAssertTrue(positiveEval.details.contains(where: { $0.title == "心理与情绪自评" }))
+
+        // 3. 融入低落焦虑与量表负荷
+        let stressedMoods = [
+            MoodCheckInEntry(day: day, moodScore: 1, energyScore: 2, stressScore: 5)
+        ]
+        let depressedScale = PsychScaleScore(
+            scaleID: .phq9,
+            completedAt: day,
+            totalScore: 18,
+            band: PsychBandLevel.moderatelySevere,
+            completeness: PsychCompleteness(totalItems: 9, answeredItems: 9, missingItemIndices: []),
+            topItemIndices: [1, 2]
+        )
+        let stressedEval = PleasureIndexEvaluator.evaluate(
+            snapshot: snapshot,
+            recentMoodEntries: stressedMoods,
+            recentScaleScores: [depressedScale]
+        )
+        XCTAssertLessThan(stressedEval.pleasureScore, baseEval.pleasureScore)
+        XCTAssertGreaterThan(stressedEval.stressScore, baseEval.stressScore)
+    }
 }

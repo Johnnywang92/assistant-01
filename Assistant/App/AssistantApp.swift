@@ -232,6 +232,10 @@ private final class ForegroundAuditCoordinator {
             TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
             StartupMetrics.mark("audit.todoNotifications")
 
+            // 6.5 心理状态提醒排期（低分档不打扰，判定规则在 Core 的 PsychReminderPolicy）
+            PsychReminderScheduler.shared.rescheduleNotifications(context: context)
+            StartupMetrics.mark("audit.psychReminders")
+
             self.lastCompletedAt = CFAbsoluteTimeGetCurrent()
             StartupMetrics.mark("audit.end")
 

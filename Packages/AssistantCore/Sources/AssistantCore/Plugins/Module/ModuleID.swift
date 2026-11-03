@@ -35,4 +35,5 @@ public enum ModuleID: String, CaseIterable, Sendable, Hashable {
     case pets
     case children
     case vehicles
+    case mentalHealth
 }

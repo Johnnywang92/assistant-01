@@ -61,6 +61,13 @@ public struct BackupPackage: Codable {
     public var judgmentFeedbacks: [JudgmentFeedbackDTO]?
     /// 每日健康快照（Schema V4 备份格式新增；旧版备份为 nil）
     public var healthSnapshots: [HealthDaySnapshotRecordDTO]?
+    /// 心理量表作答记录（Schema V8 新增；旧版备份为 nil）
+    ///
+    /// **含题目级分数**——只存总分会让「第 9 题非零但总分低」在备份里不可见，
+    /// 还原后也无法做题目级告警。
+    public var psychScaleRecords: [PsychScaleRecordDTO]?
+    /// 每日情绪微记录（Schema V8 新增；旧版备份为 nil）
+    public var moodCheckIns: [MoodCheckInRecordDTO]?
     /// 用户偏好设置快照（旧版备份为 nil；收录原则见 AssistantCore 的 AssistantSettingsKeys）
     public var settings: SettingsSnapshotDTO?
 }
@@ -638,5 +645,39 @@ public struct HealthDaySnapshotRecordDTO: Codable {
     public var respiratoryRate: Double?
     public var workoutMinutes: Double?
     public var workoutCount: Int?
+    public var updatedAt: Date
+}
+
+/// 心理量表作答记录（Schema V8 新增）。
+///
+/// **必须存题目级分数**（`itemScores`），不能只存总分：
+/// 只存总分的话，「第 9 题（自伤意念）非零但总分低」这种情况在备份里根本不可见，
+/// 还原后也无法做题目级告警——而那恰恰是最不能漏判的一种。
+/// 下标即题号减一，`nil` 表示该题未作答（与「答了 0 分」语义不同）。
+public struct PsychScaleRecordDTO: Codable {
+    public var id: UUID
+    public var completedAt: Date
+    /// 量表标识 rawValue（`phq9` / `gad7`）
+    public var scaleIDRaw: String
+    /// 题目级得分，下标 = 题号 - 1，nil 表示未作答
+    public var itemScores: [Int?]
+    public var answeredCount: Int
+    public var hasAcknowledgedCrisis: Bool
+    public var createdAt: Date
+}
+
+/// 每日情绪微记录（Schema V8 新增）。
+public struct MoodCheckInRecordDTO: Codable {
+    public var id: UUID
+    /// 归属日（当天 00:00）
+    public var day: Date
+    /// 情绪分值 1...5
+    public var moodScore: Int
+    /// 精力分值 1...5
+    public var energyScore: Int
+    /// 压力分值 1...5
+    public var stressScore: Int
+    public var note: String?
+    public var createdAt: Date
     public var updatedAt: Date
 }

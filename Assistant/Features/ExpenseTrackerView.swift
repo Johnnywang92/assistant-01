@@ -17,9 +17,6 @@ fileprivate struct ExpenseSummary {
     var todayFlexibleSpend: Double = 0
 
     init(records: [ExpenseRecord], calendar: Calendar = .current, now: Date = .now) {
-        let currentYear = calendar.component(.year, from: now)
-        let currentMonth = calendar.component(.month, from: now)
-
         var todayExp: Double = 0
         var monthExp: Double = 0
         var monthInc: Double = 0
@@ -106,6 +103,7 @@ struct ExpenseTrackerView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var selectedPeriodFilter: ExpenseTimePeriodFilter = .thisMonth
+    @State private var expenseTrendScope: TrendAnalytics.ExpenseTrendScope = .days7
     @State private var quickInputText: String = ""
     @AppStorage(ExpenseCurrency.preferredCurrencyKey) private var preferredCurrencyRaw: String = ExpenseCurrency.cny.rawValue
     @State private var showingManualAddSheet = false
@@ -147,15 +145,8 @@ struct ExpenseTrackerView: View {
 
     @State private var analysisCache = ExpenseAnalysisCache()
 
-    /// 覆盖统计/分组所依赖的字段 + 周期筛选 + 归属日（跨午夜自动失效）的轻量内容指纹（带 50ms 渲染脉冲节流）。
+    /// 覆盖统计/分组所依赖的字段 + 周期筛选 + 归属日（跨午夜自动失效）的轻量内容指纹。
     private var analysisKey: Int {
-        let now = CFAbsoluteTimeGetCurrent()
-        if analysisCache.key != -1,
-           analysisCache.recordCount == records.count,
-           analysisCache.periodFilter == selectedPeriodFilter,
-           (now - analysisCache.lastCheckedTime) < 0.05 {
-            return analysisCache.key
-        }
         var hasher = Hasher()
         hasher.combine(selectedPeriodFilter.rawValue)
         hasher.combine(Calendar.current.startOfDay(for: .now).timeIntervalSinceReferenceDate)
@@ -165,13 +156,13 @@ struct ExpenseTrackerView: View {
             hasher.combine(record.date.timeIntervalSinceReferenceDate)
             hasher.combine(record.amount)
             hasher.combine(record.isIncome)
+            hasher.combine(record.isPending)
             hasher.combine(record.categoryRaw)
             hasher.combine(record.currencyCode)
             hasher.combine(record.foreignAmount)
             hasher.combine(record.rawText)
         }
         let computed = hasher.finalize()
-        analysisCache.lastCheckedTime = now
         analysisCache.recordCount = records.count
         analysisCache.periodFilter = selectedPeriodFilter
         return computed
@@ -204,17 +195,29 @@ struct ExpenseTrackerView: View {
         summary.currentMonthCategoryBreakdown
     }
 
+    private var expenseEntries: [TrendAnalytics.ExpenseEntry] {
+        records.lazy.filter { !$0.isPending }.map {
+            TrendAnalytics.ExpenseEntry(
+                date: $0.date,
+                amount: $0.amount,
+                isIncome: $0.isIncome,
+                categoryRaw: $0.categoryRaw
+            )
+        }
+    }
+
+    /// 每日消费总额趋势（基于当前选中的 7 / 14 / 30 天切片实时重算）
+    private var dailyExpenseTrend: TrendAnalytics.DailyExpenseTrend {
+        TrendAnalytics.dailyExpenseTrend(
+            entries: expenseEntries,
+            dayCount: expenseTrendScope.dayCount
+        )
+    }
+
     /// 近 6 个月消费趋势（O(N) 归集，纯函数在 AssistantCore.TrendAnalytics）
     private var expenseTrend: TrendAnalytics.ExpenseTrend {
         TrendAnalytics.expenseTrend(
-            entries: records.map {
-                TrendAnalytics.ExpenseEntry(
-                    date: $0.date,
-                    amount: $0.amount,
-                    isIncome: $0.isIncome,
-                    categoryRaw: $0.categoryRaw
-                )
-            },
+            entries: expenseEntries,
             monthCount: 6
         )
     }
@@ -223,7 +226,7 @@ struct ExpenseTrackerView: View {
     /// 用它触发预算提醒复算——只盯 `records.count` 的话，改金额不会重新判定超支。
     private var monthlySpendFingerprint: Double {
         records
-            .filter { !$0.isIncome && calendar.isDate($0.date, equalTo: .now, toGranularity: .month) }
+            .filter { !$0.isIncome && !$0.isPending && calendar.isDate($0.date, equalTo: .now, toGranularity: .month) }
             .reduce(0) { $0 + $1.amount }
     }
 
@@ -525,8 +528,12 @@ struct ExpenseTrackerView: View {
                     .padding(.vertical, 4)
                 }
 
-                // 2.5 消费趋势（近 6 个月柱状图 + 环比与类别变化）
-                ExpenseTrendCard(trend: expenseTrend)
+                // 2.5 消费趋势（每日消费总额 / 月度趋势 + 实时响应更新）
+                ExpenseTrendCard(
+                    scope: $expenseTrendScope,
+                    dailyTrend: dailyExpenseTrend,
+                    monthlyTrend: expenseTrend
+                )
                     .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                     .listRowBackground(Color.clear)
 
@@ -1767,6 +1774,7 @@ struct AddOrEditExpenseSheet: View {
     @State private var linkedItemID: UUID? = nil
 
     // 原始单据拍摄与识别状态
+    @State private var hasInitializedForm = false
     @State private var showingCamera = false
     @State private var showingPhotoPicker = false
     @State private var isRecognizingReceipt = false
@@ -1955,6 +1963,7 @@ struct AddOrEditExpenseSheet: View {
                                         Haptic.light()
                                     }
                                     .font(.caption2)
+                                    .buttonStyle(.borderless)
                                 }
                             }
 
@@ -2109,6 +2118,7 @@ struct AddOrEditExpenseSheet: View {
                             }
                             .font(.caption)
                         }
+                        .buttonStyle(.borderless)
                     } else {
                         HStack(spacing: 12) {
                             Button {
@@ -2141,6 +2151,7 @@ struct AddOrEditExpenseSheet: View {
                                 Label("识别剪贴板中的单据截图", systemImage: "doc.on.clipboard")
                                     .font(.caption)
                             }
+                            .buttonStyle(.borderless)
                         }
                     }
                 }
@@ -2199,6 +2210,8 @@ struct AddOrEditExpenseSheet: View {
                 }
             }
             .onAppear {
+                guard !hasInitializedForm else { return }
+                hasInitializedForm = true
                 if let record = recordToEdit {
                     isIncome = record.isIncome
                     selectedCurrency = record.currency
@@ -2247,11 +2260,12 @@ struct AddOrEditExpenseSheet: View {
             } message: {
                 Text("删除后无法恢复，确认删除这笔账目明细吗？")
             }
-            .sheet(isPresented: $showingCamera) {
+            .fullScreenCover(isPresented: $showingCamera) {
                 ReceiptCameraView { image in
                     handlePickedReceiptImage(image)
                     showingCamera = false
                 }
+                .ignoresSafeArea()
             }
             .photosPicker(
                 isPresented: $showingPhotoPicker,
@@ -2319,12 +2333,14 @@ struct AddOrEditExpenseSheet: View {
               let image = UIImage(data: data) else {
             await MainActor.run {
                 isRecognizingReceipt = false
+                selectedReceiptItem = nil
                 recognitionMessage = "未能读取所选图片，请重试"
             }
             return
         }
         await MainActor.run {
             receiptImageData = data
+            selectedReceiptItem = nil
         }
         await recognizeReceipt(from: image)
     }
