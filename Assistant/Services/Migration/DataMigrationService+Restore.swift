@@ -659,21 +659,20 @@ extension DataMigrationService {
         totalRestored += restoredPets
 
         // 宠物成长与健康记录
-        let petByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<PetProfile>()).map { ($0.id, $0) })
         let existingPetRecordIDs = Set(try context.fetch(FetchDescriptor<PetRecord>()).map(\.id))
         var restoredPetRecords = 0
         for r in package.petRecords ?? [] {
             if strategy == .merge && existingPetRecordIDs.contains(r.id) { continue }
             let item = PetRecord(
                 id: r.id,
+                petID: r.petID,
                 date: r.date,
                 type: PetRecordType(rawValue: r.typeRaw) ?? .growth,
                 title: r.title,
                 weightKg: r.weightKg,
                 clinicOrPlace: r.clinicOrPlace,
                 notes: r.notes,
-                createdAt: r.createdAt,
-                pet: r.petID.flatMap { petByID[$0] }
+                createdAt: r.createdAt
             )
             context.insert(item)
             restoredPetRecords += 1

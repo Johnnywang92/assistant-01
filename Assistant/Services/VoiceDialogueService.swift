@@ -7,15 +7,36 @@ import Speech
 final class VoiceDialogueService: NSObject, ObservableObject {
     static let shared = VoiceDialogueService()
 
-    private let zhRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
-    private let enRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private lazy var zhRecognizer: SFSpeechRecognizer? = {
+        let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
+        recognizer?.delegate = self
+        return recognizer
+    }()
+    private lazy var enRecognizer: SFSpeechRecognizer? = {
+        let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+        recognizer?.delegate = self
+        return recognizer
+    }()
     private var speechRecognizer: SFSpeechRecognizer? {
         L10n.isEnglish ? (enRecognizer ?? zhRecognizer) : (zhRecognizer ?? enRecognizer)
     }
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
-    private let audioEngine = AVAudioEngine()
-    private let synthesizer = AVSpeechSynthesizer()
+    private var _audioEngine: AVAudioEngine?
+    private var audioEngine: AVAudioEngine {
+        if let engine = _audioEngine { return engine }
+        let engine = AVAudioEngine()
+        _audioEngine = engine
+        return engine
+    }
+    private var _synthesizer: AVSpeechSynthesizer?
+    private var synthesizer: AVSpeechSynthesizer {
+        if let synth = _synthesizer { return synth }
+        let synth = AVSpeechSynthesizer()
+        synth.delegate = self
+        _synthesizer = synth
+        return synth
+    }
     private var isTapInstalled = false
     /// 激活会话是异步的：期间可能被 stopListening 打断，用它判断这次开麦是否已作废
     private var listeningGeneration = 0
@@ -30,9 +51,6 @@ final class VoiceDialogueService: NSObject, ObservableObject {
 
     private override init() {
         super.init()
-        zhRecognizer?.delegate = self
-        enRecognizer?.delegate = self
-        synthesizer.delegate = self
     }
 
     /// 请求语音识别与麦克风权限
@@ -146,12 +164,14 @@ final class VoiceDialogueService: NSObject, ObservableObject {
     /// 停止录音
     public func stopListening() {
         listeningGeneration &+= 1
-        if audioEngine.isRunning {
-            audioEngine.stop()
-        }
-        if isTapInstalled {
-            audioEngine.inputNode.removeTap(onBus: 0)
-            isTapInstalled = false
+        if let engine = _audioEngine {
+            if engine.isRunning {
+                engine.stop()
+            }
+            if isTapInstalled {
+                engine.inputNode.removeTap(onBus: 0)
+                isTapInstalled = false
+            }
         }
         recognitionRequest?.endAudio()
         recognitionRequest = nil
@@ -181,8 +201,8 @@ final class VoiceDialogueService: NSObject, ObservableObject {
     }
 
     public func stopSpeaking() {
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
+        if let synth = _synthesizer, synth.isSpeaking {
+            synth.stopSpeaking(at: .immediate)
         }
         isSpeaking = false
     }

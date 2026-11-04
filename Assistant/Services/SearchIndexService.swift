@@ -23,10 +23,10 @@ public final class SearchIndexService: ObservableObject {
 
     private let recentSearchesKey = "unified_search_recent_queries_v2"
     private var isIndexInitialized = false
+    private var hasIndexedStaticSettings = false
 
     private init() {
         loadRecentSearches()
-        indexStaticSettings()
     }
 
     // MARK: - 静态系统设置索引
@@ -257,12 +257,14 @@ public final class SearchIndexService: ObservableObject {
         ]
 
         engine.add(settingsDocs)
+        hasIndexedStaticSettings = true
         totalIndexedCount = engine.count
     }
 
     // MARK: - 全域数据索引重建
 
     /// 全面扫描 App 全部业务数据表，构建高性能跨模块倒排索引
+    /// 采用分片让出主线程（`Task.yield()`）策略，杜绝冷启动或页面切换时全表拉取 + 拼音分词阻塞主线程导致白屏。
     public func rebuildIndex(context: ModelContext) async {
         guard !isIndexing else { return }
         isIndexing = true
@@ -270,7 +272,9 @@ public final class SearchIndexService: ObservableObject {
 
         // 重新初始化清空并注入设置项
         engine.clear()
+        hasIndexedStaticSettings = false
         indexStaticSettings()
+        await Task.yield()
 
         var batch: [SearchIndexDocument] = []
         batch.reserveCapacity(2000)
@@ -654,7 +658,16 @@ public final class SearchIndexService: ObservableObject {
             }
         }
 
-        engine.add(batch)
+        // 分批送入分词与拼音引擎，每批 80 条后主动让出主线程，避免一次性转换上千条汉字拼音卡住 UI 渲染
+        let chunkSize = 80
+        var offset = 0
+        while offset < batch.count {
+            if Task.isCancelled { return }
+            let end = min(offset + chunkSize, batch.count)
+            engine.add(Array(batch[offset..<end]))
+            offset = end
+            await Task.yield()
+        }
         totalIndexedCount = engine.count
         isIndexInitialized = true
     }
@@ -663,6 +676,9 @@ public final class SearchIndexService: ObservableObject {
 
     /// 执行全域索引检索
     public func search(query: String, category: SearchIndexCategory = .all, limit: Int = 30) -> [SearchIndexMatch] {
+        if !hasIndexedStaticSettings {
+            indexStaticSettings()
+        }
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             self.searchResults = []

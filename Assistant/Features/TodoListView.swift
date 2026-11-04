@@ -379,6 +379,9 @@ struct TodoListView: View {
                 crossModuleSearchText = ""
             }
             .task {
+                // 首屏渲染优先：延迟启动全域 16 表倒排索引构建，避免冷启动首帧抢占主线程
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                guard !Task.isCancelled else { return }
                 await SearchIndexService.shared.rebuildIndex(context: context)
             }
             .sheet(isPresented: $showAddTodo) {
@@ -472,7 +475,9 @@ struct TodoListView: View {
             .task {
                 StartupMetrics.markOnce("todoList.task begin", "n=\(todos.count)")
                 // 纪念日/出行购票横幅：首帧之后再刷新，不阻塞首屏；同时不必等待天气网络请求
-                scheduleReminderRefresh(delayMilliseconds: 150)
+                scheduleReminderRefresh(delayMilliseconds: 250)
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                guard !Task.isCancelled else { return }
                 await weatherAlerts.checkAlertsIfNeeded()
                 StartupMetrics.markOnce("todoList.task weatherDone")
             }
@@ -1454,18 +1459,18 @@ struct TodoListView: View {
     private func renderPageContent(for category: TodoFilterCategory) -> some View {
         List {
             homeHeaderSection
-            // 放进列表头部，使“今日安排”可以随首页内容向上滚动，仅在全部总览页且非搜索状态下挂载
+            // 放进列表内普通行，使“今日安排”可以随首页内容向上滚动，同时避免空 Section + 超高自定义 Header 引发 UICollectionView 布局死锁与白屏
             if category == .all && !isSearching {
                 Section {
-                    EmptyView()
-                } header: {
                     VStack(spacing: 4) {
                         TodayBriefingView(items: activeTodos)
                         // Structured 式今日时间轴：起床/下班锚点 + 日程 + 定时待办 + 打卡，
                         // 自动标出空闲时段，一眼判断"今天塞不塞得下一件新事"。
                         DayTimelineView(items: activeTodos)
                     }
-                    .textCase(nil)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
             }
 

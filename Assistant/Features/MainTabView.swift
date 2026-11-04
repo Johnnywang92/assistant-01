@@ -24,6 +24,9 @@ struct MainTabView: View {
     @AppStorage("has_completed_permission_onboarding_v1") private var hasCompletedPermissionOnboarding: Bool = false
     @State private var showPermissionOnboarding = false
     @ObservedObject private var pinManager = MigrationPinManager.shared
+    /// 懒加载已访问过的 Tab：冷启动首帧仅挂载当前选中 Tab（默认首页待办），
+    /// 避免首帧同时实例化百宝箱（19 个全表 @Query）、记账与设置页造成主线程白屏卡顿。
+    @State private var loadedTabs: Set<NavigationRouter.AppTab> = [NavigationRouter.shared.selectedTab]
 
     var body: some View {
         ZStack {
@@ -32,12 +35,18 @@ struct MainTabView: View {
 
             TabView(selection: $router.selectedTab) {
                 ForEach(tabManager.activeTabs) { tab in
-                    tabContentView(for: tab)
-                        .tabItem {
-                            Label(tab.title, systemImage: tab.systemImage)
+                    Group {
+                        if loadedTabs.contains(tab) || router.selectedTab == tab {
+                            tabContentView(for: tab)
+                        } else {
+                            Color.clear
                         }
-                        .tag(tab)
-                        .badge(badgeCount(for: tab))
+                    }
+                    .tabItem {
+                        Label(tab.title, systemImage: tab.systemImage)
+                    }
+                    .tag(tab)
+                    .badge(badgeCount(for: tab))
                 }
             }
 
@@ -169,6 +178,10 @@ struct MainTabView: View {
             if !tabManager.activeTabs.contains(router.selectedTab) {
                 router.selectedTab = tabManager.activeTabs.first ?? .todos
             }
+            loadedTabs.insert(router.selectedTab)
+        }
+        .onChange(of: router.selectedTab) { _, newTab in
+            loadedTabs.insert(newTab)
         }
         .onChange(of: pinManager.isConfigured) { _, isConfigured in
             if isConfigured && !hasCompletedPermissionOnboarding {

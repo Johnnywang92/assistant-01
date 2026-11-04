@@ -88,6 +88,9 @@ struct AssistantApp: App {
             .task {
                 guard Persistence.recoveryError == nil else { return }
                 StartupMetrics.mark("root.task begin")
+                // 让出首帧渲染窗口，确保主界面先上屏，再执行快捷方式、通知分类与小组件快照全表查询
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
                 // 密码迁移不再在冷启动主线程执行：全表拉取 + 可触发 SQLite VACUUM，
                 // 改由打开保险箱时（PasswordVaultView.onAppear）惰性地按需迁移。
                 StartupMetrics.measure("registerDynamicShortcuts") { router.registerDynamicShortcuts() }

@@ -342,7 +342,7 @@ extension DataMigrationService {
 
         let petRecordDTOs = petRecords.sorted { ($0.date, $0.id.uuidString) < ($1.date, $1.id.uuidString) }.map { r in
             PetRecordDTO(
-                id: r.id, petID: r.pet?.id, date: r.date, typeRaw: r.typeRaw,
+                id: r.id, petID: r.petID, date: r.date, typeRaw: r.typeRaw,
                 title: r.title, weightKg: r.weightKg, clinicOrPlace: r.clinicOrPlace,
                 notes: r.notes, createdAt: r.createdAt
             )

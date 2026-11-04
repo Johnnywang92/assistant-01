@@ -26,16 +26,17 @@ enum Persistence {
     static let shared: ModelContainer = {
         StartupMetrics.mark("store.open begin")
         do {
-            let container = try openStore()
-            StartupMetrics.mark("store.open ready")
+            // 优先采用单次直达的自动轻量迁移打开：V1~V9 全部为纯加法变更（新增可选/默认字段与新模型），
+            // 直接按最新 Schema 打开仅反射 1 次当前模型全集，避免每次冷启动在主线程同步反射
+            // V1~V9 共 9 套历史 Schema（340+ 模型描述符）导致的启动白屏与卡死。
+            let container = try openStoreAutoMigrate()
+            StartupMetrics.mark("store.open ready(autoMigrate)")
             return container
         } catch {
-            // 真机旧库由引入迁移计划前的「无版本容器」创建，版本标识/内容可能与此处 V1 声明不符，
-            // 带计划的轻量迁移会找不到源库。退回旧路径：无迁移计划、由系统自动轻量升级
-            // （纯加法变更，历次发布在真机上就是这么升级的）；仍不动磁盘文件。
+            // 若直达轻量迁移未能处理，回退到显式版本化迁移计划（AssistantMigrationPlan）；仍不动磁盘文件。
             do {
-                let container = try openStoreAutoMigrate()
-                StartupMetrics.mark("store.open ready(autoMigrate)")
+                let container = try openStore()
+                StartupMetrics.mark("store.open ready")
                 return container
             } catch {
                 // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
@@ -58,23 +59,18 @@ enum Persistence {
         #if DEBUG
         Self.assertSchemaCoverage()
         #endif
-        // 全新安装 / 重新安装优化：若底层 store 文件尚不存在，直接按最新 Schema 初始化。
-        // 彻底省去 SwiftData 在冷启动主线程反射 V1~V7 历史 7 个版本及 230+ 模型描述符的巨大耗时。
-        let isFreshStore = storeFiles.isEmpty
-        if isFreshStore {
-            return try StartupMetrics.measure("openStore(fresh)") {
-                try ModelContainer(for: schema, configurations: config)
-            }
-        }
         return try StartupMetrics.measure("openStore(versioned)") {
             try ModelContainer(for: schema, migrationPlan: AssistantMigrationPlan.self, configurations: config)
         }
     }
 
-    /// 无迁移计划的旧路径：仅作为版本化计划识别不了真机遗留库时的兜底。
+    /// 单次直达轻量升级路径：仅反射当前最新 Schema 一次，消除多版本 Schema 反射堆叠。
     private static func openStoreAutoMigrate() throws -> ModelContainer {
         let schema = Schema(AssistantSchemaV9.models)
         let config = ModelConfiguration(schema: schema)
+        #if DEBUG
+        Self.assertSchemaCoverage()
+        #endif
         return try StartupMetrics.measure("openStore(autoMigrate)") {
             try ModelContainer(for: schema, configurations: config)
         }

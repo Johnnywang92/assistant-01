@@ -58,10 +58,6 @@ public final class PetProfile {
     public var notes: String?                // 特殊习惯/过敏/常去宠物医院
     public var createdAt: Date
 
-    // 5. 持续成长与健康记录关联
-    @Relationship(deleteRule: .cascade, inverse: \PetRecord.pet)
-    public var records: [PetRecord]? = []
-
     public init(
         name: String,
         type: PetType = .cat,
@@ -160,12 +156,14 @@ public final class PetProfile {
         }
     }
 
-    public var sortedRecords: [PetRecord] {
-        (records ?? []).sorted { ($0.date, $0.id.uuidString) > ($1.date, $1.id.uuidString) }
+    public func sortedRecords(from allRecords: [PetRecord]) -> [PetRecord] {
+        allRecords
+            .filter { $0.petID == self.id }
+            .sorted { ($0.date, $0.id.uuidString) > ($1.date, $1.id.uuidString) }
     }
 
-    public func records(for type: PetRecordType) -> [PetRecord] {
-        sortedRecords.filter { $0.type == type }
+    public func records(for type: PetRecordType, from allRecords: [PetRecord]) -> [PetRecord] {
+        sortedRecords(from: allRecords).filter { $0.type == type }
     }
 }
 
@@ -197,9 +195,11 @@ public enum PetRecordType: String, Codable, CaseIterable, Identifiable {
 }
 
 /// 宠物成长与健康记录模型
+/// 采用 `petID` 软关联 `PetProfile.id`，避免修改 V1 已发布的 `PetProfile` 关系元数据导致跨版本 Schema 校验/迁移卡死。
 @Model
 public final class PetRecord {
     public var id: UUID
+    public var petID: UUID?
     public var date: Date
     public var typeRaw: String
     public var title: String
@@ -207,10 +207,10 @@ public final class PetRecord {
     public var clinicOrPlace: String?
     public var notes: String?
     public var createdAt: Date
-    public var pet: PetProfile?
 
     public init(
         id: UUID = UUID(),
+        petID: UUID? = nil,
         date: Date = .now,
         type: PetRecordType = .growth,
         title: String,
@@ -221,6 +221,7 @@ public final class PetRecord {
         pet: PetProfile? = nil
     ) {
         self.id = id
+        self.petID = petID ?? pet?.id
         self.date = date
         self.typeRaw = type.rawValue
         self.title = title
@@ -228,7 +229,6 @@ public final class PetRecord {
         self.clinicOrPlace = clinicOrPlace
         self.notes = notes
         self.createdAt = createdAt
-        self.pet = pet
     }
 
     public var type: PetRecordType {

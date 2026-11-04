@@ -6,6 +6,7 @@ import SwiftUI
 struct PetManagementView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \PetProfile.createdAt, order: .reverse) private var pets: [PetProfile]
+    @Query(sort: \PetRecord.date, order: .reverse) private var allPetRecords: [PetRecord]
 
     @State private var showAddPet = false
     @State private var editingPet: PetProfile? = nil
@@ -206,11 +207,11 @@ struct PetManagementView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
 
-                    let recordsCount = pet.records?.count ?? 0
-                    if recordsCount > 0 {
-                        let growthCount = pet.records(for: .growth).count
-                        let medCount = pet.records(for: .medical).count
-                        let msCount = pet.records(for: .milestones).count
+                    let petRecords = pet.sortedRecords(from: allPetRecords)
+                    if !petRecords.isEmpty {
+                        let growthCount = pet.records(for: .growth, from: allPetRecords).count
+                        let medCount = pet.records(for: .medical, from: allPetRecords).count
+                        let msCount = pet.records(for: .milestones, from: allPetRecords).count
                         Text("已累计 \(growthCount) 次测量 · \(medCount) 条就医 · \(msCount) 个高光足迹")
                             .font(.caption2)
                             .foregroundStyle(.teal)
@@ -393,6 +394,10 @@ struct PetManagementView: View {
 
     private func deletePet(_ pet: PetProfile) {
         withAnimation {
+            let relatedRecords = allPetRecords.filter { $0.petID == pet.id }
+            for record in relatedRecords {
+                context.delete(record)
+            }
             context.delete(pet)
             try? context.save()
             showToast("已删除宠物档案")
@@ -425,7 +430,7 @@ struct PetManagementView: View {
                                 .font(.subheadline.bold())
                                 .foregroundStyle(.primary)
 
-                            let count = pet.records?.count ?? 0
+                            let count = pet.sortedRecords(from: allPetRecords).count
                             if count > 0 {
                                 Text("\(count) 项")
                                     .font(.caption2.bold())

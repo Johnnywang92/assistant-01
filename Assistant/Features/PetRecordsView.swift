@@ -5,6 +5,7 @@ import SwiftUI
 struct PetRecordsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Query(sort: \PetRecord.date, order: .reverse) private var allRecords: [PetRecord]
     let pet: PetProfile
 
     @State private var recordType: PetRecordType = .growth
@@ -63,7 +64,7 @@ struct PetRecordsView: View {
     // MARK: - 1. 成长体重列表
 
     private var growthList: some View {
-        let items = pet.records(for: .growth)
+        let items = pet.records(for: .growth, from: allRecords)
         return recordScroll {
             if items.isEmpty {
                 emptyRecord(
@@ -104,7 +105,7 @@ struct PetRecordsView: View {
     // MARK: - 2. 医疗健康列表
 
     private var medicalList: some View {
-        let items = pet.records(for: .medical)
+        let items = pet.records(for: .medical, from: allRecords)
         return recordScroll {
             if items.isEmpty {
                 emptyRecord(
@@ -140,7 +141,7 @@ struct PetRecordsView: View {
     // MARK: - 3. 高光里程碑列表
 
     private var milestoneList: some View {
-        let items = pet.records(for: .milestones)
+        let items = pet.records(for: .milestones, from: allRecords)
         return recordScroll {
             if items.isEmpty {
                 emptyRecord(
