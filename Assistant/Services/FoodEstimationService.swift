@@ -416,4 +416,226 @@ final class FoodEstimationService: ObservableObject {
         statusMessage = nil
         needsManualSelection = false
     }
+
+    // MARK: - 宴席 / 聚餐多菜品场景快捷估算
+
+    /// 根据聚餐/宴席场景、个人进食程度与席间饮品，构建符合成人单人真实摄入结构的整餐估算
+    static func buildBanquetEstimate(
+        scene: FoodBanquetScene,
+        appetite: FoodBanquetAppetiteLevel,
+        drinkAddon: FoodBanquetDrinkAddon
+    ) -> FoodCalorieEstimate {
+        let scale = appetite.gramsMultiplier
+        var dishes: [FoodDishEstimate] = []
+
+        for spec in scene.dishSpecs {
+            guard let baseItem = FoodCatalog.item(id: spec.foodID) else { continue }
+            let item = spec.customName.map { baseItem.withCustom(name: $0) } ?? baseItem
+            let grams = max(20, (spec.baseGrams * scale).rounded())
+            dishes.append(
+                FoodDishEstimate(
+                    id: "\(spec.foodID)_\(dishes.count)",
+                    food: item,
+                    portion: .regular,
+                    confidence: 0.9,
+                    consumedRatio: 1.0,
+                    cookingMethod: spec.cookingMethod,
+                    oilSauceLevel: spec.oilLevel,
+                    customGrams: grams
+                )
+            )
+        }
+
+        if let drinkSpec = drinkAddon.dishSpec,
+           let drinkItem = FoodCatalog.item(id: drinkSpec.foodID) {
+            let item = drinkSpec.customName.map { drinkItem.withCustom(name: $0) } ?? drinkItem
+            dishes.append(
+                FoodDishEstimate(
+                    id: "\(drinkSpec.foodID)_drink",
+                    food: item,
+                    portion: .regular,
+                    confidence: 0.9,
+                    consumedRatio: 1.0,
+                    customGrams: drinkSpec.baseGrams
+                )
+            )
+        }
+
+        let mealTitle = "\(scene.title)（\(appetite.shortTitle)）"
+        return FoodCalorieEstimate(
+            dishes: dishes,
+            portion: .regular,
+            customDisplayName: mealTitle
+        )
+    }
+
+    /// 应用宴席/聚餐预设到当前估算草稿
+    func applyBanquetPreset(
+        scene: FoodBanquetScene,
+        appetite: FoodBanquetAppetiteLevel,
+        drinkAddon: FoodBanquetDrinkAddon
+    ) {
+        let built = Self.buildBanquetEstimate(scene: scene, appetite: appetite, drinkAddon: drinkAddon)
+        estimate = built
+        needsManualSelection = false
+        statusMessage = "已按「\(scene.title) · \(appetite.title)」折算单人进食明细（共 \(built.dishes.count) 类代表菜品，合计约 \(Int(built.consumedCalories.rounded())) 千卡），可继续增删微调或直接保存。"
+    }
+}
+
+// MARK: - 宴席 / 聚餐场景模型
+
+enum FoodBanquetScene: String, CaseIterable, Identifiable {
+    case chineseBanquet = "中式酒席/桌餐"
+    case hotpot = "火锅聚餐"
+    case barbecue = "烤肉/烧烤局"
+    case buffet = "自助大餐"
+
+    var id: String { rawValue }
+    var title: String { rawValue }
+
+    var subtitle: String {
+        switch self {
+        case .chineseBanquet:
+            return "喜宴/家宴/商务圆桌，10~16 道菜每样夹几筷"
+        case .hotpot:
+            return "涮肥牛羊肉、虾滑毛肚、豆制品与时蔬菌菇"
+        case .barbecue:
+            return "炭火烤串、韩式烤五花/牛肉、烤鸡翅与素菜"
+        case .buffet:
+            return "海鲜刺身、牛排铁板、热菜沙拉与餐后甜点"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .chineseBanquet: return "person.3.fill"
+        case .hotpot: return "flame.fill"
+        case .barbecue: return "sparkles"
+        case .buffet: return "fork.knife.circle.fill"
+        }
+    }
+
+    struct DishSpec {
+        let foodID: String
+        let customName: String?
+        let baseGrams: Double
+        let cookingMethod: FoodCookingMethod?
+        let oilLevel: FoodOilSauceLevel
+    }
+
+    /// 单人正常聚餐（1.0x）下各代表性菜类的实际入肚克数（已按圆桌多人分食折算为个人进食量）
+    var dishSpecs: [DishSpec] {
+        switch self {
+        case .chineseBanquet:
+            return [
+                DishSpec(foodID: "braised_meat", customName: "席间红烧硬菜(肘子/红烧肉/排骨)", baseGrams: 75, cookingMethod: .braisedOrSauced, oilLevel: .heavy),
+                DishSpec(foodID: "roast_duck", customName: "冷盘卤味与烧腊拼盘", baseGrams: 65, cookingMethod: .panFriedOrGrilled, oilLevel: .standard),
+                DishSpec(foodID: "fish", customName: "清蒸鱼/海鲜主菜", baseGrams: 90, cookingMethod: .steamedOrBoiled, oilLevel: .standard),
+                DishSpec(foodID: "shrimp", customName: "白灼虾/贝类河鲜", baseGrams: 75, cookingMethod: .steamedOrBoiled, oilLevel: .low),
+                DishSpec(foodID: "stir_fry_meat", customName: "热炒荤素小炒(2~3道合算)", baseGrams: 110, cookingMethod: .stirFried, oilLevel: .standard),
+                DishSpec(foodID: "vegetable_dish", customName: "宴席清炒时蔬与菌菇", baseGrams: 120, cookingMethod: .stirFried, oilLevel: .standard),
+                DishSpec(foodID: "pork_ribs_soup", customName: "席间老火炖汤/羹", baseGrams: 180, cookingMethod: .soupOrStew, oilLevel: .standard),
+                DishSpec(foodID: "rice", customName: "席间主食点心(小半份)", baseGrams: 80, cookingMethod: .steamedOrBoiled, oilLevel: .low)
+            ]
+        case .hotpot:
+            return [
+                DishSpec(foodID: "beef", customName: "涮肥牛/肥羊卷", baseGrams: 140, cookingMethod: .soupOrStew, oilLevel: .heavy),
+                DishSpec(foodID: "shrimp", customName: "虾滑/毛肚/海鲜涮品", baseGrams: 100, cookingMethod: .soupOrStew, oilLevel: .standard),
+                DishSpec(foodID: "pork", customName: "午餐肉/丸滑荤菜", baseGrams: 85, cookingMethod: .soupOrStew, oilLevel: .heavy),
+                DishSpec(foodID: "tofu", customName: "冻豆腐/响铃卷/豆制品", baseGrams: 90, cookingMethod: .soupOrStew, oilLevel: .heavy),
+                DishSpec(foodID: "vegetable_dish", customName: "涮绿叶菜与菌菇拼盘", baseGrams: 160, cookingMethod: .soupOrStew, oilLevel: .standard),
+                DishSpec(foodID: "noodles", customName: "火锅面/宽粉/蘸料折算", baseGrams: 90, cookingMethod: .braisedOrSauced, oilLevel: .heavy)
+            ]
+        case .barbecue:
+            return [
+                DishSpec(foodID: "barbecue", customName: "碳火羊肉串/猪肉串", baseGrams: 140, cookingMethod: .panFriedOrGrilled, oilLevel: .heavy),
+                DishSpec(foodID: "beef", customName: "烤牛五花/牛肉粒", baseGrams: 110, cookingMethod: .panFriedOrGrilled, oilLevel: .heavy),
+                DishSpec(foodID: "chicken_breast", customName: "烤鸡翅/掌中宝", baseGrams: 90, cookingMethod: .panFriedOrGrilled, oilLevel: .standard),
+                DishSpec(foodID: "vegetable_dish", customName: "烤韭菜/金针菇/茄子", baseGrams: 130, cookingMethod: .panFriedOrGrilled, oilLevel: .heavy),
+                DishSpec(foodID: "bread", customName: "烤馒头片/主食小吃", baseGrams: 55, cookingMethod: .panFriedOrGrilled, oilLevel: .standard)
+            ]
+        case .buffet:
+            return [
+                DishSpec(foodID: "steak", customName: "铁板牛排/烤肉档口", baseGrams: 130, cookingMethod: .panFriedOrGrilled, oilLevel: .standard),
+                DishSpec(foodID: "sushi", customName: "三文鱼刺身与寿司", baseGrams: 120, cookingMethod: .readyToEat, oilLevel: .low),
+                DishSpec(foodID: "shrimp", customName: "海鲜大虾/蟹腿贝类", baseGrams: 140, cookingMethod: .steamedOrBoiled, oilLevel: .low),
+                DishSpec(foodID: "fried_chicken", customName: "中西热菜与炸物小食", baseGrams: 90, cookingMethod: .deepFriedOrBreaded, oilLevel: .standard),
+                DishSpec(foodID: "cake", customName: "自助甜品小蛋糕/冰淇淋", baseGrams: 85, cookingMethod: .readyToEat, oilLevel: .standard),
+                DishSpec(foodID: "fruit", customName: "餐后鲜切水果", baseGrams: 130, cookingMethod: .readyToEat, oilLevel: .low)
+            ]
+        }
+    }
+}
+
+enum FoodBanquetAppetiteLevel: String, CaseIterable, Identifiable {
+    case light = "浅尝克制"
+    case normal = "正常聚餐"
+    case feast = "丰盛畅吃"
+
+    var id: String { rawValue }
+    var title: String { rawValue }
+
+    var shortTitle: String {
+        switch self {
+        case .light: return "七分饱"
+        case .normal: return "正常饱"
+        case .feast: return "畅吃饱"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .light: return "每道菜尝一两筷、少吃肥腻与主食"
+        case .normal: return "荤素搭配正常夹菜、吃饱为止"
+        case .feast: return "硬菜主食甜点尽情享用、十成饱"
+        }
+    }
+
+    var gramsMultiplier: Double {
+        switch self {
+        case .light: return 0.65
+        case .normal: return 1.00
+        case .feast: return 1.38
+        }
+    }
+}
+
+enum FoodBanquetDrinkAddon: String, CaseIterable, Identifiable {
+    case none = "清茶/白水"
+    case sweetDrink = "饮料/果汁"
+    case alcohol = "小酌酒水"
+
+    var id: String { rawValue }
+    var title: String { rawValue }
+
+    var subtitle: String {
+        switch self {
+        case .none: return "0 千卡"
+        case .sweetDrink: return "约 1 杯 (250ml)"
+        case .alcohol: return "啤酒/红酒约 300ml"
+        }
+    }
+
+    var dishSpec: FoodBanquetScene.DishSpec? {
+        switch self {
+        case .none:
+            return nil
+        case .sweetDrink:
+            return FoodBanquetScene.DishSpec(
+                foodID: "juice",
+                customName: "席间含糖饮料/果汁",
+                baseGrams: 250,
+                cookingMethod: .readyToEat,
+                oilLevel: .standard
+            )
+        case .alcohol:
+            return FoodBanquetScene.DishSpec(
+                foodID: "alcohol",
+                customName: "席间酒水小酌",
+                baseGrams: 300,
+                cookingMethod: .readyToEat,
+                oilLevel: .standard
+            )
+        }
+    }
 }

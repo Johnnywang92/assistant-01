@@ -28,6 +28,7 @@ struct FoodPhotoCalorieView: View {
     @State private var hintText: String = ""
     @State private var showingFoodPicker = false
     @State private var showingAddDishPicker = false
+    @State private var showingBanquetSheet = false
     @State private var mealDate = Date.now
     /// 用户是否改动过任何参数（用于标记记录为「已手动调整」）
     @State private var didAdjust = false
@@ -54,6 +55,8 @@ struct FoodPhotoCalorieView: View {
     @State private var showingRecognitionDetailSheet = false
     /// 饮食记录展示周期筛选
     @State private var selectedRecordPeriod: FoodRecordPeriodFilter = .today
+    /// 完成并保存饮食记录时的微动效反馈数据
+    @State private var activeSavedMotion: FoodSavedMotionData? = nil
 
     /// 今日营养素摄入汇总（蛋白质、碳水、脂肪，单位克）
     private var todayMacroNutrients: (protein: Double, carbs: Double, fat: Double) {
@@ -126,12 +129,6 @@ struct FoodPhotoCalorieView: View {
         .themedAppBackground()
         .navigationTitle("食物热量估算")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("保存") { saveRecord() }
-                    .disabled(estimation.estimate == nil)
-            }
-        }
         .sheet(isPresented: $showingCamera) {
             FoodCameraPicker { image in
                 photo = image
@@ -187,6 +184,20 @@ struct FoodPhotoCalorieView: View {
                 recommendations: preferenceService.currentRecommendations
             )
         }
+        .sheet(isPresented: $showingBanquetSheet) {
+            FoodBanquetQuickEstimateSheet(
+                onApplyDraft: { scene, appetite, drink in
+                    estimation.applyBanquetPreset(scene: scene, appetite: appetite, drinkAddon: drink)
+                    didAdjust = true
+                    Haptic.light()
+                },
+                onDirectSave: { scene, appetite, drink in
+                    estimation.applyBanquetPreset(scene: scene, appetite: appetite, drinkAddon: drink)
+                    didAdjust = true
+                    saveRecord()
+                }
+            )
+        }
         .alert("修改整餐名称", isPresented: $showingEditMealNameAlert) {
             TextField("输入整餐名称", text: $customMealNameInput)
             Button("保存") {
@@ -239,6 +250,9 @@ struct FoodPhotoCalorieView: View {
                 hintText = newText
             }
         }
+        .overlay {
+            FoodCalorieSavedOverlay(motion: $activeSavedMotion)
+        }
     }
 
     // MARK: - 顶部今日营养仪表盘（摄入、剩余热量、宏量营养素与个性化目标）
@@ -279,6 +293,7 @@ struct FoodPhotoCalorieView: View {
                         Text("\(Int(consumed.rounded()))")
                             .font(.system(size: 28, weight: .bold, design: .rounded))
                             .foregroundStyle(AppColor.primary)
+                            .contentTransition(.numericText())
                         Text("千卡")
                             .font(.caption2.bold())
                             .foregroundStyle(AppColor.secondaryText)
@@ -296,6 +311,7 @@ struct FoodPhotoCalorieView: View {
                         Text("\(Int(remaining.rounded()))")
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                             .foregroundStyle(remaining >= 0 ? AppColor.success : AppColor.danger)
+                            .contentTransition(.numericText())
                         Text("千卡")
                             .font(.caption2.bold())
                             .foregroundStyle(AppColor.secondaryText)
@@ -463,7 +479,7 @@ struct FoodPhotoCalorieView: View {
                 }
                 .buttonStyle(.plain)
 
-                // 辅助快捷入口栏（相册导入、食物库快速挑选）
+                // 辅助快捷入口栏（相册导入、食物库快速挑选、宴席/聚餐多菜速记）
                 HStack(spacing: 8) {
                     PhotosPicker(selection: $pickedItems, maxSelectionCount: 1, matching: .images) {
                         Label("相册导入", systemImage: "photo.on.rectangle")
@@ -483,6 +499,20 @@ struct FoodPhotoCalorieView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
                             .background(Color(.secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showingBanquetSheet = true
+                        Haptic.light()
+                    } label: {
+                        Label("宴席/聚餐", systemImage: "person.3.fill")
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .foregroundStyle(Color.orange)
+                            .background(Color.orange.opacity(0.12))
                             .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
                     }
                     .buttonStyle(.plain)
@@ -864,8 +894,8 @@ struct FoodPhotoCalorieView: View {
                     step: 0.05
                 )
 
-                HStack(spacing: 8) {
-                    ForEach([(1.0, "全部吃完 100%"), (0.75, "吃了大半 75%"), (0.5, "吃了一半 50%"), (0.25, "只尝少许 25%")], id: \.0) { value, label in
+                HStack(spacing: 6) {
+                    ForEach([(1.0, "吃完 100%"), (0.75, "大半 75%"), (0.5, "一半 50%"), (0.25, "少许 25%"), (0.15, "尝几筷 15%")], id: \.0) { value, label in
                         let isSelected = abs((estimation.estimate?.consumedRatio ?? 1.0) - value) < 0.03
                         Button {
                             estimation.updateConsumedRatio(value)
@@ -1371,15 +1401,18 @@ enum FoodRecordPeriodFilter: String, CaseIterable, Identifiable {
 
     private func saveRecord() {
         guard let estimate = estimation.estimate else { return }
+        let savedName = estimate.displayName
+        let savedCalories = estimate.consumedCalories
+        let savedRatio = estimate.consumedRatio
         // 缩略图压到 480px 长边，避免撑大数据库
         let imageData = photo?.scaledDown(maxDimension: 480).jpegData(compressionQuality: 0.7)
         let record = FoodIntakeRecord(
             date: mealDate,
-            foodName: estimate.displayName,
+            foodName: savedName,
             foodID: estimate.dishes.count == 1 ? estimate.food.id : estimate.dishes.map(\.food.id).joined(separator: "+"),
             portion: estimate.portion,
             fullPortionCalories: estimate.fullPortionCalories,
-            consumedRatio: estimate.consumedRatio,
+            consumedRatio: savedRatio,
             confidence: estimate.confidence,
             isManuallyAdjusted: didAdjust,
             source: photo != nil ? .vision : .manual,
@@ -1388,11 +1421,19 @@ enum FoodRecordPeriodFilter: String, CaseIterable, Identifiable {
         context.insert(record)
         try? context.save()
         Haptic.success()
-        // 保存后清空当前草稿，留在页面可直接查看今日累计或继续二次调整百分比
-        photo = nil
-        pickedItems = []
-        hintText = ""
-        estimation.clearDraft()
+
+        // 触发饮食记录入账微动效，并平滑收起当前估算草稿卡片
+        AppMotion.animate(.spring(response: 0.38, dampingFraction: 0.82)) {
+            activeSavedMotion = FoodSavedMotionData(
+                foodName: savedName,
+                consumedCalories: savedCalories,
+                consumedRatio: savedRatio
+            )
+            photo = nil
+            pickedItems = []
+            hintText = ""
+            estimation.clearDraft()
+        }
     }
 
     private func confidenceColor(_ level: FoodConfidenceLevel) -> Color {
@@ -2401,6 +2442,450 @@ private struct HabitPill: View {
         .padding(.vertical, 4)
         .background(AppColor.surface)
         .clipShape(Capsule())
+    }
+}
+
+// MARK: - 饮食热量保存入账微动效覆盖层（轻量、非阻塞、60/120fps）
+
+struct FoodSavedMotionData: Equatable {
+    let id = UUID()
+    let foodName: String
+    let consumedCalories: Double
+    let consumedRatio: Double
+}
+
+private struct FoodCalorieSavedOverlay: View {
+    @Binding var motion: FoodSavedMotionData?
+
+    var body: some View {
+        ZStack {
+            if let data = motion {
+                FoodCalorieSavedBadge(data: data) {
+                    AppMotion.animate(.easeOut(duration: 0.22)) {
+                        if motion?.id == data.id {
+                            motion = nil
+                        }
+                    }
+                }
+                .id(data.id)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
+    }
+}
+
+private struct FoodCalorieSavedBadge: View {
+    let data: FoodSavedMotionData
+    let onFinished: () -> Void
+
+    @State private var hubScale: CGFloat = 0.45
+    @State private var hubOpacity: Double = 0.0
+    @State private var ringScale: CGFloat = 0.65
+    @State private var ringOpacity: Double = 0.75
+    @State private var sparkleProgress: CGFloat = 0.0
+    @State private var pillOffsetY: CGFloat = 24
+    @State private var pillOpacity: Double = 0.0
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if !AppMotion.reduceMotion {
+                ZStack {
+                    // 扩散能量波纹环
+                    Circle()
+                        .stroke(
+                            LinearGradient(
+                                colors: [Color.orange.opacity(0.65), AppColor.success.opacity(0.45)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 2.5
+                        )
+                        .frame(width: 76, height: 76)
+                        .scaleEffect(ringScale)
+                        .opacity(ringOpacity)
+
+                    // 周围 6 颗轻盈星芒粒子
+                    ForEach(0..<6, id: \.self) { index in
+                        let angle = Double(index) * (.pi / 3.0)
+                        let radius: CGFloat = 46 * sparkleProgress
+                        Image(systemName: index.isMultiple(of: 2) ? "sparkle" : "flame.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(index.isMultiple(of: 2) ? Color.orange : AppColor.success)
+                            .scaleEffect(max(0.1, 1.0 - sparkleProgress * 0.4))
+                            .opacity(Double(1.0 - sparkleProgress))
+                            .offset(
+                                x: cos(angle) * radius,
+                                y: sin(angle) * radius
+                            )
+                    }
+
+                    // 中心餐盘打卡徽章
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.orange, AppColor.primary],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 60, height: 60)
+
+                        Image(systemName: "fork.knife.circle.fill")
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .scaleEffect(hubScale)
+                    .opacity(hubOpacity)
+                }
+            }
+
+            // 底部悬浮入账胶囊
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.subheadline.bold())
+                    .foregroundStyle(AppColor.success)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("已记入今日饮食 · \(data.foodName)")
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    HStack(spacing: 4) {
+                        Text("+\(Int(data.consumedCalories.rounded())) 千卡")
+                            .font(.caption2.bold().monospacedDigit())
+                            .foregroundStyle(Color.orange)
+                        if data.consumedRatio < 0.999 {
+                            Text("(\(Int((data.consumedRatio * 100).rounded()))% 进食量)")
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.8))
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Capsule().fill(Color.black.opacity(0.84)))
+            .offset(y: pillOffsetY)
+            .opacity(pillOpacity)
+        }
+        .onAppear {
+            playAnimation()
+        }
+    }
+
+    private func playAnimation() {
+        if AppMotion.reduceMotion {
+            pillOffsetY = 0
+            pillOpacity = 1.0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+                onFinished()
+            }
+            return
+        }
+
+        withAnimation(.spring(response: 0.36, dampingFraction: 0.68)) {
+            hubScale = 1.0
+            hubOpacity = 1.0
+            pillOffsetY = 0
+            pillOpacity = 1.0
+        }
+
+        withAnimation(.easeOut(duration: 0.65)) {
+            ringScale = 1.45
+            ringOpacity = 0.0
+            sparkleProgress = 1.0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.15) {
+            withAnimation(.easeIn(duration: 0.22)) {
+                hubScale = 0.85
+                hubOpacity = 0.0
+                pillOffsetY = -12
+                pillOpacity = 0.0
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            onFinished()
+        }
+    }
+}
+
+// MARK: - 宴席 / 聚餐多菜品快捷估算弹窗
+
+private struct FoodBanquetQuickEstimateSheet: View {
+    let onApplyDraft: (FoodBanquetScene, FoodBanquetAppetiteLevel, FoodBanquetDrinkAddon) -> Void
+    let onDirectSave: (FoodBanquetScene, FoodBanquetAppetiteLevel, FoodBanquetDrinkAddon) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedScene: FoodBanquetScene = .chineseBanquet
+    @State private var selectedAppetite: FoodBanquetAppetiteLevel = .normal
+    @State private var selectedDrink: FoodBanquetDrinkAddon = .none
+
+    private var previewEstimate: FoodCalorieEstimate {
+        FoodEstimationService.buildBanquetEstimate(
+            scene: selectedScene,
+            appetite: selectedAppetite,
+            drinkAddon: selectedDrink
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppSpacing.md) {
+                    // 1. 顶部实时单人折算总览卡
+                    VStack(spacing: 8) {
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("\(selectedScene.title) · 单人实际摄入估算")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(AppColor.secondaryText)
+                                Text(selectedScene.subtitle)
+                                    .font(.caption2)
+                                    .foregroundStyle(AppColor.secondaryText.opacity(0.85))
+                            }
+                            Spacer()
+                            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                                Text("\(Int(previewEstimate.consumedCalories.rounded()))")
+                                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                                    .foregroundStyle(Color.orange)
+                                    .contentTransition(.numericText())
+                                Text("千卡")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(AppColor.secondaryText)
+                            }
+                        }
+
+                        HStack {
+                            Text(previewEstimate.calorieRangeDescription)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(Color.orange)
+                            Spacer()
+                            Text("已按圆桌多人分食折算个人入肚量（共 \(previewEstimate.dishes.count) 类代表菜）")
+                                .font(.caption2)
+                                .foregroundStyle(AppColor.secondaryText)
+                        }
+                    }
+                    .padding(AppSpacing.md)
+                    .background(Color.orange.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+
+                    // 2. 选择聚餐/宴席场景
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("1. 选择聚餐类型")
+                            .font(.subheadline.bold())
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            ForEach(FoodBanquetScene.allCases) { scene in
+                                let isSelected = selectedScene == scene
+                                Button {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                        selectedScene = scene
+                                    }
+                                    Haptic.selection()
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: scene.icon)
+                                            .font(.subheadline.bold())
+                                            .foregroundStyle(isSelected ? .white : Color.orange)
+                                            .frame(width: 30, height: 30)
+                                            .background(
+                                                Circle().fill(isSelected ? Color.orange : Color.orange.opacity(0.14))
+                                            )
+
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(scene.title)
+                                                .font(.caption.bold())
+                                                .foregroundStyle(isSelected ? Color.orange : AppColor.text)
+                                                .lineLimit(1)
+                                            Text("约 \(scene.dishSpecs.count) 类代表菜")
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(AppColor.secondaryText)
+                                        }
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                                            .fill(isSelected ? Color.orange.opacity(0.14) : Color(.secondarySystemGroupedBackground))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                                            .stroke(isSelected ? Color.orange : Color.clear, lineWidth: 1.5)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    // 3. 选择个人进食程度
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("2. 今天吃了多少？")
+                            .font(.subheadline.bold())
+
+                        ForEach(FoodBanquetAppetiteLevel.allCases) { level in
+                            let isSelected = selectedAppetite == level
+                            Button {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                    selectedAppetite = level
+                                }
+                                Haptic.selection()
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(level.title)
+                                                .font(.subheadline.bold())
+                                                .foregroundStyle(isSelected ? AppColor.primary : AppColor.text)
+                                            Text(level.shortTitle)
+                                                .font(.system(size: 10, weight: .semibold))
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Capsule().fill(isSelected ? AppColor.primary.opacity(0.15) : Color(.tertiarySystemFill)))
+                                                .foregroundStyle(isSelected ? AppColor.primary : AppColor.secondaryText)
+                                        }
+                                        Text(level.subtitle)
+                                            .font(.caption2)
+                                            .foregroundStyle(AppColor.secondaryText)
+                                    }
+                                    Spacer()
+                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(isSelected ? AppColor.primary : Color.secondary.opacity(0.4))
+                                }
+                                .padding(12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                                        .fill(isSelected ? AppColor.primary.opacity(0.1) : Color(.secondarySystemGroupedBackground))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    // 4. 席间饮品/酒水
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("3. 席间酒水饮品")
+                            .font(.subheadline.bold())
+
+                        HStack(spacing: 8) {
+                            ForEach(FoodBanquetDrinkAddon.allCases) { addon in
+                                let isSelected = selectedDrink == addon
+                                Button {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                        selectedDrink = addon
+                                    }
+                                    Haptic.selection()
+                                } label: {
+                                    VStack(spacing: 3) {
+                                        Text(addon.title)
+                                            .font(.caption.bold())
+                                            .foregroundStyle(isSelected ? AppColor.primary : AppColor.text)
+                                        Text(addon.subtitle)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(AppColor.secondaryText)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 9)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                                            .fill(isSelected ? AppColor.primary.opacity(0.12) : Color(.secondarySystemGroupedBackground))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                                            .stroke(isSelected ? AppColor.primary : Color.clear, lineWidth: 1.2)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    // 5. 折算代表菜品明细预览
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("包含的单人代表菜品折算明细")
+                            .font(.caption.bold())
+                            .foregroundStyle(AppColor.secondaryText)
+
+                        ForEach(previewEstimate.dishes) { dish in
+                            HStack {
+                                Text(dish.food.name)
+                                    .font(.caption)
+                                    .foregroundStyle(AppColor.text)
+                                Spacer()
+                                Text("约 \(Int(dish.currentGrams))g")
+                                    .font(.caption2)
+                                    .foregroundStyle(AppColor.secondaryText)
+                                Text("\(Int(dish.consumedCalories.rounded())) 卡")
+                                    .font(.caption.bold().monospacedDigit())
+                                    .foregroundStyle(AppColor.primary)
+                                    .frame(width: 56, alignment: .trailing)
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 10)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+                        }
+                    }
+
+                    // 6. 底部双操作按钮：直接保存 or 填入主页微调
+                    VStack(spacing: 8) {
+                        Button {
+                            let s = selectedScene
+                            let a = selectedAppetite
+                            let d = selectedDrink
+                            dismiss()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                onDirectSave(s, a, d)
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("一键完成并保存记录 (\(Int(previewEstimate.consumedCalories.rounded())) 千卡)")
+                            }
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(AppColor.primary)
+                            .foregroundStyle(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            onApplyDraft(selectedScene, selectedAppetite, selectedDrink)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "slider.horizontal.3")
+                                Text("填入明细继续增删微调")
+                            }
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .foregroundStyle(AppColor.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(AppSpacing.md)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("宴席 / 聚餐快捷估算")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+            }
+        }
     }
 }
 

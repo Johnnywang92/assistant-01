@@ -68,18 +68,12 @@ public struct WaterTrackerView: View {
         .navigationTitle("喝水记录")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     isShowingShareSheet = true
                     Haptic.light()
                 } label: {
                     Label("分享打卡卡片", systemImage: "square.and.arrow.up")
-                }
-
-                Button {
-                    isShowingCustomSheet = true
-                } label: {
-                    Label("详细记录", systemImage: "plus")
                 }
             }
         }
