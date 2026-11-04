@@ -642,3 +642,37 @@ P0 五项至此全部完成。本轮把三项「部分完成」推到可自动�
 - [ ] CR-02/CR-03 属 UI 状态流，没有屏幕级复现（App target 无测试 scheme，未新增单测）。
 - [ ] 遗留未动：`WidgetBridgeAppHook` 分支里 6 处 `try? context.save()`（改动需连带 5 个方法签名），与上文 P3+ 的三条真机验收、`6. 真机联调` 一样继续挂账。
 
+
+## 2026-11-03 实施记录（视觉模型包：多部件图像识别模型的管理与端侧推理）
+
+### 范围
+
+- **Core**：`VisionModelRegistry`（视觉包注册表：一个包 = 语言模型 GGUF + mmproj 视觉编码器两个部件，部件级校验、发布指纹、下载源）、`ModelReleaseCatalog.visionAll`（Qwen3-VL-2B 的两条发布指纹）、对应契约测试 8 项。
+- **App**：`ModelFileValidation`（把对话模型与视觉部件共用的文件判据下沉成一处，避免两套判据各自漂移）、`VisionModelManager`（逐件下载/续传/校验/整包删除）、`VisionLlamaEngine`（mtmd 图像推理）。
+- **UI**：模型管理页新增「图像识别模型（拍照算热量专用）」分区；对话规格行左滑可单独删除并释放空间。
+
+### 关键决定
+
+- 视觉包**不进**端侧模型单选列表：两个部件必须同版本、缺一不可，而单选列表的语义是「选中它去聊天」。
+- 删除只给**整包**级别：单删一半会留下「看起来已就绪、实际加载失败」的包。
+- 图像 token 上限与上下文上限的契约钉在注册表里（`imageMaxTokens` 不得大于 `maxContextTokens`），并写进 mtmd 的 `image_max_tokens`；预算闸门同时看 `n_tokens` 与 `n_pos`——M-RoPE 下两者不等，只看位置会低估 KV 占用直到解码时才炸。
+- 引擎一次只跑一张图：`mtmd_helper_eval_chunks` 明确不是线程安全的，而 actor 可重入（解码循环每轮 await 输出回调）。
+- 解码循环与聊天路径同源但**不抽公共函数**：聊天路径本批无法在真机回归，抽走等于拿一次不可验证的重构去赌在线行为。
+- 下载回调的「复活」窗口用两道闸门堵住：整包代次（`bundleEpoch`）作废已删除包的落盘回调；部件身份一律取自 `task.taskDescription` 而非可变的 `activePart`，并且只在「该任务仍是当前下载」时才写续传数据——否则用户点完「放弃进度」或「整包删除」，在途的取消回调会把续传文件又写回来。
+
+### 验证
+
+- `swift test`（Packages/AssistantCore）：1106 项、0 失败（新增视觉注册表契约测试 8 项，发布指纹体积在 `ModelIntegrityTests` 钉死）。
+- 设备构建：在**隔离副本**中 `xcodegen generate` + `xcodebuild -destination generic/platform=iOS` → BUILD SUCCEEDED，四个新文件零警告（共享工作树有并行改动在途，未在原树跑 xcodegen）。
+- mtmd C API：对 `Frameworks/llama.xcframework/ios-arm64` 真机切片直接 `swiftc -typecheck` 通过（`mtmd_context_params` / `mtmd_input_text` / `mtmd_tokenize` / `mtmd_helper_eval_chunks` 等签名逐个核实）。
+- `mtmd_bitmap_init` 的数据所有权：`mtmd.h` 没写明是复制还是留指针，反汇编真机切片确认它**自己分配缓冲并 memcpy**（`mtmd_bitmap_init` 内 `bl _memcpy`，拷贝后的指针存在结构体 `0x38` 偏移），所以调用方的像素数组只需在调用期间有效——这一条此前是假设，现已实测。
+- 媒体标记改用 `mtmd_get_marker(ctx)` 取 context 的实际标记（`media_marker` 可在 `mtmd_context_params` 里被改写），退路才是 `mtmd_default_marker()`。
+- `mtmd_helper_eval_chunks` 的参数顺序按 `mtmd-helper.h` 逐位核对：`(ctx, lctx, chunks, n_past, seq_id, n_batch, logits_last, new_n_past)`。
+- 双语文案：新增/复用的 30 个 `L10n.tr` 键在 `Localizable.xcstrings` 中均有 `zh-Hans` 与 `en` 两份，脚本逐键核对无缺。
+
+### 未验 / 未做
+
+- 真机链路未跑：下载 → 校验 → 加载 → 出图整条路只在设备切片上编译过，没有真实 GGUF 与 mmproj 跑过。
+- 「拍照算热量」接 VL 未做：`FoodPhotoCalorieView.swift` / `FoodEstimationService.swift` 正被另一处并行改动占用，等其合入再接。
+- 发布指纹只经 ModelScope 单源核对（写指纹时 huggingface.co 超时，未做 HF 侧交叉核对），因此这两个条目**只挂 ModelScope 一个下载源**。
+- 图像 token 上限 512 与上下文上限的真实占用关系只有静态校验，未在真机量过。

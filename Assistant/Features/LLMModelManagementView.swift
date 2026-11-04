@@ -57,11 +57,22 @@ struct LLMModelManagementView: View {
                         .padding(.vertical, 2)
                     }
                     .buttonStyle(.plain)
+                    // 左滑删除：单选行本身仍是「点=切换」，删除只在已下载的行上出现，
+                    // 不给没有文件的行为留下一个什么也不会做的删除按钮
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if isInstalled {
+                            Button(role: .destructive) {
+                                deletePreset(preset)
+                            } label: {
+                                Label(L10n.tr("删除"), systemImage: "trash")
+                            }
+                        }
+                    }
                 }
             } header: {
                 Text("切换端侧模型规格 (支持 Qwen3)")
             } footer: {
-                Text("推荐使用新一代 Qwen3-1.7B（速度与推理能力均衡）或更强大的 Qwen3-4B（复杂拆解与食物热量推算更准）。已下载的模型在切换时不会丢失，可随时自由切换。")
+                Text("推荐使用新一代 Qwen3-1.7B（速度与推理能力均衡）或更强大的 Qwen3-4B（复杂拆解与食物热量推算更准）。已下载的模型在切换时不会丢失，可随时自由切换。左滑已下载的行可单独删除、释放空间。")
             }
 
             // MARK: - 1. 模型状态卡片
@@ -408,6 +419,9 @@ struct LLMModelManagementView: View {
                 }
             }
 
+            // MARK: - 2.5 图像识别模型（多部件包，不进上面的单选列表）
+            VisionModelCard()
+
             // MARK: - 3. 本地推理与问答沙盒测试
             Section("llama.cpp 端侧推理沙盒测试") {
                 VStack(alignment: .leading, spacing: 10) {
@@ -632,6 +646,19 @@ struct LLMModelManagementView: View {
             try modelManager.importModel(from: url)
         } catch {
             modelManager.errorMessage = "导入文件失败：\(error.localizedDescription)"
+        }
+    }
+
+    /// 删除某个规格的本地文件。删的若是当前选中项，接着切到另一个仍在盘上的规格——
+    /// 停在「未下载」态会让用户以为所有模型都没了，而实际上盘上还有别的可用文件。
+    private func deletePreset(_ preset: LLMModelPreset) {
+        let wasSelected = modelManager.selectedPreset == preset
+        modelManager.deleteModel(for: preset)
+        guard wasSelected else { return }
+        if let fallback = LLMModelPreset.allCases.first(where: {
+            $0 != preset && modelManager.hasModelFileOnDisk(for: $0)
+        }) {
+            modelManager.selectedPreset = fallback
         }
     }
 }

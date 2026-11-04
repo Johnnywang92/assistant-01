@@ -248,6 +248,136 @@ final class ModelContractTests: XCTestCase {
         let topKIssues = ModelRegistry.validate([badTopK])
         XCTAssertTrue(topKIssues.contains { $0.contains("Top-K") }, "\(topKIssues)")
     }
+
+    // MARK: - 视觉模型包
+
+    func testVisionRegistryValidatesClean() {
+        XCTAssertEqual(VisionModelRegistry.validate(), [])
+    }
+
+    /// 「与现在的模型作区分」的可执行版本：视觉包既不在对话模型注册表里，
+    /// 也不与它们共用任何 id 或本地文件名——文件名是引擎反查推理画像的键，撞名等于张冠李戴。
+    func testVisionBundleIsKeptOutOfChatModelRegistry() {
+        let chatIDs = Set(ModelRegistry.builtIn.map(\.id))
+        let visionIDs = Set(ModelReleaseCatalog.visionAll.map(\.id))
+        XCTAssertTrue(chatIDs.isDisjoint(with: visionIDs))
+        XCTAssertTrue(Set(ModelReleaseCatalog.all.map { $0.id }).isDisjoint(with: visionIDs))
+
+        let chatFiles = Set(ModelRegistry.builtIn.map(\.fileName))
+        let visionFiles = Set(VisionModelRegistry.builtIn.flatMap { $0.parts.map(\.fileName) })
+        XCTAssertTrue(chatFiles.isDisjoint(with: visionFiles))
+        for part in VisionModelRegistry.defaultBundle.parts {
+            XCTAssertNil(ModelRegistry.descriptor(fileName: part.fileName), "视觉部件 \(part.fileName) 撞进了对话模型表")
+        }
+    }
+
+    func testVisionPartsArePinned() {
+        let bundle = VisionModelRegistry.defaultBundle
+        XCTAssertEqual(bundle.id, "qwen3_vl_2b")
+        XCTAssertEqual(bundle.shortName, "Qwen3-VL-2B")
+        XCTAssertEqual(bundle.imageMaxTokens, 512)
+        XCTAssertEqual(bundle.parts.map(\.role), [.languageModel, .visionProjector])
+        XCTAssertEqual(bundle.parts.map(\.fileName), [
+            "Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+            "mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf"
+        ])
+        XCTAssertEqual(bundle.parts.map(\.minValidSizeBytes), [900_000_000, 350_000_000])
+        // 两个部件都是 1.5GB 级下载，误判截断的代价是把整包重下一遍
+        XCTAssertEqual(bundle.totalSizeBytes, 1_107_409_952 + 445_053_216)
+    }
+
+    /// 钉住「只挂 ModelScope 一个源」这个决定。
+    ///
+    /// 写入清单时 HF 侧无法交叉核对指纹（本机访问 huggingface.co 超时），所以故意不配 HF。
+    /// 补上 HF 的正确动作是：先拿到 HF 的 LFS `oid sha256`/`size` 与本条目逐字一致，
+    /// 再同时改这条断言——不是先加地址再说。
+    func testVisionPartsHaveOnlyCrossVerifiedSources() {
+        for bundle in VisionModelRegistry.builtIn {
+            for part in bundle.parts {
+                XCTAssertEqual(Array(part.downloadURLs.keys), [.modelScope], part.id)
+                XCTAssertEqual(part.availableSources, [.modelScope], part.id)
+            }
+        }
+    }
+
+    func testVisionFileNameLookupResolvesProfile() {
+        for part in VisionModelRegistry.defaultBundle.parts {
+            XCTAssertEqual(
+                VisionModelRegistry.inferenceProfile(fileName: part.fileName),
+                VisionModelRegistry.defaultBundle.inference
+            )
+        }
+        XCTAssertNil(VisionModelRegistry.inferenceProfile(fileName: "Qwen3-1.7B-Q4_K_M.gguf"))
+    }
+
+    func testVisionValidateFlagsMissingPart() {
+        // 少 mmproj 的包在设备上表现为「加载失败」，但根因是注册表写漏，必须在发布前判红
+        let bundle = VisionModelRegistry.defaultBundle
+        let llmOnly = bundle.replacing(parts: [bundle.parts[0]])
+        let issues = VisionModelRegistry.validate([llmOnly])
+        XCTAssertTrue(issues.contains { $0.contains("缺少 visionProjector 部件") }, "\(issues)")
+    }
+
+    func testVisionValidateFlagsOrphanReleaseEntryAndFileNameMismatch() {
+        let bundle = VisionModelRegistry.defaultBundle
+        let renamed = bundle.replacing(parts: [
+            bundle.parts[0].replacing(fileName: "renamed-weights.gguf"),
+            bundle.parts[1]
+        ])
+        let issues = VisionModelRegistry.validate([renamed])
+        XCTAssertTrue(issues.contains { $0.contains("与本地文件名") }, "\(issues)")
+
+        let orphaned = bundle.replacing(parts: [
+            bundle.parts[0].replacing(id: "not_a_vision_part"),
+            bundle.parts[1]
+        ])
+        let orphanIssues = VisionModelRegistry.validate([orphaned])
+        XCTAssertTrue(orphanIssues.contains { $0.contains("没有已核验的发布条目") }, "\(orphanIssues)")
+        XCTAssertTrue(orphanIssues.contains { $0.contains("没有对应部件") }, "\(orphanIssues)")
+    }
+
+    func testVisionValidateFlagsImageBudgetAboveContextWindow() {
+        let bundle = VisionModelRegistry.defaultBundle
+        let tight = bundle.replacing(
+            inference: ModelInferenceProfile(
+                maxContextTokens: 8192, fallbackContextTokens: 4096,
+                topK: 40, topP: 0.80, temperature: 0.20
+            ),
+            imageMaxTokens: 8192
+        )
+        let issues = VisionModelRegistry.validate([tight])
+        XCTAssertTrue(issues.contains { $0.contains("一张图就能把提示词预算吃光") }, "\(issues)")
+    }
+}
+
+private extension VisionModelBundle {
+    /// 只替换关心字段的副本，用于反向证明自检真的能抓到手抄常量的错
+    func replacing(
+        parts: [VisionModelPart]? = nil,
+        inference: ModelInferenceProfile? = nil,
+        imageMaxTokens: Int? = nil
+    ) -> VisionModelBundle {
+        VisionModelBundle(
+            id: id, displayName: displayName, shortName: shortName,
+            subtitle: subtitle, usageNote: usageNote,
+            parameterCountText: parameterCountText, estimatedRAMText: estimatedRAMText,
+            parts: parts ?? self.parts,
+            inference: inference ?? self.inference,
+            imageMaxTokens: imageMaxTokens ?? self.imageMaxTokens
+        )
+    }
+}
+
+private extension VisionModelPart {
+    func replacing(id: String? = nil, fileName: String? = nil) -> VisionModelPart {
+        VisionModelPart(
+            id: id ?? self.id,
+            role: role, displayName: displayName,
+            fileName: fileName ?? self.fileName,
+            minValidSizeBytes: minValidSizeBytes,
+            downloadURLs: downloadURLs
+        )
+    }
 }
 
 private extension ModelDescriptor {

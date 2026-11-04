@@ -141,9 +141,9 @@ final class ModelIntegrityTests: XCTestCase {
     // MARK: - 发布清单自检（防手抄错误）
 
     /// 清单里的哈希是手抄常量：抄错一位会让所有下载全被判「文件无效」。
-    /// 这条断言是发布前的最后一道闸。
+    /// 这条断言是发布前的最后一道闸。视觉部件同样是手抄指纹，一起过闸。
     func testPublishedCatalogEntriesAreWellFormed() {
-        for entry in ModelReleaseCatalog.all {
+        for entry in ModelReleaseCatalog.all + ModelReleaseCatalog.visionAll {
             XCTAssertTrue(
                 ModelIntegrityEvaluator.isWellFormed(entry.integrity),
                 "发布清单条目格式非法：\(entry.id)"
@@ -152,32 +152,37 @@ final class ModelIntegrityTests: XCTestCase {
     }
 
     func testPublishedCatalogIdsAreUnique() {
-        let ids = ModelReleaseCatalog.all.map(\.id)
+        let ids = (ModelReleaseCatalog.all + ModelReleaseCatalog.visionAll).map(\.id)
         XCTAssertEqual(Set(ids).count, ids.count, "发布清单存在重复 id")
     }
 
     func testPublishedCatalogDigestsAreUnique() {
-        let digests = ModelReleaseCatalog.all.map { ModelIntegrityEvaluator.normalizeDigest($0.sha256) }
+        let digests = (ModelReleaseCatalog.all + ModelReleaseCatalog.visionAll)
+            .map { ModelIntegrityEvaluator.normalizeDigest($0.sha256) }
         XCTAssertEqual(Set(digests).count, digests.count, "发布清单存在重复哈希")
     }
 
     func testPublishedCatalogEntryLookupById() {
-        for entry in ModelReleaseCatalog.all {
+        for entry in ModelReleaseCatalog.all + ModelReleaseCatalog.visionAll {
             XCTAssertEqual(ModelReleaseCatalog.entry(id: entry.id), entry)
         }
         XCTAssertNil(ModelReleaseCatalog.entry(id: "not_a_model"))
     }
 
     func testPublishedCatalogSizesMatchRealPublishedBytes() {
-        // 钉住三个模型的精确体积：体积用于「没下完」的快速判定，
-        // 与发布方标注不一致会让正常的下载被误判为截断。
+        // 钉住发布方标注的精确体积：体积用于「没下完」的快速判定，
+        // 与发布方不一致会让正常的下载被误判为截断。
         XCTAssertEqual(ModelReleaseCatalog.qwen3_1_7b.byteSize, 1_107_409_472)
         XCTAssertEqual(ModelReleaseCatalog.qwen3_4b.byteSize, 2_497_280_256)
         XCTAssertEqual(ModelReleaseCatalog.qwen2_5_1_5b.byteSize, 1_117_320_736)
+        // 视觉两个部件。Qwen3-1.7B 与 Qwen3-VL-2B 的 Q4_K_M 只差 480 字节，
+        // 这两个数一旦有人「顺手对齐」就会让正常下载全被判截断，故分别钉死。
+        XCTAssertEqual(ModelReleaseCatalog.qwen3_vl_2b_llm.byteSize, 1_107_409_952)
+        XCTAssertEqual(ModelReleaseCatalog.qwen3_vl_2b_mmproj.byteSize, 445_053_216)
     }
 
     func testEachCatalogEntryMatchesItself() {
-        for entry in ModelReleaseCatalog.all {
+        for entry in ModelReleaseCatalog.all + ModelReleaseCatalog.visionAll {
             let verdict = ModelIntegrityEvaluator.evaluate(
                 actualSize: entry.byteSize,
                 actualDigest: entry.sha256,

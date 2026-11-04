@@ -22,7 +22,7 @@ An offline life-assistant app that runs entirely on your iPhone. It wires togeth
 | Mental & Emotional State | 10-second daily mood micro check-in (mood / energy / stress), PHQ-9 & GAD-7 screening, 3-line emotional resonance trend chart (7/14/30-day view), 3-channel cross-reading (questionnaire / daily / physiology), LLM export & social share cards |
 | Health Dual-Index | Real-time Vitality & Pleasure Index estimation (integrating ANS HRV, resting HR, sleep recovery stages, activity, and emotional check-in modulations), hydration & calorie tracking, health share cards |
 | Contextual Intelligence | Autonomous learning of frequent places, daily pain-point audit (low battery, expiring documents, auto-renewal prevention), periodic review reports |
-| Model Management | Download and manage local GGUF models; can also connect to Ollama on the LAN |
+| Model Management | Download and manage local GGUF models; can also connect to Ollama on the LAN. Vision model packs (language model + vision encoder) are downloaded, verified, and deleted part by part |
 | System Integration | App Shortcuts, Action Button, Back Tap, interactive home-screen widgets, Live Activities, completing to-dos directly from widgets |
 | Data Safety | Full backup/restore (PIN-encrypted export/import), app lock passcode, senior mode, customizable tab bar and app background |
 

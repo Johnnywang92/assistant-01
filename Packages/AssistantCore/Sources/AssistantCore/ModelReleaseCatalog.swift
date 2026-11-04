@@ -12,6 +12,13 @@ import Foundation
 /// - 与 Hugging Face 同一文件的 LFS pointer `oid sha256:` / `size` 交叉核对一致后才写入。
 ///
 /// 只核对单侧来源是不够的——那等于把「自己下载来的东西」当成标准答案。
+///
+/// **例外：`visionAll`（Qwen3-VL 视觉包）**。写入时本网络访问 huggingface.co 超时，
+/// 未能做 HF 侧交叉核对；改用同一发布方的两个独立接口对齐——文件接口的 `Sha256` 与
+/// `resolve` 下载端点返回的 `X-Linked-Etag` 逐字相同，且体积一致。这只证明
+/// 「ModelScope 给出的地址与它给出的指纹自洽」，不证明上游没换过产物，
+/// 因此这两个条目**只配 ModelScope 一个下载源**（见 `VisionModelRegistry`），
+/// HF 指纹补到之后再加第二个源。
 public enum ModelReleaseCatalog {
 
     /// 清单条目
@@ -68,11 +75,38 @@ public enum ModelReleaseCatalog {
         sha256: "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"
     )
 
-    /// 全部条目
+    /// 全部对话模型条目（与 `ModelRegistry.builtIn` 一一对应，契约测试按此判红）
     public static let all: [Entry] = [qwen3_1_7b, qwen3_4b, qwen2_5_1_5b]
 
-    /// 按 id 取条目
+    // MARK: - 视觉模型包
+
+    /// Qwen3-VL-2B-Instruct · Q4_K_M（视觉包的语言模型部件）
+    ///
+    /// 体积与 `qwen3_1_7b` 只差 480 字节，哈希完全不同——这正是清单最容易被抄错的地方，
+    /// 所以两个值在 `ModelIntegrityTests` 里分别钉死，不允许互相「顺手改齐」。
+    public static let qwen3_vl_2b_llm = Entry(
+        id: "qwen3_vl_2b_llm",
+        displayName: "Qwen3-VL-2B-Instruct · Q4_K_M（语言模型部件）",
+        releaseVersion: "Qwen/Qwen3-VL-2B-Instruct-GGUF@1d49f1a7",
+        byteSize: 1_107_409_952,
+        sha256: "089d75c52f4b7ffc56ba998ffc50aae89fcafc755f9e7208aacca281dca6c2ae"
+    )
+
+    /// Qwen3-VL-2B-Instruct · Q8_0（视觉包的视觉编码部件，llama.cpp 的 mmproj）
+    public static let qwen3_vl_2b_mmproj = Entry(
+        id: "qwen3_vl_2b_mmproj",
+        displayName: "Qwen3-VL-2B-Instruct · mmproj Q8_0（视觉编码器部件）",
+        releaseVersion: "Qwen/Qwen3-VL-2B-Instruct-GGUF@1d49f1a7",
+        byteSize: 445_053_216,
+        sha256: "f9a68fabba69c3b81e153367b2c7521030b0fa8bb0de400c9599c8e6725f9c82"
+    )
+
+    /// 视觉包条目。刻意与 `all` 分开：`ModelRegistry.validate()` 按「`all` 与 builtIn 一一对应」
+    /// 判红，而视觉包不是可选对话规格，混进去会让它出现在端侧模型单选列表里。
+    public static let visionAll: [Entry] = [qwen3_vl_2b_llm, qwen3_vl_2b_mmproj]
+
+    /// 按 id 取条目（对话模型与视觉部件共用一张表）
     public static func entry(id: String) -> Entry? {
-        all.first { $0.id == id }
+        (all + visionAll).first { $0.id == id }
     }
 }
