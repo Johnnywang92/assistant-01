@@ -218,6 +218,7 @@ public struct ExpenseCardShareSheet: View {
     @State private var toastMessage: String?
     @State private var includeReceipt = false
     @State private var showSystemShareSheet = false
+    @State private var showAASplitSheet = false
     @State private var shareItems: [Any] = []
 
     public init(record: ExpenseRecord) {
@@ -265,6 +266,24 @@ public struct ExpenseCardShareSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                         }
                         .buttonStyle(.plain)
+
+                        if !record.isIncome {
+                            Button {
+                                showAASplitSheet = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "wave.3.forward.circle.fill")
+                                    Text("面对面 AA 碰一碰 / 扫码分摊")
+                                }
+                                .font(.subheadline.bold())
+                                .foregroundStyle(Color.accentColor)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.accentColor.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     .padding(.horizontal, 24)
                 }
@@ -294,6 +313,9 @@ public struct ExpenseCardShareSheet: View {
         }
         .sheet(isPresented: $showSystemShareSheet, onDismiss: { shareItems = [] }) {
             ShareActivityView(activityItems: shareItems)
+        }
+        .sheet(isPresented: $showAASplitSheet) {
+            ExpenseAASplitSheet(record: record)
         }
     }
 

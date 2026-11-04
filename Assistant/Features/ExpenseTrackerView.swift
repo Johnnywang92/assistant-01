@@ -98,6 +98,7 @@ enum ExpenseTimePeriodFilter: String, CaseIterable, Identifiable {
 
 /// 智能记账本主界面
 struct ExpenseTrackerView: View {
+    @ObservedObject private var router = NavigationRouter.shared
     @Environment(\.modelContext) private var context
     @Query(sort: \ExpenseRecord.date, order: .reverse) private var records: [ExpenseRecord]
     @Environment(\.colorScheme) private var colorScheme
@@ -115,6 +116,7 @@ struct ExpenseTrackerView: View {
     /// AI 洞察生成时所依据的「本月账本数据指纹」，数据未变时复用缓存结果、避免重复推理
     @State private var aiInsightDataFingerprint: Int? = nil
     @State private var recordToShare: ExpenseRecord?
+    @State private var recordForNearbyAA: ExpenseRecord?
     @State private var activeTransactionMotion: FinancialMotionType? = nil
 
     private func triggerTransactionMotion(isIncome: Bool, amount: Double) {
@@ -604,9 +606,25 @@ struct ExpenseTrackerView: View {
                                             Label("分享", systemImage: "square.and.arrow.up")
                                         }
                                         .tint(.blue)
+
+                                        if !item.isIncome {
+                                            Button {
+                                                recordForNearbyAA = item
+                                            } label: {
+                                                Label("AA平摊", systemImage: "wave.3.forward.circle.fill")
+                                            }
+                                            .tint(.orange)
+                                        }
                                     }
                                     .contextMenu {
                                         rowContextMenu(for: item)
+                                        if !item.isIncome {
+                                            Button {
+                                                recordForNearbyAA = item
+                                            } label: {
+                                                Label("面对面 AA 平摊", systemImage: "wave.3.forward.circle.fill")
+                                            }
+                                        }
                                         Button {
                                             recordToShare = item
                                         } label: {
@@ -671,6 +689,9 @@ struct ExpenseTrackerView: View {
             }
             .sheet(item: $recordToShare) { record in
                 ExpenseCardShareSheet(record: record)
+            }
+            .sheet(item: $recordForNearbyAA) { record in
+                ExpenseAASplitSheet(record: record)
             }
             .expenseCalorieConfirmation()
             .task {
@@ -1227,6 +1248,18 @@ struct SafeToSpendCard: View {
                 }
             }
 
+            if result.todayFlexibleSpend >= 100 {
+                HStack(spacing: 5) {
+                    Image(systemName: "person.2.fill")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(AppColor.primary)
+                    Text("群体基准：82.5% 的人每周会有 1~2 次犒赏性消费 · 额度内享受生活，无需负罪")
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppColor.secondaryText)
+                        .lineLimit(1)
+                }
+            }
+
             HStack(spacing: 12) {
                 Text("月预算 ¥\(String(format: "%.0f", budget))")
                 Text("固定支出 ¥\(String(format: "%.0f", recurringManager.monthlyEstimatedTotal))")
@@ -1691,7 +1724,9 @@ struct ExpenseRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(L10n.tr(item.title))
                     .font(.body)
-                HStack(spacing: 6) {
+                    .lineLimit(2)
+                    .layoutPriority(1)
+                HStack(spacing: 5) {
                     Text(L10n.tr(item.category.rawValue))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -1723,6 +1758,7 @@ struct ExpenseRow: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
+                .lineLimit(1)
             }
 
             Spacer()

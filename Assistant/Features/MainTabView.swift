@@ -11,6 +11,7 @@ struct MainTabView: View {
     @Query(filter: #Predicate<TodoItem> { $0.statusRaw == "active" }) private var activeTodos: [TodoItem]
     @State private var showVoice = false
     @State private var showScanner = false
+    @State private var scannerInitialMode: QRCodeScannerView.ReceiverMode = .camera
     @State private var showOmnibox = false
     @State private var showUnifiedSearch = false
     @State private var showSettings = false
@@ -85,7 +86,7 @@ struct MainTabView: View {
                 .environment(\.locale, LanguageManager.shared.locale)
         }
         .sheet(isPresented: $showScanner) {
-            QRCodeScannerView()
+            QRCodeScannerView(initialMode: scannerInitialMode)
                 .environment(\.locale, LanguageManager.shared.locale)
         }
         .sheet(isPresented: $showOmnibox) {
@@ -95,6 +96,12 @@ struct MainTabView: View {
         .sheet(item: $router.pendingImportPayload) { payload in
             TodoImportPreviewSheet(payload: payload) {
                 router.pendingImportPayload = nil
+            }
+            .environment(\.locale, LanguageManager.shared.locale)
+        }
+        .sheet(item: $router.pendingUniversalEnvelope) { envelope in
+            UniversalImportPreviewSheet(envelope: envelope) {
+                router.pendingUniversalEnvelope = nil
             }
             .environment(\.locale, LanguageManager.shared.locale)
         }
@@ -116,6 +123,11 @@ struct MainTabView: View {
                 showVoice = true
                 router.activeSheet = nil
             } else if newSheet == .qrScanner {
+                scannerInitialMode = .camera
+                showScanner = true
+                router.activeSheet = nil
+            } else if newSheet == .nearbyReceiver {
+                scannerInitialMode = .nearby
                 showScanner = true
                 router.activeSheet = nil
             } else if newSheet == .omnibox {
@@ -195,6 +207,20 @@ struct MainTabView: View {
             showClipboardReadError = true
             return
         }
+
+        // 优先检查：若剪贴板内容为小助离线口令或分享链接，直接唤起统一互联确认面板，不进普通投喂
+        if case .text(let rawText) = payload {
+            if let envelope = QRCodeService.decodeEnvelope(from: rawText) {
+                router.pendingUniversalEnvelope = envelope
+                clipboard.markHandled(suggestion.changeCount)
+                return
+            } else if let legacyPayload = QRCodeService.decodePayload(from: rawText) {
+                router.pendingImportPayload = legacyPayload
+                clipboard.markHandled(suggestion.changeCount)
+                return
+            }
+        }
+
         // 拒绝记忆：同一条内容被用户拒绝过一次就不再唤起万能投喂
         if clipboard.isContentRejected(payload) {
             clipboard.markHandled(suggestion.changeCount)

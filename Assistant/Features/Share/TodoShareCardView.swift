@@ -76,10 +76,20 @@ struct TodoShareCardView: View {
                                 .foregroundStyle(item.status == .done ? (theme == .obsidian ? theme.accentColor : Color.green) : Color.secondary.opacity(0.6))
 
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(L10n.tr(item.title))
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundStyle(item.status == .done ? theme.secondaryTextColor : theme.textColor)
-                                    .strikethrough(item.status == .done)
+                                HStack(spacing: 6) {
+                                    Text(L10n.tr(item.title))
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundStyle(item.status == .done ? theme.secondaryTextColor : theme.textColor)
+                                        .strikethrough(item.status == .done)
+
+                                    Text(item.type.displayName)
+                                        .font(.system(size: 9.5, weight: .medium))
+                                        .foregroundStyle(theme.secondaryTextColor)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1.5)
+                                        .background(theme.dividerColor.opacity(0.6))
+                                        .clipShape(Capsule())
+                                }
 
                                 if let code = item.pickupCode {
                                     HStack(spacing: 4) {

@@ -6,7 +6,7 @@ import SwiftUI
 import UIKit
 
 /// 面对面/跨设备分享的数据传输载荷
-public struct SharedTodoDTO: Codable, Identifiable {
+public struct SharedTodoDTO: Codable, Identifiable, Hashable, Sendable {
     public var id: String { "\(t)_\(due ?? 0)_\(pc ?? "")" }
     public var t: String                // title
     public var ty: String               // type rawValue (TodoType)
@@ -82,7 +82,7 @@ public enum QRCodeService {
         return "assistant://import?d=\(encoded)"
     }
 
-    /// 从扫描字符串或 URL 中解析出待办数据载荷
+    /// 从扫描字符串或 URL 中解析出待办数据载荷（旧版兼容）
     public static func decodePayload(from rawString: String) -> TodoSharePayload? {
         var base64Content: String = rawString.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -113,6 +113,38 @@ public enum QRCodeService {
         }
 
         return nil
+    }
+
+    // MARK: - 统一信封包 (UniversalShareEnvelope) 编码与解码
+
+    /// 将通用信封包编码为二维码字符串
+    public static func encodeEnvelope(_ envelope: UniversalShareEnvelope) -> String {
+        envelope.encodeToURLString()
+    }
+
+    /// 从扫描字符串或 URL 中解析出通用分享信封
+    public static func decodeEnvelope(from rawString: String) -> UniversalShareEnvelope? {
+        // 先尝试解析新格式
+        if let envelope = UniversalShareEnvelope.decode(from: rawString) {
+            return envelope
+        }
+
+        // 若解析失败，尝试兼容旧版 TodoSharePayload 并升级为 UniversalShareEnvelope
+        if let legacy = decodePayload(from: rawString) {
+            return UniversalShareEnvelope(
+                senderName: "小助用户",
+                type: .todos,
+                title: legacy.title,
+                todos: legacy.items
+            )
+        }
+
+        return nil
+    }
+
+    /// 为通用分享信封直接生成高清矢量二维码图片
+    public static func generateQRCode(from envelope: UniversalShareEnvelope, targetSize: CGFloat = 380) -> UIImage? {
+        generateQRCode(from: encodeEnvelope(envelope), targetSize: targetSize)
     }
 
     // MARK: - 原生高清矢量级二维码图片生成 (CoreImage)

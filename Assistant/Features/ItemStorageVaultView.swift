@@ -21,6 +21,7 @@ struct ItemStorageVaultView: View {
     @State private var selectedArea: String = "全部"
     @State private var showingAddSheet: Bool = false
     @State private var itemToEdit: StoredItem? = nil
+    @State private var itemToShare: StoredItem? = nil
     @State private var previewImageData: Data? = nil
     @State private var showingAddMedicineSheet: Bool = false
     @State private var medicineToEdit: MedicineItem? = nil
@@ -481,6 +482,14 @@ struct ItemStorageVaultView: View {
                         }
                         .swipeActions(edge: .leading) {
                             Button {
+                                itemToShare = item
+                                Haptic.light()
+                            } label: {
+                                Label("分享", systemImage: "square.and.arrow.up")
+                            }
+                            .tint(.blue)
+
+                            Button {
                                 itemToEdit = item
                                 Haptic.light()
                             } label: {
@@ -489,6 +498,31 @@ struct ItemStorageVaultView: View {
                             .tint(.indigo)
                         }
                         .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                Haptic.warning()
+                                context.delete(item)
+                                try? context.save()
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
+                        .contextMenu {
+                            Button {
+                                itemToShare = item
+                                Haptic.light()
+                            } label: {
+                                Label("分享收纳位置", systemImage: "square.and.arrow.up")
+                            }
+
+                            Button {
+                                itemToEdit = item
+                                Haptic.light()
+                            } label: {
+                                Label("编辑", systemImage: "pencil")
+                            }
+
+                            Divider()
+
                             Button(role: .destructive) {
                                 Haptic.warning()
                                 context.delete(item)
@@ -664,6 +698,9 @@ struct ItemStorageVaultView: View {
                 triggerStorageMotion(name: name, roomArea: area, location: loc, isEditing: isEdit)
             }
         }
+        .sheet(item: $itemToShare) { item in
+            StoredItemShareSheet(item: item)
+        }
         .sheet(isPresented: $showingAddMedicineSheet) {
             MedicineEditorSheet(medicine: nil, prefillFrom: medicinePrefillSource)
         }
@@ -748,10 +785,12 @@ private struct StoredItemRow: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(item.name)
                         .font(.body.bold())
                         .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .layoutPriority(1)
 
                     Text(L10n.tr(item.roomArea))
                         .font(.caption2.bold())
@@ -761,7 +800,7 @@ private struct StoredItemRow: View {
                         .foregroundStyle(.indigo)
 
                     if item.isSecondHand {
-                        Text("二手购入")
+                        Text("二手")
                             .font(.caption2.bold())
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -786,13 +825,15 @@ private struct StoredItemRow: View {
                     Text(item.location)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                }
 
-                if let notes = item.notes, !notes.isEmpty {
-                    Text(notes)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                    if let notes = item.notes, !notes.isEmpty {
+                        Text("·")
+                            .foregroundStyle(.tertiary)
+                        Text(notes)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
 
                 // 日均持有成本（已录入购入价或有关联投入时显示）
@@ -835,6 +876,7 @@ struct AddOrEditStoredItemSheet: View {
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var selectedImageData: Data? = nil
     @State private var showingCamera: Bool = false
+    @State private var showingShareSheet: Bool = false
     @State private var isRecognizingItemOCR: Bool = false
     @State private var ocrItemHint: String? = nil
     @State private var purchasePriceString: String = ""
@@ -1152,10 +1194,26 @@ struct AddOrEditStoredItemSheet: View {
                     Button("取消") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("保存") {
-                        saveItem()
+                    HStack(spacing: 12) {
+                        if let _ = itemToEdit {
+                            Button {
+                                showingShareSheet = true
+                                Haptic.light()
+                            } label: {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                            .accessibilityLabel("分享收纳位置")
+                        }
+                        Button("保存") {
+                            saveItem()
+                        }
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .sheet(isPresented: $showingShareSheet) {
+                if let item = itemToEdit {
+                    StoredItemShareSheet(item: item)
                 }
             }
             .sheet(isPresented: $showingCamera) {
@@ -1319,17 +1377,22 @@ private struct MedicineItemRow: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
+                // 1. 药品名称与核心状态（药名完整展示、绝不截断）
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(medicine.name)
                         .font(.body.bold())
-                        .lineLimit(1)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .layoutPriority(1)
+
                     Text(medicine.category.displayName)
                         .font(.caption2.bold())
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color.green.opacity(0.14)))
                         .foregroundStyle(.green)
+
                     if let plan = linkedPlan {
                         Menu {
                             Button(role: .destructive) {
@@ -1349,11 +1412,9 @@ private struct MedicineItemRow: View {
                                 }
                             }
                         } label: {
-                            HStack(spacing: 3) {
+                            HStack(spacing: 2) {
                                 Image(systemName: "bell.badge.fill")
-                                Text("每日\(plan.dailyTimePoints.count)次提醒")
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 8, weight: .bold))
+                                Text("每日\(plan.dailyTimePoints.count)次")
                             }
                             .font(.caption2.bold())
                             .padding(.horizontal, 6)
@@ -1362,24 +1423,8 @@ private struct MedicineItemRow: View {
                             .foregroundStyle(.orange)
                         }
                         .buttonStyle(.plain)
-                    } else if pausedPlan != nil {
-                        if let onEditReminder {
-                            Button {
-                                onEditReminder()
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "bell.slash")
-                                    Text("提醒已停用")
-                                }
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color(.tertiarySystemFill)))
-                                .foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
                     }
+
                     if medicine.isDisposed {
                         Text("已处理")
                             .font(.caption2.bold())
@@ -1390,26 +1435,39 @@ private struct MedicineItemRow: View {
                     }
                 }
 
-                expiryLine
-
-                batchMetaLine
-
-                if let usage = medicine.usageMethod, !usage.isEmpty {
-                    Label(usage, systemImage: "text.book.closed")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
+                // 2. 存放位置、余量与精炼时效（一目了然，去除冗余大段文字）
                 HStack(spacing: 4) {
                     Image(systemName: "mappin.and.ellipse")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Text("\(L10n.tr(medicine.roomArea)) · \(medicine.storageLocation)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+
+                    if let q = medicine.remainingQuantity, !q.isEmpty {
+                        Text("·")
+                        Text("余 \(q)")
+                    }
+
+                    if medicine.isDisposed {
+                        Text("·")
+                        Text("已用完")
+                    } else if let days = medicine.daysUntilExpiry {
+                        Text("·")
+                        if days < 0 {
+                            Text("已过期 \(abs(days))天")
+                                .foregroundStyle(.red)
+                                .fontWeight(.semibold)
+                        } else if days <= 30 {
+                            Text("剩 \(days)天到期")
+                                .foregroundStyle(.orange)
+                                .fontWeight(.semibold)
+                        } else if let date = medicine.effectiveExpiryDate {
+                            Text("\(date.formatted(.dateTime.year().month()))到期")
+                        }
+                    }
                 }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
             }
 
             Spacer(minLength: 0)
@@ -1443,55 +1501,6 @@ private struct MedicineItemRow: View {
             }
         }
         .padding(.vertical, 4)
-    }
-
-    /// 批次元信息文本：购买日 + 剩余数量（普通计算属性，避免在 ViewBuilder 里做变量累加）
-    private var batchMetaText: String {
-        var parts: [String] = []
-        if let p = medicine.purchaseDate {
-            parts.append("购于 \(p.formatted(date: .abbreviated, time: .omitted))")
-        }
-        if let q = medicine.remainingQuantity, !q.isEmpty {
-            parts.append("余 \(q)")
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    /// 同种药多批次时用于区分先后与余量
-    @ViewBuilder private var batchMetaLine: some View {
-        let meta = batchMetaText
-        if !meta.isEmpty {
-            Text(meta)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-    }
-
-    @ViewBuilder private var expiryLine: some View {
-        if medicine.isDisposed {
-            Text("已用完或丢弃")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else if let days = medicine.daysUntilExpiry {
-            if days < 0 {
-                Label("已过期 \(abs(days)) 天", systemImage: "xmark.octagon.fill")
-                    .font(.caption.bold())
-                    .foregroundStyle(.red)
-            } else if days <= 30 {
-                Label("剩 \(days) 天到期", systemImage: "clock.badge.exclamationmark")
-                    .font(.caption.bold())
-                    .foregroundStyle(.orange)
-            } else if let date = medicine.effectiveExpiryDate {
-                Text("有效至 \(date.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } else {
-            Text("未设置有效期")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
     }
 }
 
@@ -1536,10 +1545,11 @@ private struct MedicineGroupHeader: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(group.name)
                         .font(.body.bold())
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .layoutPriority(1)
                     Text(group.category.displayName)
                         .font(.caption2.bold())
                         .padding(.horizontal, 6)
@@ -1554,23 +1564,26 @@ private struct MedicineGroupHeader: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if group.needsAttention, let rep = group.representative, rep.isExpired {
-                    Label("最早一批已过期 \(abs(rep.daysUntilExpiry ?? 0)) 天", systemImage: "xmark.octagon.fill")
-                        .font(.caption.bold())
-                        .foregroundStyle(.red)
-                } else if group.needsAttention, let rep = group.representative {
-                    Label("最早一批剩 \(rep.daysUntilExpiry ?? 0) 天到期", systemImage: "clock.badge.exclamationmark")
-                        .font(.caption.bold())
-                        .foregroundStyle(.orange)
-                } else if let date = group.earliestActiveDate {
-                    Text("最早一批有效至 \(date.formatted(date: .abbreviated, time: .omitted))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("未设置有效期")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    if group.needsAttention, let rep = group.representative, rep.isExpired {
+                        Label("最早一批已过期 \(abs(rep.daysUntilExpiry ?? 0)) 天", systemImage: "xmark.octagon.fill")
+                            .font(.caption.bold())
+                            .foregroundStyle(.red)
+                    } else if group.needsAttention, let rep = group.representative {
+                        Label("最早一批剩 \(rep.daysUntilExpiry ?? 0) 天到期", systemImage: "clock.badge.exclamationmark")
+                            .font(.caption.bold())
+                            .foregroundStyle(.orange)
+                    } else if let date = group.earliestActiveDate {
+                        Text("共 \(group.count) 批 · 最早 \(date.formatted(.dateTime.year().month())) 到期")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("共 \(group.count) 批")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .lineLimit(1)
             }
 
             Spacer(minLength: 0)

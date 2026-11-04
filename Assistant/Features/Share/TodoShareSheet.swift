@@ -25,6 +25,9 @@ struct TodoShareSheet: View {
     @State private var renderedImage: UIImage?
     @State private var toastMessage: String?
     @State private var showSystemShareSheet: Bool = false
+    @State private var showAirDropSheet: Bool = false
+    @State private var airdropItems: [Any] = []
+    @State private var nearbyEnvelope: UniversalShareEnvelope? = nil
     @State private var isItemSelectionExpanded: Bool = true
 
     init(
@@ -35,70 +38,18 @@ struct TodoShareSheet: View {
         self.allTodos = allTodos
         self._selectedCategory = State(initialValue: initialCategory)
 
-        // 计算当前分类下的候选项
-        let candidates = Self.filterItems(allTodos: allTodos, category: initialCategory)
         let defaultSelection: Set<UUID>
         if let initialSelectedIds {
             defaultSelection = initialSelectedIds
         } else {
-            // 默认全选当前分类下的条目
-            defaultSelection = Set(candidates.map { $0.id })
+            defaultSelection = Set(allTodos.map { $0.id })
         }
         self._selectedItemIds = State(initialValue: defaultSelection)
     }
 
-    // MARK: - 候选数据源过滤
-
-    /// 候选过滤：规则在 `AssistantCore.TodoShareContent`（可单测），
-    /// 这里只负责把 SwiftData 模型映射成 Core 的纯值快照。
-    private static func filterItems(allTodos: [TodoItem], category: TodoFilterCategory) -> [TodoItem] {
-        let shareCategory = category.shareCategory
-        switch shareCategory {
-        case .all:
-            return allTodos
-        case .general:
-            let now = Date.now
-            let cal = Calendar.current
-            return allTodos.filter {
-                TodoShareContent.isTodayItem(
-                    dueAt: $0.dueAt,
-                    reminderOverrideAt: $0.reminderOverrideAt,
-                    createdAt: $0.createdAt,
-                    now: now,
-                    calendar: cal
-                )
-            }
-        case .recurring:
-            return allTodos.filter { $0.isRecurring }
-        default:
-            let groups = TodoShareContent.groups(for: shareCategory)
-            return allTodos.filter { item in
-                guard let group = shareGroup(for: item.type) else { return false }
-                return groups.contains(group)
-            }
-        }
-    }
-
-    /// 模型映射：`TodoType` → 分享类型分组。
-    /// 「哪些类型算哪一组」的规则在 Core，这里只做一对一映射，
-    /// 避免同一份分类清单写两遍然后各自漂移。
-    private static func shareGroup(for type: TodoType) -> TodoShareTypeGroup? {
-        switch type {
-        case .work: return .work
-        case .parcel: return .parcel
-        case .returnParcel: return .returnParcel
-        case .medication, .housework, .charging, .hydration: return .life
-        case .subscription, .bill, .itemExpiry, .anniversary, .passwordSecurity, .data, .vehicleCare: return .alert
-        case .childVaccine, .childGrowth, .childMilestone, .childHealth: return .parenting
-        case .pet: return .pet
-        case .other: return .other
-        default: return nil
-        }
-    }
-
-    /// 当前分类下的所有候选项
+    /// 所有候选项：直接展示当前传入的清单项，不再强制大类切换隔离
     private var candidateItems: [TodoItem] {
-        Self.filterItems(allTodos: allTodos, category: selectedCategory)
+        allTodos
     }
 
     /// 勾选并在卡片上实际展示的事项列表
@@ -106,9 +57,15 @@ struct TodoShareSheet: View {
         candidateItems.filter { selectedItemIds.contains($0.id) }
     }
 
-    /// 动态卡片标题：文案规则在 Core，这里做本地化
+    /// 动态卡片标题：不放无意义的大分类名，单项直接用标题，多项用简洁自然的“待办清单”
     private var dynamicCardTitle: String {
-        L10n.tr(TodoShareContent.title(for: selectedCategory.shareCategory))
+        if itemsForCard.count == 1, let item = itemsForCard.first {
+            return item.type == .parcel ? "快递代取: \(item.title)" : item.title
+        }
+        if !itemsForCard.isEmpty && itemsForCard.allSatisfy({ $0.type == .parcel || $0.type == .returnParcel }) {
+            return "待取快递"
+        }
+        return "待办清单"
     }
 
     /// 面对面扫码高清二维码
@@ -139,10 +96,7 @@ struct TodoShareSheet: View {
                     .padding(.horizontal)
                     .padding(.top, 4)
 
-                    // 1. 分类快速切换胶囊栏
-                    categorySegmentBar
-
-                    // 2. 实时所见即所得卡片预览
+                    // 1. 实时所见即所得卡片预览
                     if shareFormat == .qrCode {
                         TodoQRCodeCardView(
                             title: dynamicCardTitle,
@@ -228,6 +182,24 @@ struct TodoShareSheet: View {
                     // 5. 核心分享按钮组
                     VStack(spacing: 12) {
                         if shareFormat == .qrCode {
+                            // 碰一碰近场直传
+                            Button {
+                                nearbyEnvelope = currentEnvelope
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "wave.3.forward.circle.fill")
+                                        .font(.title3)
+                                    Text("碰一碰 · 附近设备直传")
+                                }
+                                .font(.headline.bold())
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(itemsForCard.isEmpty ? Color.gray : Color.accentColor)
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
+                            }
+                            .disabled(itemsForCard.isEmpty)
+
                             // 二维码模式：保存二维码到相册 / 复制导入口令 / 直接分享图片
                             Button {
                                 generateAndSaveToPhotos()
@@ -237,12 +209,13 @@ struct TodoShareSheet: View {
                                     Text("保存二维码卡片到相册")
                                 }
                                 .font(.headline)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(.primary)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 14)
-                                .background(itemsForCard.isEmpty ? Color.gray : Color.accentColor)
+                                .background(Color(.secondarySystemGroupedBackground))
                                 .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
                             }
+                            .buttonStyle(.plain)
                             .disabled(itemsForCard.isEmpty)
 
                             HStack(spacing: 10) {
@@ -251,7 +224,7 @@ struct TodoShareSheet: View {
                                 } label: {
                                     HStack(spacing: 6) {
                                         Image(systemName: "doc.on.doc")
-                                        Text("复制导入口令链接")
+                                        Text("复制微信口令")
                                     }
                                     .font(.subheadline.bold())
                                     .frame(maxWidth: .infinity)
@@ -263,11 +236,11 @@ struct TodoShareSheet: View {
                                 .disabled(itemsForCard.isEmpty)
 
                                 Button {
-                                    shareImageViaSystemSheet()
+                                    shareViaAirDrop()
                                 } label: {
                                     HStack(spacing: 6) {
-                                        Image(systemName: "photo.on.rectangle.angled")
-                                        Text("直接分享卡片")
+                                        Image(systemName: "airdrop")
+                                        Text("AirDrop 文件")
                                     }
                                     .font(.subheadline.bold())
                                     .frame(maxWidth: .infinity)
@@ -376,6 +349,12 @@ struct TodoShareSheet: View {
                     ShareActivityView(activityItems: [renderedImage])
                 }
             }
+            .sheet(isPresented: $showAirDropSheet, onDismiss: { airdropItems = [] }) {
+                ShareActivityView(activityItems: airdropItems)
+            }
+            .sheet(item: $nearbyEnvelope) { env in
+                NearbyInteractionSheet(envelope: env)
+            }
             .overlay(alignment: .bottom) {
                 if let toastMessage {
                     Text(L10n.tr(toastMessage))
@@ -391,51 +370,7 @@ struct TodoShareSheet: View {
         }
     }
 
-    // MARK: - 1. 分类选择栏
-
-    private var categorySegmentBar: some View {
-        HStack(spacing: 6) {
-            ForEach(TodoFilterCategory.allCases) { cat in
-                let isSelected = selectedCategory == cat
-                let count = Self.filterItems(allTodos: allTodos, category: cat).count
-
-                Button {
-                    AppMotion.animate(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        selectedCategory = cat
-                        // 切换分类后自动全选该分类下的事项
-                        let newCandidates = Self.filterItems(allTodos: allTodos, category: cat)
-                        selectedItemIds = Set(newCandidates.map { $0.id })
-                    }
-                    Haptic.selection()
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(L10n.tr(cat.rawValue))
-                            .font(.subheadline)
-                            .fontWeight(isSelected ? .bold : .medium)
-
-                        if count > 0 {
-                            Text("\(count)")
-                                .font(.caption2.bold())
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(Capsule().fill(isSelected ? Color.white.opacity(0.25) : Color.secondary.opacity(0.15)))
-                        }
-                    }
-                    .padding(.vertical, 7)
-                    .padding(.horizontal, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                            .fill(isSelected ? Color.accentColor : Color(.secondarySystemBackground))
-                    )
-                    .foregroundStyle(isSelected ? Color.white : Color.primary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal)
-    }
-
-    // MARK: - 2. 事项勾选选择区（支持多选、反选、自主挑选）
+    // MARK: - 事项勾选选择区（支持多选、反选、自主挑选）
 
     private var itemSelectionSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -450,7 +385,7 @@ struct TodoShareSheet: View {
                 Spacer()
 
                 if !candidateItems.isEmpty {
-                    Button(selectedItemIds.count == candidateItems.count ? "取消全选" : "全选本类") {
+                    Button(selectedItemIds.count == candidateItems.count ? "取消全选" : "全选") {
                         AppMotion.animate(.spring(response: 0.25)) {
                             if selectedItemIds.count == candidateItems.count {
                                 selectedItemIds.removeAll()
@@ -467,7 +402,7 @@ struct TodoShareSheet: View {
             if candidateItems.isEmpty {
                 HStack {
                     Spacer()
-                    Text("当前「\(L10n.tr(selectedCategory.rawValue))」分类下暂无事项")
+                    Text("暂无可分享的事项")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 12)
@@ -493,10 +428,20 @@ struct TodoShareSheet: View {
                                     .font(.title3)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(L10n.tr(item.title))
-                                        .font(.subheadline)
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(1)
+                                    HStack(spacing: 6) {
+                                        Text(L10n.tr(item.title))
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(1)
+
+                                        Text(item.type.displayName)
+                                            .font(.system(size: 9.5))
+                                            .foregroundStyle(.secondary)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1.5)
+                                            .background(Color(.systemGray6))
+                                            .clipShape(Capsule())
+                                    }
 
                                     if let code = item.pickupCode {
                                         HStack(spacing: 4) {
@@ -564,12 +509,33 @@ struct TodoShareSheet: View {
         )
     }
 
+    private var currentEnvelope: UniversalShareEnvelope {
+        if itemsForCard.count == 1,
+           let first = itemsForCard.first,
+           first.type == .parcel,
+           first.pickupCode != nil {
+            return UniversalShareEnvelope.forParcel(item: first)
+        }
+        return UniversalShareEnvelope.forTodos(title: dynamicCardTitle, todos: itemsForCard)
+    }
+
     private func copyImportLink() {
         guard !itemsForCard.isEmpty else { return }
-        let payloadURL = QRCodeService.encodePayload(title: dynamicCardTitle, todos: itemsForCard)
-        UIPasteboard.general.string = payloadURL
+        let envelope = currentEnvelope
+        UIPasteboard.general.string = envelope.generateShareText()
         Haptic.success()
-        showToast("已复制一键导入口令链接 📋")
+        let toast = envelope.type == .parcelTransfer ? "已复制快递代取口令 📦" : "已复制小助清单社交口令 📋"
+        showToast(toast)
+    }
+
+    private func shareViaAirDrop() {
+        guard !itemsForCard.isEmpty else { return }
+        let envelope = currentEnvelope
+        if let fileURL = AssistantPackageService.createPackageFile(for: envelope) {
+            self.airdropItems = [fileURL]
+            self.showAirDropSheet = true
+            Haptic.selection()
+        }
     }
 
     private func generateAndSaveToPhotos() {

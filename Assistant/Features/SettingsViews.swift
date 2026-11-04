@@ -178,6 +178,56 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    // 1. 扫一扫：直开相机取景框，0 多余点击
+                    Button {
+                        router.activeSheet = .qrScanner
+                        Haptic.light()
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(icon: "qrcode.viewfinder", color: .indigo)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("扫一扫")
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
+                                Text("扫描小助分享码、待办清单或AA账单")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(Color(.tertiaryLabel))
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    // 2. 碰一碰：直开雷达感知广播，0 多余点击
+                    Button {
+                        router.activeSheet = .nearbyReceiver
+                        Haptic.light()
+                    } label: {
+                        HStack(spacing: 12) {
+                            SettingsIconBadge(icon: "wave.3.forward.circle.fill", color: .teal)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("碰一碰")
+                                    .font(.body)
+                                    .foregroundStyle(.primary)
+                                Text("免对准扫码，与附近设备靠近自动感应接收")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(Color(.tertiaryLabel))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                } header: {
+                    Text("离线面对面互联")
+                }
+
+                Section {
                     NavigationLink {
                         SettingsAppearancePage()
                     } label: {

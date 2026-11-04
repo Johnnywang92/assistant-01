@@ -122,6 +122,18 @@
         }
       }
     },
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "Privacy - Local Network Usage Description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "需要局域网与本地网络权限以支持面对面碰一碰交换待办清单、AA账单与心情名片"
+          }
+        }
+      }
+    },
     "NSLocationAlwaysAndWhenInUseUsageDescription" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -237,6 +249,9 @@
       }
     },
     "一句话记账" : {
+
+    },
+    "小助离线数据包" : {
 
     },
     "待取快递" : {

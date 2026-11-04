@@ -440,6 +440,9 @@ public struct PsychShareSheet: View {
     @State private var toastMessage: String?
     @State private var renderedImage: UIImage?
     @State private var showSystemShareSheet = false
+    @State private var showNearbySheet = false
+    @State private var showAirDropSheet = false
+    @State private var airdropItems: [Any] = []
 
     public init(
         date: Date = .now,
@@ -455,6 +458,21 @@ public struct PsychShareSheet: View {
         self.scaleScores = scaleScores
         self.insight = insight
         self.physiology = physiology
+    }
+
+    private var emotionEnvelope: UniversalShareEnvelope {
+        let score = todayMood?.moodScore ?? 3
+        let energy = todayMood?.energyScore ?? 3
+        let stress = todayMood?.stressScore ?? 2
+        let tag = insight?.band?.displayName ?? "平和"
+        let note = insight?.headline ?? "身心节奏平稳，安住当下。"
+        return UniversalShareEnvelope.forEmotion(
+            moodScore: score,
+            energyScore: energy,
+            stressScore: stress,
+            moodTag: tag,
+            note: note
+        )
     }
 
     private var cardView: PsychShareCardView {
@@ -477,19 +495,71 @@ public struct PsychShareSheet: View {
 
                     // 导出操作按钮组
                     VStack(spacing: 12) {
+                        // 碰一碰面对面交换心情名片
                         Button {
-                            saveToPhotos()
+                            showNearbySheet = true
                         } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: "square.and.arrow.down.fill")
-                                Text("保存到相册")
+                                Image(systemName: "wave.3.forward.circle.fill")
+                                Text("碰一碰 · 面对面交换心情名片")
                             }
-                            .font(.headline)
+                            .font(.headline.bold())
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
                             .background(Color(red: 0.38, green: 0.32, blue: 0.88))
                             .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            saveToPhotos()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "square.and.arrow.down.fill")
+                                Text("保存卡片到相册")
+                            }
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+
+                        HStack(spacing: 10) {
+                            Button {
+                                copyEmotionToken()
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "doc.on.doc")
+                                    Text("复制微信口令")
+                                }
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color(.secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                shareViaAirDrop()
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "airdrop")
+                                    Text("AirDrop 文件")
+                                }
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color(.secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
                         }
 
                         Button {
@@ -497,13 +567,12 @@ public struct PsychShareSheet: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: "photo.on.rectangle.angled")
-                                Text("分享到社交平台")
+                                Text("直接分享图片")
                             }
                             .font(.subheadline.bold())
+                            .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color(.secondarySystemGroupedBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
+                            .padding(.vertical, 10)
                         }
                         .buttonStyle(.plain)
                     }
@@ -537,6 +606,26 @@ public struct PsychShareSheet: View {
             if let renderedImage {
                 ShareActivityView(activityItems: [renderedImage])
             }
+        }
+        .sheet(isPresented: $showNearbySheet) {
+            NearbyInteractionSheet(envelope: emotionEnvelope)
+        }
+        .sheet(isPresented: $showAirDropSheet, onDismiss: { airdropItems = [] }) {
+            ShareActivityView(activityItems: airdropItems)
+        }
+    }
+
+    private func copyEmotionToken() {
+        UIPasteboard.general.string = emotionEnvelope.generateShareText()
+        Haptic.success()
+        showToast("已复制小助心情名片口令 💌")
+    }
+
+    private func shareViaAirDrop() {
+        if let fileURL = AssistantPackageService.createPackageFile(for: emotionEnvelope) {
+            self.airdropItems = [fileURL]
+            self.showAirDropSheet = true
+            Haptic.selection()
         }
     }
 

@@ -126,6 +126,27 @@ targets:
         # 用于在健康数据页与日报中提供压力状态、身心愉悦指数与生活调养建议。
         NSHealthShareUsageDescription: "需要读取你在「健康」中的心率变异性(HRV)、睡眠分期、心率、静息心率、活动能量与体征数据，用于在健康中心推断自主神经平衡与身心愉悦指数，并在日报中评估身体活力。数据仅在设备本机离线分析展示，绝不上传。"
         NSHealthUpdateUsageDescription: "需要写入权限以将你在助手里记录的饮水量同步至 Apple 健康。"
+        NSLocalNetworkUsageDescription: "需要局域网与本地网络权限以支持面对面碰一碰交换待办清单、AA账单与心情名片"
+        NSBonjourServices:
+          - _asst-share._tcp
+          - _asst-share._udp
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: "小助离线数据包"
+            CFBundleTypeRole: "Editor"
+            LSHandlerRank: "Owner"
+            LSItemContentTypes:
+              - "com.yifanwang.assistant01.package"
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: "com.yifanwang.assistant01.package"
+            UTTypeDescription: "小助离线数据包"
+            UTTypeConformsTo:
+              - "public.data"
+              - "public.content"
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - "assistant"
+              public.mime-type:
+                - "application/x-assistant"
 
   AssistantWidgetExtension:
     type: app-extension

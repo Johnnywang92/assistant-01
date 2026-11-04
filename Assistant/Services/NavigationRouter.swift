@@ -70,6 +70,7 @@ public final class NavigationRouter: ObservableObject {
         case idVault
         case settings
         case qrScanner
+        case nearbyReceiver
         case omnibox
         case unifiedSearch
 
@@ -83,6 +84,7 @@ public final class NavigationRouter: ObservableObject {
     /// 统一搜索/深链直达待办：TodoListView 消费后打开该待办详情并置 nil
     @Published public var requestedTodoDetailID: UUID? = nil
     @Published public var pendingImportPayload: TodoSharePayload?
+    @Published public var pendingUniversalEnvelope: UniversalShareEnvelope?
     /// 万能投喂口的剪贴板预填充载荷（由投喂口消费后置 nil）
     @Published public var omniboxPrefill: OmniboxPayload?
     /// 是否为剪贴板自动唤起投喂口（用于支持无意添加时的倒计时自动关闭）
@@ -155,8 +157,18 @@ public final class NavigationRouter: ObservableObject {
         }
     }
 
-    /// 处理 URL Scheme 跳转 (assistant://...)
+    /// 处理 URL Scheme 跳转 (assistant://...) 与 AirDrop / 文件打开
     public func handleURL(_ url: URL) {
+        // 1. 处理文件类型 URL（AirDrop 隔空投送接收或在「文件」App 打开的 .assistant 数据包）
+        if url.isFileURL || url.scheme?.lowercased() == "file" {
+            if url.pathExtension.lowercased() == AssistantPackageService.fileExtension {
+                if let envelope = AssistantPackageService.readPackage(from: url) {
+                    self.pendingUniversalEnvelope = envelope
+                    return
+                }
+            }
+        }
+
         guard let scheme = url.scheme?.lowercased(), scheme == "assistant" else { return }
 
         // 支持 host 或 path 格式，如 assistant://voice 或 assistant:///voice
@@ -180,14 +192,18 @@ public final class NavigationRouter: ObservableObject {
                 prefilledSearchQuery = queryValue
             }
             activeSheet = .unifiedSearch
-        case "import", "import-todo", "import-qr":
-            if let payload = QRCodeService.decodePayload(from: url.absoluteString) {
+        case "nearby-share", "import", "import-todo", "import-qr":
+            if let envelope = QRCodeService.decodeEnvelope(from: url.absoluteString) {
+                pendingUniversalEnvelope = envelope
+            } else if let payload = QRCodeService.decodePayload(from: url.absoluteString) {
                 selectedTab = .todos
                 pendingImportPayload = payload
             }
         case "scan", "scanner", "qr":
             selectedTab = .todos
             activeSheet = .qrScanner
+        case "nearby", "bump", "touch", "peer":
+            activeSheet = .nearbyReceiver
         case "voice", "dialogue":
             activeSheet = .voice
         case "add", "add-todo", "todo":
@@ -231,8 +247,15 @@ public final class NavigationRouter: ObservableObject {
         case "omnibox", "drop", "feed":
             activeSheet = .omnibox
         case "share", "share-import":
-            // 分享扩展交接：排空 App Group 中转区，OCR/解析并落库
-            Task { @MainActor in await ShareInboxService.processAll() }
+            if let envelope = QRCodeService.decodeEnvelope(from: url.absoluteString) {
+                pendingUniversalEnvelope = envelope
+            } else if let payload = QRCodeService.decodePayload(from: url.absoluteString) {
+                selectedTab = .todos
+                pendingImportPayload = payload
+            } else {
+                // 分享扩展交接：排空 App Group 中转区，OCR/解析并落库
+                Task { @MainActor in await ShareInboxService.processAll() }
+            }
         default:
             break
         }

@@ -19,6 +19,12 @@ struct MentalHealthView: View {
     @Query(sort: \PsychScaleRecord.completedAt, order: .reverse)
     private var scaleRecords: [PsychScaleRecord]
 
+    @Query
+    private var todos: [TodoItem]
+
+    @Query
+    private var expenses: [ExpenseRecord]
+
     @State private var showScalePicker = false
     @State private var showMoodCheckIn = false
     /// 导出面板。
@@ -44,6 +50,7 @@ struct MentalHealthView: View {
         ScrollView {
             VStack(spacing: AppSpacing.lg) {
                 dailyCheckInCard
+                companionEchoCardSection
                 scaleEntryCard
                 if let insight = latestInsight {
                     insightCard(insight)
@@ -469,6 +476,31 @@ struct MentalHealthView: View {
     private var todayCheckIn: MoodCheckInRecord? {
         let today = Calendar.current.startOfDay(for: .now)
         return moodCheckIns.first { $0.day == today }
+    }
+
+    // MARK: - 拟真社交搭子与群体共鸣
+
+    private var companionEchoCardSection: some View {
+        CompanionEchoCard(
+            moodRecord: todayCheckIn,
+            completedTodosCount: completedTodosTodayCount,
+            pendingTodosCount: pendingTodosCount,
+            todayExpenseAmount: todayExpenseAmount
+        )
+    }
+
+    private var completedTodosTodayCount: Int {
+        let calendar = Calendar.current
+        return todos.filter { $0.status == .done && ($0.completedAt.map { calendar.isDateInToday($0) } ?? false) }.count
+    }
+
+    private var pendingTodosCount: Int {
+        todos.filter { $0.status == .active }.count
+    }
+
+    private var todayExpenseAmount: Double {
+        let calendar = Calendar.current
+        return expenses.filter { !$0.isIncome && calendar.isDateInToday($0.date) }.reduce(0) { $0 + $1.amount }
     }
 
     // MARK: - 量表入口
@@ -1459,31 +1491,31 @@ private struct MoodCelebrationBadgeView: View {
     private func play() {
         if AppMotion.reduceMotion {
             badgeOpacity = 1.0
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
                 onFinished()
             }
             return
         }
 
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.65)) {
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.68)) {
             orbScale = 1.0
             orbOpacity = 1.0
             sparkleScale = 1.0
             sparkleOpacity = 0.85
         }
 
-        withAnimation(.spring(response: 0.42, dampingFraction: 0.72).delay(0.1)) {
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.72).delay(0.1)) {
             badgeOffset = 64
             badgeOpacity = 1.0
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
-            withAnimation(.easeOut(duration: 0.25)) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            withAnimation(.easeOut(duration: 0.35)) {
                 badgeOpacity = 0.0
                 orbOpacity = 0.0
                 sparkleOpacity = 0.0
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) {
                 onFinished()
             }
         }
