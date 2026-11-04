@@ -343,6 +343,54 @@ final class FoodEstimationService: ObservableObject {
         estimate = current.updatingDishPortion(dishID: dishID, portion: portion)
     }
 
+    /// 单独调整本餐中某一道菜的具体克数。
+    func updateDishGrams(dishID: String, grams: Double) {
+        guard let current = estimate else { return }
+        estimate = current.updatingDishGrams(dishID: dishID, grams: grams)
+    }
+
+    /// 单独调整本餐中某一道菜的烹饪方式。
+    func updateDishCookingMethod(dishID: String, method: FoodCookingMethod) {
+        guard let current = estimate else { return }
+        estimate = current.updatingDishCookingMethod(dishID: dishID, method: method)
+    }
+
+    /// 单独调整本餐中某一道菜的用油/酱汁档位。
+    func updateDishOilSauceLevel(dishID: String, level: FoodOilSauceLevel) {
+        guard let current = estimate else { return }
+        estimate = current.updatingDishOilSauceLevel(dishID: dishID, level: level)
+    }
+
+    /// 单独调整本餐中某一道菜的称重状态（熟重/生重）。
+    func updateDishPreparationState(dishID: String, state: FoodPreparationState) {
+        guard let current = estimate else { return }
+        estimate = current.updatingDishPreparationState(dishID: dishID, state: state)
+    }
+
+    /// 综合配置某一道菜的明细（名称、克数、烹饪方式、用油量、称量状态、手动热量）。
+    func updateDishConfig(
+        dishID: String,
+        name: String? = nil,
+        grams: Double? = nil,
+        cookingMethod: FoodCookingMethod? = nil,
+        oilSauceLevel: FoodOilSauceLevel? = nil,
+        preparationState: FoodPreparationState? = nil,
+        calories: Double? = nil
+    ) {
+        guard let current = estimate else { return }
+        let updated = current.updatingDishConfig(
+            dishID: dishID,
+            name: name,
+            grams: grams,
+            cookingMethod: cookingMethod,
+            oilSauceLevel: oilSauceLevel,
+            preparationState: preparationState,
+            calories: calories
+        )
+        estimate = updated
+        statusMessage = "已校准「\(name ?? "菜品")」的估算参数（整餐合计 \(Int(updated.consumedCalories.rounded())) 千卡）。"
+    }
+
     /// 用户调整整餐份量。
     func updatePortion(_ portion: FoodPortion) {
         guard let current = estimate else { return }

@@ -699,4 +699,82 @@ final class FoodCalorieEstimatorTests: XCTestCase {
         XCTAssertTrue(summary.contains("蛋白质"))
         XCTAssertTrue(summary.contains("脂肪"))
     }
+
+    /// 回归测试：带骨食材（如排骨，可食率 72%）必须按可食净重计算热量，不能把骨头当成纯肉计算
+    func testEdibleRatioCalculatesNetEdibleCaloriesForBoneInMeats() {
+        let ribsFood = FoodCatalog.item(id: "braised_meat")! // 红烧肉/红烧排骨, edibleRatio = 0.72
+        XCTAssertTrue(ribsFood.hasBoneOrShell)
+        XCTAssertEqual(ribsFood.edibleRatio, 0.72, accuracy: 0.01)
+
+        let dish = FoodDishEstimate(food: ribsFood, customGrams: 200.0)
+        XCTAssertEqual(dish.currentGrams, 200.0)
+        XCTAssertEqual(dish.edibleGrams, 144.0, accuracy: 0.1)
+
+        // 200g 毛重，净肉 144g，按 245 kcal / 100g 计算，整份热量应约为 144 * 2.45 = 352.8 kcal
+        // 而不是 200 * 2.45 = 490 kcal
+        let expectedBaseCal = (144.0 / 100.0) * ribsFood.caloriesPer100g
+        XCTAssertEqual(dish.fullPortionCalories, expectedBaseCal, accuracy: 1.0)
+    }
+
+    /// 回归测试：烹饪方式（如油炸、重油）只增加油脂/热量，严格守恒蛋白质与碳水
+    func testMacronutrientConservationWhenCookingMethodChanges() {
+        let chicken = FoodCatalog.item(id: "chicken_breast")! // 鸡胸肉
+        let steamedDish = FoodDishEstimate(food: chicken, cookingMethod: .steamedOrBoiled, customGrams: 100.0)
+        let friedDish = FoodDishEstimate(food: chicken, cookingMethod: .deepFriedOrBreaded, oilSauceLevel: .heavy, customGrams: 100.0)
+
+        // 油炸和重油大幅增加热量与脂肪
+        XCTAssertGreaterThan(friedDish.fullPortionCalories, steamedDish.fullPortionCalories * 1.3)
+        XCTAssertGreaterThan(friedDish.fat, steamedDish.fat * 2.0)
+
+        // 但基准鸡胸肉的蛋白质绝不能因为加了油或油炸而凭空增加！
+        XCTAssertEqual(friedDish.protein, steamedDish.protein, accuracy: 0.5, "油炸加烹调油不得虚报暴增蛋白质")
+    }
+
+    /// 回归测试：文本手输显式克数（如「米饭 250克」）必须被 FoodDishEstimate 完整保留
+    func testCustomGramsPropagationFromHintText() {
+        let meal = FoodCalorieEstimator.estimateMeal(fromHint: "米饭 250克")
+        XCTAssertNotNil(meal)
+        guard let m = meal, let dish = m.dishes.first else { return }
+
+        XCTAssertEqual(dish.currentGrams, 250.0, accuracy: 0.1, "手输克数 250g 必须完整保留，不能回退到默认 150g")
+        XCTAssertEqual(dish.customGrams, 250.0)
+    }
+
+    /// 回归测试：多菜组合的置信区间使用高斯独立误差均方根合成，避免简单线性累加导致区间虚高
+    func testGaussianErrorPropagationInCalorieRange() {
+        let rice = FoodCatalog.item(id: "rice")!
+        let beef = FoodCatalog.item(id: "beef")!
+        let veg = FoodCatalog.item(id: "vegetable_dish")!
+        let soup = FoodCatalog.item(id: "soup")!
+
+        let dish1 = FoodDishEstimate(food: rice, customGrams: 150)
+        let dish2 = FoodDishEstimate(food: beef, customGrams: 150)
+        let dish3 = FoodDishEstimate(food: veg, customGrams: 150)
+        let dish4 = FoodDishEstimate(food: soup, customGrams: 200)
+
+        let meal = FoodCalorieEstimate(dishes: [dish1, dish2, dish3, dish4])
+        let range = meal.calorieRange
+
+        let linearDelta = (dish1.calorieRange.high - dish1.consumedCalories)
+            + (dish2.calorieRange.high - dish2.consumedCalories)
+            + (dish3.calorieRange.high - dish3.consumedCalories)
+            + (dish4.calorieRange.high - dish4.consumedCalories)
+
+        let actualDelta = range.high - meal.consumedCalories
+
+        // 独立误差合成的标准差必定严格小于直接线性求和 (sqrt(sum(a_i^2)) < sum(a_i))
+        XCTAssertLessThan(actualDelta, linearDelta)
+        XCTAssertGreaterThan(range.low, 0)
+        XCTAssertGreaterThan(range.high, range.low)
+    }
+
+    /// 回归测试：生熟称重状态换算（生米膨胀 ~2.3，生肉熟化脱水 ~0.75）
+    func testPreparationStateRawToCookedConversion() {
+        let rice = FoodCatalog.item(id: "rice")!
+        let cookedDish = FoodDishEstimate(food: rice, preparationState: .cooked, customGrams: 100.0)
+        let rawDish = FoodDishEstimate(food: rice, preparationState: .raw, customGrams: 100.0)
+
+        // 100g 生大米蒸熟后为 ~230g 熟米饭，热量约为熟米饭 100g 的 2.3 倍
+        XCTAssertEqual(rawDish.fullPortionCalories, cookedDish.fullPortionCalories * 2.3, accuracy: 5.0)
+    }
 }

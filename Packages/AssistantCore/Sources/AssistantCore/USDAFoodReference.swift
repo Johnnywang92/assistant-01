@@ -20,6 +20,18 @@ enum USDAFoodReference {
 
     struct Nutrients: Decodable {
         let kcal: Double
+        let proteinG: Double?
+        let fatG: Double?
+        let carbG: Double?
+        let fiberG: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case kcal
+            case proteinG = "protein_g"
+            case fatG = "fat_g"
+            case carbG = "carb_g"
+            case fiberG = "fiber_g"
+        }
     }
 
     struct FDCID: Decodable {

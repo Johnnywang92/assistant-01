@@ -46,8 +46,46 @@ struct FoodPhotoCalorieView: View {
     /// 离线语音听写服务
     @StateObject private var voiceService = VoiceDialogueService.shared
     @State private var isListeningVoice = false
-    /// 历史记录时间周期筛选（本周 / 今天 / 本月 / 全部）
-    @State private var selectedRecordPeriod: FoodRecordPeriodFilter = .thisWeek
+    /// 个性化每日热量目标（千卡，默认 2000，用户可自定义）
+    @AppStorage("daily_calorie_goal_kcal") private var dailyCalorieGoal: Double = 2000.0
+    @State private var showingGoalSettingAlert = false
+    @State private var goalInputText = ""
+    /// 拍照后进入专门的 AI 识别与校正页面
+    @State private var showingRecognitionDetailSheet = false
+    /// 饮食记录展示周期筛选
+    @State private var selectedRecordPeriod: FoodRecordPeriodFilter = .today
+
+    /// 今日营养素摄入汇总（蛋白质、碳水、脂肪，单位克）
+    private var todayMacroNutrients: (protein: Double, carbs: Double, fat: Double) {
+        var p: Double = 0
+        var c: Double = 0
+        var f: Double = 0
+        for r in todayRecords {
+            if let foodID = r.foodID?.components(separatedBy: "+").first,
+               let item = FoodCatalog.item(id: foodID) {
+                let ratio = (r.consumedCalories / max(1, item.caloriesPer100g))
+                p += ratio * item.proteinPer100g
+                c += ratio * item.carbsPer100g
+                f += ratio * item.fatPer100g
+            } else {
+                // 自定义或组合菜品按标准健康均衡宏量推算（碳水 50%、蛋白 20%、脂肪 30%）
+                let cal = r.consumedCalories
+                c += (cal * 0.50) / 4.0
+                p += (cal * 0.20) / 4.0
+                f += (cal * 0.30) / 9.0
+            }
+        }
+        return (protein: p, carbs: c, fat: f)
+    }
+
+    /// 根据热量目标自动推算的参考营养配比目标（碳水 50%、蛋白 20%、脂肪 30%）
+    private var targetMacros: (protein: Double, carbs: Double, fat: Double) {
+        let cal = max(1000, dailyCalorieGoal)
+        let c = (cal * 0.50) / 4.0
+        let p = (cal * 0.20) / 4.0
+        let f = (cal * 0.30) / 9.0
+        return (protein: p, carbs: c, fat: f)
+    }
 
     private var todayRecords: [FoodIntakeRecord] {
         let cal = Calendar.current
@@ -83,6 +121,7 @@ struct FoodPhotoCalorieView: View {
                 }
             }
             .padding(AppSpacing.md)
+            .padding(.bottom, 64)
         }
         .themedAppBackground()
         .navigationTitle("食物热量估算")
@@ -121,8 +160,16 @@ struct FoodPhotoCalorieView: View {
             FoodIntakeRecordAdjustmentSheet(record: record)
         }
         .sheet(item: $editingDish) { dish in
-            FoodDishDetailEditSheet(dish: dish) { newName, newCal in
-                estimation.updateDishDetails(dishID: dish.id, name: newName, calories: newCal)
+            FoodDishDetailEditSheet(dish: dish) { newName, newGrams, newMethod, newOil, newPrepState, newCal in
+                estimation.updateDishConfig(
+                    dishID: dish.id,
+                    name: newName,
+                    grams: newGrams,
+                    cookingMethod: newMethod,
+                    oilSauceLevel: newOil,
+                    preparationState: newPrepState,
+                    calories: newCal
+                )
                 didAdjust = true
             } onReplaceRequest: {
                 dishToReplace = dish
@@ -154,6 +201,21 @@ struct FoodPhotoCalorieView: View {
         } message: {
             Text("可以为本餐自定义名称（如「工作日便当」「老妈炖排骨套餐」），保存时将作为饮食记录名称。")
         }
+        .alert("设置每日热量目标", isPresented: $showingGoalSettingAlert) {
+            TextField("目标热量 (千卡)", text: $goalInputText)
+                .keyboardType(.numberPad)
+            Button("保存") {
+                if let val = Double(goalInputText), val >= 500, val <= 10000 {
+                    dailyCalorieGoal = val
+                }
+            }
+            Button("恢复推荐 (2000)", role: .destructive) {
+                dailyCalorieGoal = 2000
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("个性化设定每日热量消耗目标，用于计算剩余热量与宏量营养素推荐。")
+        }
         .onAppear {
             preferenceService.refresh(with: context)
         }
@@ -179,44 +241,92 @@ struct FoodPhotoCalorieView: View {
         }
     }
 
-    // MARK: - 顶部今日数据与画像建议（紧凑合并卡片）
+    // MARK: - 顶部今日营养仪表盘（摄入、剩余热量、宏量营养素与个性化目标）
 
     private var topSummaryAndRecommendationCard: some View {
         let recommendations = preferenceService.currentRecommendations
+        let consumed = todayConsumedCalories
+        let goal = max(500, dailyCalorieGoal)
+        let remaining = goal - consumed
+        let macros = todayMacroNutrients
+        let targetM = targetMacros
 
-        return VStack(spacing: 8) {
+        return VStack(spacing: 10) {
+            // 1. 核心热量与剩余额度
             HStack(alignment: .center) {
-                HStack(spacing: 8) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.orange.opacity(0.14))
-                            .frame(width: 32, height: 32)
-                        Image(systemName: "flame.fill")
-                            .font(.subheadline)
-                            .foregroundStyle(.orange)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("今日已记录摄入")
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 5) {
+                        Text("今日摄入")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(AppColor.secondaryText)
-                        Text(todayRecords.isEmpty ? "今日尚未记录" : "共 \(todayRecords.count) 餐")
-                            .font(.caption2)
+                        Button {
+                            goalInputText = "\(Int(dailyCalorieGoal.rounded()))"
+                            showingGoalSettingAlert = true
+                        } label: {
+                            HStack(spacing: 2) {
+                                Text("/ \(Int(goal.rounded())) 千卡")
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(AppColor.secondaryText)
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(AppColor.primary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text("\(Int(consumed.rounded()))")
+                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                            .foregroundStyle(AppColor.primary)
+                        Text("千卡")
+                            .font(.caption2.bold())
                             .foregroundStyle(AppColor.secondaryText)
                     }
                 }
 
                 Spacer()
 
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    Text("\(Int(todayConsumedCalories.rounded()))")
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(AppColor.primary)
-                    Text("千卡")
-                        .font(.caption2.bold())
+                // 剩余热量卡片
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("剩余可用")
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(AppColor.secondaryText)
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text("\(Int(remaining.rounded()))")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundStyle(remaining >= 0 ? AppColor.success : AppColor.danger)
+                        Text("千卡")
+                            .font(.caption2.bold())
+                            .foregroundStyle(AppColor.secondaryText)
+                    }
                 }
             }
 
+            // 2. 宏量营养素进度条（蛋白质、碳水、脂肪闭环管理）
+            HStack(spacing: 8) {
+                macroItemView(
+                    title: "蛋白质",
+                    current: macros.protein,
+                    target: targetM.protein,
+                    color: Color.blue
+                )
+                macroItemView(
+                    title: "碳水",
+                    current: macros.carbs,
+                    target: targetM.carbs,
+                    color: Color.orange
+                )
+                macroItemView(
+                    title: "脂肪",
+                    current: macros.fat,
+                    target: targetM.fat,
+                    color: Color.purple
+                )
+            }
+            .padding(.vertical, 2)
+
+            // 3. 饮食场景建议
             if let firstRec = recommendations.first {
                 Divider()
                 Button {
@@ -254,6 +364,36 @@ struct FoodPhotoCalorieView: View {
         .appCard()
     }
 
+    private func macroItemView(title: String, current: Double, target: Double, color: Color) -> some View {
+        let ratio = target > 0 ? min(1.0, current / target) : 0
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(AppColor.secondaryText)
+                Spacer()
+                Text("\(Int(current.rounded()))/\(Int(target.rounded()))g")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(AppColor.text)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.12))
+                    Capsule()
+                        .fill(color)
+                        .frame(width: max(3, geo.size.width * CGFloat(ratio)))
+                }
+            }
+            .frame(height: 5)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color(.tertiarySystemFill))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+    }
+
     // MARK: - 统一输入区（支持拍照识图、相册选图、直接文字手输与离线语音）
 
     private var inputSection: some View {
@@ -282,7 +422,74 @@ struct FoodPhotoCalorieView: View {
                 }
             }
 
-            // 2. 常驻文字输入框与语音输入（无照片时手输，有照片时作为补充提示）
+            // 2. 主视觉录入口：以拍照识别为主入口，相册与食物库作为辅助
+            VStack(spacing: 8) {
+                Button {
+                    showingCamera = true
+                } label: {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.22))
+                                .frame(width: 44, height: 44)
+                            Image(systemName: "camera.fill")
+                                .font(.title3)
+                                .foregroundStyle(.white)
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("拍照识别食物与营养")
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.white)
+                            Text("AI 自动检测分量、分析烹饪方式并支持逐项校正")
+                                .font(.caption2)
+                                .foregroundStyle(Color.white.opacity(0.85))
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.bold())
+                            .foregroundStyle(Color.white.opacity(0.7))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(
+                        LinearGradient(
+                            colors: [AppColor.primary, AppColor.primary.opacity(0.82)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+                    .shadow(color: AppColor.primary.opacity(0.25), radius: 8, y: 3)
+                }
+                .buttonStyle(.plain)
+
+                // 辅助快捷入口栏（相册导入、食物库快速挑选）
+                HStack(spacing: 8) {
+                    PhotosPicker(selection: $pickedItems, maxSelectionCount: 1, matching: .images) {
+                        Label("相册导入", systemImage: "photo.on.rectangle")
+                            .font(.caption.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showingFoodPicker = true
+                    } label: {
+                        Label("食物库", systemImage: "book.pages")
+                            .font(.caption.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(Color(.secondarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            // 3. 常驻文字与语音输入框（整合录音与手输，避免悬浮遮挡历史记录）
             HStack(spacing: 8) {
                 Image(systemName: "fork.knife")
                     .font(.footnote)
@@ -309,7 +516,7 @@ struct FoodPhotoCalorieView: View {
                     .buttonStyle(.plain)
                 }
 
-                // 语音输入按钮
+                // 输入框内集成的语音输入按钮
                 Button {
                     toggleVoiceListening()
                 } label: {
@@ -366,43 +573,6 @@ struct FoodPhotoCalorieView: View {
                     .foregroundStyle(.red)
                 }
                 .padding(.horizontal, 4)
-            }
-
-            // 3. 快捷入口按钮栏（拍照、相册、食物库）
-            HStack(spacing: 10) {
-                Button {
-                    showingCamera = true
-                } label: {
-                    Label("拍照", systemImage: "camera")
-                        .font(.caption.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
-                }
-                .buttonStyle(.plain)
-
-                PhotosPicker(selection: $pickedItems, maxSelectionCount: 1, matching: .images) {
-                    Label("相册", systemImage: "photo")
-                        .font(.caption.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    showingFoodPicker = true
-                } label: {
-                    Label("食物库", systemImage: "book.pages")
-                        .font(.caption.weight(.medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
-                }
-                .buttonStyle(.plain)
             }
 
             // 4. 时段快捷补菜（当尚未估算时，提供小巧的快速点选气泡）
@@ -505,12 +675,35 @@ struct FoodPhotoCalorieView: View {
                 }
             }
 
+            // 热量可信度区间与误差源分析（诚实展示区间，打破对单点数字的怀疑）
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.caption2)
+                        .foregroundStyle(AppColor.primary)
+                    Text(estimate.calorieRangeDescription)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppColor.primary)
+                    Spacer()
+                    Text("80% 置信区间")
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppColor.secondaryText)
+                }
+                Text(estimate.uncertaintyFactorsSummary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(AppColor.secondaryText)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(AppColor.primary.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+
             Divider()
 
             // 2. 餐品明细（点击整行进入修改/换菜/改热量，去除杂乱的行内小步进器）
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("菜品明细")
+                    Text("菜品明细 (点击任意菜品修改/校准)")
                         .font(.caption.bold())
                         .foregroundStyle(AppColor.secondaryText)
                     Spacer()
@@ -534,10 +727,21 @@ struct FoodPhotoCalorieView: View {
                         } label: {
                             HStack(spacing: 6) {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(dish.food.name)
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(AppColor.text)
-                                    Text("\(dish.portion.displayName) · 整份 \(Int(dish.fullPortionCalories.rounded())) 卡")
+                                    HStack(spacing: 4) {
+                                        Text(dish.food.name)
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(AppColor.text)
+                                        if dish.food.hasBoneOrShell {
+                                            Text("带骨壳")
+                                                .font(.system(size: 9, weight: .medium))
+                                                .padding(.horizontal, 4)
+                                                .padding(.vertical, 1)
+                                                .background(Color.orange.opacity(0.15))
+                                                .foregroundStyle(.orange)
+                                                .clipShape(Capsule())
+                                        }
+                                    }
+                                    Text("\(Int(dish.currentGrams))g · \(dish.food.stateAndCookingLabel(overrideMethod: dish.cookingMethod)) · \(Int(dish.fullPortionCalories.rounded())) 卡")
                                         .font(.caption2)
                                         .foregroundStyle(AppColor.secondaryText)
                                 }
@@ -550,18 +754,38 @@ struct FoodPhotoCalorieView: View {
 
                         Spacer()
 
-                        // 单菜份量切换
+                        // 单菜分量与烹饪快调
                         Menu {
-                            ForEach(FoodPortion.allCases, id: \.self) { p in
-                                Button(p.displayName) {
-                                    estimation.updateDishPortion(dishID: dish.id, portion: p)
-                                    didAdjust = true
-                                    Haptic.light()
+                            Section("常见份量/容器") {
+                                ForEach(dish.food.containerPresets) { preset in
+                                    Button("\(preset.label) (\(preset.subtitle))") {
+                                        estimation.updateDishGrams(dishID: dish.id, grams: preset.grams)
+                                        didAdjust = true
+                                        Haptic.light()
+                                    }
+                                }
+                            }
+                            Section("烹饪方式") {
+                                ForEach(FoodCookingMethod.allCases) { method in
+                                    Button(method.rawValue) {
+                                        estimation.updateDishCookingMethod(dishID: dish.id, method: method)
+                                        didAdjust = true
+                                        Haptic.light()
+                                    }
+                                }
+                            }
+                            Section("用油档位") {
+                                ForEach(FoodOilSauceLevel.allCases) { level in
+                                    Button(level.rawValue) {
+                                        estimation.updateDishOilSauceLevel(dishID: dish.id, level: level)
+                                        didAdjust = true
+                                        Haptic.light()
+                                    }
                                 }
                             }
                         } label: {
-                            Text(dish.portion.displayName)
-                                .font(.caption2.weight(.medium))
+                            Text("\(Int(dish.currentGrams))g · \(dish.cookingMethod.rawValue)")
+                                .font(.system(size: 11, weight: .medium))
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
                                 .background(Capsule().fill(Color.secondary.opacity(0.12)))
@@ -1217,46 +1441,280 @@ private struct FoodCameraPicker: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - 菜品修改弹窗（修改名称、手动输入热量千卡、更换菜品）
+// MARK: - 菜品多维校准弹窗（分量克数、容器预设、烹饪方式、用油量、称量状态、热量与宏量营养素校准）
 
 struct FoodDishDetailEditSheet: View {
     let dish: FoodDishEstimate
-    let onSave: (String, Double) -> Void
+    let onSave: (_ name: String, _ grams: Double, _ method: FoodCookingMethod, _ oilLevel: FoodOilSauceLevel, _ prepState: FoodPreparationState, _ calories: Double) -> Void
     let onReplaceRequest: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var nameText: String
-    @State private var caloriesText: String
+    @State private var grams: Double
+    @State private var cookingMethod: FoodCookingMethod
+    @State private var oilSauceLevel: FoodOilSauceLevel
+    @State private var preparationState: FoodPreparationState
+    @State private var isCustomizingCalories: Bool = false
+    @State private var customCaloriesText: String
 
-    init(dish: FoodDishEstimate, onSave: @escaping (String, Double) -> Void, onReplaceRequest: @escaping () -> Void) {
+    init(dish: FoodDishEstimate,
+         onSave: @escaping (_ name: String, _ grams: Double, _ method: FoodCookingMethod, _ oilLevel: FoodOilSauceLevel, _ prepState: FoodPreparationState, _ calories: Double) -> Void,
+         onReplaceRequest: @escaping () -> Void) {
         self.dish = dish
         self.onSave = onSave
         self.onReplaceRequest = onReplaceRequest
         _nameText = State(initialValue: dish.food.name)
-        _caloriesText = State(initialValue: "\(Int(dish.fullPortionCalories.rounded()))")
+        _grams = State(initialValue: dish.currentGrams)
+        _cookingMethod = State(initialValue: dish.cookingMethod)
+        _oilSauceLevel = State(initialValue: dish.oilSauceLevel)
+        _preparationState = State(initialValue: dish.preparationState)
+        _customCaloriesText = State(initialValue: "\(Int(dish.fullPortionCalories.rounded()))")
+    }
+
+    private var stateAdjustedGrams: Double {
+        if preparationState == .raw && dish.food.defaultState == .cooked {
+            return grams * dish.food.rawToCookedRatio
+        } else if preparationState == .cooked && dish.food.defaultState == .raw {
+            return grams / max(0.1, dish.food.rawToCookedRatio)
+        }
+        return grams
+    }
+
+    private var edibleGrams: Double {
+        stateAdjustedGrams * dish.food.edibleRatio
+    }
+
+    private var computedCalories: Double {
+        if isCustomizingCalories, let cal = Double(customCaloriesText), cal > 0 {
+            return cal
+        }
+        let base = (edibleGrams / 100.0) * dish.food.caloriesPer100g
+        let methodFactor = (cookingMethod == dish.food.defaultCookingMethod) ? 1.0 : (cookingMethod.calorieFactor / dish.food.defaultCookingMethod.calorieFactor)
+        return (base * methodFactor * oilSauceLevel.multiplier).rounded()
+    }
+
+    private var computedProtein: Double {
+        (edibleGrams / 100.0) * dish.food.proteinPer100g
+    }
+
+    private var computedCarbs: Double {
+        let baseCarbs = (edibleGrams / 100.0) * dish.food.carbsPer100g
+        if cookingMethod == .deepFriedOrBreaded && dish.food.defaultCookingMethod != .deepFriedOrBreaded {
+            let baseCalories = (edibleGrams / 100.0) * dish.food.caloriesPer100g
+            let extraCalories = max(0, computedCalories - baseCalories)
+            return baseCarbs + (extraCalories * 0.25 / 4.0)
+        }
+        return baseCarbs
+    }
+
+    private var computedFat: Double {
+        let baseFat = (edibleGrams / 100.0) * dish.food.fatPer100g
+        let baseCalories = (edibleGrams / 100.0) * dish.food.caloriesPer100g
+        let extraCalories = max(0, computedCalories - baseCalories)
+        let oilCalories = (cookingMethod == .deepFriedOrBreaded && dish.food.defaultCookingMethod != .deepFriedOrBreaded)
+            ? (extraCalories * 0.75)
+            : extraCalories
+        return baseFat + (oilCalories / 9.0)
+    }
+
+    private var calorieRange: (low: Double, high: Double) {
+        let uncert = cookingMethod.relativeUncertainty + (dish.food.hasBoneOrShell ? 0.08 : 0.04)
+        let delta = computedCalories * uncert
+        return (low: max(0, (computedCalories - delta).rounded()), high: (computedCalories + delta).rounded())
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("菜品名称") {
+                // 1. 菜品名称与称量状态
+                Section("菜品基本信息") {
                     TextField("输入菜名", text: $nameText)
-                }
 
-                Section {
-                    HStack {
-                        TextField("整份热量", text: $caloriesText)
-                            .keyboardType(.numberPad)
-                        Text("千卡")
-                            .foregroundStyle(.secondary)
+                    Picker("称重状态", selection: $preparationState) {
+                        Text("熟食/烹饪后称重").tag(FoodPreparationState.cooked)
+                        Text("生食/原料称量").tag(FoodPreparationState.raw)
                     }
-                } header: {
-                    Text("整份热量数值")
-                } footer: {
-                    Text("输入该道菜整份的标准热量数值，保存后将自动按当前吃掉比例换算实际摄入热量。")
+                    .pickerStyle(.segmented)
+
+                    if preparationState == .raw && dish.food.defaultState == .cooked {
+                        Text("已按生原料吸水膨胀系数（约 ×\(String(format: "%.1f", dish.food.rawToCookedRatio))）换算为等效熟食分量。")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.primary)
+                    } else if preparationState == .cooked && dish.food.defaultState == .raw {
+                        Text("已按原料熟化脱水系数（约 ÷\(String(format: "%.1f", dish.food.rawToCookedRatio))）换算为等效生重基准。")
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.primary)
+                    }
+
+                    if dish.food.hasBoneOrShell {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "checkmark.shield.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("带骨/带壳食材提示")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.orange)
+                                Text("已扣除骨壳重量（可食率约 \(Int(dish.food.edibleRatio * 100))%）。以当前称重 \(Int(grams))g 换算，纯可食净肉约 \(Int(edibleGrams.rounded()))g。")
+                                    .font(.caption2)
+                                    .foregroundStyle(Color.secondary)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
                 }
 
-                Section("更换食物") {
+                // 2. 份量估算与容器校准 (Container Calibration)
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("预估称重重量")
+                                .font(.subheadline)
+                            Spacer()
+                            Text("\(Int(grams)) 克")
+                                .font(.subheadline.bold().monospacedDigit())
+                                .foregroundStyle(AppColor.primary)
+                        }
+
+                        Slider(value: $grams, in: 20...1000, step: 5)
+                            .onChange(of: grams) { _, _ in
+                                if isCustomizingCalories {
+                                    isCustomizingCalories = false
+                                }
+                            }
+
+                        // 常见容器快捷点选（如：小碗 100g、普通碗 150g、大碗 250g）
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(dish.food.containerPresets) { preset in
+                                    let isSelected = abs(grams - preset.grams) < 2
+                                    Button {
+                                        grams = preset.grams
+                                        isCustomizingCalories = false
+                                        Haptic.light()
+                                    } label: {
+                                        VStack(spacing: 2) {
+                                            Text(preset.label)
+                                                .font(.caption.weight(isSelected ? .bold : .medium))
+                                            Text(preset.subtitle)
+                                                .font(.system(size: 9))
+                                                .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(isSelected ? AppColor.primary : Color.secondary.opacity(0.12))
+                                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("份量与容器校准")
+                } footer: {
+                    Text("分量是决定热量准确性的最关键因素。可通过预设容器（如家用中碗约150g）快速对齐。")
+                }
+
+                // 3. 烹饪方式与用油量 (Cooking & Oil)
+                Section("烹饪方式与调味用油") {
+                    Picker("烹饪方式", selection: $cookingMethod) {
+                        ForEach(FoodCookingMethod.allCases) { method in
+                            Text(method.rawValue).tag(method)
+                        }
+                    }
+
+                    Picker("用油 / 酱汁量", selection: $oilSauceLevel) {
+                        ForEach(FoodOilSauceLevel.allCases) { level in
+                            Text(level.rawValue).tag(level)
+                        }
+                    }
+                }
+
+                // 4. 实时热量与三大宏量营养素
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("整份热量估算")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.secondary)
+                                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                                    Text("\(Int(computedCalories.rounded()))")
+                                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                                        .foregroundStyle(AppColor.primary)
+                                    Text("千卡")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(Color.secondary)
+                                }
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("置信区间")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Color.secondary)
+                                Text("\(Int(calorieRange.low))–\(Int(calorieRange.high)) 千卡")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(AppColor.primary)
+                            }
+                        }
+
+                        Divider()
+
+                        HStack(spacing: 8) {
+                            VStack(spacing: 2) {
+                                Text("蛋白质")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Color.secondary)
+                                Text("\(String(format: "%.1f", computedProtein))g")
+                                    .font(.caption.bold())
+                            }
+                            .frame(maxWidth: .infinity)
+
+                            VStack(spacing: 2) {
+                                Text("碳水")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Color.secondary)
+                                Text("\(String(format: "%.1f", computedCarbs))g")
+                                    .font(.caption.bold())
+                            }
+                            .frame(maxWidth: .infinity)
+
+                            VStack(spacing: 2) {
+                                Text("脂肪")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Color.secondary)
+                                Text("\(String(format: "%.1f", computedFat))g")
+                                    .font(.caption.bold())
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .padding(.vertical, 4)
+
+                        // 手动输入卡路里数值开关
+                        Toggle("手动直接指定卡路里数值", isOn: $isCustomizingCalories)
+                            .font(.caption)
+
+                        if isCustomizingCalories {
+                            HStack {
+                                TextField("手动卡路里", text: $customCaloriesText)
+                                    .keyboardType(.numberPad)
+                                Text("千卡")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                } header: {
+                    Text("营养与热量分解")
+                }
+
+                // 5. 更换食物
+                Section("食物替换") {
                     Button {
                         dismiss()
                         onReplaceRequest()
@@ -1265,7 +1723,7 @@ struct FoodDishDetailEditSheet: View {
                     }
                 }
             }
-            .navigationTitle("修改菜品与热量")
+            .navigationTitle("校准菜品与营养")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1273,8 +1731,15 @@ struct FoodDishDetailEditSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") {
-                        let parsedCal = Double(caloriesText) ?? dish.fullPortionCalories
-                        onSave(nameText.trimmingCharacters(in: .whitespacesAndNewlines), parsedCal)
+                        let finalCal = computedCalories
+                        onSave(
+                            nameText.trimmingCharacters(in: .whitespacesAndNewlines),
+                            grams,
+                            cookingMethod,
+                            oilSauceLevel,
+                            preparationState,
+                            finalCal
+                        )
                         Haptic.success()
                         dismiss()
                     }

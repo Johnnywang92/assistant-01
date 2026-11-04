@@ -78,6 +78,87 @@ public enum FoodCategory: String, CaseIterable, Sendable, Identifiable {
     }
 }
 
+// MARK: - 食物状态、烹饪方式与用油档位
+
+/// 食物状态（区分生食、熟食、流质饮品与即食成品，避免生米与熟米饭混用同一热量口径）。
+public enum FoodPreparationState: String, CaseIterable, Codable, Sendable {
+    case raw = "生食"
+    case cooked = "熟食"
+    case liquid = "饮品/流质"
+    case readyToEat = "即食"
+}
+
+/// 烹饪方式（同一种食材在不同烹饪方式下油盐糖吸收差异显著）。
+public enum FoodCookingMethod: String, CaseIterable, Codable, Sendable, Identifiable {
+    case steamedOrBoiled = "清蒸/水煮"
+    case coldTossed = "凉拌"
+    case stirFried = "炒制"
+    case panFriedOrGrilled = "煎烤"
+    case braisedOrSauced = "含酱汁"
+    case deepFriedOrBreaded = "油炸/裹粉"
+    case soupOrStew = "炖汤"
+    case readyToEat = "即食"
+
+    public var id: String { rawValue }
+
+    /// 相对家常炒制基准的热量密度系数
+    public var calorieFactor: Double {
+        switch self {
+        case .steamedOrBoiled: return 0.85
+        case .coldTossed: return 0.90
+        case .stirFried: return 1.00
+        case .panFriedOrGrilled: return 1.12
+        case .braisedOrSauced: return 1.15
+        case .deepFriedOrBreaded: return 1.32
+        case .soupOrStew: return 0.92
+        case .readyToEat: return 1.00
+        }
+    }
+
+    /// 烹饪方式带来的相对热量不确定度（用于区间估算）
+    public var relativeUncertainty: Double {
+        switch self {
+        case .steamedOrBoiled, .readyToEat: return 0.08
+        case .coldTossed, .soupOrStew: return 0.12
+        case .stirFried, .panFriedOrGrilled: return 0.16
+        case .braisedOrSauced: return 0.20
+        case .deepFriedOrBreaded: return 0.24
+        }
+    }
+}
+
+/// 烹饪用油与酱汁摄入档位
+public enum FoodOilSauceLevel: String, CaseIterable, Codable, Sendable, Identifiable {
+    case low = "少油/不喝汁"
+    case standard = "标准家常"
+    case heavy = "多油/拌汁"
+
+    public var id: String { rawValue }
+
+    public var multiplier: Double {
+        switch self {
+        case .low: return 0.86
+        case .standard: return 1.00
+        case .heavy: return 1.18
+        }
+    }
+}
+
+/// 份量快速校准预设（如：小碗 100g / 普通碗 150g / 大碗 250g）。
+public struct FoodContainerPreset: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let label: String
+    public let subtitle: String
+    public let grams: Double
+
+    public init(id: String, label: String, subtitle: String, grams: Double) {
+        self.id = id
+        self.label = label
+        self.subtitle = subtitle
+        self.grams = grams
+    }
+}
+
 // MARK: - 食物库
 
 /// 一种食物的热量基准。热量值取每 100 克可食部分的千卡数（kcal/100g）。
@@ -128,9 +209,16 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
         self.name = name
         self.nameEn = nameEn
         self.caloriesPer100g = caloriesPer100g
-        self.proteinPer100g = proteinPer100g
-        self.fatPer100g = fatPer100g
-        self.carbsPer100g = carbsPer100g
+        if proteinPer100g == 0 && fatPer100g == 0 && carbsPer100g == 0 && caloriesPer100g > 5 && !id.hasPrefix("custom_") {
+            let inferred = Self.inferMacros(id: id, name: name, category: category, caloriesPer100g: caloriesPer100g)
+            self.proteinPer100g = inferred.protein
+            self.fatPer100g = inferred.fat
+            self.carbsPer100g = inferred.carbs
+        } else {
+            self.proteinPer100g = proteinPer100g
+            self.fatPer100g = fatPer100g
+            self.carbsPer100g = carbsPer100g
+        }
         self.category = category
         self.visionIdentifiers = visionIdentifiers
         self.aliases = aliases
@@ -139,19 +227,65 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
         self.referenceDescription = referenceDescription
     }
 
+    /// 当条目未显式提供三大营养素时，按菜品分类与每 100g 热量进行营养学比例推算。
+    private static func inferMacros(id: String, name: String, category: FoodCategory, caloriesPer100g: Double) -> (protein: Double, fat: Double, carbs: Double) {
+        let cal = max(0, caloriesPer100g)
+        let pRatio: Double
+        let fRatio: Double
+        let cRatio: Double
+        switch category {
+        case .staple:
+            pRatio = 0.11; fRatio = 0.14; cRatio = 0.75
+        case .meat:
+            if name.contains("鱼") || name.contains("虾") || name.contains("鸡胸") || name.contains("牛") {
+                pRatio = 0.42; fRatio = 0.46; cRatio = 0.12
+            } else {
+                pRatio = 0.28; fRatio = 0.58; cRatio = 0.14
+            }
+        case .veggie:
+            if name.contains("豆腐") || name.contains("蛋") || name.contains("豆") {
+                pRatio = 0.30; fRatio = 0.48; cRatio = 0.22
+            } else {
+                pRatio = 0.15; fRatio = 0.50; cRatio = 0.35
+            }
+        case .soup:
+            pRatio = 0.25; fRatio = 0.45; cRatio = 0.30
+        case .snack:
+            pRatio = 0.20; fRatio = 0.45; cRatio = 0.35
+        case .dessert:
+            if name.contains("坚果") || name.contains("核桃") || name.contains("杏仁") || name.contains("花生") {
+                pRatio = 0.14; fRatio = 0.72; cRatio = 0.14
+            } else {
+                pRatio = 0.08; fRatio = 0.42; cRatio = 0.50
+            }
+        case .drink:
+            if name.contains("奶") || name.contains("拿铁") || name.contains("豆浆") {
+                pRatio = 0.20; fRatio = 0.35; cRatio = 0.45
+            } else {
+                pRatio = 0.04; fRatio = 0.04; cRatio = 0.92
+            }
+        }
+        return (
+            protein: ((cal * pRatio) / 4.0 * 10).rounded() / 10.0,
+            fat: ((cal * fRatio) / 9.0 * 10).rounded() / 10.0,
+            carbs: ((cal * cRatio) / 4.0 * 10).rounded() / 10.0
+        )
+    }
+
     /// 创建一个用户自定义名称和热量的食物条目
     public static func custom(name: String, calories: Double, category: FoodCategory = .staple) -> FoodItem {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayName = trimmed.isEmpty ? "自定义食物" : trimmed
         let cleanID = "custom_\(UUID().uuidString.prefix(8))"
+        let macros = inferMacros(id: cleanID, name: displayName, category: category, caloriesPer100g: max(1, calories))
         return FoodItem(
             id: cleanID,
             name: displayName,
             nameEn: "Custom Food",
             caloriesPer100g: max(1, calories),
-            proteinPer100g: 0,
-            fatPer100g: 0,
-            carbsPer100g: 0,
+            proteinPer100g: macros.protein,
+            fatPer100g: macros.fat,
+            carbsPer100g: macros.carbs,
             category: category,
             visionIdentifiers: [],
             aliases: [displayName]
@@ -185,9 +319,9 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
             name: name,
             nameEn: nameEn,
             caloriesPer100g: reference.per100g.kcal,
-            proteinPer100g: proteinPer100g,
-            fatPer100g: fatPer100g,
-            carbsPer100g: carbsPer100g,
+            proteinPer100g: reference.per100g.proteinG ?? proteinPer100g,
+            fatPer100g: reference.per100g.fatG ?? fatPer100g,
+            carbsPer100g: reference.per100g.carbG ?? carbsPer100g,
             category: category,
             visionIdentifiers: visionIdentifiers,
             aliases: aliases,
@@ -319,8 +453,158 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
         case "cookie": return 10.0               // 单片曲奇约 10g (整包 30g 约 3 片)
         case "shrimp": return 20.0               // 单只大虾约 20g (整盘 180g 约 9 只)
         case "oden": return 40.0                 // 单串关东煮约 40g (整份 250g 约 6 串)
-        default: return nil
+        case "cn_d020": return 45.0              // 单只可乐鸡翅约 45g (整盘 180g~250g 约 4~6 只)
+        default:
+            if name.contains("鸡翅") { return 45.0 }
+            if name.contains("排骨") { return 35.0 }
+            return nil
         }
+    }
+
+    /// 可食部分比例 (0.50...1.0)。
+    /// 用于区分「带骨/带壳总重量」与「实际可食部分重量」（如鸡翅、排骨、整鱼、带壳虾、猪蹄、鸭脖等）。
+    public var edibleRatio: Double {
+        if id == "pig_trotter" || name.contains("猪蹄") || name.contains("猪手") { return 0.55 }
+        if id == "braised_duck_neck" || name.contains("鸭脖") || name.contains("鸡爪") || name.contains("鸭翅") { return 0.50 }
+        if id == "shrimp" || name.contains("小龙虾") || name.contains("大虾") || name.contains("螃蟹") { return 0.62 }
+        if id == "fried_chicken" || id == "cn_d020" || name.contains("鸡翅") || name.contains("辣子鸡") { return 0.68 }
+        if id == "braised_meat" || name.contains("排骨") || name.contains("羊蝎子") { return 0.72 }
+        if (id == "roast_duck" || name.contains("烤鸭") || name.contains("卤鸭") || name.contains("白切鸡")) && !name.contains("鸡胸") { return 0.70 }
+        if id == "fish" || id == "suancai_fish" || name.contains("鱼") { return 0.72 }
+        if id == "pork_ribs_soup" { return 0.78 }
+        if id == "watermelon" || id == "durian_mango" || id == "banana" || id == "orange_citrus" || id == "avocado" { return 0.70 }
+        return 1.0
+    }
+
+    /// 是否含骨头或硬壳（影响份量估算口径与不确定度）。
+    public var hasBoneOrShell: Bool {
+        edibleRatio < 0.90
+    }
+
+    /// 默认食物状态（生食/熟食/饮品流质/即食）。
+    public var defaultState: FoodPreparationState {
+        if name.contains("（生）") || name.contains("(生)") { return .raw }
+        if category == .drink && !name.contains("水果") && !name.contains("苹果") && !name.contains("香蕉") && !name.contains("西瓜") && !name.contains("橙") && !name.contains("牛油果") && !name.contains("榴莲") && !name.contains("葡萄") && !name.contains("草莓") && !name.contains("蓝莓") && !name.contains("梨") && !name.contains("桃") && !name.contains("菠萝") && !name.contains("猕猴桃") {
+            return .liquid
+        }
+        if category == .soup { return .liquid }
+        if category == .dessert || category == .drink { return .readyToEat }
+        return .cooked
+    }
+
+    /// 若在熟食基准条目上输入生重，生重转化为等效熟重所乘的系数（生米吸水膨胀 ~2.3，生肉熟化脱水 ~0.75）。
+    public var rawToCookedRatio: Double {
+        if isStaple || category == .staple || id == "rice" || id == "noodles" || id == "congee" || id == "oats" || id == "corn_sweetpotato" {
+            return 2.3
+        }
+        if category == .meat || id == "chicken_breast" || id == "beef" || id == "pork" || id == "fish" || id == "egg" || id == "shrimp" {
+            return 0.75
+        }
+        if category == .veggie {
+            return 0.85
+        }
+        return 1.0
+    }
+
+    /// 默认烹饪方式（水煮/清蒸、凉拌、炒制、煎烤、含酱汁/红烧、油炸/裹粉、炖汤、即食）。
+    public var defaultCookingMethod: FoodCookingMethod {
+        if defaultState == .raw || defaultState == .readyToEat { return .readyToEat }
+        if category == .soup || id == "congee" { return .soupOrStew }
+        if id == "rice" || id == "usda_f002" || id == "steamed_bun" || id == "mantou" || id == "shaomai" || id == "changfen" || id == "zongzi" || id == "corn_sweetpotato" || id == "egg" || id == "usda_f048" || id == "steamed_egg_custard" || id == "chicken_breast" || id == "shrimp" || name.contains("清蒸") || name.contains("白灼") || name.contains("水煮蛋") {
+            return .steamedOrBoiled
+        }
+        if id == "youtiao" || id == "fried_chicken" || id == "fried_pork_cutlet" || id == "sweet_sour_pork" || id == "stinky_tofu" || id == "fries" || name.contains("炸") || name.contains("酥") || name.contains("锅包肉") {
+            return .deepFriedOrBreaded
+        }
+        if id == "braised_meat" || id == "cn_d020" || id == "curry_chicken_beef" || id == "pig_trotter" || id == "braised_duck_neck" || id == "boiled_pork_fish" || id == "mapo_tofu" || id == "zhajiangmian" || name.contains("红烧") || name.contains("可乐") || name.contains("卤") || name.contains("酱") || name.contains("咖喱") || name.contains("水煮肉") || name.contains("水煮鱼") {
+            return .braisedOrSauced
+        }
+        if id == "steak" || id == "roast_duck" || id == "barbecue" || id == "fried_egg" || id == "shengjian_xiaolong" || id == "pancake_roll" || name.contains("煎") || name.contains("烤") {
+            return .panFriedOrGrilled
+        }
+        if id == "salad" || id == "seaweed_dish" || id == "cold_cucumber_fungus" || name.contains("凉拌") || name.contains("拍黄瓜") || name.contains("沙拉") {
+            return .coldTossed
+        }
+        if category == .staple {
+            if id == "fried_rice" || name.contains("炒") { return .stirFried }
+            return .steamedOrBoiled
+        }
+        return .stirFried
+    }
+
+    /// 供识别结果行展示的「食物状态/烹饪方式」简短标签（如「熟米饭」「含酱汁」「炒制」「油炸/裹粉」）。
+    public func stateAndCookingLabel(overrideMethod: FoodCookingMethod? = nil) -> String {
+        let method = overrideMethod ?? defaultCookingMethod
+        if id == "rice" && method == .steamedOrBoiled {
+            return "熟米饭"
+        }
+        if defaultState == .raw {
+            return "生食基准"
+        }
+        if category == .drink {
+            return defaultState == .liquid ? "饮品" : "鲜果即食"
+        }
+        return method.rawValue
+    }
+
+    /// 针对当前菜品的单张照片补充询问文案（如「这碗米饭大约有多少？」）。
+    public var calibrationPromptQuestion: String {
+        if id == "rice" || id == "fried_rice" || id == "congee" || id == "noodles" || id == "rice_noodles" {
+            return "这碗\(name)大约有多少？"
+        }
+        if pieceGrams != nil {
+            return "这份\(name)大约有几件/多少克？"
+        }
+        if category == .drink {
+            return "这杯/份\(name)大约有多少？"
+        }
+        return "这盘\(name)大约有多少？"
+    }
+
+    /// 针对当前菜品的容器/常见份量快速校准预设（校准碗型、盘型或件数）。
+    public var containerPresets: [FoodContainerPreset] {
+        if id == "rice" || id == "usda_f002" {
+            return [
+                FoodContainerPreset(id: "small_bowl", label: "小碗", subtitle: "约 100g", grams: 100),
+                FoodContainerPreset(id: "regular_bowl", label: "普通碗", subtitle: "约 150g", grams: 150),
+                FoodContainerPreset(id: "full_bowl", label: "标准满碗", subtitle: "约 180g", grams: 180),
+                FoodContainerPreset(id: "large_bowl", label: "大碗", subtitle: "约 250g", grams: 250)
+            ]
+        }
+        if id == "noodles" || id == "rice_noodles" || id == "zhajiangmian" || id == "fried_rice" || id == "congee" {
+            return [
+                FoodContainerPreset(id: "small_bowl", label: "小碗", subtitle: "约 180g", grams: 180),
+                FoodContainerPreset(id: "regular_bowl", label: "普通碗", subtitle: "约 280g", grams: 280),
+                FoodContainerPreset(id: "large_bowl", label: "大碗", subtitle: "约 400g", grams: 400)
+            ]
+        }
+        if let piece = pieceGrams, piece > 0 {
+            if name.contains("鸡翅") || id == "fried_chicken" || id == "cn_d020" {
+                return [
+                    FoodContainerPreset(id: "p2", label: "2~3只", subtitle: "约 110g", grams: 110),
+                    FoodContainerPreset(id: "p4", label: "4只(中份)", subtitle: "约 180g", grams: 180),
+                    FoodContainerPreset(id: "p6", label: "6只(大份)", subtitle: "约 260g", grams: 260)
+                ]
+            }
+            return [
+                FoodContainerPreset(id: "p_small", label: "小份(约4件)", subtitle: "约 \(Int((piece * 4).rounded()))g", grams: (piece * 4).rounded()),
+                FoodContainerPreset(id: "p_reg", label: "标准(约8件)", subtitle: "约 \(Int((piece * 8).rounded()))g", grams: (piece * 8).rounded()),
+                FoodContainerPreset(id: "p_large", label: "大份(约12件)", subtitle: "约 \(Int((piece * 12).rounded()))g", grams: (piece * 12).rounded())
+            ]
+        }
+        if category == .drink {
+            return [
+                FoodContainerPreset(id: "cup_s", label: "小杯", subtitle: "约 250ml", grams: 250),
+                FoodContainerPreset(id: "cup_m", label: "中杯", subtitle: "约 350ml", grams: 350),
+                FoodContainerPreset(id: "cup_l", label: "大杯", subtitle: "约 500ml", grams: 500)
+            ]
+        }
+        return [
+            FoodContainerPreset(id: "dish_s", label: "小份/食堂勺", subtitle: "约 100g", grams: 100),
+            FoodContainerPreset(id: "dish_m", label: "家常半盘", subtitle: "约 150g", grams: 150),
+            FoodContainerPreset(id: "dish_reg", label: "标准盘", subtitle: "约 200g", grams: 200),
+            FoodContainerPreset(id: "dish_l", label: "大盘/聚餐份", subtitle: "约 300g", grams: 300)
+        ]
     }
 
     /// 是否属于主食（用于套餐/托盘多菜组合判别）。
@@ -627,6 +911,9 @@ public enum FoodCatalog {
             name: item.displayName,
             nameEn: reference.nameEn,
             caloriesPer100g: reference.per100g.kcal,
+            proteinPer100g: reference.per100g.proteinG ?? 0,
+            fatPer100g: reference.per100g.fatG ?? 0,
+            carbsPer100g: reference.per100g.carbG ?? 0,
             category: item.category,
             aliases: item.aliases,
             referenceServingGrams: reference.servingGrams,
@@ -938,24 +1225,80 @@ public struct FoodDishEstimate: Equatable, Sendable, Identifiable {
     public let consumedRatio: Double
     /// 该道菜整份热量（千卡）
     public let fullPortionCalories: Double
+    /// 烹饪方式（清蒸/水煮、炒制、含酱汁、油炸等）
+    public let cookingMethod: FoodCookingMethod
+    /// 用油/酱汁档位（少油/标准/多油）
+    public let oilSauceLevel: FoodOilSauceLevel
+    /// 称重状态（熟重/生重）
+    public let preparationState: FoodPreparationState
+    /// 显式设定的整份估计重量（克）；若为 nil 则按 portion 倍数换算标准克数
+    public let customGrams: Double?
+
+    /// 当前整份有效总重量（克）
+    public var currentGrams: Double {
+        if let customGrams, customGrams > 0 { return customGrams }
+        return food.standardServingGrams * portion.multiplier
+    }
+
+    /// 生熟状态换算后的等效基准重量（克）
+    public var stateAdjustedGrams: Double {
+        if preparationState == .raw && food.defaultState == .cooked {
+            return currentGrams * food.rawToCookedRatio
+        } else if preparationState == .cooked && food.defaultState == .raw {
+            return currentGrams / max(0.1, food.rawToCookedRatio)
+        }
+        return currentGrams
+    }
+
+    /// 当前可食部分估算重量（克，扣除骨头/硬壳）
+    public var edibleGrams: Double {
+        stateAdjustedGrams * food.edibleRatio
+    }
+
+    /// 实际吃进去的可食部分净重（克）
+    public var consumedEdibleGrams: Double {
+        edibleGrams * consumedRatio
+    }
+
     /// 该道菜实际摄入热量（千卡）
     public var consumedCalories: Double {
         fullPortionCalories * consumedRatio
     }
-    /// 实际摄入蛋白质（克）
+
+    /// 实际摄入蛋白质（克，由可食基准食材提供，烹调油脂不污染蛋白质）
     public var protein: Double {
-        let grams = (fullPortionCalories / max(1, food.caloriesPer100g)) * 100.0
-        return (grams / 100.0) * food.proteinPer100g * consumedRatio
+        (consumedEdibleGrams / 100.0) * food.proteinPer100g
     }
-    /// 实际摄入脂肪（克）
-    public var fat: Double {
-        let grams = (fullPortionCalories / max(1, food.caloriesPer100g)) * 100.0
-        return (grams / 100.0) * food.fatPer100g * consumedRatio
-    }
+
     /// 实际摄入碳水化合物（克）
     public var carbs: Double {
-        let grams = (fullPortionCalories / max(1, food.caloriesPer100g)) * 100.0
-        return (grams / 100.0) * food.carbsPer100g * consumedRatio
+        let baseCarbs = (consumedEdibleGrams / 100.0) * food.carbsPer100g
+        // 裹粉油炸面衣提供部分额外碳水
+        if cookingMethod == .deepFriedOrBreaded && food.defaultCookingMethod != .deepFriedOrBreaded {
+            let baseCalories = (consumedEdibleGrams / 100.0) * food.caloriesPer100g
+            let extraCalories = max(0, consumedCalories - baseCalories)
+            let batterCarbCalories = extraCalories * 0.25
+            return baseCarbs + (batterCarbCalories / 4.0)
+        }
+        return baseCarbs
+    }
+
+    /// 实际摄入脂肪（克，基准食材自带脂肪 + 烹调方式与用油量带来的全部额外油脂，9 kcal/g）
+    public var fat: Double {
+        let baseFat = (consumedEdibleGrams / 100.0) * food.fatPer100g
+        let baseCalories = (consumedEdibleGrams / 100.0) * food.caloriesPer100g
+        let extraCalories = max(0, consumedCalories - baseCalories)
+        let oilCalories = (cookingMethod == .deepFriedOrBreaded && food.defaultCookingMethod != .deepFriedOrBreaded)
+            ? (extraCalories * 0.75)
+            : extraCalories
+        return baseFat + (oilCalories / 9.0)
+    }
+
+    /// 该道菜的估计热量波动区间（下限与上限，单位千卡）
+    public var calorieRange: (low: Double, high: Double) {
+        let uncert = cookingMethod.relativeUncertainty + (food.hasBoneOrShell ? 0.08 : 0.04)
+        let delta = consumedCalories * uncert
+        return (low: max(0, (consumedCalories - delta).rounded()), high: (consumedCalories + delta).rounded())
     }
 
     public init(id: String? = nil,
@@ -963,14 +1306,40 @@ public struct FoodDishEstimate: Equatable, Sendable, Identifiable {
                 portion: FoodPortion = .regular,
                 confidence: Double = 0.8,
                 consumedRatio: Double = 1.0,
-                fullPortionCaloriesOverride: Double? = nil) {
+                fullPortionCaloriesOverride: Double? = nil,
+                cookingMethod: FoodCookingMethod? = nil,
+                oilSauceLevel: FoodOilSauceLevel = .standard,
+                preparationState: FoodPreparationState? = nil,
+                customGrams: Double? = nil) {
         self.id = id ?? food.id
         self.food = food
         self.portion = portion
         self.confidence = confidence
         self.consumedRatio = FoodCalorieEstimator.clampRatio(consumedRatio)
-        self.fullPortionCalories = fullPortionCaloriesOverride
-            ?? (food.standardServingCalories * portion.multiplier)
+        let resolvedMethod = cookingMethod ?? food.defaultCookingMethod
+        self.cookingMethod = resolvedMethod
+        self.oilSauceLevel = oilSauceLevel
+        let resolvedState = preparationState ?? food.defaultState
+        self.preparationState = resolvedState
+        self.customGrams = customGrams
+
+        if let override = fullPortionCaloriesOverride {
+            self.fullPortionCalories = override
+        } else {
+            let rawGrams = customGrams ?? (food.standardServingGrams * portion.multiplier)
+            let effectiveGrams: Double
+            if resolvedState == .raw && food.defaultState == .cooked {
+                effectiveGrams = rawGrams * food.rawToCookedRatio
+            } else if resolvedState == .cooked && food.defaultState == .raw {
+                effectiveGrams = rawGrams / max(0.1, food.rawToCookedRatio)
+            } else {
+                effectiveGrams = rawGrams
+            }
+            let edibleWeight = effectiveGrams * food.edibleRatio
+            let base = (edibleWeight / 100.0) * food.caloriesPer100g
+            let methodFactor = (resolvedMethod == food.defaultCookingMethod) ? 1.0 : (resolvedMethod.calorieFactor / food.defaultCookingMethod.calorieFactor)
+            self.fullPortionCalories = base * methodFactor * oilSauceLevel.multiplier
+        }
     }
 
     public func withConsumedRatio(_ ratio: Double) -> FoodDishEstimate {
@@ -980,7 +1349,11 @@ public struct FoodDishEstimate: Equatable, Sendable, Identifiable {
             portion: portion,
             confidence: confidence,
             consumedRatio: ratio,
-            fullPortionCaloriesOverride: fullPortionCalories
+            fullPortionCaloriesOverride: fullPortionCalories,
+            cookingMethod: cookingMethod,
+            oilSauceLevel: oilSauceLevel,
+            preparationState: preparationState,
+            customGrams: customGrams
         )
     }
 
@@ -990,7 +1363,72 @@ public struct FoodDishEstimate: Equatable, Sendable, Identifiable {
             food: food,
             portion: newPortion,
             confidence: confidence,
-            consumedRatio: consumedRatio
+            consumedRatio: consumedRatio,
+            fullPortionCaloriesOverride: nil,
+            cookingMethod: cookingMethod,
+            oilSauceLevel: oilSauceLevel,
+            preparationState: preparationState,
+            customGrams: nil
+        )
+    }
+
+    public func withCustomGrams(_ grams: Double) -> FoodDishEstimate {
+        FoodDishEstimate(
+            id: id,
+            food: food,
+            portion: portion,
+            confidence: confidence,
+            consumedRatio: consumedRatio,
+            fullPortionCaloriesOverride: nil,
+            cookingMethod: cookingMethod,
+            oilSauceLevel: oilSauceLevel,
+            preparationState: preparationState,
+            customGrams: max(1, grams)
+        )
+    }
+
+    public func withCookingMethod(_ method: FoodCookingMethod) -> FoodDishEstimate {
+        FoodDishEstimate(
+            id: id,
+            food: food,
+            portion: portion,
+            confidence: confidence,
+            consumedRatio: consumedRatio,
+            fullPortionCaloriesOverride: nil,
+            cookingMethod: method,
+            oilSauceLevel: oilSauceLevel,
+            preparationState: preparationState,
+            customGrams: customGrams
+        )
+    }
+
+    public func withOilSauceLevel(_ level: FoodOilSauceLevel) -> FoodDishEstimate {
+        FoodDishEstimate(
+            id: id,
+            food: food,
+            portion: portion,
+            confidence: confidence,
+            consumedRatio: consumedRatio,
+            fullPortionCaloriesOverride: nil,
+            cookingMethod: cookingMethod,
+            oilSauceLevel: level,
+            preparationState: preparationState,
+            customGrams: customGrams
+        )
+    }
+
+    public func withPreparationState(_ state: FoodPreparationState) -> FoodDishEstimate {
+        FoodDishEstimate(
+            id: id,
+            food: food,
+            portion: portion,
+            confidence: confidence,
+            consumedRatio: consumedRatio,
+            fullPortionCaloriesOverride: nil,
+            cookingMethod: cookingMethod,
+            oilSauceLevel: oilSauceLevel,
+            preparationState: state,
+            customGrams: customGrams
         )
     }
 
@@ -1001,7 +1439,11 @@ public struct FoodDishEstimate: Equatable, Sendable, Identifiable {
             portion: portion,
             confidence: confidence,
             consumedRatio: consumedRatio,
-            fullPortionCaloriesOverride: calories
+            fullPortionCaloriesOverride: calories,
+            cookingMethod: cookingMethod,
+            oilSauceLevel: oilSauceLevel,
+            preparationState: preparationState,
+            customGrams: customGrams
         )
     }
 
@@ -1013,7 +1455,11 @@ public struct FoodDishEstimate: Equatable, Sendable, Identifiable {
             portion: portion,
             confidence: 1.0,
             consumedRatio: consumedRatio,
-            fullPortionCaloriesOverride: newFood.standardServingCalories * portion.multiplier
+            fullPortionCaloriesOverride: nil,
+            cookingMethod: newFood.defaultCookingMethod,
+            oilSauceLevel: .standard,
+            preparationState: newFood.defaultState,
+            customGrams: customGrams
         )
     }
 
@@ -1031,7 +1477,11 @@ public struct FoodDishEstimate: Equatable, Sendable, Identifiable {
             portion: portion,
             confidence: confidence,
             consumedRatio: consumedRatio,
-            fullPortionCaloriesOverride: calories ?? fullPortionCalories
+            fullPortionCaloriesOverride: calories ?? fullPortionCalories,
+            cookingMethod: cookingMethod,
+            oilSauceLevel: oilSauceLevel,
+            preparationState: preparationState,
+            customGrams: customGrams
         )
     }
 }
@@ -1066,6 +1516,51 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
 
     public var confidenceLevel: FoodConfidenceLevel {
         FoodConfidenceLevel(confidence: confidence)
+    }
+
+    /// 整餐估计摄入热量的 80% 可信置信区间（low: P10, high: P90，基于各菜品不确定度的高斯均方根合成）
+    public var calorieRange: (low: Double, high: Double) {
+        if dishes.count == 1, let single = dishes.first {
+            return single.calorieRange
+        }
+        var sumSquares: Double = 0
+        for dish in dishes {
+            let uncert = dish.cookingMethod.relativeUncertainty + (dish.food.hasBoneOrShell ? 0.08 : 0.04)
+            let delta = dish.consumedCalories * uncert
+            sumSquares += delta * delta
+        }
+        let totalDelta = sqrt(sumSquares)
+        let low = max(0, (consumedCalories - totalDelta).rounded())
+        let high = (consumedCalories + totalDelta).rounded()
+        return (low: low, high: high)
+    }
+
+    /// 热量区间格式化文本（如「可能范围：620–930 千卡」）
+    public var calorieRangeDescription: String {
+        let r = calorieRange
+        return "可能范围：\(Int(r.low))–\(Int(r.high)) 千卡"
+    }
+
+    /// 整餐的主要估算误差来源说明（可信度提示）
+    public var uncertaintyFactorsSummary: String {
+        var factors: [String] = []
+        let hasBone = dishes.contains { $0.food.hasBoneOrShell }
+        if hasBone {
+            factors.append("骨壳可食重量")
+        }
+        let hasSauceOrFry = dishes.contains { $0.cookingMethod == .braisedOrSauced || $0.cookingMethod == .deepFriedOrBreaded }
+        if hasSauceOrFry {
+            factors.append("烹饪裹粉与油脂吸收")
+        }
+        if dishes.count > 1 && dishes.contains(where: { $0.consumedRatio < 0.999 }) {
+            factors.append("剩菜分布")
+        } else if consumedRatio < 0.999 {
+            factors.append("实际摄入比例")
+        }
+        if factors.isEmpty {
+            factors.append("分量与密度")
+        }
+        return "主要不确定因素：" + factors.joined(separator: "、")
     }
 
     /// 整餐实际摄入蛋白质合计（克）
@@ -1222,6 +1717,74 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
     public func updatingDishPortion(dishID: String, portion newPortion: FoodPortion) -> FoodCalorieEstimate {
         let updated = dishes.map { dish in
             dish.id == dishID ? dish.withPortion(newPortion) : dish
+        }
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+    }
+
+    /// 调整某一道菜的具体克数
+    public func updatingDishGrams(dishID: String, grams: Double) -> FoodCalorieEstimate {
+        let updated = dishes.map { dish in
+            dish.id == dishID ? dish.withCustomGrams(grams) : dish
+        }
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+    }
+
+    /// 调整某一道菜的烹饪方式
+    public func updatingDishCookingMethod(dishID: String, method: FoodCookingMethod) -> FoodCalorieEstimate {
+        let updated = dishes.map { dish in
+            dish.id == dishID ? dish.withCookingMethod(method) : dish
+        }
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+    }
+
+    /// 调整某一道菜的用油/酱汁水平
+    public func updatingDishOilSauceLevel(dishID: String, level: FoodOilSauceLevel) -> FoodCalorieEstimate {
+        let updated = dishes.map { dish in
+            dish.id == dishID ? dish.withOilSauceLevel(level) : dish
+        }
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+    }
+
+    /// 综合配置某一道菜（名称、克数分量、烹饪方式、用油量、称量状态、手动卡路里）
+    public func updatingDishConfig(
+        dishID: String,
+        name: String? = nil,
+        grams: Double? = nil,
+        cookingMethod: FoodCookingMethod? = nil,
+        oilSauceLevel: FoodOilSauceLevel? = nil,
+        preparationState: FoodPreparationState? = nil,
+        calories: Double? = nil
+    ) -> FoodCalorieEstimate {
+        let updated = dishes.map { dish -> FoodDishEstimate in
+            guard dish.id == dishID else { return dish }
+            var d = dish
+            if let grams, grams > 0 {
+                d = d.withCustomGrams(grams)
+            }
+            if let cookingMethod {
+                d = d.withCookingMethod(cookingMethod)
+            }
+            if let oilSauceLevel {
+                d = d.withOilSauceLevel(oilSauceLevel)
+            }
+            if let preparationState {
+                d = d.withPreparationState(preparationState)
+            }
+            if let calories, calories > 0 {
+                d = d.withOverriddenCalories(calories)
+            }
+            if let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                d = d.updating(name: name, calories: d.fullPortionCalories)
+            }
+            return d
+        }
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+    }
+
+    /// 调整某一道菜的生熟称重状态
+    public func updatingDishPreparationState(dishID: String, state: FoodPreparationState) -> FoodCalorieEstimate {
+        let updated = dishes.map { dish in
+            dish.id == dishID ? dish.withPreparationState(state) : dish
         }
         return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
     }
@@ -1445,9 +2008,21 @@ public enum FoodCalorieEstimator {
             }
         }
 
+        // 0. 紧邻数字/量词的空格是修饰关系，不是跨菜分隔符（如 "米饭 250克" -> "米饭250克"，"200g 米饭" -> "200g米饭"）
+        cleaned = cleaned.replacingOccurrences(
+            of: "(?<=[^0-9a-zA-Z一二两三四五六七八九十半])\\s+(?=[0-9一二两三四五六七八九十半]+(?:个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|斤|g|克|ml|毫升))",
+            with: "",
+            options: .regularExpression
+        )
+        cleaned = cleaned.replacingOccurrences(
+            of: "(?<=[0-9一二两三四五六七八九十半]+(?:个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|斤|g|克|ml|毫升))\\s+(?=[^0-9a-zA-Z一二两三四五六七八九十半])",
+            with: "",
+            options: .regularExpression
+        )
+
         // 1. 先检查是否包含未用标点分隔的多菜口语表述（如「两个包子一碗粥」「一个肉包一杯豆浆」「两个鸡蛋一碗小米粥」）
         var preprocessed = cleaned
-        let spokenBoundaryPattern = "(?<=[^\\s|，,、+＋/；;0-9一二两三四五六七八九十百千万半])(?=(?:[0-9]+|[一二两三四五六七八九十半]+)\\s*(?:个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|g|克|ml|毫升))"
+        let spokenBoundaryPattern = "(?<=[^\\s|，,、+＋/；;0-9一二两三四五六七八九十百千万半])(?=(?:[0-9]+|[一二两三四五六七八九十半]+)\\s*(?:个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|g|克|ml|毫升)\\s*[^\\s|，,、+＋/；;0-9一二两三四五六七八九十百千万半])"
         if let boundaryRegex = try? NSRegularExpression(pattern: spokenBoundaryPattern) {
             let range = NSRange(preprocessed.startIndex..., in: preprocessed)
             preprocessed = boundaryRegex.stringByReplacingMatches(in: preprocessed, range: range, withTemplate: "|")
@@ -1478,12 +2053,19 @@ public enum FoodCalorieEstimator {
 
             if !seen.contains(food.id) {
                 seen.insert(food.id)
+                let resolvedGrams: Double? = {
+                    if let grams = parsed.explicitGrams, grams > 0 {
+                        return grams
+                    } else if let pieceGrams = food.pieceGrams, let unit = parsed.unit, isPieceUnit(unit) {
+                        return pieceGrams * parsed.multiplier
+                    }
+                    return nil
+                }()
+
                 let baseCal: Double
-                if let grams = parsed.explicitGrams, grams > 0 {
-                    baseCal = (grams / 100.0) * food.caloriesPer100g
-                } else if let pieceGrams = food.pieceGrams, let unit = parsed.unit, isPieceUnit(unit) {
-                    let totalGrams = pieceGrams * parsed.multiplier
-                    baseCal = (totalGrams / 100.0) * food.caloriesPer100g
+                if let grams = resolvedGrams {
+                    let edibleWeight = grams * food.edibleRatio
+                    baseCal = (edibleWeight / 100.0) * food.caloriesPer100g
                 } else {
                     let dishPortion = parsed.portion != .regular ? parsed.portion : portion
                     baseCal = food.standardServingCalories * dishPortion.multiplier * parsed.multiplier
@@ -1502,7 +2084,8 @@ public enum FoodCalorieEstimator {
                     portion: dishPortion,
                     confidence: confidence,
                     consumedRatio: clampedRatio,
-                    fullPortionCaloriesOverride: finalCal
+                    fullPortionCaloriesOverride: finalCal,
+                    customGrams: resolvedGrams
                 )
                 matchedDishes.append(dish)
             }
@@ -1514,12 +2097,19 @@ public enum FoodCalorieEstimator {
             guard let fallback = FoodCatalog.items(matchingName: fallbackName).first ?? FoodCatalog.items(matchingName: trimmed).first else {
                 return nil
             }
+            let resolvedGrams: Double? = {
+                if let grams = parsed.explicitGrams, grams > 0 {
+                    return grams
+                } else if let pieceGrams = fallback.pieceGrams, let unit = parsed.unit, isPieceUnit(unit) {
+                    return pieceGrams * parsed.multiplier
+                }
+                return nil
+            }()
+
             let baseCal: Double
-            if let grams = parsed.explicitGrams, grams > 0 {
-                baseCal = (grams / 100.0) * fallback.caloriesPer100g
-            } else if let pieceGrams = fallback.pieceGrams, let unit = parsed.unit, isPieceUnit(unit) {
-                let totalGrams = pieceGrams * parsed.multiplier
-                baseCal = (totalGrams / 100.0) * fallback.caloriesPer100g
+            if let grams = resolvedGrams {
+                let edibleWeight = grams * fallback.edibleRatio
+                baseCal = (edibleWeight / 100.0) * fallback.caloriesPer100g
             } else {
                 let dishPortion = parsed.portion != .regular ? parsed.portion : portion
                 baseCal = fallback.standardServingCalories * dishPortion.multiplier * parsed.multiplier
@@ -1539,19 +2129,14 @@ public enum FoodCalorieEstimator {
                     portion: dishPortion,
                     confidence: confidence,
                     consumedRatio: clampedRatio,
-                    fullPortionCaloriesOverride: finalCal
+                    fullPortionCaloriesOverride: finalCal,
+                    customGrams: resolvedGrams
                 )
             ]
         }
 
         if matchedDishes.count == 1, let single = matchedDishes.first {
-            return FoodCalorieEstimate(
-                food: single.food,
-                portion: single.portion,
-                confidence: single.confidence,
-                consumedRatio: single.consumedRatio,
-                fullPortionCaloriesOverride: single.fullPortionCalories
-            )
+            return FoodCalorieEstimate(dishes: [single], portion: single.portion)
         }
 
         return FoodCalorieEstimate(dishes: matchedDishes, portion: portion)
