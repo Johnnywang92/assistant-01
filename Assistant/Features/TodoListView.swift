@@ -311,120 +311,8 @@ struct TodoListView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if !isSearching {
-                    // 顶部快捷卡片支持左右滑动，避免欢迎信息和投喂入口同时占用首页高度。
-                    HomeTopCardsCarousel(activeCount: activeTodos.count) {
-                        Haptic.light()
-                        router.activeSheet = .omnibox
-                    }
-                    LifeEventHomeBanner()
-                }
-
-                // 顶部固定横向分类 Tab 栏（带指示胶囊与角标）
-                filterTabBar
-                    .wallpaperReadableText()
-
-                // 标签快速筛选栏：仅在库内存在标签时自适应展示，支持按项目/客户/标签聚焦
-                if !isSearching && !allActiveTags.isEmpty {
-                    tagFilterBar
-                        .wallpaperReadableText()
-                }
-
-                // 时间聚合条：按时间组织的逾期/今天/本周入口 + 逾期一键整理
-                // （与类型分类正交；三桶互斥，chip 计数即详情列表长度）
-                if !isSearching && !timeBuckets.isEmpty {
-                    timeAggregationBar
-                        .wallpaperReadableText()
-                }
-
-                // 搜索词非空时，展示全域索引实时匹配卡片，支持直接跳转任意模块/设置或进入全景搜索
-                if isSearching {
-                    homeSearchIndexPreview(query: crossModuleSearchText)
-                }
-
-                if !isSearching {
-                    // 上下滑动排序模式开启提示横幅
-                    if isReordering {
-                        TodoReorderingBanner {
-                            AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.8)) {
-                                isReordering = false
-                            }
-                            Haptic.medium()
-                        }
-                    }
-
-                    // 长辈关怀大字模式顶部状态微胶囊（支持一键调整字号）
-                    if seniorManager.isSeniorModeEnabled {
-                        TodoSeniorModeBanner(fontScaleTitle: seniorManager.fontScale.title) {
-                            showSeniorSettings = true
-                            Haptic.light()
-                        }
-                    }
-
-                    // 突发气象预警或气温骤降轻巧胶囊（若有则展示，支持手动划掉关闭）
-                    if let banner = weatherAlerts.currentBanner {
-                        TodoWeatherAlertBanner(banner: banner) {
-                            weatherAlerts.dismissCurrentBanner()
-                        }
-                    }
-
-                    // 临近 5~7 天纪念日浪漫筹备备忘横幅（支持一键加入待办与不再提醒）
-                    if let upcoming = anniversaryReminder.activeUpcoming {
-                        TodoAnniversaryPrepBanner(
-                            upcoming: upcoming,
-                            onDismiss: {
-                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    anniversaryReminder.dismiss(for: upcoming)
-                                    showToast("已设置本周期不再提醒该纪念日")
-                                }
-                            },
-                            onAddTodos: {
-                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    anniversaryReminder.addPreparationTodos(for: upcoming, in: context)
-                                    showToast("已一键将准备鲜花、订蛋糕与订餐厅加入待办！🎉")
-                                }
-                            }
-                        )
-                    }
-
-                    // 临近节假日或出差旅游出行前购票提醒横幅（火车票提前15天、机票提前15-30天）
-                    if let ticketInfo = ticketReminder.activeUpcomingTicket {
-                        TodoTravelTicketPrepBanner(
-                            info: ticketInfo,
-                            onDismiss: {
-                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    ticketReminder.dismiss(for: ticketInfo)
-                                    showToast("已设置本周期不再提醒该出行购票")
-                                }
-                            },
-                            onConfirm: {
-                                confirmingTicketInfo = ticketInfo
-                            }
-                        )
-                    }
-                }
-
-                Divider()
-                    .opacity(isCustomBackgroundActive ? 0.35 : 1.0)
-
-                // 支持横向滑动的分页容器
-                ScrollViewReader { proxy in
-                    TabView(selection: $selectedFilter) {
-                        ForEach(homeCategories) { category in
-                            // 性能：只构建当前页及左右相邻页的 List，远端分页用轻量占位，
-                            // 避免分页容器一次性实例化最多 9 个完整列表；滑动到相邻页时已就绪，无感知。
-                            Group {
-                                if isPageNearSelection(category) {
-                                    renderPageContent(for: category)
-                                } else {
-                                    Color.clear
-                                }
-                            }
-                            .tag(category)
-                        }
-                    }
-                    .tabViewStyle(.page(indexDisplayMode: .never))
+            ScrollViewReader { proxy in
+                renderPageContent(for: selectedFilter)
                     .onChange(of: router.focusedTodoID) { _, id in
                         guard let id else { return }
                         highlightedTodoID = id
@@ -447,7 +335,6 @@ struct TodoListView: View {
                             }
                         }
                     }
-                }
             }
             .background(isCustomBackgroundActive ? Color.clear : Color(.systemGroupedBackground))
             .themedAppBackground()
@@ -478,11 +365,10 @@ struct TodoListView: View {
                 }
             }
             // 首页搜索栏：输入时实时筛选当前页待办（支持完整中文拼音输入），按键盘「搜索」或点击横幅唤起跨模块全景搜索。
-            // displayMode 必须钉死 .always：automatic 模式下搜索栏交给系统随滚动收放，
-            // 而首页主体是横向分页 TabView + 多个条件横幅，纵向滚动联动失效，搜索栏被收起后有时不再回来。
+            // 列表滑动时随用户手势自然收起或下拉展开。
             .searchable(
                 text: $crossModuleSearchText,
-                placement: .navigationBarDrawer(displayMode: .always),
+                placement: .navigationBarDrawer(displayMode: .automatic),
                 prompt: Text(L10n.tr("搜索待办、记录、数据、证件或设置…"))
             )
             .onSubmit(of: .search) {
@@ -1391,7 +1277,7 @@ struct TodoListView: View {
                 AppMotion.animate(.easeInOut(duration: 0.2)) { proxy.scrollTo(category, anchor: .center) }
             }
         }
-        .background(isCustomBackgroundActive ? Color.clear : Color(.systemBackground))
+        .background(Color.clear)
     }
 
     @ViewBuilder
@@ -1457,9 +1343,117 @@ struct TodoListView: View {
         .padding(.vertical, 8)
     }
 
+    // MARK: - 首页头部可滑动区域（卡片、分类栏、筛选栏、横幅）
+
+    @ViewBuilder
+    private var homeHeaderSection: some View {
+        Section {
+            VStack(spacing: 0) {
+                if !isSearching {
+                    // 顶部快捷卡片支持左右滑动，避免欢迎信息和投喂入口同时占用首页高度。
+                    HomeTopCardsCarousel(activeCount: activeTodos.count) {
+                        Haptic.light()
+                        router.activeSheet = .omnibox
+                    }
+                    LifeEventHomeBanner()
+                }
+
+                // 横向分类 Tab 栏（带指示胶囊与角标）
+                filterTabBar
+                    .wallpaperReadableText()
+
+                // 标签快速筛选栏：仅在库内存在标签时自适应展示，支持按项目/客户/标签聚焦
+                if !isSearching && !allActiveTags.isEmpty {
+                    tagFilterBar
+                        .wallpaperReadableText()
+                }
+
+                // 时间聚合条：按时间组织的逾期/今天/本周入口 + 逾期一键整理
+                // （与类型分类正交；三桶互斥，chip 计数即详情列表长度）
+                if !isSearching && !timeBuckets.isEmpty {
+                    timeAggregationBar
+                }
+
+                // 搜索词非空时，展示全域索引实时匹配卡片，支持直接跳转任意模块/设置或进入全景搜索
+                if isSearching {
+                    homeSearchIndexPreview(query: crossModuleSearchText)
+                }
+
+                if !isSearching {
+                    // 上下滑动排序模式开启提示横幅
+                    if isReordering {
+                        TodoReorderingBanner {
+                            AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.8)) {
+                                isReordering = false
+                            }
+                            Haptic.medium()
+                        }
+                    }
+
+                    // 长辈关怀大字模式顶部状态微胶囊（支持一键调整字号）
+                    if seniorManager.isSeniorModeEnabled {
+                        TodoSeniorModeBanner(fontScaleTitle: seniorManager.fontScale.title) {
+                            showSeniorSettings = true
+                            Haptic.light()
+                        }
+                    }
+
+                    // 突发气象预警或气温骤降轻巧胶囊（若有则展示，支持手动划掉关闭）
+                    if let banner = weatherAlerts.currentBanner {
+                        TodoWeatherAlertBanner(banner: banner) {
+                            weatherAlerts.dismissCurrentBanner()
+                        }
+                    }
+
+                    // 临近 5~7 天纪念日浪漫筹备备忘横幅（支持一键加入待办与不再提醒）
+                    if let upcoming = anniversaryReminder.activeUpcoming {
+                        TodoAnniversaryPrepBanner(
+                            upcoming: upcoming,
+                            onDismiss: {
+                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    anniversaryReminder.dismiss(for: upcoming)
+                                    showToast("已设置本周期不再提醒该纪念日")
+                                }
+                            },
+                            onAddTodos: {
+                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    anniversaryReminder.addPreparationTodos(for: upcoming, in: context)
+                                    showToast("已一键将准备鲜花、订蛋糕与订餐厅加入待办！🎉")
+                                }
+                            }
+                        )
+                    }
+
+                    // 临近节假日或出差旅游出行前购票提醒横幅（火车票提前15天、机票提前15-30天）
+                    if let ticketInfo = ticketReminder.activeUpcomingTicket {
+                        TodoTravelTicketPrepBanner(
+                            info: ticketInfo,
+                            onDismiss: {
+                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                    ticketReminder.dismiss(for: ticketInfo)
+                                    showToast("已设置本周期不再提醒该出行购票")
+                                }
+                            },
+                            onConfirm: {
+                                confirmingTicketInfo = ticketInfo
+                            }
+                        )
+                    }
+                }
+
+                Divider()
+                    .opacity(isCustomBackgroundActive ? 0.35 : 1.0)
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        }
+    }
+
     @ViewBuilder
     private func renderPageContent(for category: TodoFilterCategory) -> some View {
         List {
+            homeHeaderSection
             // 放进列表头部，使“今日安排”可以随首页内容向上滚动，仅在全部总览页且非搜索状态下挂载
             if category == .all && !isSearching {
                 Section {
@@ -1581,14 +1575,6 @@ struct TodoListView: View {
         .background(Color.clear)
         .environment(\.editMode, isReordering ? .constant(.active) : .constant(.inactive))
         .themedRow()
-    }
-
-    private func isPageNearSelection(_ category: TodoFilterCategory) -> Bool {
-        guard let selIndex = homeCategories.firstIndex(of: selectedFilter),
-              let catIndex = homeCategories.firstIndex(of: category) else {
-            return category == selectedFilter
-        }
-        return abs(selIndex - catIndex) <= 1
     }
 
     private func badgeCount(for category: TodoFilterCategory) -> Int {

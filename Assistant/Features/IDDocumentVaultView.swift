@@ -50,13 +50,6 @@ struct IDDocumentVaultView: View {
                         Image(systemName: "plus")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        auth.lock()
-                    } label: {
-                        Image(systemName: "lock.fill")
-                    }
-                }
             }
         }
         .sheet(isPresented: $showingAddSheet) {
@@ -199,19 +192,27 @@ struct IDDocumentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // 头部：类型图标、标题、持有人、有效期状态
-            HStack(alignment: .center) {
-                Label(document.title, systemImage: document.type.icon)
-                    .font(.headline)
+            HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: document.type.icon)
+                        .foregroundStyle(Color.accentColor)
 
-                if let holder = document.holderName, !holder.isEmpty {
-                    Text(holder)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(.secondary.opacity(0.15)))
+                    Text(document.title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .layoutPriority(1)
+
+                    if let holder = document.holderName, !holder.isEmpty {
+                        Text(holder)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(.secondary.opacity(0.15)))
+                    }
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 if document.isPermanent {
                     Text("长期有效")

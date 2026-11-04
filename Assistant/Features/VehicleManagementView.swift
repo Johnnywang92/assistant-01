@@ -38,13 +38,6 @@ struct VehicleManagementView: View {
                         Label("暂无爱车档案", systemImage: "car.badge.gearshape")
                     } description: {
                         Text("添加你的爱车，设定加油或充电周期、保养日程与车险到期日，小助将为你准时把关。")
-                    } actions: {
-                        Button {
-                            showingAddSheet = true
-                        } label: {
-                            Label("添加我的爱车", systemImage: "plus")
-                        }
-                        .buttonStyle(.borderedProminent)
                     }
                     .padding(.vertical, 16)
                 }
