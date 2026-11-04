@@ -29,6 +29,7 @@ extension DataMigrationService {
         let skillStages = try context.fetch(FetchDescriptor<SkillStage>())
         let practiceLogs = try context.fetch(FetchDescriptor<SkillPracticeLog>())
         let pets = try context.fetch(FetchDescriptor<PetProfile>())
+        let petRecords = try context.fetch(FetchDescriptor<PetRecord>())
         let children = try context.fetch(FetchDescriptor<ChildProfile>())
         let childGrowthRecords = try context.fetch(FetchDescriptor<ChildGrowthRecord>())
         let childMilestones = try context.fetch(FetchDescriptor<ChildMilestoneRecord>())
@@ -339,6 +340,14 @@ extension DataMigrationService {
             )
         }
 
+        let petRecordDTOs = petRecords.sorted { ($0.date, $0.id.uuidString) < ($1.date, $1.id.uuidString) }.map { r in
+            PetRecordDTO(
+                id: r.id, petID: r.pet?.id, date: r.date, typeRaw: r.typeRaw,
+                title: r.title, weightKg: r.weightKg, clinicOrPlace: r.clinicOrPlace,
+                notes: r.notes, createdAt: r.createdAt
+            )
+        }
+
         let childDTOs = children.sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }.map { c in
             ChildProfileDTO(
                 id: c.id, name: c.name, realName: c.realName, genderRaw: c.genderRaw,
@@ -547,6 +556,7 @@ extension DataMigrationService {
             skillStages: skillStageDTOs,
             practiceLogs: practiceLogDTOs,
             pets: petDTOs,
+            petRecords: petRecordDTOs,
             children: childDTOs,
             childGrowthRecords: childGrowthDTOs,
             childMilestones: childMilestoneDTOs,

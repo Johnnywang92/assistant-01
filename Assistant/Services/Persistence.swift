@@ -40,7 +40,7 @@ enum Persistence {
             } catch {
                 // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
                 storedRecoveryError = Self.diagnose(openError: error)
-                let memSchema = Schema(AssistantSchemaV8.models)
+                let memSchema = Schema(AssistantSchemaV9.models)
                 if let memContainer = try? ModelContainer(for: memSchema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
                     return memContainer
                 }
@@ -53,7 +53,7 @@ enum Persistence {
     /// 旧库（V1）经 lightweight 阶段自动升级到 V2；**任何失败都不动磁盘文件**，
     /// 由调用方走恢复页导出原库。详见 `AssistantMigrationPlan`。
     private static func openStore() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV8.models)
+        let schema = Schema(AssistantSchemaV9.models)
         let config = ModelConfiguration(schema: schema)
         #if DEBUG
         Self.assertSchemaCoverage()
@@ -73,7 +73,7 @@ enum Persistence {
 
     /// 无迁移计划的旧路径：仅作为版本化计划识别不了真机遗留库时的兜底。
     private static func openStoreAutoMigrate() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV8.models)
+        let schema = Schema(AssistantSchemaV9.models)
         let config = ModelConfiguration(schema: schema)
         return try StartupMetrics.measure("openStore(autoMigrate)") {
             try ModelContainer(for: schema, configurations: config)
@@ -101,7 +101,7 @@ enum Persistence {
     /// 删模型会让旧库升级后静默丢表。DEBUG 下断言，发布构建不增开销。
     private static func assertSchemaCoverage() {
         let v1 = Set(AssistantSchemaV1.models.map { String(describing: $0) })
-        let current = Set(AssistantSchemaV8.models.map { String(describing: $0) })
+        let current = Set(AssistantSchemaV9.models.map { String(describing: $0) })
         let missing = v1.subtracting(current)
         assert(missing.isEmpty, "V1 模型从当前版本消失，旧库升级会丢数据：\(missing.sorted())")
     }
@@ -250,15 +250,25 @@ enum AssistantSchemaV7: VersionedSchema {
     }
 }
 
-/// Schema V8：当前版本。V8 相对 V7 纯加法（新增心理量表记录 PsychScaleRecord
+/// Schema V8：已发布版本。V8 相对 V7 纯加法（新增心理量表记录 PsychScaleRecord
 /// 与每日情绪微记录 MoodCheckInRecord），走 lightweight 迁移即可。
-/// 已发布版本 V7 清单不可再改；后续再有加法请新开 V9。
+/// 已发布版本 V8 清单不可再改；后续再有加法请新开 V9。
 enum AssistantSchemaV8: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(8, 0, 0) }
     static var models: [any PersistentModel.Type] {
         AssistantSchemaV7.models + [
             PsychScaleRecord.self,
             MoodCheckInRecord.self
+        ]
+    }
+}
+
+/// Schema V9：当前版本。V9 相对 V8 纯加法（新增宠物健康成长记录 PetRecord），走 lightweight 迁移即可。
+enum AssistantSchemaV9: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(9, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        AssistantSchemaV8.models + [
+            PetRecord.self
         ]
     }
 }
@@ -270,12 +280,12 @@ enum AssistantMigrationPlan: SchemaMigrationPlan {
         [
             AssistantSchemaV1.self, AssistantSchemaV2.self, AssistantSchemaV3.self,
             AssistantSchemaV4.self, AssistantSchemaV5.self, AssistantSchemaV6.self,
-            AssistantSchemaV7.self, AssistantSchemaV8.self
+            AssistantSchemaV7.self, AssistantSchemaV8.self, AssistantSchemaV9.self
         ]
     }
 
     static var stages: [MigrationStage] {
-        // V1→V2→…→V8 全是「加字段（带默认值/可选）+ 加模型」，系统 lightweight 迁移可完成。
+        // V1→V2→…→V9 全是「加字段（带默认值/可选）+ 加模型」，系统 lightweight 迁移可完成。
         // 若未来出现不兼容变更（删字段/改类型），在此插自定义阶段，
         // 并把目标版本的该字段改回可选或提供默认值——不要静默丢数据。
         [
@@ -285,7 +295,8 @@ enum AssistantMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: AssistantSchemaV4.self, toVersion: AssistantSchemaV5.self),
             .lightweight(fromVersion: AssistantSchemaV5.self, toVersion: AssistantSchemaV6.self),
             .lightweight(fromVersion: AssistantSchemaV6.self, toVersion: AssistantSchemaV7.self),
-            .lightweight(fromVersion: AssistantSchemaV7.self, toVersion: AssistantSchemaV8.self)
+            .lightweight(fromVersion: AssistantSchemaV7.self, toVersion: AssistantSchemaV8.self),
+            .lightweight(fromVersion: AssistantSchemaV8.self, toVersion: AssistantSchemaV9.self)
         ]
     }
 }

@@ -58,6 +58,10 @@ public final class PetProfile {
     public var notes: String?                // 特殊习惯/过敏/常去宠物医院
     public var createdAt: Date
 
+    // 5. 持续成长与健康记录关联
+    @Relationship(deleteRule: .cascade, inverse: \PetRecord.pet)
+    public var records: [PetRecord]? = []
+
     public init(
         name: String,
         type: PetType = .cat,
@@ -154,5 +158,80 @@ public final class PetProfile {
             let days = cal.dateComponents([.day], from: b, to: .now).day ?? 0
             return L10n.tr("\(max(1, days))天幼宠")
         }
+    }
+
+    public var sortedRecords: [PetRecord] {
+        (records ?? []).sorted { ($0.date, $0.id.uuidString) > ($1.date, $1.id.uuidString) }
+    }
+
+    public func records(for type: PetRecordType) -> [PetRecord] {
+        sortedRecords.filter { $0.type == type }
+    }
+}
+
+/// 宠物成长与健康记录类型
+public enum PetRecordType: String, Codable, CaseIterable, Identifiable {
+    case growth = "成长体重"
+    case medical = "就医体检"
+    case milestones = "高光足迹"
+
+    public var id: String { rawValue }
+
+    public var displayName: String { L10n.tr(rawValue) }
+
+    public var icon: String {
+        switch self {
+        case .growth: return "scalemass"
+        case .medical: return "cross.case"
+        case .milestones: return "sparkles"
+        }
+    }
+
+    public var color: Color {
+        switch self {
+        case .growth: return .teal
+        case .medical: return .blue
+        case .milestones: return .orange
+        }
+    }
+}
+
+/// 宠物成长与健康记录模型
+@Model
+public final class PetRecord {
+    public var id: UUID
+    public var date: Date
+    public var typeRaw: String
+    public var title: String
+    public var weightKg: Double?
+    public var clinicOrPlace: String?
+    public var notes: String?
+    public var createdAt: Date
+    public var pet: PetProfile?
+
+    public init(
+        id: UUID = UUID(),
+        date: Date = .now,
+        type: PetRecordType = .growth,
+        title: String,
+        weightKg: Double? = nil,
+        clinicOrPlace: String? = nil,
+        notes: String? = nil,
+        pet: PetProfile? = nil
+    ) {
+        self.id = id
+        self.date = date
+        self.typeRaw = type.rawValue
+        self.title = title
+        self.weightKg = weightKg
+        self.clinicOrPlace = clinicOrPlace
+        self.notes = notes
+        self.createdAt = .now
+        self.pet = pet
+    }
+
+    public var type: PetRecordType {
+        get { PetRecordType(rawValue: typeRaw) ?? .growth }
+        set { typeRaw = newValue.rawValue }
     }
 }

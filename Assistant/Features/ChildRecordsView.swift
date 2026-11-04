@@ -9,6 +9,11 @@ struct ChildRecordsView: View {
     @State private var recordType: RecordType = .growth
     @State private var addingType: RecordType?
 
+    init(child: ChildProfile, initialType: RecordType = .growth) {
+        self.child = child
+        self._recordType = State(initialValue: initialType)
+    }
+
     enum RecordType: String, CaseIterable, Identifiable {
         case growth = "成长"
         case milestones = "里程碑"

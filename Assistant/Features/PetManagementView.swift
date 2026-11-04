@@ -9,6 +9,8 @@ struct PetManagementView: View {
 
     @State private var showAddPet = false
     @State private var editingPet: PetProfile? = nil
+    @State private var recordsPet: PetProfile? = nil
+    @State private var selectedPetRecordType: PetRecordType = .growth
     @State private var toastMessage: String? = nil
 
     private var needingCareCount: Int {
@@ -52,6 +54,9 @@ struct PetManagementView: View {
             }
             .sheet(item: $editingPet) { pet in
                 AddEditPetSheet(petToEdit: pet)
+            }
+            .sheet(item: $recordsPet) { pet in
+                PetRecordsView(pet: pet, initialType: selectedPetRecordType)
             }
             .overlay(alignment: .bottom) {
                 if let msg = toastMessage {
@@ -200,9 +205,34 @@ struct PetManagementView: View {
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+
+                    let recordsCount = pet.records?.count ?? 0
+                    if recordsCount > 0 {
+                        let growthCount = pet.records(for: .growth).count
+                        let medCount = pet.records(for: .medical).count
+                        let msCount = pet.records(for: .milestones).count
+                        Text("已累计 \(growthCount) 次测量 · \(medCount) 条就医 · \(msCount) 个高光足迹")
+                            .font(.caption2)
+                            .foregroundStyle(.teal)
+                    }
                 }
 
                 Spacer()
+
+                Button {
+                    openRecords(for: pet, type: .growth)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chart.xyaxis.line")
+                        Text("成长档案")
+                    }
+                    .font(.caption2.bold())
+                    .foregroundStyle(.teal)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.teal.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
 
                 Menu {
                     Button("编辑档案", systemImage: "pencil") {
@@ -218,6 +248,9 @@ struct PetManagementView: View {
                         .padding(8)
                 }
             }
+
+            // 成长记录与健康档案卡片 + 快捷操作
+            recordsSection(for: pet)
 
             Divider()
 
@@ -364,6 +397,95 @@ struct PetManagementView: View {
             try? context.save()
             showToast("已删除宠物档案")
         }
+    }
+
+    private func openRecords(for pet: PetProfile, type: PetRecordType = .growth) {
+        selectedPetRecordType = type
+        recordsPet = pet
+    }
+
+    private func recordsSection(for pet: PetProfile) -> some View {
+        VStack(spacing: 8) {
+            Button {
+                openRecords(for: pet, type: .growth)
+            } label: {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.teal.opacity(0.12))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "heart.text.square.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.teal)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("爱宠成长记录与健康档案")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+
+                            let count = pet.records?.count ?? 0
+                            if count > 0 {
+                                Text("\(count) 项")
+                                    .font(.caption2.bold())
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.teal.opacity(0.15)))
+                                    .foregroundStyle(.teal)
+                            }
+                        }
+
+                        Text("记录体重体态曲线 · 就医体检病历 · 难忘高光瞬间")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                        .fill(Color(.tertiarySystemGroupedBackground))
+                )
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 8) {
+                quickActionButton(title: "记体重体态", icon: "scalemass.fill", color: .teal) {
+                    openRecords(for: pet, type: .growth)
+                }
+                quickActionButton(title: "记就医体检", icon: "cross.case.fill", color: .blue) {
+                    openRecords(for: pet, type: .medical)
+                }
+                quickActionButton(title: "记高光足迹", icon: "sparkles", color: .orange) {
+                    openRecords(for: pet, type: .milestones)
+                }
+            }
+        }
+    }
+
+    private func quickActionButton(title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                Text(title)
+                    .font(.caption2.bold())
+            }
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
+                    .fill(color.opacity(0.08))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func showToast(_ message: String) {

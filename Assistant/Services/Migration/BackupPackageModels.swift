@@ -35,8 +35,9 @@ public struct BackupPackage: Codable {
     public var skillPaths: [SkillPathDTO]?
     public var skillStages: [SkillStageDTO]?
     public var practiceLogs: [SkillPracticeLogDTO]?
-    /// 宠物与育儿档案（含宝贝四类记录；旧版备份为 nil）
+    /// 宠物与育儿档案（含宠物成长记录与宝贝四类记录；旧版备份为 nil）
     public var pets: [PetProfileDTO]?
+    public var petRecords: [PetRecordDTO]?
     public var children: [ChildProfileDTO]?
     public var childGrowthRecords: [ChildGrowthRecordDTO]?
     public var childMilestones: [ChildMilestoneRecordDTO]?
@@ -410,6 +411,41 @@ public struct PetProfileDTO: Codable {
     public var isReminderEnabled: Bool
     public var notes: String?
     public var createdAt: Date
+}
+
+public struct PetRecordDTO: Codable {
+    public var id: UUID
+    /// 归属毛孩子的软引用；模型端是 PetProfile.pet 关系，导出时扁平化为 ID
+    public var petID: UUID?
+    public var date: Date
+    public var typeRaw: String
+    public var title: String
+    public var weightKg: Double?
+    public var clinicOrPlace: String?
+    public var notes: String?
+    public var createdAt: Date
+
+    public init(
+        id: UUID,
+        petID: UUID?,
+        date: Date,
+        typeRaw: String,
+        title: String,
+        weightKg: Double? = nil,
+        clinicOrPlace: String? = nil,
+        notes: String? = nil,
+        createdAt: Date
+    ) {
+        self.id = id
+        self.petID = petID
+        self.date = date
+        self.typeRaw = typeRaw
+        self.title = title
+        self.weightKg = weightKg
+        self.clinicOrPlace = clinicOrPlace
+        self.notes = notes
+        self.createdAt = createdAt
+    }
 }
 
 public struct ChildProfileDTO: Codable {

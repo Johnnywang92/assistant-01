@@ -112,6 +112,7 @@ extension DataMigrationService {
             try context.delete(model: SkillStage.self)
             try context.delete(model: SkillPracticeLog.self)
             try context.delete(model: PetProfile.self)
+            try context.delete(model: PetRecord.self)
             try context.delete(model: ChildProfile.self)
             try context.delete(model: ChildGrowthRecord.self)
             try context.delete(model: ChildMilestoneRecord.self)
@@ -656,6 +657,29 @@ extension DataMigrationService {
         }
         details.append("宠物档案: \(restoredPets) 位")
         totalRestored += restoredPets
+
+        // 宠物成长与健康记录
+        let petByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<PetProfile>()).map { ($0.id, $0) })
+        let existingPetRecordIDs = Set(try context.fetch(FetchDescriptor<PetRecord>()).map(\.id))
+        var restoredPetRecords = 0
+        for r in package.petRecords ?? [] {
+            if strategy == .merge && existingPetRecordIDs.contains(r.id) { continue }
+            let item = PetRecord(
+                id: r.id,
+                date: r.date,
+                type: PetRecordType(rawValue: r.typeRaw) ?? .growth,
+                title: r.title,
+                weightKg: r.weightKg,
+                clinicOrPlace: r.clinicOrPlace,
+                notes: r.notes,
+                createdAt: r.createdAt,
+                pet: r.petID.flatMap { petByID[$0] }
+            )
+            context.insert(item)
+            restoredPetRecords += 1
+        }
+        details.append("宠物成长记录: \(restoredPetRecords) 条")
+        totalRestored += restoredPetRecords
 
         // 宝贝档案（先宝贝再四类记录：记录通过 ChildProfile.child 真关系挂载，父必须在先）
         let existingChildIDs = Set(try context.fetch(FetchDescriptor<ChildProfile>()).map(\.id))

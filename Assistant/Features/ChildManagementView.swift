@@ -10,6 +10,7 @@ struct ChildManagementView: View {
     @State private var showAddChild = false
     @State private var editingChild: ChildProfile? = nil
     @State private var recordsChild: ChildProfile? = nil
+    @State private var selectedRecordType: ChildRecordsView.RecordType = .growth
     @State private var toastMessage: String? = nil
 
     var body: some View {
@@ -51,7 +52,7 @@ struct ChildManagementView: View {
                 AddEditChildSheet(childToEdit: child)
             }
             .sheet(item: $recordsChild) { child in
-                ChildRecordsView(child: child)
+                ChildRecordsView(child: child, initialType: selectedRecordType)
             }
             .overlay(alignment: .bottom) {
                 if let msg = toastMessage {
@@ -189,7 +190,7 @@ struct ChildManagementView: View {
                     .foregroundStyle(.secondary)
 
                     if !child.growthRecords.isEmpty || !child.milestones.isEmpty || !child.healthVisits.isEmpty {
-                        Text("已累计 (child.growthRecords.count) 次测量 · (child.milestones.count) 个里程碑 · (child.healthVisits.count) 条健康记录")
+                        Text("已累计 \(child.growthRecords.count) 次测量 · \(child.milestones.count) 个里程碑 · \(child.healthVisits.count) 条健康记录")
                             .font(.caption2)
                             .foregroundStyle(.pink)
                     }
@@ -198,11 +199,17 @@ struct ChildManagementView: View {
                 Spacer()
 
                 Button {
-                    recordsChild = child
+                    openRecords(for: child, type: .growth)
                 } label: {
-                    Label("成长记录", systemImage: "chart.xyaxis.line")
-                        .font(.caption.bold())
-                        .foregroundStyle(.pink)
+                    HStack(spacing: 4) {
+                        Image(systemName: "chart.xyaxis.line")
+                        Text("成长记录")
+                    }
+                    .font(.caption2.bold())
+                    .foregroundStyle(.pink)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.pink.opacity(0.12)))
                 }
                 .buttonStyle(.plain)
 
@@ -235,6 +242,9 @@ struct ChildManagementView: View {
                 .padding(.vertical, 6)
                 .background(RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color.red.opacity(0.08)))
             }
+
+            // 成长记录与健康档案卡片 + 快捷操作
+            recordsSection(for: child)
 
             Divider()
 
@@ -333,6 +343,95 @@ struct ChildManagementView: View {
             try? context.save()
             showToast("已删除宝贝档案")
         }
+    }
+
+    private func openRecords(for child: ChildProfile, type: ChildRecordsView.RecordType = .growth) {
+        selectedRecordType = type
+        recordsChild = child
+    }
+
+    private func recordsSection(for child: ChildProfile) -> some View {
+        VStack(spacing: 8) {
+            Button {
+                openRecords(for: child, type: .growth)
+            } label: {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.pink.opacity(0.12))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "heart.text.square.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.pink)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("宝贝成长记录与健康档案")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.primary)
+
+                            let totalCount = child.growthRecords.count + child.milestones.count + child.healthVisits.count
+                            if totalCount > 0 {
+                                Text("\(totalCount) 项")
+                                    .font(.caption2.bold())
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.pink.opacity(0.15)))
+                                    .foregroundStyle(.pink)
+                            }
+                        }
+
+                        Text("记录身高体重曲线 · 第一次翻身/走路等里程碑 · 门诊病历")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                        .fill(Color(.tertiarySystemGroupedBackground))
+                )
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 8) {
+                quickActionButton(title: "记成长测量", icon: "ruler", color: .pink) {
+                    openRecords(for: child, type: .growth)
+                }
+                quickActionButton(title: "记里程碑", icon: "flag.fill", color: .orange) {
+                    openRecords(for: child, type: .milestone)
+                }
+                quickActionButton(title: "记就医看诊", icon: "cross.case.fill", color: .blue) {
+                    openRecords(for: child, type: .health)
+                }
+            }
+        }
+    }
+
+    private func quickActionButton(title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                Text(title)
+                    .font(.caption2.bold())
+            }
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
+                    .fill(color.opacity(0.08))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private func showToast(_ message: String) {
