@@ -283,11 +283,12 @@ struct UnifiedSearchView: View {
                 .background(categoryColor(for: doc.category).opacity(0.14), in: Circle())
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(doc.title)
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .layoutPriority(1)
 
                     if let badge = doc.badge {
                         Text(badge)

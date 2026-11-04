@@ -57,13 +57,13 @@ struct TodoRow: View {
                     isAnimatingCompletion = true
                     ringScale = 0.6
                     ringOpacity = 1.0
-                    AppMotion.animate(.easeOut(duration: 0.45)) {
+                    AppMotion.animate(.easeOut(duration: 0.65)) {
                         ringScale = 2.0
                         ringOpacity = 0.0
                     }
-                    // 2. 延迟 0.45 秒平滑移入已完成列表
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                        AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.75)) {
+                    // 2. 延迟 0.70 秒（保留清晰的完成反馈体验，随后平滑移入已完成列表）
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.70) {
+                        AppMotion.animate(.spring(response: 0.38, dampingFraction: 0.78)) {
                             item.markAsCompleted(in: context)
                             isAnimatingCompletion = false
                             ringScale = 0.5

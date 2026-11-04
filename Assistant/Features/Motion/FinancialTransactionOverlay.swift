@@ -309,19 +309,19 @@ private struct TransactionAnimationCanvas: View {
 
     private func playAnimation() {
         // 1. 中心图标弹性浮现
-        AppMotion.animate(.spring(response: 0.38, dampingFraction: 0.65)) {
+        AppMotion.animate(.spring(response: 0.42, dampingFraction: 0.68)) {
             hubScale = 1.0
             hubOpacity = 1.0
         }
 
         // 2. 悬浮数字徽标从下方轻弹滑出
-        AppMotion.animate(.spring(response: 0.42, dampingFraction: 0.72).delay(0.08)) {
+        AppMotion.animate(.spring(response: 0.45, dampingFraction: 0.72).delay(0.1)) {
             badgeOffset = 58
             badgeOpacity = 1.0
         }
 
-        // 3. 驱动主物理阶段
-        AppMotion.animate(.easeInOut(duration: 0.85)) {
+        // 3. 驱动主物理阶段（金币/钞票物理动画）
+        AppMotion.animate(.easeInOut(duration: 0.95)) {
             animPhase = 1.0
             rippleScale = 2.2
             rippleOpacity = 0.0
@@ -331,33 +331,33 @@ private struct TransactionAnimationCanvas: View {
         // 4. 触觉分段精准触发
         if motion.isIncome {
             Haptic.light()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 Haptic.selection()
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 Haptic.medium()
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.52) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 Haptic.success()
             }
         } else {
             Haptic.light()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
                 Haptic.medium()
             }
         }
 
-        // 5. 收尾淡出
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.88) {
-            AppMotion.animate(.easeOut(duration: 0.28)) {
+        // 5. 保持展示供清晰阅读，适时温和收尾淡出（~1.55s 开始淡出）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.55) {
+            AppMotion.animate(.easeOut(duration: 0.35)) {
                 hubOpacity = 0.0
                 badgeOpacity = 0.0
                 badgeOffset = 46
             }
         }
 
-        // 6. 结束回调
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.18) {
+        // 6. 结束回调（总时长约 1.95s，既不一闪而过，又绝不拖沓阻塞）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.95) {
             onFinished()
         }
     }
@@ -399,11 +399,11 @@ private struct ReducedMotionTransactionBadge: View {
                 opacity = 1.0
             }
             Haptic.success()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                withAnimation(.easeOut(duration: 0.2)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                withAnimation(.easeOut(duration: 0.25)) {
                     opacity = 0.0
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
                     onFinished()
                 }
             }

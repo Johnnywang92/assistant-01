@@ -833,6 +833,9 @@
         }
       }
     },
+    "· 离线直传" : {
+
+    },
     "· 约 %@ 位熵" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1036,6 +1039,9 @@
           }
         }
       }
+    },
+    "“%@”" : {
+
     },
     "(%@)" : {
 
@@ -1299,6 +1305,9 @@
     "/ %lld ml" : {
 
     },
+    "/ %lld 千卡" : {
+
+    },
     "/ 5" : {
 
     },
@@ -1536,16 +1545,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · 成长档案"
-          }
-        }
-      }
-    },
-    "%@ · 整份 %lld 卡" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · 整份 %2$lld 卡"
           }
         }
       }
@@ -1840,6 +1839,9 @@
         }
       }
     },
+    "%@ 的回响：" : {
+
+    },
     "%@ 统计" : {
 
     },
@@ -2013,6 +2015,12 @@
           }
         }
       }
+    },
+    "%@g" : {
+
+    },
+    "%@到期" : {
+
     },
     "%@周期：每 %@ 天提醒一次" : {
       "extractionState" : "manual",
@@ -2585,7 +2593,13 @@
         }
       }
     },
+    "%lld 人" : {
+
+    },
     "%lld 件" : {
+
+    },
+    "%lld 克" : {
 
     },
     "%lld 分" : {
@@ -2721,6 +2735,16 @@
         }
       }
     },
+    "%lld–%lld 千卡" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld–%2$lld 千卡"
+          }
+        }
+      }
+    },
     "%lld，%@ 项" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2792,6 +2816,16 @@
         }
       }
     },
+    "%lld/%lldg" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld/%2$lldg"
+          }
+        }
+      }
+    },
     "%lld/5" : {
 
     },
@@ -2803,6 +2837,26 @@
     },
     "%lld+" : {
 
+    },
+    "%lldg · %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lldg · %2$@"
+          }
+        }
+      }
+    },
+    "%lldg · %@ · %lld 卡" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lldg · %2$@ · %3$lld 卡"
+          }
+        }
+      }
     },
     "%lldkcal" : {
 
@@ -7530,6 +7584,23 @@
         }
       }
     },
+    "21 亿 (2.0B) + 视觉编码器" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2.1B (2.0B) + vision encoder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "21 亿 (2.0B) + 视觉编码器"
+          }
+        }
+      }
+    },
     "22:00 粤博" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7566,6 +7637,9 @@
           }
         }
       }
+    },
+    "80% 置信区间" : {
+
     },
     "99+" : {
 
@@ -7646,6 +7720,9 @@
           }
         }
       }
+    },
+    "AA平摊" : {
+
     },
     "AB型" : {
       "extractionState" : "manual",
@@ -7785,6 +7862,15 @@
           }
         }
       }
+    },
+    "AI 自动检测分量、分析烹饪方式并支持逐项校正" : {
+
+    },
+    "AirDrop 投送" : {
+
+    },
+    "AirDrop 文件" : {
+
     },
     "AirPods 耳机" : {
       "extractionState" : "manual",
@@ -8127,6 +8213,9 @@
         }
       }
     },
+    "ITEM STORAGE · 物品收纳备忘" : {
+
+    },
     "JohnnyBoyStudio" : {
 
     },
@@ -8386,6 +8475,23 @@
     },
     "Q4_K_M (4-bit)" : {
 
+    },
+    "Qwen3-VL-2B-Instruct (图像识别专用)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qwen3-VL-2B-Instruct (vision only)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qwen3-VL-2B-Instruct (图像识别专用)"
+          }
+        }
+      }
     },
     "REM 快速眼动" : {
       "extractionState" : "manual",
@@ -9552,8 +9658,42 @@
         }
       }
     },
+    "下载全部" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download All"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载全部"
+          }
+        }
+      }
+    },
     "下载并恢复" : {
 
+    },
+    "下载源" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Source"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载源"
+          }
+        }
+      }
     },
     "下载进度：%@%%" : {
       "extractionState" : "manual",
@@ -9741,6 +9881,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不太确定你要做什么（），请核对下方参数后再执行。"
+          }
+        }
+      }
+    },
+    "不完整" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incomplete"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不完整"
           }
         }
       }
@@ -9964,6 +10121,9 @@
         }
       }
     },
+    "两台手机靠近即可自组网，无需外网或蓝牙配对" : {
+
+    },
     "两次输入的 PIN 码不一致，请核对后重新输入。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10099,6 +10259,9 @@
           }
         }
       }
+    },
+    "个性化设定每日热量消耗目标，用于计算剩余热量与宏量营养素推荐。" : {
+
     },
     "中介服务" : {
       "extractionState" : "manual",
@@ -11033,6 +11196,9 @@
     "事项被完成后会从时间聚合里移出，去类型分类里还能找到历史" : {
 
     },
+    "二手" : {
+
+    },
     "二手购入" : {
 
     },
@@ -11932,9 +12098,6 @@
     "今日尚无饮水记录" : {
 
     },
-    "今日尚未记录" : {
-
-    },
     "今日屏幕使用时长" : {
 
     },
@@ -11974,9 +12137,6 @@
           }
         }
       }
-    },
-    "今日已记录摄入" : {
-
     },
     "今日已超额" : {
 
@@ -12019,6 +12179,12 @@
       }
     },
     "今日待办已全部清空，好好休息吧！" : {
+
+    },
+    "今日情绪状态名片" : {
+
+    },
+    "今日摄入" : {
 
     },
     "今日摄入明细" : {
@@ -12614,6 +12780,9 @@
     "份量" : {
 
     },
+    "份量与容器校准" : {
+
+    },
     "休闲娱乐" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12686,6 +12855,9 @@
       }
     },
     "传统模式：将本月可用弹性额度均摊到每一天。" : {
+
+    },
+    "传输通道" : {
 
     },
     "估算" : {
@@ -12847,6 +13019,9 @@
         }
       }
     },
+    "余 %@" : {
+
+    },
     "作为推荐的长期锚点：单晚调整不会偏离它超过 ±60 分钟，防止提醒把作息越带越偏。凌晨时间请选 00:30 这类次日时刻。" : {
 
     },
@@ -12988,6 +13163,9 @@
           }
         }
       }
+    },
+    "你的分摊应付金额" : {
+
     },
     "你目前没有任何未完成的待办事项，轻松一下吧！" : {
       "extractionState" : "manual",
@@ -13316,6 +13494,9 @@
     "保存到相册" : {
 
     },
+    "保存卡片到相册" : {
+
+    },
     "保存卡片至相册 (社交分享)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13400,6 +13581,9 @@
       }
     },
     "保存手账日签至相册 (社交分享)" : {
+
+    },
+    "保存收纳卡片到相册" : {
 
     },
     "保存水光卡片至相册 (社交分享)" : {
@@ -13687,9 +13871,6 @@
 
     },
     "修改时间: %@" : {
-
-    },
-    "修改菜品与热量" : {
 
     },
     "修改菜品名称与整份热量" : {
@@ -14314,6 +14495,9 @@
         }
       }
     },
+    "免对准扫码，与附近设备靠近自动感应接收" : {
+
+    },
     "免费试用7天，记得第6天退订" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14911,6 +15095,16 @@
     "共 %lld 批" : {
 
     },
+    "共 %lld 批 · 最早 %@ 到期" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "共 %1$lld 批 · 最早 %2$@ 到期"
+          }
+        }
+      }
+    },
     "共 %lld 笔明细" : {
 
     },
@@ -14932,9 +15126,6 @@
       }
     },
     "共 %lld 道" : {
-
-    },
-    "共 %lld 餐" : {
 
     },
     "共 %lld 餐 · 累计 %lld 千卡" : {
@@ -15031,6 +15222,9 @@
           }
         }
       }
+    },
+    "共收到 %lld 项待办，请勾选需要导入的内容：" : {
+
     },
     "关心父母近况" : {
       "extractionState" : "manual",
@@ -15599,9 +15793,6 @@
 
     },
     "最早一批已过期 %lld 天" : {
-
-    },
-    "最早一批有效至 %@" : {
 
     },
     "最近搜索" : {
@@ -17085,6 +17276,9 @@
     "分享打卡卡片" : {
 
     },
+    "分享收纳位置" : {
+
+    },
     "分享文字和原始单据" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -17326,6 +17520,9 @@
         }
       }
     },
+    "分摊备注" : {
+
+    },
     "分数" : {
 
     },
@@ -17433,6 +17630,9 @@
           }
         }
       }
+    },
+    "分量是决定热量准确性的最关键因素。可通过预设容器（如家用中碗约150g）快速对齐。" : {
+
     },
     "切换为自由排序流" : {
       "extractionState" : "manual",
@@ -17677,6 +17877,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除后无法恢复，确认删除这笔账目明细吗？"
+          }
+        }
+      }
+    },
+    "删除图像识别模型？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete the vision model?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除图像识别模型？"
           }
         }
       }
@@ -18345,7 +18562,7 @@
         }
       }
     },
-    "剩 %lld 天到期" : {
+    "剩 %lld天到期" : {
 
     },
     "剩余 %@ 天" : {
@@ -18398,6 +18615,9 @@
           }
         }
       }
+    },
+    "剩余可用" : {
+
     },
     "剩余数量（如：约8片、半盒、1支）" : {
 
@@ -18834,6 +19054,9 @@
           }
         }
       }
+    },
+    "包含你在内的所有共同出资人" : {
+
     },
     "包含原声片段" : {
       "extractionState" : "manual",
@@ -19767,6 +19990,12 @@
     "双击标记回未完成" : {
 
     },
+    "双方情绪名片已在本地安全握手，数据不上传云端。" : {
+
+    },
+    "双方手机靠近即可，对方在「小助」中点击投送后将自动弹出确认。" : {
+
+    },
     "双方无需添加好友，离线状态下也可直接对准屏幕扫描导入。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19870,6 +20099,9 @@
       }
     },
     "发布指纹" : {
+
+    },
+    "发现附近设备，点击头像即可秒级投送" : {
 
     },
     "发生/起始日期" : {
@@ -20126,6 +20358,9 @@
           }
         }
       }
+    },
+    "取件码已核验 · 导入后直登灵动岛与小组件" : {
+
     },
     "取出" : {
       "extractionState" : "manual",
@@ -20762,6 +20997,12 @@
           }
         }
       }
+    },
+    "向「%@」倾诉" : {
+
+    },
+    "向%@倾诉心声" : {
+
     },
     "含 %lld 笔关联记账投入 ¥%@" : {
       "localizations" : {
@@ -21692,6 +21933,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "国徽面（反面）"
+          }
+        }
+      }
+    },
+    "图像识别模型（拍照算热量专用）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vision Model (photo calorie estimates only)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图像识别模型（拍照算热量专用）"
           }
         }
       }
@@ -22808,6 +23066,12 @@
         }
       }
     },
+    "复制微信 AA 口令" : {
+
+    },
+    "复制微信口令" : {
+
+    },
     "复制码号" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -23705,6 +23969,9 @@
         }
       }
     },
+    "如：老友聚餐/周末露营" : {
+
+    },
     "如不继续使用请提前关闭" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -24240,6 +24507,9 @@
           }
         }
       }
+    },
+    "存放备注" : {
+
     },
     "存放驿站/自提柜（选填，如：东门菜鸟驿站、丰巢）" : {
       "extractionState" : "manual",
@@ -25811,6 +26081,9 @@
         }
       }
     },
+    "家庭空间共享" : {
+
+    },
     "家政" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -26466,6 +26739,9 @@
         }
       }
     },
+    "对方手机靠近打开小助，或扫描生成的二维码，账单将直接以「¥%@」记入对方本地账本。" : {
+
+    },
     "对比装修公司方案与报价" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -26875,6 +27151,9 @@
     "将寄件码复制到剪贴板" : {
 
     },
+    "将小助分享码/AA账单/待办二维码放入框内，或从相册选图" : {
+
+    },
     "将当前所在位置覆盖为该地点坐标" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -26998,6 +27277,9 @@
       }
     },
     "小助 · 个人智能生活助理" : {
+
+    },
+    "小助 · 记所想，助所行" : {
 
     },
     "小助 · 面对面扫码导入" : {
@@ -27684,6 +27966,23 @@
         }
       }
     },
+    "已下载完成的部件文件会保留，只清掉断点进度；下次下载从零开始。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finished part files are kept; only the resume point is cleared, so the next download starts from the beginning."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已下载完成的部件文件会保留，只清掉断点进度；下次下载从零开始。"
+          }
+        }
+      }
+    },
     "已为你中断对话向导，打开系统手动详细设置。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -27958,9 +28257,6 @@
           }
         }
       }
-    },
-    "已停用提醒" : {
-
     },
     "已全部取齐 ✓" : {
 
@@ -28760,6 +29056,9 @@
         }
       }
     },
+    "已成功投送给「%@」！" : {
+
+    },
     "已成功校准为当前坐标！" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -28845,7 +29144,23 @@
         }
       }
     },
+    "已扣除骨壳重量（可食率约 %lld%%）。以当前称重 %lldg 换算，纯可食净肉约 %lldg。" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已扣除骨壳重量（可食率约 %1$lld%%）。以当前称重 %2$lldg 换算，纯可食净肉约 %3$lldg。"
+          }
+        }
+      }
+    },
     "已报销" : {
+
+    },
+    "已按原料熟化脱水系数（约 ÷%@）换算为等效生重基准。" : {
+
+    },
+    "已按生原料吸水膨胀系数（约 ×%@）换算为等效熟食分量。" : {
 
     },
     "已接入 llama.cpp 端侧推理引擎（Apple Metal GPU 加速）。模型文件下载或导入后，所有对话问答均在 iPhone 本机离线完成，隐私数据不出设备。" : {
@@ -28963,6 +29278,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已暂停 · 点击继续"
+          }
+        }
+      }
+    },
+    "已暂停，可续传" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused, can resume"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暂停，可续传"
           }
         }
       }
@@ -29153,10 +29485,13 @@
         }
       }
     },
+    "已用完" : {
+
+    },
     "已用完/丢弃" : {
 
     },
-    "已用完或丢弃" : {
+    "已直连" : {
 
     },
     "已确认" : {
@@ -29734,7 +30069,7 @@
         }
       }
     },
-    "已过期 %lld 天" : {
+    "已过期 %lld天" : {
 
     },
     "已过目标日期 %lld 天" : {
@@ -30021,6 +30356,29 @@
         }
       }
     },
+    "带视觉编码器的千问多模态模型 · 直接看照片认菜名与份量（建议 6GB+ 内存机型）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Qwen multimodal model with a vision encoder — reads photos directly to recognize dishes and portions (6 GB+ RAM recommended)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "带视觉编码器的千问多模态模型 · 直接看照片认菜名与份量（建议 6GB+ 内存机型）"
+          }
+        }
+      }
+    },
+    "带骨/带壳食材提示" : {
+
+    },
+    "带骨壳" : {
+
+    },
     "帮我拆解" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30209,6 +30567,9 @@
         }
       }
     },
+    "常见份量/容器" : {
+
+    },
     "常规下班时间" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30333,6 +30694,9 @@
           }
         }
       }
+    },
+    "平摊总人数" : {
+
     },
     "平时习惯放在哪（如：玄关托盘、双肩包侧袋）" : {
       "extractionState" : "manual",
@@ -30854,6 +31218,9 @@
         }
       }
     },
+    "开启面对面碰一碰 / 扫码分摊" : {
+
+    },
     "开始加密并上传" : {
 
     },
@@ -30970,6 +31337,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "开销信息"
+          }
+        }
+      }
+    },
+    "引擎未链接" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engine not linked"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "引擎未链接"
           }
         }
       }
@@ -32395,6 +32779,9 @@
         }
       }
     },
+    "待取包裹" : {
+
+    },
     "待取快递" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -33183,6 +33570,9 @@
           }
         }
       }
+    },
+    "恢复推荐 (2000)" : {
+
     },
     "恢复提醒" : {
 
@@ -34177,6 +34567,9 @@
         }
       }
     },
+    "手动卡路里" : {
+
+    },
     "手动新建" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34213,6 +34606,9 @@
           }
         }
       }
+    },
+    "手动直接指定卡路里数值" : {
+
     },
     "手动确认并锁定此角色" : {
       "extractionState" : "manual",
@@ -34702,6 +35098,12 @@
         }
       }
     },
+    "扫一扫" : {
+
+    },
+    "扫描小助分享码、待办清单或AA账单" : {
+
+    },
     "扫码即时传输" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -34882,6 +35284,9 @@
       }
     },
     "投入与周期" : {
+
+    },
+    "投入树洞并倾听" : {
 
     },
     "折叠雨伞" : {
@@ -35181,6 +35586,9 @@
 
     },
     "拍照识别单据/订单" : {
+
+    },
+    "拍照识别食物与营养" : {
 
     },
     "拍药盒智能填入" : {
@@ -35626,6 +36034,9 @@
         }
       }
     },
+    "换句评语" : {
+
+    },
     "换图" : {
 
     },
@@ -35645,6 +36056,9 @@
           }
         }
       }
+    },
+    "换搭子" : {
+
     },
     "换货" : {
       "extractionState" : "manual",
@@ -35751,7 +36165,7 @@
         }
       }
     },
-    "推荐使用新一代 Qwen3-1.7B（速度与推理能力均衡）或更强大的 Qwen3-4B（复杂拆解与食物热量推算更准）。已下载的模型在切换时不会丢失，可随时自由切换。" : {
+    "推荐使用新一代 Qwen3-1.7B（速度与推理能力均衡）或更强大的 Qwen3-4B（复杂拆解与食物热量推算更准）。已下载的模型在切换时不会丢失，可随时自由切换。左滑已下载的行可单独删除、释放空间。" : {
 
     },
     "推荐候选分类（点击一键修正）：" : {
@@ -36674,9 +37088,6 @@
         }
       }
     },
-    "提醒已停用" : {
-
-    },
     "提醒我明天下午3点买咖啡" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -37089,6 +37500,9 @@
           }
         }
       }
+    },
+    "搭子正在思考..." : {
+
     },
     "携带必备肠胃药及常用药品" : {
       "extractionState" : "manual",
@@ -37602,6 +38016,40 @@
         }
       }
     },
+    "放弃" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放弃"
+          }
+        }
+      }
+    },
+    "放弃下载进度？" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard the download progress?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放弃下载进度？"
+          }
+        }
+      }
+    },
     "放弃并重来" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -37649,6 +38097,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "放弃本次录音？"
+          }
+        }
+      }
+    },
+    "放弃进度" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard progress"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放弃进度"
           }
         }
       }
@@ -37980,7 +38445,7 @@
     "整份热量（例如 450）" : {
 
     },
-    "整份热量数值" : {
+    "整份热量估算" : {
 
     },
     "整份约 %lld 千卡" : {
@@ -38545,6 +39010,9 @@
         }
       }
     },
+    "无声心智树洞" : {
+
+    },
     "无操作自动退出" : {
 
     },
@@ -38831,6 +39299,9 @@
           }
         }
       }
+    },
+    "无需好友，碰一碰即可入账" : {
+
     },
     "无需打开 App，在 iPhone 桌面上长按应用图标即可弹出快捷菜单：" : {
       "extractionState" : "manual",
@@ -40156,6 +40627,9 @@
     "暂无分数" : {
 
     },
+    "暂无可分享的事项" : {
+
+    },
     "暂无可分享的内容" : {
 
     },
@@ -40783,9 +41257,6 @@
     "更换药盒照片" : {
 
     },
-    "更换食物" : {
-
-    },
     "更新" : {
 
     },
@@ -41047,9 +41518,6 @@
 
     },
     "有效样本" : {
-
-    },
-    "有效至 %@" : {
 
     },
     "有效补水" : {
@@ -41584,6 +42052,9 @@
         }
       }
     },
+    "未检测到待办内容" : {
+
+    },
     "未添加" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -41779,9 +42250,6 @@
           }
         }
       }
-    },
-    "未设置有效期" : {
-
     },
     "未识别到小票金额，请补拍含有“合计/实付”金额的部分" : {
       "extractionState" : "manual",
@@ -42945,6 +43413,9 @@
     "校准结果" : {
 
     },
+    "校准菜品与营养" : {
+
+    },
     "校准覆盖（%@ / %@)" : {
       "localizations" : {
         "zh-Hans" : {
@@ -43789,6 +44260,9 @@
     "正在从 NAS 获取文件列表..." : {
 
     },
+    "正在传输至附近设备..." : {
+
+    },
     "正在倾听中... 说完后点击停止" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -43876,6 +44350,9 @@
           }
         }
       }
+    },
+    "正在搜寻附近开启小助的用户..." : {
+
     },
     "正在显示「健康」中的今日数据。数据只在本机读取，不会离开这台设备。" : {
       "extractionState" : "manual",
@@ -44106,6 +44583,9 @@
       }
     },
     "正在连接 NAS / 云盘..." : {
+
+    },
+    "正在静候附近设备投送..." : {
 
     },
     "正本/正页" : {
@@ -44599,6 +45079,9 @@
         }
       }
     },
+    "每人应记入" : {
+
+    },
     "每周" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -44736,7 +45219,7 @@
     "每日: %@" : {
 
     },
-    "每日%lld次提醒" : {
+    "每日%lld次" : {
 
     },
     "每日一次，每次 1 片，温水送服" : {
@@ -48532,6 +49015,12 @@
         }
       }
     },
+    "烹饪方式" : {
+
+    },
+    "烹饪方式与调味用油" : {
+
+    },
     "照顾不同朋友的饮食偏好与忌口" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -48548,6 +49037,9 @@
           }
         }
       }
+    },
+    "熟食/烹饪后称重" : {
+
     },
     "燃气" : {
       "extractionState" : "manual",
@@ -49908,6 +50400,9 @@
     "生理有效补水" : {
 
     },
+    "生食/原料称量" : {
+
+    },
     "生鲜食品" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -49925,6 +50420,23 @@
         }
       }
     },
+    "用于「拍照算热量」：认出菜名并估重，替代通用图像分类器只能报 1,303 个泛类标签的上限。不参与日常问答。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For calorie-from-photo: recognizes the dish and estimates its weight, replacing the generic image classifier that can only report 1,303 broad labels. Not used for everyday chat."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用于「拍照算热量」：认出菜名并估重，替代通用图像分类器只能报 1,303 个泛类标签的上限。不参与日常问答。"
+          }
+        }
+      }
+    },
     "用于动态评估睡前蓝光负荷，支持快捷指令自动化上报。" : {
 
     },
@@ -49932,6 +50444,12 @@
 
     },
     "用户名" : {
+
+    },
+    "用油 / 酱汁量" : {
+
+    },
+    "用油档位" : {
 
     },
     "用法预览" : {
@@ -50578,6 +51096,9 @@
     "目标日期已过去 %lld 天" : {
 
     },
+    "目标热量 (千卡)" : {
+
+    },
     "目的地国家级/省级博物馆（如故宫/国博/省博等提前7天放票）与热门5A景区门票今日起放票预约，请记得准点抢约！" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -50646,6 +51167,9 @@
         }
       }
     },
+    "直接分享卡片图片" : {
+
+    },
     "直接分享图片" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -50670,9 +51194,6 @@
 
     },
     "直接拍照识物" : {
-
-    },
-    "相册" : {
 
     },
     "相册导入" : {
@@ -51864,6 +52385,18 @@
         }
       }
     },
+    "碰一碰" : {
+
+    },
+    "碰一碰 · 附近设备直传" : {
+
+    },
+    "碰一碰 · 面对面交换心情名片" : {
+
+    },
+    "碳水" : {
+
+    },
     "礼金" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -51911,6 +52444,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "社保卡/医保卡"
+          }
+        }
+      }
+    },
+    "视觉编码器 mmproj Q8_0" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vision encoder mmproj Q8_0"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视觉编码器 mmproj Q8_0"
           }
         }
       }
@@ -52068,6 +52618,9 @@
         }
       }
     },
+    "离线心智陪伴 · 懂你的同温层" : {
+
+    },
     "离线语音助手双向对话交互、语音备忘录随身录音与端侧离线文字转写。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -52135,6 +52688,9 @@
           }
         }
       }
+    },
+    "离线面对面互联" : {
+
     },
     "私密资料" : {
       "extractionState" : "manual",
@@ -52226,6 +52782,9 @@
           }
         }
       }
+    },
+    "称重状态" : {
+
     },
     "移动电源" : {
       "extractionState" : "manual",
@@ -53474,6 +54033,23 @@
         }
       }
     },
+    "约 2.6–3.2 GB（含图像编码，待真机实测）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Approx. 2.6–3.2 GB (incl. vision encoder; to be measured on device)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "约 2.6–3.2 GB（含图像编码，待真机实测）"
+          }
+        }
+      }
+    },
     "约 980 MB" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -53660,6 +54236,9 @@
           }
         }
       }
+    },
+    "纯本地视觉光学传输 · 零网络与蓝牙依赖" : {
+
     },
     "纯电动车" : {
       "extractionState" : "manual",
@@ -54235,6 +54814,23 @@
         }
       }
     },
+    "继续下载" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue Download"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续下载"
+          }
+        }
+      }
+    },
     "继续断点下载" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -54661,6 +55257,9 @@
         }
       }
     },
+    "置信区间" : {
+
+    },
     "置顶" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -54694,6 +55293,9 @@
           }
         }
       }
+    },
+    "群体基准：82.5% 的人每周会有 1~2 次犒赏性消费 · 额度内享受生活，无需负罪" : {
+
     },
     "老年人大字关怀模式" : {
       "extractionState" : "manual",
@@ -55056,6 +55658,9 @@
       }
     },
     "能量消耗与健身" : {
+
+    },
+    "脂肪" : {
 
     },
     "脊灰减毒疫苗 OPV/IPV (第2剂)" : {
@@ -55838,7 +56443,10 @@
     "菜品名称" : {
 
     },
-    "菜品明细" : {
+    "菜品基本信息" : {
+
+    },
+    "菜品明细 (点击任意菜品修改/校准)" : {
 
     },
     "菜场" : {
@@ -55959,6 +56567,9 @@
           }
         }
       }
+    },
+    "营养与热量分解" : {
+
     },
     "蓄力前行 💪" : {
       "extractionState" : "manual",
@@ -56081,6 +56692,9 @@
           }
         }
       }
+    },
+    "蛋白质" : {
+
     },
     "血型" : {
       "extractionState" : "manual",
@@ -57052,6 +57666,9 @@
           }
         }
       }
+    },
+    "让对方打开小助「扫一扫」即可接收" : {
+
     },
     "训犬奖励冻干零食" : {
       "extractionState" : "manual",
@@ -58029,6 +58646,9 @@
     "设置本次备份文件的加密口令" : {
 
     },
+    "设置每日热量目标" : {
+
+    },
     "设置解锁 PIN（8–64 位）" : {
 
     },
@@ -58856,6 +59476,40 @@
         }
       }
     },
+    "语言模型 Q4_K_M" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language model Q4_K_M"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语言模型 Q4_K_M"
+          }
+        }
+      }
+    },
+    "语言模型与视觉编码器必须同版本，缺任一件都不能用；因此这里只提供整包删除。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The language model and the vision encoder must be the same version; neither works without the other, so only whole-bundle deletion is offered."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "语言模型与视觉编码器必须同版本，缺任一件都不能用；因此这里只提供整包删除。"
+          }
+        }
+      }
+    },
     "语言表达" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -59582,6 +60236,9 @@
           }
         }
       }
+    },
+    "账单原总额 · %@" : {
+
     },
     "账单名称（如：信用卡账单还款、缴纳房租水电）" : {
       "extractionState" : "manual",
@@ -60649,6 +61306,9 @@
         }
       }
     },
+    "轻触投送" : {
+
+    },
     "较弱" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -60856,9 +61516,6 @@
           }
         }
       }
-    },
-    "输入该道菜整份的标准热量数值，保存后将自动按当前吃掉比例换算实际摄入热量。" : {
-
     },
     "达成无消费日 🎉" : {
 
@@ -61614,6 +62271,9 @@
       }
     },
     "这里已经空了" : {
+
+    },
+    "这里是你的绝对离线安全树洞，字句绝不上云。" : {
 
     },
     "这项待办尚未完成，请及时处理。" : {
@@ -62460,6 +63120,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "邀请：%lld"
+          }
+        }
+      }
+    },
+    "部件异常" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Part error"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部件异常"
           }
         }
       }
@@ -63700,6 +64377,9 @@
         }
       }
     },
+    "附近已感知设备：" : {
+
+    },
     "陆家嘴" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -64296,6 +64976,15 @@
         }
       }
     },
+    "面对面 AA 分摊" : {
+
+    },
+    "面对面 AA 平摊" : {
+
+    },
+    "面对面 AA 碰一碰 / 扫码分摊" : {
+
+    },
     "面对面二维码" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -64312,6 +65001,12 @@
           }
         }
       }
+    },
+    "面对面互联" : {
+
+    },
+    "面对面离线互联" : {
+
     },
     "面食 %lld%%" : {
 
@@ -64579,6 +65274,9 @@
           }
         }
       }
+    },
+    "预估称重重量" : {
+
     },
     "预算上限" : {
       "extractionState" : "manual",
@@ -65301,6 +65999,9 @@
 
     },
     "食物库挑选" : {
+
+    },
+    "食物替换" : {
 
     },
     "食物热量估算" : {

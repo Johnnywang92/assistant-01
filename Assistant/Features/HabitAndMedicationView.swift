@@ -399,10 +399,12 @@ struct MedicationRow: View {
         HStack(spacing: 10) {
             // 左侧内容区可点击编辑
             VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Label(med.medName, systemImage: "pills.fill")
                         .font(seniorManager.isSeniorModeEnabled ? .title3.bold() : .headline)
-                        .foregroundStyle(seniorManager.isSeniorModeEnabled ? .green : .primary)
+                        .foregroundStyle(seniorManager.isSeniorModeEnabled ? .green : (med.isEnabled ? .primary : .secondary))
+                        .lineLimit(2)
+                        .layoutPriority(1)
 
                     // 饮食时效标签
                     HStack(spacing: 3) {
@@ -415,16 +417,7 @@ struct MedicationRow: View {
                     .background(Capsule().fill(Color.blue.opacity(0.12)))
                     .foregroundStyle(.blue)
 
-                    if !med.isEnabled {
-                        Text("已停用提醒")
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color(.tertiarySystemFill)))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
+                    Spacer(minLength: 4)
 
                     Text(med.dosage)
                         .font(seniorManager.isSeniorModeEnabled ? .body.bold() : .subheadline)

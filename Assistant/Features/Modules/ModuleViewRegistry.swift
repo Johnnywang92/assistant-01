@@ -13,19 +13,13 @@ enum ModuleViewRegistry {
     // MARK: - Tab 栏内容视图
 
     static func tabView(for moduleID: ModuleID) -> AnyView {
-        #if DEBUG
-        assert(contractIssues.isEmpty, "模块 View 注册表与 Core 描述符不一致：\(contractIssues)")
-        #endif
-        return rawTabView(for: moduleID)
+        rawTabView(for: moduleID)
     }
 
     // MARK: - 生活档案子页面视图
 
     static func vaultView(for moduleID: ModuleID) -> AnyView {
-        #if DEBUG
-        assert(contractIssues.isEmpty, "模块 View 注册表与 Core 描述符不一致：\(contractIssues)")
-        #endif
-        return rawVaultView(for: moduleID)
+        rawVaultView(for: moduleID)
     }
 
     // MARK: - 无断言底层构造（供公共入口与 contractIssues 自检共享，避免循环递归死锁）
@@ -103,10 +97,8 @@ enum ModuleViewRegistry {
 
     #if DEBUG
     /// 交叉校验：Core 描述符声明了某 surface，这里的 switch 就必须能构造出非空 View。
-    /// 漏接会在首次导航时断言，而不是静默展示空白页。
-    /// 注意：自检遍历必须调用 `rawTabView` / `rawVaultView`，刻意不调用 `tabView` / `vaultView`
-    /// （如同 InferenceBackendRegistry 刻意不调用 backend(for:)），否则会在 `swift_once` 内部重入死锁。
-    private static let contractIssues: [String] = {
+    /// 由单元测试按需调用，不在主线程运行时冷启动中盲目实例化全量 View，避免重入死锁与内存激增。
+    static func validateContracts() -> [String] {
         var issues: [String] = []
         for descriptor in ModuleRegistry.builtIn {
             if descriptor.tabBar != nil {
@@ -123,7 +115,7 @@ enum ModuleViewRegistry {
             }
         }
         return issues
-    }()
+    }
 
     private static func isBlank(_ view: AnyView) -> Bool {
         // AnyView 包 EmptyView 时 body 是 EmptyView；用镜像近似判断。

@@ -133,11 +133,13 @@ final class PleasureIndexEvaluatorTests: XCTestCase {
         ]
         let depressedScale = PsychScaleScore(
             scaleID: .phq9,
-            completedAt: day,
             totalScore: 18,
+            completeness: .complete,
             band: PsychBandLevel.moderatelySevere,
-            completeness: PsychCompleteness(totalItems: 9, answeredItems: 9, missingItemIndices: []),
-            topItemIndices: [1, 2]
+            isScreeningPositive: true,
+            itemScores: [0: 2, 1: 3, 2: 3, 3: 2, 4: 2, 5: 2, 6: 2, 7: 1, 8: 1],
+            topItemIndices: [1, 2],
+            completedAt: day
         )
         let stressedEval = PleasureIndexEvaluator.evaluate(
             snapshot: snapshot,

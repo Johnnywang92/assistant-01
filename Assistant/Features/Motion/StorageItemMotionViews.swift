@@ -243,9 +243,9 @@ private struct StorageBoxAnimationCanvas: View {
             badgeOpacity = 1.0
         }
 
-        // 5. 收尾淡出
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.88) {
-            AppMotion.animate(.easeOut(duration: 0.25)) {
+        // 5. 收尾淡出（保留充足可读时间，随后柔和淡出）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.55) {
+            AppMotion.animate(.easeOut(duration: 0.35)) {
                 boxOpacity = 0.0
                 badgeOpacity = 0.0
                 badgeOffset = 48
@@ -253,7 +253,7 @@ private struct StorageBoxAnimationCanvas: View {
         }
 
         // 6. 回调完成
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.16) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.95) {
             onFinished()
         }
     }
@@ -291,15 +291,15 @@ private struct ReducedMotionStorageBadge: View {
         )
         .opacity(opacity)
         .onAppear {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.easeInOut(duration: 0.25)) {
                 opacity = 1.0
             }
             Haptic.success()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) {
-                withAnimation(.easeOut(duration: 0.2)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                withAnimation(.easeOut(duration: 0.28)) {
                     opacity = 0.0
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     onFinished()
                 }
             }

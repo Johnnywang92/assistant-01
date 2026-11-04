@@ -417,9 +417,9 @@ private struct HydrationDropletCanvas: View {
             badgeOpacity = 1.0
         }
 
-        // 4. 收尾淡出
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) {
-            AppMotion.animate(.easeOut(duration: 0.25)) {
+        // 4. 收尾淡出（保留充足可读时间，随后柔和淡出）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.55) {
+            AppMotion.animate(.easeOut(duration: 0.35)) {
                 badgeOpacity = 0.0
                 badgeOffset = 48
                 celebrationOpacity = 0.0
@@ -427,7 +427,7 @@ private struct HydrationDropletCanvas: View {
         }
 
         // 5. 回调完成
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.15) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.95) {
             onFinished()
         }
     }
@@ -465,15 +465,15 @@ private struct ReducedMotionHydrationBadge: View {
         )
         .opacity(opacity)
         .onAppear {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(.easeInOut(duration: 0.25)) {
                 opacity = 1.0
             }
             Haptic.success()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) {
-                withAnimation(.easeOut(duration: 0.2)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                withAnimation(.easeOut(duration: 0.28)) {
                     opacity = 0.0
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     onFinished()
                 }
             }

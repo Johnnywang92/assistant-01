@@ -411,17 +411,17 @@ struct LifeVaultView: View {
                                         .font(.body.weight(.semibold))
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
+                                        .layoutPriority(1)
 
-                                    Text(L10n.tr("日报 · 周报 · 月报 · 年报"))
+                                    Text(L10n.tr("周期总览"))
                                         .font(.system(size: 10, weight: .medium))
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 2)
                                         .background(Capsule().fill(Color.blue.opacity(0.12)))
                                         .foregroundStyle(Color.blue)
-                                        .lineLimit(1)
                                 }
 
-                                Text(L10n.tr("待办完成度、收支分析、健康活力与行动建议"))
+                                Text(L10n.tr("待办、收支与身心全景洞察"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
@@ -871,6 +871,7 @@ struct LifeVaultView: View {
                         .font(.body.weight(.semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
+                        .layoutPriority(1)
 
                     // 类别胶囊
                     Text(L10n.tr(card.category))
