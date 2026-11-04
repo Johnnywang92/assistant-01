@@ -217,6 +217,7 @@ public final class PetRecord {
         weightKg: Double? = nil,
         clinicOrPlace: String? = nil,
         notes: String? = nil,
+        createdAt: Date = .now,
         pet: PetProfile? = nil
     ) {
         self.id = id
@@ -226,7 +227,7 @@ public final class PetRecord {
         self.weightKg = weightKg
         self.clinicOrPlace = clinicOrPlace
         self.notes = notes
-        self.createdAt = .now
+        self.createdAt = createdAt
         self.pet = pet
     }
 

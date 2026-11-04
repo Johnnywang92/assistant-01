@@ -406,7 +406,7 @@ struct ChildManagementView: View {
                     openRecords(for: child, type: .growth)
                 }
                 quickActionButton(title: "记里程碑", icon: "flag.fill", color: .orange) {
-                    openRecords(for: child, type: .milestone)
+                    openRecords(for: child, type: .milestones)
                 }
                 quickActionButton(title: "记就医看诊", icon: "cross.case.fill", color: .blue) {
                     openRecords(for: child, type: .health)
