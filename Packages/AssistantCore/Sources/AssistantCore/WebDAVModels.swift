@@ -75,20 +75,37 @@ public enum WebDAVRequestFactory: Sendable {
         return "Basic \(data.base64EncodedString())"
     }
 
-    /// 规范化服务器地址与远端目录拼接
+    /// 规范化服务器地址与远端目录拼接。
+    ///
+    /// 注意：**不能对整串地址做 `addingPercentEncoding`**。旧实现对整串用
+    /// `.urlQueryAllowed` 补编码，用户从浏览器地址栏复制的已编码地址
+    /// （`https://nas.local/my%20folder`）会被二次编码成 `my%2520folder` → 404，
+    /// 而且 `/`、`?` 等字符在 query 集合里的处理也不对。现在先按原样解析，
+    /// 只有原样无法解析（含空格/非 ASCII 等）时才按「路径允许字符」补编码。
     public static func makeDirectoryURL(serverURL: String, remoteDirectory: String) -> URL? {
-        guard var trimmed = serverURL.trimmingCharacters(in: .whitespacesAndNewlines).addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            return nil
-        }
+        var trimmed = serverURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
         if !trimmed.hasPrefix("http://") && !trimmed.hasPrefix("https://") {
             trimmed = "https://" + trimmed
         }
-        guard var base = URL(string: trimmed) else { return nil }
+        guard var base = normalizedURL(from: trimmed) else { return nil }
         let cleanDir = remoteDirectory.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
         if !cleanDir.isEmpty {
-            base.appendPathComponent(cleanDir)
+            // 目录段单独编码后拼接：既避免二次编码，也避免 `%` 被 appendingPathComponent 再转义
+            guard let encodedDir = cleanDir.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+            let baseString = base.absoluteString
+            let separator = baseString.hasSuffix("/") ? "" : "/"
+            guard let resolved = URL(string: baseString + separator + encodedDir) else { return nil }
+            base = resolved
         }
         return base
+    }
+
+    /// 按原样解析地址；解析不了（含空格 / 中文 / 非法字符）才补编码。
+    private static func normalizedURL(from text: String) -> URL? {
+        if let url = URL(string: text) { return url }
+        guard let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+        return URL(string: encoded)
     }
 
     /// 构建具体文件的完整 URL
@@ -128,6 +145,16 @@ public enum WebDAVRequestFactory: Sendable {
             }
             path = absolute.path
         }
+        // 相对 href 里的「裸文件名」（如 `a.assistantbackup`）：
+        // 部分 NAS 会这样返回，旧实现因「必须落在配置目录前缀下」而一律拒绝（注释承诺的能力没兑现）。
+        // 只取最后一段、且不含路径分隔符与 `..`，因此不存在目录遍历风险。
+        if !hasAbsoluteScheme(trimmed),
+           !trimmed.contains("/"),
+           !trimmed.contains("\\"),
+           trimmed != ".", trimmed != ".." {
+            return dirURL.appendingPathComponent(trimmed)
+        }
+
         // 解析器给出的是已解码文本，但直接调用方可能传原始 href，两种都吃
         path = path.removingPercentEncoding ?? path
 

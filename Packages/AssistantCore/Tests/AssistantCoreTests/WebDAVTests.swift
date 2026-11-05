@@ -184,6 +184,50 @@ final class WebDAVTests: XCTestCase {
         XCTAssertNil(resolveHref("   "))
     }
 
+    // MARK: - 回归（CORE-12）：已编码地址不得二次编码；裸文件名 href 要能解析
+
+    func testAlreadyEncodedServerURLIsNotDoubleEncoded() {
+        let dirURL = WebDAVRequestFactory.makeDirectoryURL(
+            serverURL: "https://nas.local/my%20folder",
+            remoteDirectory: "backup"
+        )
+        XCTAssertEqual(dirURL?.absoluteString, "https://nas.local/my%20folder/backup")
+        XCTAssertFalse(dirURL?.absoluteString.contains("%2520") ?? true, "已编码地址被二次编码了")
+    }
+
+    func testUnencodedServerURLWithSpacesIsEncodedOnce() {
+        let dirURL = WebDAVRequestFactory.makeDirectoryURL(
+            serverURL: "https://nas.local/dav/my folder",
+            remoteDirectory: "backup"
+        )
+        XCTAssertEqual(dirURL?.absoluteString, "https://nas.local/dav/my%20folder/backup")
+    }
+
+    func testBareFilenameHrefResolvesUnderConfiguredDirectory() {
+        let url = WebDAVRequestFactory.makeFileURL(
+            fromHref: "assistant_20261027.assistantbackup",
+            serverURL: "https://nas.local",
+            remoteDirectory: "dav/AssistantBackups"
+        )
+        XCTAssertEqual(
+            url?.absoluteString,
+            "https://nas.local/dav/AssistantBackups/assistant_20261027.assistantbackup"
+        )
+    }
+
+    func testBareFilenameHrefStillRejectsTraversal() {
+        XCTAssertNil(WebDAVRequestFactory.makeFileURL(
+            fromHref: "..",
+            serverURL: "https://nas.local",
+            remoteDirectory: "dav/AssistantBackups"
+        ))
+        XCTAssertNil(WebDAVRequestFactory.makeFileURL(
+            fromHref: "",
+            serverURL: "https://nas.local",
+            remoteDirectory: "dav/AssistantBackups"
+        ))
+    }
+
     func testInsecureTransportDetection() {
         XCTAssertTrue(WebDAVRequestFactory.usesInsecureTransport(serverURL: "http://192.168.1.100:8080"))
         XCTAssertTrue(WebDAVRequestFactory.usesInsecureTransport(serverURL: "  HTTP://NAS.LAN  "))

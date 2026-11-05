@@ -103,6 +103,47 @@ final class ExpenseAmountExtractorTests: XCTestCase {
         XCTAssertNil(amount("   "))
     }
 
+    // MARK: - 回归：中文角分被截断（2026-11-05）
+    //
+    // 根因：中文整数正则排在口语正则之前且命中即返回，「花了三百二十八块五毛」
+    // 会被截成 328（少 0.5 元），「花了九毛五」会被截成 9（10 倍偏差）。
+    // 这几条在修复前全部失败，改动提取顺序/正则时必须保持通过。
+
+    func testChineseJiaoFenIsNotTruncated() {
+        assertAmount("花了三百二十八块五毛", 328.50)
+        assertAmount("花了九块五毛", 9.50)
+        assertAmount("付了九块五", 9.50)
+        assertAmount("花了九毛五", 0.95)
+        assertAmount("花了二十块零五毛", 20.50)
+        assertAmount("花了九点五元", 9.50)
+        assertAmount("午饭三十八点五元", 38.50)
+    }
+
+    // MARK: - 回归：口语省略下级单位（2026-11-05）
+    //
+    // 「三百五」在口语里是 350 而不是 305；但「一千零五」的「零」是显式个位，
+    // 必须保持 1005。两者只差一个「零」，是本次修复最容易再踩坏的地方。
+
+    func testColloquialOmittedUnitNumbers() {
+        assertAmount("花了三百五", 350)
+        assertAmount("花了三百五元", 350)
+        assertAmount("花了两百五", 250)
+        assertAmount("收入一千五", 1500)
+        assertAmount("花了一万五", 15000)
+        // 显式个位：不进位
+        assertAmount("花了一千零五", 1005)
+        assertAmount("花了一百零五", 105)
+        // 已有下级单位：不放大
+        assertAmount("花了二十五", 25)
+        assertAmount("花了三百二十八", 328)
+    }
+
+    func testTimeExpressionIsNotTreatedAsAmount() {
+        // 中文小数只在「后面跟货币单位」时才数字化，时间表达不能被当成金额
+        XCTAssertNil(amount("下午三点半开会"))
+        XCTAssertNil(amount("九点见"))
+    }
+
     // MARK: - 中文数字转换
 
     func testChineseNumberConversion() {
@@ -111,6 +152,15 @@ final class ExpenseAmountExtractorTests: XCTestCase {
         XCTAssertEqual(ExpenseAmountExtractor.numberValue("两千")!, 2000, accuracy: 0.001)
         XCTAssertEqual(ExpenseAmountExtractor.numberValue("一万二千")!, 12000, accuracy: 0.001)
         XCTAssertEqual(ExpenseAmountExtractor.numberValue("十")!, 10, accuracy: 0.001)
+        // 口语省略下级单位（2026-11-05 修复）
+        XCTAssertEqual(ExpenseAmountExtractor.numberValue("三百五")!, 350, accuracy: 0.001)
+        XCTAssertEqual(ExpenseAmountExtractor.numberValue("一百五")!, 150, accuracy: 0.001)
+        XCTAssertEqual(ExpenseAmountExtractor.numberValue("一千五")!, 1500, accuracy: 0.001)
+        XCTAssertEqual(ExpenseAmountExtractor.numberValue("一万五")!, 15000, accuracy: 0.001)
+        // 「零」是显式个位，不得进位
+        XCTAssertEqual(ExpenseAmountExtractor.numberValue("一千零五")!, 1005, accuracy: 0.001)
+        XCTAssertEqual(ExpenseAmountExtractor.numberValue("三百零五")!, 305, accuracy: 0.001)
+        XCTAssertEqual(ExpenseAmountExtractor.numberValue("一千零五十")!, 1050, accuracy: 0.001)
         // 阿拉伯数字直通
         XCTAssertEqual(ExpenseAmountExtractor.numberValue("1234.56")!, 1234.56, accuracy: 0.001)
         // 含非法字符返回 nil

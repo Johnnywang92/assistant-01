@@ -105,19 +105,11 @@ public enum MedicationFoodTimingAdvisor {
                 let bestTime = meal.date.addingTimeInterval(Double(minutes) * 60)
                 let windowEnd = bestTime.addingTimeInterval(30 * 60) // 最佳服用窗口保持 30 分钟
 
-                if now >= meal.date && now <= windowEnd {
-                    // 正处于餐后最佳服药黄金窗口
-                    return MedicationTimingEvaluation(
-                        planID: plan.id,
-                        medName: plan.medName,
-                        dosage: plan.dosage,
-                        status: .primeTimePostMeal(recommendedTime: bestTime, windowEnd: windowEnd, mealName: meal.foodName),
-                        adaptiveNotificationTime: bestTime > now ? bestTime : now,
-                        headline: "✨ 餐后黄金用药窗口（刚享用 \(meal.foodName)）",
-                        actionTip: "建议在 \(formatHourMinute(windowEnd)) 前温水送服（\(plan.dosage)），有效保护胃黏膜减轻刺激！",
-                        isUrgent: true
-                    )
-                } else if now < meal.date.addingTimeInterval(Double(minutes) * 60) {
+                // 顺序很重要：先判断「还没到最佳时间」，再判断「已进入黄金窗口」。
+                // 旧实现把顺序写反了 —— `recentMeal` 已过滤 `date <= now`，导致「刚吃完等一等」
+                // 分支从构造上不可达，用户刚放下筷子就被提示「黄金窗口，建议现在服用」，
+                // 与外层 adaptiveNotificationTime（bestTime）自相矛盾。
+                if now < bestTime {
                     // 刚吃完，建议稍等几分钟消化
                     return MedicationTimingEvaluation(
                         planID: plan.id,
@@ -128,6 +120,19 @@ public enum MedicationFoodTimingAdvisor {
                         headline: "用餐完毕 · 等待最佳饭后时机",
                         actionTip: "刚刚用餐完毕，建议饭后 \(minutes) 分钟（约 \(formatHourMinute(bestTime))）服药，吸收平稳不伤胃",
                         isUrgent: false
+                    )
+                }
+                if now <= windowEnd {
+                    // 正处于餐后最佳服药黄金窗口
+                    return MedicationTimingEvaluation(
+                        planID: plan.id,
+                        medName: plan.medName,
+                        dosage: plan.dosage,
+                        status: .primeTimePostMeal(recommendedTime: bestTime, windowEnd: windowEnd, mealName: meal.foodName),
+                        adaptiveNotificationTime: bestTime > now ? bestTime : now,
+                        headline: "✨ 餐后黄金用药窗口（刚享用 \(meal.foodName)）",
+                        actionTip: "建议在 \(formatHourMinute(windowEnd)) 前温水送服（\(plan.dosage)），有效保护胃黏膜减轻刺激！",
+                        isUrgent: true
                     )
                 }
             }
@@ -177,6 +182,27 @@ public enum MedicationFoodTimingAdvisor {
             let leadTime = Double(minutes) * 60
             let startWindow = scheduledTime.addingTimeInterval(-leadTime)
             let suggestMealTime = scheduledTime.addingTimeInterval(leadTime)
+
+            // 饭前服药的前提是空腹：若近 1 小时内刚吃过，不能让人空腹服药。
+            // 旧实现完全不看 recentMeal，刚吃完饭也会提示「请空腹温水送服」。
+            if let meal = recentMeal,
+               now.timeIntervalSince(meal.date) <= 60 * 60,
+               now >= startWindow,
+               now <= scheduledTime.addingTimeInterval(30 * 60) {
+                return MedicationTimingEvaluation(
+                    planID: plan.id,
+                    medName: plan.medName,
+                    dosage: plan.dosage,
+                    status: .waitingForMeal(
+                        scheduledTime: scheduledTime,
+                        reason: "近 1 小时内检测到进餐记录（\(meal.foodName)），与本计划「饭前空腹服用」冲突，已顺延到下一次餐前。"
+                    ),
+                    adaptiveNotificationTime: now.addingTimeInterval(60 * 60),
+                    headline: "刚进食 · 与饭前服药计划冲突",
+                    actionTip: "近 1 小时内已进食，不建议空腹服药；请顺延到下一次餐前，或咨询医生后调整。",
+                    isUrgent: false
+                )
+            }
 
             if now >= startWindow && now <= scheduledTime.addingTimeInterval(30 * 60) {
                 return MedicationTimingEvaluation(

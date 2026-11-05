@@ -420,31 +420,10 @@ public enum QueryInsightEngine {
     }
 
     /// 中文/阿拉伯数字 → Int（支持 1~99：一 二 两 三 … 十 十一 二十 三十）
+    /// 中文数字 → 整数（统一实现见 `ChineseNumeralParser`）。
+    /// 现在支持百/千/万（旧实现只支持 1–99，「近一百天」会解析失败）。
     static func parseChineseNumber(_ text: String) -> Int? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let direct = Int(trimmed) { return direct }
-        let digits: [Character: Int] = [
-            "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
-            "五": 5, "六": 6, "七": 7, "八": 8, "九": 9
-        ]
-        guard !trimmed.isEmpty else { return nil }
-        if trimmed == "十" { return 10 }
-        if trimmed.hasPrefix("十"), let unit = digits[trimmed.dropFirst().first ?? " "] {
-            return 10 + unit
-        }
-        if trimmed.hasSuffix("十"), let tens = digits[trimmed.first ?? " "] {
-            return tens * 10
-        }
-        if trimmed.count == 2,
-           let tens = digits[trimmed.first ?? " "],
-           trimmed.hasPrefix("十") == false,
-           let unit = digits[trimmed.dropFirst().first ?? " "] {
-            return tens * 10 + unit
-        }
-        if trimmed.count == 1, let single = digits[trimmed.first ?? " "] {
-            return single
-        }
-        return nil
+        ChineseNumeralParser.integer(text)
     }
 
     private static func containsAny(_ text: String, _ words: [String]) -> Bool {

@@ -91,12 +91,48 @@ final class ReceiptTextParserTests: XCTestCase {
 
     // MARK: - 交易时间
 
-    func testTransactionDateExtraction() {
-        XCTAssertNotNil(TransactionDateExtractor.extract(from: "2026年10月26日 19:30 消费"))
-        XCTAssertNotNil(TransactionDateExtractor.extract(from: "2026-10-26 12:00"))
-        XCTAssertNotNil(TransactionDateExtractor.extract(from: "10月26日 08:15"))
-        XCTAssertNotNil(TransactionDateExtractor.extract(from: "10月26日"))
+    private func makeDate(_ y: Int, _ mo: Int, _ d: Int, _ h: Int = 12, _ mi: Int = 0) -> Date {
+        Calendar.current.date(from: DateComponents(year: y, month: mo, day: d, hour: h, minute: mi))!
+    }
+
+    func testTransactionDateExtractionExact() {
+        // 精确断言，不再只 XCTAssertNotNil（否则「年份取错」这类缺陷会逃逸）
+        XCTAssertEqual(TransactionDateExtractor.extract(from: "2026年10月26日 19:30 消费"), makeDate(2026, 10, 26, 19, 30))
+        XCTAssertEqual(TransactionDateExtractor.extract(from: "2026-10-26 12:00"), makeDate(2026, 10, 26, 12, 0))
+        XCTAssertEqual(TransactionDateExtractor.extract(from: "10月26日 08:15"),
+                       makeDate(Calendar.current.component(.year, from: .now), 10, 26, 8, 15))
+        XCTAssertEqual(TransactionDateExtractor.extract(from: "10月26日"),
+                       makeDate(Calendar.current.component(.year, from: .now), 10, 26, 12, 0))
         XCTAssertNil(TransactionDateExtractor.extract(from: "没有日期的文本"))
+    }
+
+    /// 回归（CORE-03）：1 月导入 12 月小票，不能记成 11 个月后的未来。
+    func testMonthDayRollsBackToPreviousYearWhenFuture() {
+        let now = makeDate(2025, 1, 2, 9, 0)
+        XCTAssertEqual(TransactionDateExtractor.extract(from: "12月25日 18:30 消费 88元", now: now),
+                       makeDate(2024, 12, 25, 18, 30))
+
+        // 同月内、明显早于 now 的月日仍归今年
+        let juneNow = makeDate(2025, 6, 1, 9, 0)
+        XCTAssertEqual(TransactionDateExtractor.extract(from: "05月20日 09:00", now: juneNow),
+                       makeDate(2025, 5, 20, 9, 0))
+    }
+
+    /// 回归（CORE-03）：非法日期必须判无效，不能被日历静默顺延（2024-02-31 → 03-02）。
+    func testInvalidDatesAreRejected() {
+        XCTAssertNil(TransactionDateExtractor.extract(from: "2024-02-31 10:00"))
+        XCTAssertNil(TransactionDateExtractor.extract(from: "2024-13-45 10:00"))
+        XCTAssertNil(TransactionDateExtractor.extract(from: "2024-06-15 25:99"))
+        XCTAssertNil(TransactionDateExtractor.extract(from: "2月30日"))
+        // 合法闰日仍要能解析
+        XCTAssertEqual(TransactionDateExtractor.extract(from: "2024-02-29 10:00"), makeDate(2024, 2, 29, 10, 0))
+    }
+
+    /// 回归（CORE-03）：`parse(_:now:)` 的 now 要真正参与年份推断，而不是只做兜底。
+    func testParseUsesInjectedNowForYearInference() {
+        let now = makeDate(2025, 1, 2, 9, 0)
+        let result = ReceiptTextParser.parse("12月25日 18:30 消费 88元", now: now)
+        XCTAssertEqual(result.date, makeDate(2024, 12, 25, 18, 30))
     }
 
     func testParseFallsBackToNowWithoutDate() {

@@ -119,19 +119,12 @@ public struct SafeToSpendResult: Equatable, Sendable {
         self.rhythmAdviceText = rhythmAdviceText
     }
 
-    public static func == (lhs: SafeToSpendResult, rhs: SafeToSpendResult) -> Bool {
-        lhs.isEnabled == rhs.isEnabled
-            && abs(lhs.safeToSpendToday - rhs.safeToSpendToday) < 0.005
-            && abs(lhs.todayAllowance - rhs.todayAllowance) < 0.005
-            && abs(lhs.todayFlexibleSpend - rhs.todayFlexibleSpend) < 0.005
-            && abs(lhs.todaySpentRatio - rhs.todaySpentRatio) < 0.005
-            && abs(lhs.savedYesterday - rhs.savedYesterday) < 0.005
-            && lhs.daysLeft == rhs.daysLeft
-            && lhs.isOverBudget == rhs.isOverBudget
-            && lhs.isTodayOverspent == rhs.isTodayOverspent
-            && lhs.rhythmMode == rhs.rhythmMode
-            && lhs.isWeekend == rhs.isWeekend
-    }
+    // 不要重载 `==`：旧实现是自定义的「近似相等」，只比较 11/19 个字段，
+    // 漏掉了 disposableBudget / remainingThisMonth / daysInMonth / todayOverspentAmount /
+    // spentRatio / workdayAllowance / weekendAllowance / weekendReservoirTotal / rhythmAdviceText。
+    // 一旦它被用于 SwiftUI 刷新判断或测试断言，这些字段的变化会被静默忽略。
+    // 需要「近似比较」时请在测试里用 XCTAssertEqual(_:_:accuracy:) 逐字段断言，
+    // 不要用重载的 == 改变整个类型的相等语义。
 }
 
 public enum SafeToSpendCalculator {

@@ -8,41 +8,41 @@ import Foundation
 /// 两份正则必然漂移（见金额解析的教训），故下沉本层，App 侧保留转发。
 public enum TransactionDateExtractor {
 
-    /// 提取交易时间（短信/截图里的 MM月dd日 HH:mm、yyyy-MM-dd HH:mm 等）
-    public static func extract(from text: String) -> Date? {
+    /// 提取交易时间（短信/截图里的 MM月dd日 HH:mm、yyyy-MM-dd HH:mm 等）。
+    ///
+    /// `now` 参与两类判断（**可注入**，测试靠它钉住跨年行为）：
+    /// 1. 月日缺年时按 `now` 所在年补；
+    /// 2. 补出来的日期明显晚于 `now`（> now + 1 天）时回滚一年 ——
+    ///    1 月导入 12 月小票不会被记成 11 个月后的未来。
+    public static func extract(from text: String, now: Date = .now) -> Date? {
+        let calendar = Calendar.current
+
         // 优先匹配电商/支付截图里的显式下单、付款、成交、创建时间
-        let labeledPatterns = [
-            "(?:付款时间|支付时间|成交时间|下单时间|创建时间|交易时间)\\s*[:：]?\\s*(\\d{4})[-/年](\\d{1,2})[-/月](\\d{1,2})日?\\s*(\\d{1,2}):(\\d{2})",
-            "(?:付款时间|支付时间|成交时间|下单时间|创建时间|交易时间)\\s*[:：]?\\s*(\\d{1,2})月(\\d{1,2})日\\s*(\\d{1,2}):(\\d{2})"
+        let labeledPatterns: [(pattern: String, hasYear: Bool)] = [
+            ("(?:付款时间|支付时间|成交时间|下单时间|创建时间|交易时间)\\s*[:：]?\\s*(\\d{4})[-/年](\\d{1,2})[-/月](\\d{1,2})日?\\s*(\\d{1,2}):(\\d{2})", true),
+            ("(?:付款时间|支付时间|成交时间|下单时间|创建时间|交易时间)\\s*[:：]?\\s*(\\d{1,2})月(\\d{1,2})日\\s*(\\d{1,2}):(\\d{2})", false)
         ]
-        for pattern in labeledPatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern),
-               let comps = dateComponents(regex, in: text, hasYear: pattern.contains("\\d{4}")) {
-                if let d = Calendar.current.date(from: comps) {
-                    return d
-                }
+        for item in labeledPatterns {
+            if let regex = try? NSRegularExpression(pattern: item.pattern),
+               let comps = dateComponents(regex, in: text, hasYear: item.hasYear) {
+                // 一旦匹配就以该精度为准：非法（2024-02-31 / 25:99）直接判无效，
+                // 不再退到更粗的「仅日期」模式去「猜」一个看起来合法的日期。
+                return validatedDate(comps, hasYear: item.hasYear, calendar: calendar, now: now)
             }
         }
 
-        // 完整日期 + 时间
-        if let regex = try? NSRegularExpression(pattern: "(\\d{4})[-/年](\\d{1,2})[-/月](\\d{1,2})日?\\s*(\\d{1,2}):(\\d{2})"),
-           let comps = dateComponents(regex, in: text, hasYear: true) {
-            return Calendar.current.date(from: comps)
-        }
-        // 完整日期无时间
-        if let regex = try? NSRegularExpression(pattern: "(\\d{4})[-/年](\\d{1,2})[-/月](\\d{1,2})日?"),
-           let comps = dateComponents(regex, in: text, hasYear: true) {
-            return Calendar.current.date(from: comps)
-        }
-        // 月日 + 时间（默认今年）
-        if let regex = try? NSRegularExpression(pattern: "(\\d{1,2})月(\\d{1,2})日\\s*(\\d{1,2}):(\\d{2})"),
-           let comps = dateComponents(regex, in: text, hasYear: false) {
-            return Calendar.current.date(from: comps)
-        }
-        // 仅日期
-        if let regex = try? NSRegularExpression(pattern: "(\\d{1,2})月(\\d{1,2})日"),
-           let comps = dateComponents(regex, in: text, hasYear: false) {
-            return Calendar.current.date(from: comps)
+        // 完整日期/月日型，按精度从高到低尝试
+        let patterns: [(pattern: String, hasYear: Bool)] = [
+            ("(\\d{4})[-/年](\\d{1,2})[-/月](\\d{1,2})日?\\s*(\\d{1,2}):(\\d{2})", true),
+            ("(\\d{4})[-/年](\\d{1,2})[-/月](\\d{1,2})日?", true),
+            ("(\\d{1,2})月(\\d{1,2})日\\s*(\\d{1,2}):(\\d{2})", false),
+            ("(\\d{1,2})月(\\d{1,2})日", false)
+        ]
+        for item in patterns {
+            if let regex = try? NSRegularExpression(pattern: item.pattern),
+               let comps = dateComponents(regex, in: text, hasYear: item.hasYear) {
+                return validatedDate(comps, hasYear: item.hasYear, calendar: calendar, now: now)
+            }
         }
         return nil
     }
@@ -52,7 +52,8 @@ public enum TransactionDateExtractor {
             return nil
         }
         func captured(_ index: Int) -> Int? {
-            guard match.range(at: index).location != NSNotFound,
+            guard index < match.numberOfRanges,
+                  match.range(at: index).location != NSNotFound,
                   let range = Range(match.range(at: index), in: text),
                   let value = Int(text[range]) else { return nil }
             return value
@@ -73,10 +74,50 @@ public enum TransactionDateExtractor {
             comps.hour = hour
             comps.minute = minute
         }
-        // 与原 App 侧实现保持同一语义：缺省年=今年、缺省时=12 点
-        if comps.year == nil { comps.year = Calendar.current.component(.year, from: .now) }
-        if comps.hour == nil { comps.hour = 12 }
         return comps
+    }
+
+    /// 构造并校验日期。
+    ///
+    /// - 范围校验：月 1–12、日 1–31、时 0–23、分 0–59；
+    /// - **回写比对**：拒绝 `2024-02-31` / `2024-13-45` / `25:99` 这类会被日历静默顺延的非法值
+    ///   （与 `BatchCSVImport.parseDay` 的判据保持一致）；
+    /// - 缺年时按 `now` 所在年补，缺时补 12 点（沿用旧语义）；
+    /// - 月日型结果晚于 `now + 1 天` 时回滚一年。
+    private static func validatedDate(
+        _ comps: DateComponents,
+        hasYear: Bool,
+        calendar: Calendar,
+        now: Date
+    ) -> Date? {
+        var components = comps
+        if components.year == nil { components.year = calendar.component(.year, from: now) }
+        if components.hour == nil { components.hour = 12 }
+
+        guard let year = components.year,
+              let month = components.month,
+              let day = components.day,
+              (1...12).contains(month),
+              (1...31).contains(day) else { return nil }
+        if let hour = components.hour, !(0...23).contains(hour) { return nil }
+        if let minute = components.minute, !(0...59).contains(minute) { return nil }
+
+        guard let date = calendar.date(from: components) else { return nil }
+        let roundTrip = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        guard roundTrip.year == components.year,
+              roundTrip.month == components.month,
+              roundTrip.day == components.day,
+              // minute 在「仅日期」模式下是 nil，不能拿 Optional 与 Int 直接比
+              components.hour == nil || roundTrip.hour == components.hour,
+              components.minute == nil || roundTrip.minute == components.minute else { return nil }
+
+        guard !hasYear else { return date }
+        if date > now.addingTimeInterval(24 * 60 * 60) {
+            var rolledBack = components
+            rolledBack.year = year - 1
+            return calendar.date(from: rolledBack)
+        }
+        return date
     }
 }
 
@@ -130,7 +171,7 @@ public enum ReceiptTextParser {
         let labeledTotal = extractLabeledTotalAmount(from: text)
         let merchant = extractMerchantOrTitle(from: text)
         let category = guessCategoryRaw(merchant: merchant, text: text)
-        let date = TransactionDateExtractor.extract(from: text) ?? now
+        let date = TransactionDateExtractor.extract(from: text, now: now) ?? now
 
         if let explicit = labeledTotal {
             return ReceiptParseResult(

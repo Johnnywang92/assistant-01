@@ -4,11 +4,11 @@ import XCTest
 final class MedicationFoodTimingAdvisorTests: XCTestCase {
 
     func testPostMealPrimeTimeWindow() {
-        // 场景：布洛芬（饭后30分钟），用户在 12:15 记录了午餐，现在 12:35（吃完20分钟）
+        // 场景：布洛芬（饭后30分钟），12:15 午餐 → 最佳 12:45，现在 12:50（已进入黄金窗口）
         let calendar = Calendar.current
         let today = Date()
         let mealTime = calendar.date(bySettingHour: 12, minute: 15, second: 0, of: today)!
-        let now = calendar.date(bySettingHour: 12, minute: 35, second: 0, of: today)!
+        let now = calendar.date(bySettingHour: 12, minute: 50, second: 0, of: today)!
 
         let plan = MedicationPlanSnapshot(
             medName: "布洛芬缓释胶囊",
@@ -30,6 +30,61 @@ final class MedicationFoodTimingAdvisorTests: XCTestCase {
             XCTAssertTrue(eval.actionTip.contains("保护胃黏膜"))
         } else {
             XCTFail("应当命中餐后黄金用药窗口，实际状态为：\(eval.status)")
+        }
+    }
+
+    /// 回归（CORE-04）：刚吃完还没到「饭后 N 分钟」时，必须先提示等待，
+    /// 不能直接说「黄金窗口、建议现在服用」。
+    func testPostMealWaitsUntilBestTime() {
+        let calendar = Calendar.current
+        let today = Date()
+        let mealTime = calendar.date(bySettingHour: 12, minute: 15, second: 0, of: today)!
+        let now = calendar.date(bySettingHour: 12, minute: 35, second: 0, of: today)!
+        let plan = MedicationPlanSnapshot(
+            medName: "布洛芬缓释胶囊",
+            dosage: "1粒",
+            mealRelation: .afterMeal(minutes: 30),
+            dailyTimePoints: ["13:00"]
+        )
+        let meals = [RecentMealSnapshot(date: mealTime, foodName: "红烧牛肉面", calories: 650)]
+
+        let eval = MedicationFoodTimingAdvisor.evaluate(plan: plan, todayMeals: meals, now: now)
+
+        if case .primeTimePostMeal(let recTime, _, _) = eval.status {
+            // 最佳时点 = 餐后 30 分钟 = 12:45
+            XCTAssertEqual(recTime, calendar.date(bySettingHour: 12, minute: 45, second: 0, of: today)!)
+            XCTAssertTrue(eval.headline.contains("等待最佳饭后时机"), "实际文案：\(eval.headline)")
+            XCTAssertFalse(eval.isUrgent)
+            // 调度时间必须与文案一致（旧实现调度 12:25、文案却说「现在服用」）
+            XCTAssertEqual(eval.adaptiveNotificationTime, recTime)
+        } else {
+            XCTFail("刚吃完饭应先提示等待，实际状态：\(eval.status)")
+        }
+    }
+
+    /// 回归（CORE-04）：饭前服药计划遇到「刚进食」要提示冲突，不能让人空腹服药。
+    func testBeforeMealConflictsWithRecentMeal() {
+        let calendar = Calendar.current
+        let today = Date()
+        let mealTime = calendar.date(bySettingHour: 11, minute: 55, second: 0, of: today)!
+        // 计划 12:30 饭前服、提前 30 分钟 → 12:00 进入窗口
+        let now = calendar.date(bySettingHour: 12, minute: 0, second: 0, of: today)!
+        let plan = MedicationPlanSnapshot(
+            medName: "奥美拉唑肠溶胶囊",
+            dosage: "20mg",
+            mealRelation: .beforeMeal(minutes: 30),
+            dailyTimePoints: ["12:30"]
+        )
+        let meals = [RecentMealSnapshot(date: mealTime, foodName: "牛肉面", calories: 600)]
+
+        let eval = MedicationFoodTimingAdvisor.evaluate(plan: plan, todayMeals: meals, now: now)
+
+        if case .waitingForMeal(_, let reason) = eval.status {
+            XCTAssertTrue(reason.contains("进餐"), "实际原因：\(reason)")
+            XCTAssertTrue(eval.headline.contains("冲突"), "实际文案：\(eval.headline)")
+            XCTAssertFalse(eval.actionTip.contains("请空腹温水送服"), "刚进食不应建议空腹服药")
+        } else {
+            XCTFail("饭前计划遇到刚进食应提示冲突，实际状态：\(eval.status)")
         }
     }
 

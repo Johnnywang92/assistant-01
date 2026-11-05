@@ -27,12 +27,52 @@ public enum ExpenseAmountExtractor {
         "人民币": "元", "点": ".", "．": "."
     ]
 
-    /// 语音/OCR 文本归一化：剥千分位逗号、统一口语金额单位与小数点。
+    private static let chineseDigits: [Character: Int] = [
+        "零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+        "五": 5, "六": 6, "七": 7, "八": 8, "九": 9
+    ]
+
+    /// 中文小数金额：「九点五元」「三十八点五元」。
+    ///
+    /// 归一化会把「点」替换成「.」，但所有正则的数字分支只认阿拉伯小数，
+    /// 于是「九点五元」会退化成「九.五元」，被中文整数正则截成 9。
+    /// 所以在替换「点」之前，先把「中文整数点中文小数 + 货币单位」整体转成阿拉伯小数。
+    /// 必须带货币单位前瞻：否则「下午三点半」这类时间表达会被误当成金额。
+    private static let chineseDecimalRegex = try? NSRegularExpression(
+        pattern: "([零〇一二两三四五六七八九十百千万]+)点([零〇一二两三四五六七八九十]+)(?=\\s*(?:元钱|圆|园|人民币|日元|日币|美元|美金|欧元|港币|港元|韩元|泰铢|英镑|新币|新台币|澳元|加元|瑞郎|澳门元|元|块))"
+    )
+
+    /// 把「中文整数点中文小数」的字面量转换成阿拉伯小数（仅限后面跟货币单位时）。
+    private static func convertChineseDecimals(in text: String) -> String {
+        guard let regex = chineseDecimalRegex, !text.isEmpty else { return text }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+        guard !matches.isEmpty else { return text }
+
+        var result = ""
+        var cursor = 0
+        for match in matches {
+            guard let whole = numberValue(nsText.substring(with: match.range(at: 1))),
+                  whole >= 0 else { continue }
+            let fractionText = nsText.substring(with: match.range(at: 2))
+            let fractionDigits = fractionText.compactMap { chineseDigits[$0] }.map(String.init).joined()
+            guard !fractionDigits.isEmpty else { continue }
+            result += nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            result += "\(Int(whole)).\(fractionDigits)"
+            cursor = match.range.location + match.range.length
+        }
+        result += nsText.substring(from: cursor)
+        return result
+    }
+
+    /// 语音/OCR 文本归一化：剥千分位逗号、把中文小数金额数字化、统一口语金额单位与小数点。
     public static func normalize(_ text: String) -> String {
         var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let commaRegex = thousandsCommaRegex {
             value = commaRegex.stringByReplacingMatches(in: value, range: NSRange(value.startIndex..., in: value), withTemplate: "")
         }
+        // 必须在下面「点 → .」替换之前做，否则中文小数会被拆成两段。
+        value = convertChineseDecimals(in: value)
         for (from, to) in replacements {
             value = value.replacingOccurrences(of: from, with: to)
         }
@@ -53,6 +93,12 @@ public enum ExpenseAmountExtractor {
     /// 数字部分支持小数；`(?<![0-9.．])` / `(?![0-9])` 防止从长数字里截取片段。
     private static let spokenAmountRegex = try? NSRegularExpression(
         pattern: "(?<![0-9.．])([0-9]+(?:[.．][0-9]{1,})?|[零〇一二两三四五六七八九十百千万]+)(?![0-9])\\s*(?:日元|日币|日圓|円|美元|美金|美刀|刀|欧元|欧|港币|港元|韩元|韩币|泰铢|铢|英镑|镑|新币|新加坡元|新元|新台币|台币|林吉特|马币|令吉|澳元|澳币|加元|加币|瑞郎|瑞士法郎|澳门元|葡币|元|块|块钱)\\s*([0-9]+(?![0-9])|[零〇一二两三四五六七八九十]+(?![零〇一二两三四五六七八九十]))?\\s*(?:毛|角)?"
+    )
+
+    /// 只有角分的金额：「九毛五」= 0.95、「五毛」= 0.5。
+    /// 必须排在中文整数正则之前，否则「花了九毛五」会先被中文正则截成 9。
+    private static let jiaoAmountRegex = try? NSRegularExpression(
+        pattern: "(?<![0-9.．])([0-9]+|[零〇一二两三四五六七八九十]+)\\s*(?:毛|角)\\s*([0-9]+|[零〇一二两三四五六七八九十]+)?(?![0-9])"
     )
 
     /// 阿拉伯数字金额，按语义优先级排列（越靠前越可信）。
@@ -124,14 +170,10 @@ public enum ExpenseAmountExtractor {
     public static func extractAmount(from text: String) -> Double? {
         let fullRange = NSRange(text.startIndex..., in: text)
 
-        if let regex = chineseAmountRegex,
-           let match = regex.firstMatch(in: text, range: fullRange),
-           let range = Range(match.range(at: 1), in: text),
-           let value = numberValue(String(text[range])), value > 0 {
-            return value
-        }
-
-        // 口语与外币中文金额："二十五块五"、"12块5毛"、"一千五百日元"、"三十美元"
+        // 1. 先跑**带货币单位**的金额（含角分）。
+        //
+        // 顺序不能反：「花了三百二十八块五毛」里中文整数正则会先命中「三百二十八」
+        // 并直接 return 328，后面的「块五毛」永远轮不到 —— 用户少记 0.5 元且无提示。
         if let regex = spokenAmountRegex,
            let match = regex.firstMatch(in: text, range: fullRange),
            let wholeRange = Range(match.range(at: 1), in: text),
@@ -145,7 +187,29 @@ public enum ExpenseAmountExtractor {
             return whole
         }
 
-        // "花了/付了/用去/收入/支出/消费/为/是 38.5" 或外币符号/代码 "$38.5"、"1200日元"
+        // 2. 只有角分：「花了九毛五」= 0.95、「五毛」= 0.5。
+        if let regex = jiaoAmountRegex,
+           let match = regex.firstMatch(in: text, range: fullRange),
+           let jiaoRange = Range(match.range(at: 1), in: text),
+           let jiao = numberValue(String(text[jiaoRange])) {
+            var value = jiao / 10
+            if match.numberOfRanges > 2, match.range(at: 2).location != NSNotFound,
+               let fenRange = Range(match.range(at: 2), in: text),
+               let fen = numberValue(String(text[fenRange])) {
+                value += fen / 100
+            }
+            if value > 0 { return value }
+        }
+
+        // 3. 无单位的纯中文数字：「花了一百二十三」。
+        if let regex = chineseAmountRegex,
+           let match = regex.firstMatch(in: text, range: fullRange),
+           let range = Range(match.range(at: 1), in: text),
+           let value = numberValue(String(text[range])), value > 0 {
+            return value
+        }
+
+        // 4. "花了/付了/用去/收入/支出/消费/为/是 38.5" 或外币符号/代码 "$38.5"、"1200日元"
         for regex in numericAmountRegexes {
             if let match = regex.firstMatch(in: text, range: fullRange),
                match.numberOfRanges > 1,
@@ -158,23 +222,8 @@ public enum ExpenseAmountExtractor {
         return nil
     }
 
-    /// 中文数字转值，支持十/百/千/万。
+    /// 中文数字转值（统一实现见 `ChineseNumeralParser`；保留本入口供 App 侧复用）。
     public static func numberValue(_ value: String) -> Double? {
-        if let arabic = Double(value.replacingOccurrences(of: "．", with: ".")) { return arabic }
-        let digits: [Character: Double] = ["零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9]
-        var total = 0.0
-        var section = 0.0
-        var current = 0.0
-        for char in value {
-            if let digit = digits[char] { current = digit; continue }
-            switch char {
-            case "十": section += (current == 0 ? 1 : current) * 10; current = 0
-            case "百": section += (current == 0 ? 1 : current) * 100; current = 0
-            case "千": section += (current == 0 ? 1 : current) * 1_000; current = 0
-            case "万": total += (section + current) * 10_000; section = 0; current = 0
-            default: return nil
-            }
-        }
-        return total + section + current
+        ChineseNumeralParser.value(value)
     }
 }

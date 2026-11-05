@@ -662,29 +662,10 @@ public enum SkillPathPlanner {
         return (group(1) ?? "", group(2), group(3))
     }
 
-    private static func numericValue(_ token: String?) -> Double? {
+    /// 中文数字转值（统一实现见 `ChineseNumeralParser`；internal 供表驱动单测直接用）。
+    static func numericValue(_ token: String?) -> Double? {
         guard let token else { return nil }
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return nil }
-        if let direct = Double(trimmed) { return direct }
-        if trimmed == "半" { return 0.5 }
-        if trimmed == "两" { return 2 }
-        let digits: [Character: Double] = ["零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9]
-        // 十 / 十X / X十 / X十Y
-        if let ten = trimmed.firstIndex(of: "十") {
-            let before = String(trimmed[trimmed.startIndex..<ten])
-            let after = String(trimmed[trimmed.index(after: ten)...])
-            var value: Double = 10
-            if let b = before.first, let bv = digits[b] { value = bv * 10 }
-            if let a = after.first, let av = digits[a] { value += av }
-            return value
-        }
-        var total: Double = 0
-        for ch in trimmed {
-            guard let v = digits[ch] else { continue }
-            total = total * 10 + v
-        }
-        return total == 0 ? nil : total
+        return ChineseNumeralParser.value(token)
     }
 }
 
