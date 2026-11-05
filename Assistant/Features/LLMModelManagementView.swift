@@ -10,6 +10,8 @@ struct LLMModelManagementView: View {
     @StateObject private var inferenceService = LLMInferenceService.shared
 
     @State private var showFileImporter = false
+    /// 后台拷贝 + SHA-256 校验进行中：禁用重复导入并显示进度。
+    @State private var isImportingModel = false
     @State private var testPrompt: String = "我今天有哪些待取快递？"
     @State private var testResult: String?
     @State private var isTesting = false
@@ -401,6 +403,16 @@ struct LLMModelManagementView: View {
                     } label: {
                         Label("从「文件」App 导入外部 GGUF 文件", systemImage: "folder.badge.plus")
                     }
+                    .disabled(isImportingModel)
+
+                    if isImportingModel {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("正在后台拷贝并校验模型文件（大文件可能需数十秒）…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 if let err = modelManager.errorMessage {
@@ -643,7 +655,17 @@ struct LLMModelManagementView: View {
     private func handleFileImport(result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
-            try modelManager.importModel(from: url)
+            // 导入 = 数 GB 文件拷贝 + 全文件 SHA-256，服务层已整体移到后台 detached；
+            // 这里只等待结果，失败语义保持「errorMessage 显示导入失败」不变。
+            isImportingModel = true
+            Task {
+                defer { isImportingModel = false }
+                do {
+                    try await modelManager.importModel(from: url)
+                } catch {
+                    modelManager.errorMessage = "导入文件失败：\(error.localizedDescription)"
+                }
+            }
         } catch {
             modelManager.errorMessage = "导入文件失败：\(error.localizedDescription)"
         }

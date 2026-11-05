@@ -337,7 +337,7 @@ struct OverdueTriageSheet: View {
             TodoNotificationManager.shared.scheduleNotification(for: item)
         }
 
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
         processedCount += 1
 

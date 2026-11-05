@@ -257,7 +257,7 @@ struct LearnedPlacesView: View {
         for idx in offsets {
             context.delete(places[idx])
         }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         locationService.syncParcelStationGeofences(context: context)
     }
 }
@@ -429,7 +429,7 @@ struct LearnedPlaceDetailView: View {
                         guard !ssid.isEmpty, !place.associatedWiFiSSIDs.contains(ssid) else { return }
                         place.associatedWiFiSSIDs.append(ssid)
                         newWiFiSSID = ""
-                        try? context.save()
+                        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                     }
                     .disabled(newWiFiSSID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
@@ -444,7 +444,7 @@ struct LearnedPlaceDetailView: View {
         }
         .navigationTitle(place.name)
         .onDisappear {
-            try? context.save()
+            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
             LocationReminderService.shared.syncParcelStationGeofences(context: context)
         }
     }
@@ -461,11 +461,14 @@ struct LearnedPlaceDetailView: View {
                    !place.associatedWiFiSSIDs.contains(ssid) {
                     place.associatedWiFiSSIDs.append(ssid)
                 }
-                try? context.save()
-                updateLocationFeedback = LocationReminderService.shared.lastKnownWiFiSSID.map {
-                    "已成功校准坐标，并关联 Wi‑Fi「\($0)」！"
-                } ?? "已成功校准为当前坐标！"
-                Haptic.success()
+                if context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "校准地点坐标") }) {
+                    updateLocationFeedback = LocationReminderService.shared.lastKnownWiFiSSID.map {
+                        "已成功校准坐标，并关联 Wi‑Fi「\($0)」！"
+                    } ?? "已成功校准为当前坐标！"
+                    Haptic.success()
+                } else {
+                    Haptic.error()
+                }
             }
             isUpdatingLocation = false
         }
@@ -480,9 +483,12 @@ struct LearnedPlaceDetailView: View {
                 if !place.associatedWiFiSSIDs.contains(ssid) {
                     place.associatedWiFiSSIDs.append(ssid)
                 }
-                try? context.save()
-                updateLocationFeedback = "已关联当前 Wi-Fi「\(ssid)」"
-                Haptic.success()
+                if context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "关联地点 Wi-Fi") }) {
+                    updateLocationFeedback = "已关联当前 Wi-Fi「\(ssid)」"
+                    Haptic.success()
+                } else {
+                    Haptic.error()
+                }
             } else {
                 updateLocationFeedback = "暂时读取不到 Wi-Fi。当前个人开发团队不支持自动读取 Wi-Fi，请在上方输入框中手动关联网络名称。"
                 Haptic.error()
@@ -589,7 +595,10 @@ struct AddPlaceSheet: View {
                             isUserConfirmed: true
                         )
                         context.insert(place)
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存常用地点") }) else {
+                            Haptic.error()
+                            return
+                        }
                         LocationReminderService.shared.syncParcelStationGeofences(context: context)
                         Haptic.success()
                         dismiss()

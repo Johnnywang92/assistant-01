@@ -1,63 +1,6 @@
 import SwiftData
 import SwiftUI
 
-/// 手动粘贴导入（也用于在没配自动化前测试规则）。
-struct ManualImportView: View {
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
-    @State private var resultText: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextEditor(text: $text)
-                        .frame(minHeight: 160)
-                } header: {
-                    Text("粘贴短信或聊天内容")
-                } footer: {
-                    Text("可以一次粘贴多条短信，用空行分隔。")
-                }
-                if let resultText {
-                    Section("结果") { Text(resultText) }
-                }
-            }
-            .navigationTitle("导入")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("导入") { runImport() }
-                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    Button("从剪贴板粘贴", systemImage: "doc.on.clipboard") {
-                        text = UIPasteboard.general.string ?? ""
-                    }
-                }
-            }
-        }
-    }
-
-    private func runImport() {
-        let service = ImportService(context: context)
-        let chunks = text.components(separatedBy: "\n\n").filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        var lines: [String] = []
-        for chunk in chunks {
-            do {
-                lines.append(try service.ingest(chunk, source: "manual").summary)
-            } catch {
-                lines.append("失败：\(error.localizedDescription)")
-            }
-        }
-        resultText = lines.joined(separator: "\n")
-        text = ""
-    }
-}
-
 /// 简洁美观的 iOS 原生风格圆角方形设置图标
 struct SettingsIconBadge: View {
     let icon: String
@@ -703,5 +646,3 @@ struct AppLanguageSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 }
-
-

@@ -14,12 +14,16 @@ struct DataMigrationView: View {
     @State private var exportFileName: String = "Assistant_Migration.json"
     @State private var exportTempURL: URL?
     @State private var exportSuccessNotice: String?
+    /// 正在后台生成加密备份：期间禁用重复点击，并在导出区显示进度。
+    @State private var isExporting = false
 
     // 导入与 PIN 码解锁状态
     @State private var showFileImporter = false
     @State private var showUnlockPinSheet = false
     @State private var pendingEnvelope: EncryptedBackupEnvelope?
     @State private var unlockErrorMessage: String?
+    @State private var isUnlockingBackup = false
+    @State private var isParsingImportFile = false
     @State private var pendingPackage: BackupPackage?
     @State private var inspectionSummary: BackupInspectionSummary?
     @State private var selectedStrategy: RestoreStrategy = .merge
@@ -93,6 +97,18 @@ struct DataMigrationView: View {
                     Label("设置 PIN 码并生成迁移备份", systemImage: "lock.shield.fill")
                         .font(.body.weight(.medium))
                 }
+                .disabled(isExporting)
+
+                if isExporting {
+                    // 大库导出（全表读 + 附件读盘 + 加密）在后台分片执行，主线程只显示这一行。
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("正在生成加密备份…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
 
                 if let exportSuccessNotice {
                     HStack(alignment: .top, spacing: 8) {
@@ -156,6 +172,17 @@ struct DataMigrationView: View {
                     showFileImporter = true
                 } label: {
                     Label("选择备份文件 (.json)", systemImage: "square.and.arrow.down.fill")
+                }
+                .disabled(isParsingImportFile || isRestoring)
+
+                if isParsingImportFile {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("正在校验备份文件…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
                 }
 
                 if let summary = inspectionSummary, let package = pendingPackage {
@@ -342,7 +369,8 @@ struct DataMigrationView: View {
                     onUnlock: { pin in
                         handleUnlockBackup(envelope: envelope, pin: pin)
                     },
-                    errorMessage: unlockErrorMessage
+                    errorMessage: unlockErrorMessage,
+                    isUnlocking: isUnlockingBackup
                 )
             }
         }
@@ -402,22 +430,43 @@ struct DataMigrationView: View {
     // MARK: - 加密备份生成
 
     private func handleExportEncryptedBackup(pin: String, hint: String?) {
+        guard !isExporting else { return }
         guard let service = migrationService ?? DataMigrationService(context: context) as DataMigrationService? else { return }
-        do {
-            let (data, filename) = try service.exportEncryptedArchive(pin: pin, hint: hint)
-            self.exportedData = data
-            self.exportFileName = filename
-
-            let tempDir = FileManager.default.temporaryDirectory
-            let fileURL = tempDir.appendingPathComponent(filename)
-            try data.write(to: fileURL)
-            self.exportTempURL = fileURL
-            self.exportSuccessNotice = "加密备份生成成功！"
-            Haptic.success()
-        } catch {
-            self.exportSuccessNotice = "生成失败: \(error.localizedDescription)"
-            Haptic.error()
+        isExporting = true
+        exportSuccessNotice = nil
+        // 重活（编码/PBKDF2/AES-GCM）在服务层的 detached 任务里跑；这里只负责状态与
+        // 临时文件生命周期：失败/取消都清掉上一份临时备份，避免临时目录里堆敏感数据。
+        Task {
+            defer { isExporting = false }
+            do {
+                let (data, filename) = try await service.exportEncryptedArchive(pin: pin, hint: hint)
+                removeExportTempFile()
+                let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+                try data.write(to: fileURL, options: .atomic)
+                self.exportedData = data
+                self.exportFileName = filename
+                self.exportTempURL = fileURL
+                self.exportSuccessNotice = "加密备份生成成功！"
+                Haptic.success()
+            } catch is CancellationError {
+                removeExportTempFile()
+                self.exportSuccessNotice = "已取消生成。"
+                Haptic.warning()
+            } catch {
+                removeExportTempFile()
+                self.exportSuccessNotice = "生成失败: \(error.localizedDescription)"
+                Haptic.error()
+            }
         }
+    }
+
+    /// 清理上一次导出的临时文件（含敏感明文密文，留在临时目录没有必要）。
+    private func removeExportTempFile() {
+        if let url = exportTempURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        exportTempURL = nil
+        exportedData = nil
     }
 
     // MARK: - 导入文件解析与解锁
@@ -428,26 +477,42 @@ struct DataMigrationView: View {
             guard selectedURL.startAccessingSecurityScopedResource() else {
                 throw CocoaError(.fileReadNoPermission)
             }
-            defer { selectedURL.stopAccessingSecurityScopedResource() }
-
-            let data = try Data(contentsOf: selectedURL)
             let service = migrationService ?? DataMigrationService(context: context)
-            let inspection = try service.inspectBackupFile(from: data)
+            // 读文件 + JSON 解析都放到后台：几百 MB 的备份包在主线程 `Data(contentsOf:)`
+            // 加整包 decode 会直接卡死首屏。
+            // 安全作用域资源必须**读到文件之后再释放**，所以把 stopAccessing 放进 Task 的 defer，
+            // 不能在 handleFileImport 返回时同步释放（那样后台读取会拿到无权限错误）。
+            isParsingImportFile = true
+            Task {
+                defer {
+                    selectedURL.stopAccessingSecurityScopedResource()
+                    isParsingImportFile = false
+                }
+                do {
+                    let data = try await Task.detached(priority: .utility) {
+                        try Data(contentsOf: selectedURL)
+                    }.value
+                    let inspection = try await service.inspectBackupFileAsync(from: data)
 
-            switch inspection {
-            case .encrypted(let envelope):
-                self.pendingEnvelope = envelope
-                self.unlockErrorMessage = nil
-                self.pendingPackage = nil
-                self.inspectionSummary = nil
-                self.restoreResultText = nil
-                self.showUnlockPinSheet = true
-                Haptic.impact(style: .medium)
-            case .legacyPlaintext(let package, let summary):
-                self.pendingPackage = package
-                self.inspectionSummary = summary
-                self.restoreResultText = nil
-                Haptic.success()
+                    switch inspection {
+                    case .encrypted(let envelope):
+                        self.pendingEnvelope = envelope
+                        self.unlockErrorMessage = nil
+                        self.pendingPackage = nil
+                        self.inspectionSummary = nil
+                        self.restoreResultText = nil
+                        self.showUnlockPinSheet = true
+                        Haptic.impact(style: .medium)
+                    case .legacyPlaintext(let package, let summary):
+                        self.pendingPackage = package
+                        self.inspectionSummary = summary
+                        self.restoreResultText = nil
+                        Haptic.success()
+                    }
+                } catch {
+                    self.restoreResultText = "解析备份文件失败：\(error.localizedDescription)"
+                    Haptic.error()
+                }
             }
         } catch {
             self.restoreResultText = "解析备份文件失败：\(error.localizedDescription)"
@@ -457,34 +522,44 @@ struct DataMigrationView: View {
 
     private func handleUnlockBackup(envelope: EncryptedBackupEnvelope, pin: String) {
         guard let service = migrationService ?? DataMigrationService(context: context) as DataMigrationService? else { return }
-        do {
-            let (package, summary) = try service.unlockEncryptedArchive(envelope: envelope, pin: pin)
-            self.pendingPackage = package
-            self.inspectionSummary = summary
-            self.restoreResultText = nil
-            self.showUnlockPinSheet = false
-            self.unlockErrorMessage = nil
-            Haptic.success()
-        } catch {
-            self.unlockErrorMessage = error.localizedDescription
-            Haptic.error()
+        // PBKDF2 310k 轮 + AES-GCM + 整包 JSON decode 都在后台；期间显示解锁进度并防重复提交。
+        isUnlockingBackup = true
+        Task {
+            defer { isUnlockingBackup = false }
+            do {
+                let (package, summary) = try await service.unlockEncryptedArchiveAsync(envelope: envelope, pin: pin)
+                self.pendingPackage = package
+                self.inspectionSummary = summary
+                self.restoreResultText = nil
+                self.showUnlockPinSheet = false
+                self.unlockErrorMessage = nil
+                Haptic.success()
+            } catch {
+                self.unlockErrorMessage = error.localizedDescription
+                Haptic.error()
+            }
         }
     }
 
     private func performRestore(package: BackupPackage) {
+        guard !isRestoring else { return }
         guard let service = migrationService ?? DataMigrationService(context: context) as DataMigrationService? else { return }
         isRestoring = true
-        do {
-            let result = try service.restore(from: package, strategy: selectedStrategy)
-            isRestoring = false
-            self.restoreResultText = "✅ 还原完成！共恢复/合并 \(result.restoredCount) 条记录。\n" + result.details.joined(separator: "，")
-            self.pendingPackage = nil
-            self.inspectionSummary = nil
-            Haptic.success()
-        } catch {
-            isRestoring = false
-            self.restoreResultText = "❌ 还原失败: \(error.localizedDescription)"
-            Haptic.error()
+        restoreResultText = nil
+        // 还原的删除/插入仍必须在主 actor（ModelContext 非 Sendable），但服务层现在
+        // 每个实体域 / 大表每 N 条记录都会 Task.yield()，UI 能持续渲染进度而不是整段冻结。
+        Task {
+            defer { isRestoring = false }
+            do {
+                let result = try await service.restore(from: package, strategy: selectedStrategy)
+                self.restoreResultText = "✅ 还原完成！共恢复/合并 \(result.restoredCount) 条记录。\n" + result.details.joined(separator: "，")
+                self.pendingPackage = nil
+                self.inspectionSummary = nil
+                Haptic.success()
+            } catch {
+                self.restoreResultText = "❌ 还原失败: \(error.localizedDescription)"
+                Haptic.error()
+            }
         }
     }
 
@@ -626,6 +701,8 @@ struct UnlockBackupPinSheet: View {
     let envelope: EncryptedBackupEnvelope
     let onUnlock: (String) -> Void
     var errorMessage: String?
+    /// 后台 PBKDF2/解密进行中：禁用重复提交并显示进度。
+    var isUnlocking: Bool = false
 
     @State private var pin: String = ""
 
@@ -690,13 +767,17 @@ struct UnlockBackupPinSheet: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("解锁并读取") {
-                        let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !cleanPin.isEmpty else { return }
-                        onUnlock(cleanPin)
+                    if isUnlocking {
+                        ProgressView()
+                    } else {
+                        Button("解锁并读取") {
+                            let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !cleanPin.isEmpty else { return }
+                            onUnlock(cleanPin)
+                        }
+                        .bold()
+                        .disabled(pin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    .bold()
-                    .disabled(pin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }

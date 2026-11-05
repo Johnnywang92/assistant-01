@@ -43,7 +43,7 @@ struct MemoCapabilityProvider: CapabilityProvider {
                 source: .manual
             )
             context.insert(foodRecord)
-            try? context.save()
+            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
             foodRecordID = foodRecord.id
             foodRecordSummary = " · 已录入饮食：\(estimate.displayName)（约 \(Int(estimate.fullPortionCalories))千卡）"
         }

@@ -497,6 +497,9 @@ struct TravelTicketConfirmationSheet: View {
             for: ticketInfo,
             context: context
         )
+        // 保存失败时服务层返回 0 并已弹出失败横幅；留在本页让用户重试，
+        // 不要播成功触感、不要回调「已添加」、也不要 dismiss。
+        guard count > 0 else { return }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         onConfirm?(count)
         dismiss()

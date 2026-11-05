@@ -129,7 +129,7 @@ struct VoiceMemoListView: View {
         .swipeActions(edge: .leading) {
             Button {
                 memo.isBookmarked.toggle()
-                try? context.save()
+                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                 Haptic.light()
             } label: {
                 Label(memo.isBookmarked ? "取消星标" : "星标", systemImage: memo.isBookmarked ? "star.slash" : "star.fill")
@@ -342,7 +342,10 @@ struct VoiceMemoRecorderSheet: View {
         }
         let memo = VoiceMemo(title: VoiceMemo.defaultTitle(), duration: result.duration, audioFileName: result.fileName, tag: tag)
         context.insert(memo)
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存语音备忘") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         if autoTranscribe {
             VoiceMemoActions.transcribeInBackground(memo, context: context)
@@ -391,7 +394,7 @@ enum VoiceMemoActions {
             VoiceMemoImageStorage.delete(name)
         }
         context.delete(memo)
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
     }
 
     /// 后台离线转写，完成后写回转写文本、要点与标题
@@ -400,7 +403,7 @@ enum VoiceMemoActions {
             do {
                 let text = try await VoiceMemoAudioService.shared.transcribe(memo: memo)
                 apply(transcription: text, to: memo)
-                try? context.save()
+                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                 if text.isEmpty { onError?("未识别到有效语音内容") }
             } catch {
                 onError?(error.localizedDescription)

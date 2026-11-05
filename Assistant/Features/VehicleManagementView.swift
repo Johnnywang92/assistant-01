@@ -91,7 +91,10 @@ struct VehicleManagementView: View {
         for idx in offsets {
             context.delete(vehicles[idx])
         }
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除爱车档案") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.warning()
     }
 }
@@ -456,7 +459,10 @@ private struct AddVehicleSheet: View {
             notes: notes.trimmingCharacters(in: .whitespaces).isEmpty ? nil : notes
         )
         context.insert(vehicle)
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加爱车档案") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         dismiss()
     }
@@ -532,7 +538,10 @@ private struct EditVehicleSheet: View {
                     Button("完成") {
                         vehicle.insuranceExpiryDate = hasInsuranceExpiry ? insuranceExpiryDate : nil
                         vehicle.annualInspectionDate = hasAnnualInspection ? annualInspectionDate : nil
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存爱车信息") }) else {
+                            Haptic.error()
+                            return
+                        }
                         Haptic.success()
                         dismiss()
                     }
@@ -629,7 +638,10 @@ private struct QuickVehicleExpenseSheet: View {
             vehicle.completeMaintenance()
         }
 
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存车务记账") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         dismiss()
     }

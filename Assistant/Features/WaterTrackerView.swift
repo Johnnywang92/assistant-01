@@ -496,7 +496,7 @@ public struct WaterTrackerView: View {
         )
         let wasAchievedBefore = summary.effectiveHydrationML >= dailyGoalML
         context.insert(record)
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
 
         let isNowAchieved = (summary.effectiveHydrationML + record.effectiveHydrationML) >= dailyGoalML
         let firstAchieved = !wasAchievedBefore && isNowAchieved
@@ -514,7 +514,7 @@ public struct WaterTrackerView: View {
             if success {
                 await MainActor.run {
                     record.syncedToHealthKit = true
-                    try? context.save()
+                    context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "标记健康同步状态") }
                 }
             }
         }
@@ -524,7 +524,10 @@ public struct WaterTrackerView: View {
 
     private func deleteRecord(_ record: WaterIntakeRecord) {
         context.delete(record)
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除饮水记录") }) else {
+            Haptic.error()
+            return
+        }
         showToast("已删除记录")
     }
 
@@ -649,7 +652,7 @@ struct AddCustomWaterSheet: View {
             note: note.isEmpty ? nil : note
         )
         context.insert(record)
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
 
         Task {
             _ = await HealthKitService.shared.recordWaterIntake(amountML: record.effectiveHydrationML, date: record.date)

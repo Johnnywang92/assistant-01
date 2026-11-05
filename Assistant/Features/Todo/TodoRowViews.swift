@@ -69,7 +69,12 @@ struct TodoRow: View {
                             ringScale = 0.5
                             ringOpacity = 0.0
                         }
-                        try? context.save()
+                        // 完成待办是唯一事实源：落库失败时 rollback 会把状态退回未完成，
+                        // 必须让用户知道（否则重启后「已完成」又变回待办）。
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "完成待办") }) else {
+                            Haptic.error()
+                            return
+                        }
                         // 同步桌面/锁屏组件快照（含技能练习的「今日已打卡」状态）
                         WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
                     }
@@ -82,7 +87,7 @@ struct TodoRow: View {
                         isAnimatingCompletion = false
                     }
                     LifeEventTodoLink.syncTask(for: item, in: context)
-                    try? context.save()
+                    context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "恢复待办") }
                 }
             } label: {
                 ZStack {
@@ -519,7 +524,7 @@ struct TodoRow: View {
                 Haptic.warning()
                 item.cleanupExternalIntegrations()
                 context.delete(item)
-                try? context.save()
+                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "删除待办") }
             } label: { Label("删除", systemImage: "trash") }
         }
         .themedRow()
@@ -599,12 +604,12 @@ struct ReviewRow: View {
             HStack {
                 Button("加入待办") {
                     item.status = .active
-                    try? context.save()
+                    context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "加入待办") }
                 }
                 .buttonStyle(.borderedProminent)
                 Button("忽略", role: .destructive) {
                     context.delete(item)
-                    try? context.save()
+                    context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "忽略待办") }
                 }
                 .buttonStyle(.bordered)
             }

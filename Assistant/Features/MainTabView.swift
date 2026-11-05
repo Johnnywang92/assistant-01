@@ -200,6 +200,11 @@ struct MainTabView: View {
         } message: {
             Text(L10n.tr("可能未获授权。可打开投喂口，用「一键粘贴」手动带入"))
         }
+        // 全局落库失败提示：任何页面 save 失败都在这里给一条可见反馈，
+        // 避免「UI 播成功、数据没落库」的静默失败（审计报告 UI-01）。
+        .overlay(alignment: .top) {
+            SaveFailureBanner()
+        }
     }
 
     // MARK: - 剪贴板投喂（检测 → 引导 → 自动分流）

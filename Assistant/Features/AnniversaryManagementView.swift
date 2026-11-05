@@ -48,7 +48,7 @@ struct AnniversaryManagementView: View {
         for idx in offsets {
             context.delete(anniversaries[idx])
         }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
     }
 }
 
@@ -146,7 +146,10 @@ struct AddAnniversarySheet: View {
                             notes: notes.isEmpty ? nil : notes
                         )
                         context.insert(item)
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加纪念日") }) else {
+                            Haptic.error()
+                            return
+                        }
                         dismiss()
                     }
                     .disabled(title.isEmpty)

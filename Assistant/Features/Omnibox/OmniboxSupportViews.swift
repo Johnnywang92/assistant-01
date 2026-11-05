@@ -118,7 +118,7 @@ struct OmniboxHistoryView: View {
                             for index in offsets {
                                 context.delete(transactions[index])
                             }
-                            try? context.save()
+                            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                         }
                     }
                 }
@@ -204,7 +204,7 @@ struct OmniboxHistoryView: View {
             try OmniboxExecutor.undoTokens(tokens, context: context)
             transaction.status = .undone
             transaction.undoJSON = nil
-            try? context.save()
+            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
             WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
         } catch {
             undoError = error.localizedDescription

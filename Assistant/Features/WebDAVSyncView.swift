@@ -504,9 +504,9 @@ struct WebDAVSyncView: View {
                 switch inspection {
                 case .encrypted(let envelope):
                     let unlocked = try migrationService.unlockEncryptedArchive(envelope: envelope, pin: restorePinInput)
-                    _ = try migrationService.restore(from: unlocked.package, strategy: strategy)
+                    _ = try await migrationService.restore(from: unlocked.package, strategy: strategy)
                 case .legacyPlaintext(let package, _):
-                    _ = try migrationService.restore(from: package, strategy: strategy)
+                    _ = try await migrationService.restore(from: package, strategy: strategy)
                 }
 
                 selectedItemForRestore = nil

@@ -72,11 +72,18 @@ struct ReminderCenterView: View {
         let action = LifeReminderActionStore.action(kind: kind, sourceID: sourceID, occurrenceDate: date, in: context)
         return LifeReminder(kind: kind, sourceID: sourceID, occurrenceDate: date, id: "\(kind.rawValue)-\(sourceID.uuidString)-\(date.timeIntervalSince1970)", title: title, date: date, detail: detail, icon: icon, snoozedUntil: action?.snoozedUntil, isCompleted: action?.isCompleted ?? false, onComplete: {
             if kind == .habit, let habit = habits.first(where: { $0.id == sourceID }) { habit.completeOnce() }
-            LifeReminderActionStore.complete(kind: kind, sourceID: sourceID, occurrenceDate: date, in: context)
+            // 返回 false = 落库失败（已回滚 + 全局失败横幅），不能播成功触感/推进 revision。
+            guard LifeReminderActionStore.complete(kind: kind, sourceID: sourceID, occurrenceDate: date, in: context) else {
+                Haptic.error()
+                return
+            }
             actionRevision += 1
             Haptic.success()
         }, onSnooze: {
-            LifeReminderActionStore.snooze(kind: kind, sourceID: sourceID, occurrenceDate: date, in: context)
+            guard LifeReminderActionStore.snooze(kind: kind, sourceID: sourceID, occurrenceDate: date, in: context) else {
+                Haptic.error()
+                return
+            }
             actionRevision += 1
             Haptic.light()
         })
@@ -113,14 +120,17 @@ struct ReminderCenterView: View {
 
     private func complete(_ item: TodoItem) {
         item.markAsCompleted(in: context)
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "完成提醒") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
     }
 
     private func snooze(_ item: TodoItem, interval: TimeInterval) {
         item.reminderOverrideAt = Date.now.addingTimeInterval(interval)
         TodoNotificationManager.shared.scheduleNotification(for: item)
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         Haptic.light()
     }
 }

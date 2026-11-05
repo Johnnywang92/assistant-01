@@ -523,7 +523,10 @@ struct DepartureChecklistView: View {
             isChecked: false
         )
         context.insert(item)
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加出门清单条目") }) else {
+            Haptic.error()
+            return
+        }
         pendingDepartureRefresh = true
         Haptic.success()
     }
@@ -667,7 +670,10 @@ struct DepartureChecklistView: View {
         checkedShou = false
         checkedYao = false
         checkedEr = false
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "重置出门清单") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         guard !clearedIDs.isEmpty else { return }
         // 同步到锁屏/灵动岛/Mac 镜像的实时活动，否则卡片继续显示全部已勾；
@@ -687,7 +693,7 @@ struct DepartureChecklistView: View {
         for item in items {
             context.delete(item)
         }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         Task { await refreshDepartureActivity(with: remaining) }
     }
 
@@ -727,7 +733,7 @@ struct DepartureChecklistView: View {
             )
             context.insert(item)
         }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
     }
 }
 
@@ -956,7 +962,10 @@ struct AddDepartureCheckItemSheet: View {
                 isChecked: false
             ))
         }
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存出门清单条目") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         onChanged()
         dismiss()

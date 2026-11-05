@@ -239,7 +239,7 @@ struct CompletedTodoHistoryView: View {
         for index in offsets {
             context.delete(items[index])
         }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         Haptic.light()
     }
 
@@ -247,7 +247,10 @@ struct CompletedTodoHistoryView: View {
         for item in doneTodos {
             context.delete(item)
         }
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "清空已完成待办") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.warning()
     }
 }
@@ -268,7 +271,7 @@ struct CompletedHistoryRow: View {
                     item.status = .active
                 }
                 LifeEventTodoLink.syncTask(for: item, in: context)
-                try? context.save()
+                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
             } label: {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.title3)
@@ -355,7 +358,7 @@ struct CompletedHistoryRow: View {
                     item.status = .active
                 }
                 LifeEventTodoLink.syncTask(for: item, in: context)
-                try? context.save()
+                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
             } label: {
                 Text("恢复")
                     .font(.caption2.bold())

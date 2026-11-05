@@ -210,7 +210,7 @@ struct LifeEventTaskPlanningView: View {
                     get: { task.isDone },
                     set: { newValue in
                         task.statusRaw = newValue ? "done" : "active"
-                        try? context.save()
+                        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                         Haptic.light()
                     }
                 )) {
@@ -375,7 +375,7 @@ struct LifeEventTaskPlanningView: View {
                 task.aiDecisionSummary = nil
                 task.aiActionItemsJSON = nil
                 task.aiConsultedAt = nil
-                try? context.save()
+                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                 Haptic.light()
             } label: {
                 Label("清除决策记录", systemImage: "trash")
@@ -391,7 +391,7 @@ struct LifeEventTaskPlanningView: View {
         let encoded = LifeEventTaskPlanningEngine.encodeAnswers(answers)
         if task.answersJSON != encoded {
             task.answersJSON = encoded
-            try? context.save()
+            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         }
     }
 
@@ -460,7 +460,10 @@ struct LifeEventTaskPlanningView: View {
         }
         task.aiDecisionSummary = aiReplyText.trimmingCharacters(in: .whitespacesAndNewlines)
         task.aiConsultedAt = .now
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "导入 AI 待办") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         copiedHint = mirrorToHome
             ? "已导入 \(selected.count) 条待办到「\(stageTitle)」，并同步到首页待办"
@@ -677,7 +680,10 @@ struct LifeEventAIDecisionImportView: View {
         }
         project.aiDecisionSummary = aiReplyText.trimmingCharacters(in: .whitespacesAndNewlines)
         project.aiDecisionAt = .now
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "导入 AI 待办") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         dismiss()
     }

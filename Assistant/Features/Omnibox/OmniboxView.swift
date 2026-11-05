@@ -676,7 +676,7 @@ struct OmniboxView: View {
         )
         let stored = OmniboxJudgmentFeedback(record)
         context.insert(stored)
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         feedbackRecorded = true
         lastDownFeedback = verdict == .down ? stored : nil
         feedbackHint = verdict == .down
@@ -691,7 +691,7 @@ struct OmniboxView: View {
         guard let down = lastDownFeedback, down.correctedLabelRaw == nil,
               label.rawValue != down.labelRaw else { return }
         down.correctedLabelRaw = label.rawValue
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
     }
 
     /// 按 ID 安全索引动作 Binding：避免 `actions` 清空或重算过渡帧中，
@@ -1579,7 +1579,7 @@ struct OmniboxView: View {
             // P0-2：拆解失败的投喂也要留痕（planned 状态事务），历史页可追溯原文
             let trace = OmniboxTransaction(capture: capture, actions: [], engine: plan.engine)
             context.insert(trace)
-            try? context.save()
+            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
             // 纯图片但 OCR 与食物视觉识别均无结果时给出针对性提示
             let hasImages = !images.isEmpty
             errorMessage = (hasImages && plan.normalizedText.isEmpty)
@@ -1623,7 +1623,7 @@ struct OmniboxView: View {
         // 撤销令牌持久化：跨启动后仍可在历史页撤销
         transaction.undoJSON = try? JSONEncoder().encode(executed.filter(\.succeeded).map(\.undo))
         context.insert(transaction)
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         lastTransaction = transaction
 
         WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
@@ -1637,7 +1637,7 @@ struct OmniboxView: View {
         do {
             try OmniboxExecutor.undo(outcomes, context: context)
             lastTransaction?.status = .undone
-            try? context.save()
+            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
             WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
             resetForNextFeed()
         } catch {
@@ -1718,7 +1718,10 @@ struct OmniboxView: View {
             linked += 1
         }
 
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "关联待办到人生大事") }) else {
+            Haptic.error()
+            return
+        }
         WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
         Haptic.success()
         archiveHint = "已关联 \(linked) 条待办到「\(project.title)」"

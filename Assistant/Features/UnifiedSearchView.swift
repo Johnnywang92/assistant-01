@@ -116,7 +116,8 @@ struct UnifiedSearchView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        Task { await searchIndex.rebuildIndex(context: context) }
+                        // 手动刷新 = 强制重建；打开搜索的 `.task` 走「数据未变则跳过」的增量路径。
+                        Task { await searchIndex.rebuildIndex(context: context, force: true) }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }

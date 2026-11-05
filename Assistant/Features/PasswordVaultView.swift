@@ -123,7 +123,7 @@ struct PasswordVaultView: View {
 
     private func deleteItems(at offsets: IndexSet) {
         for idx in offsets { context.delete(passwords[idx]) }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
     }
 }
 
@@ -208,7 +208,7 @@ struct PasswordVaultRow: View {
                 Spacer()
                 Button("重置更新日期") {
                     item.lastRotatedAt = .now
-                    try? context.save()
+                    context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                 }
                 .font(.caption2)
                 .buttonStyle(.borderless)

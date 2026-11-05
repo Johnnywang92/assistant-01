@@ -749,6 +749,13 @@ struct VoiceDialogueView: View {
 
     private func handleSavePlan(messageId: UUID, plan: TaskPlanningPlan) {
         let count = TaskPlanningEngine.shared.savePlanToTodos(plan: plan, context: context)
+        // 服务层保存失败会返回 0（并已回滚 + 弹出全局失败横幅）。
+        // 这里不能继续报「已成功保存」——那正是审计里「UI 说成功、数据没落库」的原型。
+        guard count > 0 else {
+            appendAssistantMessage("保存失败：任务没能写入待办列表，请稍后再试一次。")
+            if !isMuted { voice.speak(text: "保存失败，请稍后再试。") }
+            return
+        }
         if let idx = dialogueHistory.firstIndex(where: { $0.id == messageId }) {
             var updated = dialogueHistory[idx]
             if var p = updated.planningPlan {
@@ -770,6 +777,12 @@ struct VoiceDialogueView: View {
 
     private func handleSaveSkillPlan(messageId: UUID, draft: SkillPathDraft) {
         let path = SkillPathManager.shared.save(draft: draft, context: context)
+        // save 的签名保持不变（非可选），失败原因走 lastSaveFailureMessage。
+        if let failure = SkillPathManager.shared.lastSaveFailureMessage {
+            appendAssistantMessage(failure)
+            if !isMuted { voice.speak(text: failure) }
+            return
+        }
         // 新路径立即进入桌面/锁屏「今日练习」快照
         WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
         if let idx = dialogueHistory.firstIndex(where: { $0.id == messageId }) {

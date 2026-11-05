@@ -232,7 +232,10 @@ struct SkillPathDetailView: View {
                             Button {
                                 if item.status != .done {
                                     item.markAsCompleted(in: context)
-                                    try? context.save()
+                                    guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "完成练习") }) else {
+                                        Haptic.error()
+                                        return
+                                    }
                                     SkillPathManager.shared.refresh(path: path, context: context)
                                     // 同步桌面/锁屏「今日练习」快照：打卡后立刻反映「今日已打卡」与连续天数
                                     WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
@@ -383,6 +386,12 @@ struct SkillPathCreateSheet: View {
             weeks: weeks
         )
         SkillPathManager.shared.save(draft: draft, context: context)
+        // save 的签名保持不变（非可选），失败原因走 lastSaveFailureMessage：
+        // 失败时留在本页让用户重试，不要刷新组件快照、也不要 dismiss。
+        if SkillPathManager.shared.lastSaveFailureMessage != nil {
+            Haptic.error()
+            return
+        }
         // 新路径立即进入桌面/锁屏「今日练习」快照
         WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
         dismiss()

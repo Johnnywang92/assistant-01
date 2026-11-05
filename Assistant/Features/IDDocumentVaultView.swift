@@ -178,7 +178,7 @@ struct IDDocumentVaultView: View {
             IDPhotoStorage.deleteImage(fileName: doc.backImageFileName)
             context.delete(doc)
         }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
     }
 }
 
@@ -929,7 +929,10 @@ struct AddIDDocumentSheet: View {
             context.insert(newDoc)
         }
 
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存证件") }) else {
+            Haptic.error()
+            return
+        }
         dismiss()
     }
 }

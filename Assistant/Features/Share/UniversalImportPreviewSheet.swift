@@ -481,6 +481,10 @@ struct UniversalImportPreviewSheet: View {
         isProcessing = true
 
         Task { @MainActor in
+            // 通知/实时活动统一在落库成功后触发（见下方 save 之后），避免指向不存在对象的提醒
+            var todosToSchedule: [TodoItem] = []
+            var pickupTodos: [TodoItem] = []
+
             switch envelope.type {
             case .todos:
                 if let items = envelope.todos {
@@ -505,7 +509,7 @@ struct UniversalImportPreviewSheet: View {
                         )
                         orderCounter -= 1
                         context.insert(newTodo)
-                        TodoNotificationManager.shared.scheduleNotification(for: newTodo)
+                        todosToSchedule.append(newTodo)
                     }
                 }
 
@@ -539,8 +543,8 @@ struct UniversalImportPreviewSheet: View {
                         sortOrder: minOrder - 1
                     )
                     context.insert(parcelTodo)
-                    TodoNotificationManager.shared.scheduleNotification(for: parcelTodo)
-                    _ = LiveActivityService.startPickupActivity(for: [parcelTodo])
+                    todosToSchedule.append(parcelTodo)
+                    pickupTodos.append(parcelTodo)
                 }
 
             case .emotionPulse:
@@ -559,7 +563,17 @@ struct UniversalImportPreviewSheet: View {
                 }
             }
 
-            try? context.save()
+            guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "导入分享内容") }) else {
+                Haptic.error()
+                isProcessing = false
+                return
+            }
+            for todo in todosToSchedule {
+                TodoNotificationManager.shared.scheduleNotification(for: todo)
+            }
+            if !pickupTodos.isEmpty {
+                _ = LiveActivityService.startPickupActivity(for: pickupTodos)
+            }
             WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
             Haptic.success()
             isProcessing = false

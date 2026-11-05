@@ -406,8 +406,12 @@ struct QRCodeScannerView: View {
                             attachmentImageData: result.attachmentImageData
                         )
                         context.insert(item)
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "导入扫码待办") }) else {
+                            Haptic.error()
+                            return
+                        }
+                        // 通知只在落库成功后排队，避免指向不存在对象的提醒
                         TodoNotificationManager.shared.scheduleNotification(for: item)
-                        try? context.save()
                         Haptic.success()
                         dismiss()
                     }

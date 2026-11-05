@@ -252,7 +252,7 @@ struct PetRecordsView: View {
 
     private func deleteRecord(_ record: PetRecord) {
         context.delete(record)
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         Haptic.light()
     }
 }
@@ -391,7 +391,10 @@ struct AddPetRecordSheet: View {
             pet.weightKg = w
         }
 
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加宠物记录") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         dismiss()
     }

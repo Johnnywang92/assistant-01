@@ -210,6 +210,9 @@ struct TodoImportPreviewSheet: View {
 
         let itemsToImport = selectedItemIndices.sorted().map { payload.items[$0] }
 
+        // 统一在落库成功后再排通知，避免 save 失败时留下指向不存在对象的提醒
+        var importedItems: [TodoItem] = []
+
         for dto in itemsToImport {
             let todoType = TodoType(rawValue: dto.ty) ?? .general
             let dueDate = dto.due != nil ? Date(timeIntervalSince1970: dto.due!) : nil
@@ -226,10 +229,17 @@ struct TodoImportPreviewSheet: View {
                 dueAt: dueDate
             )
             context.insert(item)
-            TodoNotificationManager.shared.scheduleNotification(for: item)
+            importedItems.append(item)
         }
 
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "导入待办") }) else {
+            Haptic.error()
+            isImporting = false
+            return
+        }
+        for item in importedItems {
+            TodoNotificationManager.shared.scheduleNotification(for: item)
+        }
         Haptic.success()
         isImporting = false
 

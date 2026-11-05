@@ -45,7 +45,7 @@ struct LifeEventManagementView: View {
                                     }
                                     Button(role: .destructive) {
                                         deleteProjectCascade(project)
-                                        try? context.save()
+                                        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                                     } label: {
                                         Label("删除项目", systemImage: "trash")
                                     }
@@ -55,7 +55,7 @@ struct LifeEventManagementView: View {
                                 for index in offsets {
                                     deleteProjectCascade(projects[index])
                                 }
-                                try? context.save()
+                                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                             }
                         } header: {
                             Text("进行中的人生大事")
@@ -328,6 +328,12 @@ struct LifeEventProjectEditSheet: View {
                 budgetLimit: budgetValue,
                 in: context
             )
+            // createProject 的签名保持不变（非可选），失败原因走 lastSaveFailureMessage：
+            // 失败时不能 Haptic.success + dismiss，否则用户以为建好了。
+            if LifeEventTemplateFactory.lastSaveFailureMessage != nil {
+                Haptic.error()
+                return
+            }
             Haptic.success()
             dismiss()
             onSave?(project)
@@ -338,7 +344,10 @@ struct LifeEventProjectEditSheet: View {
             project.location = cleanLocation
             project.budgetLimit = budgetValue
             project.statusRaw = statusRaw
-            try? context.save()
+            guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存人生大事") }) else {
+                Haptic.error()
+                return
+            }
             Haptic.success()
             dismiss()
             onSave?(project)
@@ -510,7 +519,7 @@ struct LifeEventProjectDetailView: View {
                             Button {
                                 task.statusRaw = task.isDone ? "active" : "done"
                                 LifeEventTodoLink.syncMirrors(for: task, in: context)
-                                try? context.save()
+                                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                                 Haptic.light()
                             } label: {
                                 Image(systemName: task.isDone ? "checkmark.circle.fill" : "circle")
@@ -570,7 +579,7 @@ struct LifeEventProjectDetailView: View {
                                 Button("标记已完成", systemImage: "checkmark.circle") {
                                     task.statusRaw = "done"
                                     LifeEventTodoLink.syncMirrors(for: task, in: context)
-                                    try? context.save()
+                                    context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                                 }
                             }
                         }
@@ -587,7 +596,7 @@ struct LifeEventProjectDetailView: View {
                     }
                     .onDelete { offsets in
                         for index in offsets { context.delete(projectPeople[index]) }
-                        try? context.save()
+                        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                     }
                 }
                 Button("添加人物", systemImage: "person.badge.plus") { showAddPerson = true }
@@ -620,7 +629,7 @@ struct LifeEventProjectDetailView: View {
                 }
                 .onDelete { offsets in
                     for index in offsets { context.delete(projectExpenses[index]) }
-                    try? context.save()
+                    context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                 }
                 Button("添加开销", systemImage: "plus.circle") { showAddExpense = true }
             }
@@ -645,15 +654,15 @@ struct LifeEventProjectDetailView: View {
                         .contextMenu {
                             Button("标记已确认", systemImage: "checkmark.circle") {
                                 guest.attendanceRaw = "yes"
-                                try? context.save()
+                                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                             }
                             Button("标记待确认", systemImage: "questionmark.circle") {
                                 guest.attendanceRaw = "pending"
-                                try? context.save()
+                                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                             }
                             Button("标记不出席", systemImage: "xmark.circle") {
                                 guest.attendanceRaw = "no"
-                                try? context.save()
+                                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                             }
                             ShareLink(item: invitationText(for: guest), preview: SharePreview("邀请：\(guest.name)")) {
                                 Label("分享邀请通知", systemImage: "paperplane")
@@ -662,7 +671,7 @@ struct LifeEventProjectDetailView: View {
                     }
                     .onDelete { offsets in
                         for index in offsets { context.delete(projectGuests[index]) }
-                        try? context.save()
+                        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                     }
                     Button("添加宾客", systemImage: "person.2.badge.plus") { showAddGuest = true }
                 }
@@ -846,7 +855,10 @@ private struct LifeEventAddPersonView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
                         context.insert(LifeEventPerson(projectID: projectID, name: name.trimmingCharacters(in: .whitespacesAndNewlines), role: role, relationship: relationship, phone: phone, responsibility: responsibility, side: side))
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加人物") }) else {
+                            Haptic.error()
+                            return
+                        }
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -901,7 +913,10 @@ private struct LifeEventAddExpenseView: View {
                         let total = Double(amount) ?? 0
                         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, total > 0 else { return }
                         context.insert(LifeEventExpense(projectID: projectID, title: title.trimmingCharacters(in: .whitespacesAndNewlines), category: category, amount: total, paidAmount: min(max(Double(paidAmount) ?? 0, 0), total), payee: payee, dueDate: hasDueDate ? dueDate : nil))
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加开销") }) else {
+                            Haptic.error()
+                            return
+                        }
                         dismiss()
                     }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (Double(amount) ?? 0) <= 0)
@@ -949,7 +964,10 @@ private struct LifeEventAddGuestView: View {
                         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !cleanName.isEmpty else { return }
                         context.insert(LifeEventGuest(projectID: projectID, name: cleanName, relationship: relationship, side: side, phone: phone, tableNumber: tableNumber, attendanceRaw: attendance))
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加宾客") }) else {
+                            Haptic.error()
+                            return
+                        }
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -1003,7 +1021,10 @@ private struct LifeEventTaskEditView: View {
                         task.ownerName = ownerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : ownerName
                         task.detail = detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : detail
                         task.dueDate = hasDueDate ? dueDate : nil
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存任务") }) else {
+                            Haptic.error()
+                            return
+                        }
                         dismiss()
                     }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

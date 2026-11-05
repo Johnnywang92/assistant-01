@@ -27,9 +27,9 @@ struct VoiceMemoDetailView: View {
             Section {
                 TextField("标题", text: $memo.title)
                     .font(.headline)
-                    .onSubmit { try? context.save() }
+                    .onSubmit { context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存语音备忘标题") } }
                 HStack {
-                    Picker("分类", selection: Binding(get: { memo.tag }, set: { memo.tag = $0; try? context.save() })) {
+                    Picker("分类", selection: Binding(get: { memo.tag }, set: { memo.tag = $0; context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存语音备忘分类") } })) {
                         ForEach(VoiceMemoTag.allCases) { Label(L10n.tr($0.rawValue), systemImage: $0.icon).tag($0) }
                     }
                 }
@@ -102,7 +102,7 @@ struct VoiceMemoDetailView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     memo.isBookmarked.toggle()
-                    try? context.save()
+                    context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                     Haptic.light()
                 } label: {
                     Image(systemName: memo.isBookmarked ? "star.fill" : "star")
@@ -129,7 +129,7 @@ struct VoiceMemoDetailView: View {
             if !fileMissing { audio.prepare(fileName: memo.audioFileName) }
         }
         .onDisappear {
-            try? context.save()
+            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
             if isCurrent { audio.stopPlayback() }
         }
     }
@@ -212,7 +212,10 @@ struct VoiceMemoDetailView: View {
                     Spacer()
                     Button("保存") {
                         VoiceMemoActions.apply(transcription: transcriptDraft, to: memo)
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存转写文本") }) else {
+                            Haptic.error()
+                            return
+                        }
                         isEditingTranscript = false
                         Haptic.success()
                     }
@@ -351,7 +354,10 @@ struct VoiceMemoDetailView: View {
                 isGeneratingAISummary = false
                 if let output, !output.isEmpty {
                     memo.summary = output
-                    try? context.save()
+                    guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存 AI 摘要") }) else {
+                        Haptic.error()
+                        return
+                    }
                     Haptic.success()
                 } else {
                     errorText = "端侧 AI 模型尚未下载或未就绪，请先在「设置 → AI 模型」中下载。"
@@ -511,7 +517,10 @@ struct VoiceMemoTodoExtractorSheet: View {
             )
             context.insert(todo)
         }
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "提取待办") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         dismiss()
     }

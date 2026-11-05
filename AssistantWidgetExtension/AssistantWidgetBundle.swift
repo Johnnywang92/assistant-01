@@ -51,17 +51,3 @@ extension View {
         }
     }
 }
-
-/// 待办行右侧的取件码小胶囊
-struct PickupCodeChip: View {
-    let code: String
-
-    var body: some View {
-        Text(code)
-            .font(.caption.monospaced().bold())
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(Color.orange.opacity(0.18)))
-            .foregroundStyle(.orange)
-    }
-}

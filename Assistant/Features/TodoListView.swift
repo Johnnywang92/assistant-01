@@ -379,7 +379,9 @@ struct TodoListView: View {
                 crossModuleSearchText = ""
             }
             .task {
-                // 首屏渲染优先：延迟启动全域 16 表倒排索引构建，避免冷启动首帧抢占主线程
+                // 首屏渲染优先：延迟启动全域 16 表倒排索引构建，避免冷启动首帧抢占主线程。
+                // SVC-09：重建触发已改成「按需」——服务内先比较数据变更令牌（各表行数 + 最新时间戳），
+                // 已有索引且数据未变时直接返回，不会重复全表拉取；手动刷新走 force: true。
                 try? await Task.sleep(nanoseconds: 900_000_000)
                 guard !Task.isCancelled else { return }
                 await SearchIndexService.shared.rebuildIndex(context: context)
@@ -518,7 +520,7 @@ struct TodoListView: View {
         for (index, item) in mutable.enumerated() {
             item.sortOrder = index
         }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         Haptic.light()
     }
 
@@ -530,7 +532,10 @@ struct TodoListView: View {
             for (index, todo) in mutable.enumerated() {
                 todo.sortOrder = index
             }
-            try? context.save()
+            guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "调整待办顺序") }) else {
+                Haptic.error()
+                return
+            }
             Haptic.success()
         }
     }
@@ -542,7 +547,7 @@ struct TodoListView: View {
         for (index, todo) in mutable.enumerated() {
             todo.sortOrder = index
         }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         Haptic.selection()
     }
 
@@ -553,7 +558,7 @@ struct TodoListView: View {
         for (index, todo) in mutable.enumerated() {
             todo.sortOrder = index
         }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         Haptic.selection()
     }
 
@@ -1422,8 +1427,11 @@ struct TodoListView: View {
                             },
                             onAddTodos: {
                                 AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    anniversaryReminder.addPreparationTodos(for: upcoming, in: context)
-                                    showToast("已一键将准备鲜花、订蛋糕与订餐厅加入待办！🎉")
+                                    // 返回 false = 落库失败（已回滚 + 全局失败横幅），
+                                    // 不能再 toast「已加入待办」。
+                                    if anniversaryReminder.addPreparationTodos(for: upcoming, in: context) {
+                                        showToast("已一键将准备鲜花、订蛋糕与订餐厅加入待办！🎉")
+                                    }
                                 }
                             }
                         )
@@ -1553,7 +1561,7 @@ struct TodoListView: View {
                             for idx in offsets {
                                 context.delete(currentDone[idx])
                             }
-                            try? context.save()
+                            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                         }
 
                         Button {

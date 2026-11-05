@@ -162,7 +162,12 @@ private struct AddGrowthRecordView: View {
     }
     private func save() {
         let record = ChildGrowthRecord(date: date, monthAge: child.monthAge(at: date), heightCm: Double(height), weightKg: Double(weight), headCircumferenceCm: Double(head), notes: notes.isEmpty ? nil : notes, child: child)
-        context.insert(record); child.growthRecords.append(record); try? context.save(); dismiss()
+        context.insert(record); child.growthRecords.append(record)
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存成长记录") }) else {
+            Haptic.error()
+            return
+        }
+        dismiss()
     }
 }
 
@@ -183,7 +188,15 @@ private struct AddMilestoneRecordView: View {
             ToolbarItem(placement: .confirmationAction) { Button("保存") { save() }.disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }}
     }
-    private func save() { let record = ChildMilestoneRecord(date: date, monthAge: child.monthAge(at: date), title: title, notes: notes.isEmpty ? nil : notes, child: child); context.insert(record); child.milestones.append(record); try? context.save(); dismiss() }
+    private func save() {
+        let record = ChildMilestoneRecord(date: date, monthAge: child.monthAge(at: date), title: title, notes: notes.isEmpty ? nil : notes, child: child)
+        context.insert(record); child.milestones.append(record)
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存成长里程碑") }) else {
+            Haptic.error()
+            return
+        }
+        dismiss()
+    }
 }
 
 private struct AddHealthVisitView: View {
@@ -208,5 +221,13 @@ private struct AddHealthVisitView: View {
             ToolbarItem(placement: .confirmationAction) { Button("保存") { save() }.disabled(diagnosis.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }}
     }
-    private func save() { let record = ChildHealthVisitRecord(date: date, hospitalOrClinic: clinic.isEmpty ? nil : clinic, diagnosis: diagnosis, doctorAdvice: advice.isEmpty ? nil : advice, followUpDate: followUp, child: child); context.insert(record); child.healthVisits.append(record); try? context.save(); dismiss() }
+    private func save() {
+        let record = ChildHealthVisitRecord(date: date, hospitalOrClinic: clinic.isEmpty ? nil : clinic, diagnosis: diagnosis, doctorAdvice: advice.isEmpty ? nil : advice, followUpDate: followUp, child: child)
+        context.insert(record); child.healthVisits.append(record)
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存健康记录") }) else {
+            Haptic.error()
+            return
+        }
+        dismiss()
+    }
 }

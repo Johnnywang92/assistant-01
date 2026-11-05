@@ -59,12 +59,12 @@ struct PainPointManagementView: View {
 
     private func deleteSubs(at offsets: IndexSet) {
         for idx in offsets { context.delete(subscriptions[idx]) }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
     }
 
     private func deleteExpiries(at offsets: IndexSet) {
         for idx in offsets { context.delete(expiries[idx]) }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
     }
 }
 
@@ -154,7 +154,10 @@ struct AddSubscriptionSheet: View {
                             notes: notes.isEmpty ? nil : notes
                         )
                         context.insert(item)
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加自动续费监控") }) else {
+                            Haptic.error()
+                            return
+                        }
                         dismiss()
                     }
                     .disabled(name.isEmpty)
@@ -200,7 +203,10 @@ struct AddExpirySheet: View {
                             remindDaysBefore: remindDays
                         )
                         context.insert(item)
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加临期预警") }) else {
+                            Haptic.error()
+                            return
+                        }
                         dismiss()
                     }
                     .disabled(title.isEmpty)

@@ -1170,16 +1170,18 @@ struct AddTodoSheet: View {
             tags: extractedTags
         )
         context.insert(item)
-        TodoNotificationManager.shared.scheduleNotification(for: item)
+        // 通知与到站提醒统一挪到落库成功后（见函数末尾），避免 save 失败留下指向不存在对象的提醒
+        var pendingArrivalSync = false
 
         // 票面识别到到达时间就自动挂上到站清点提醒；取件模式没有行程，不挂
         if let pickup = recognizedTravelPickup, !pickup.isPickupMode, pickup.arrivalAt > .now {
             item.arrivalReminderAt = pickup.arrivalAt
             item.arrivalTransportKind = pickup.isFlight ? .flight : .train
-            TripArrivalService.shared.syncReminder(for: item)
+            pendingArrivalSync = true
         }
 
         // 用户显式勾选并确认的出行配套购票与文博景区预约待办
+        var companionItems: [TodoItem] = []
         if addCompanionTickets && hasDueDate {
             let proposed = TravelTicketReminderManager.shared.generateProposedTicketTodos(
                 title: trimmedTitle,
@@ -1218,13 +1220,23 @@ struct AddTodoSheet: View {
                         remindBeforeMinutes: p.remindBeforeMinutes
                     )
                     context.insert(compItem)
-                    TodoNotificationManager.shared.scheduleNotification(for: compItem)
+                    companionItems.append(compItem)
                     offset += 1
                 }
             }
         }
 
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加待办") }) else {
+            Haptic.error()
+            return
+        }
+        TodoNotificationManager.shared.scheduleNotification(for: item)
+        if pendingArrivalSync {
+            TripArrivalService.shared.syncReminder(for: item)
+        }
+        for compItem in companionItems {
+            TodoNotificationManager.shared.scheduleNotification(for: compItem)
+        }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         dismiss()
     }

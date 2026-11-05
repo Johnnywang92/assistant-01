@@ -26,9 +26,22 @@ struct HealthDataView: View {
     @State private var showDesiredBedtimeSheet = false
     @State private var showShareSheet = false
     @State private var dietTrendDays = 7
+    @AppStorage("daily_water_goal_ml") private var dailyWaterGoalML: Double = 1700
+    @AppStorage("daily_calorie_goal_kcal") private var dailyCalorieGoal: Double = 2000
 
-    /// 本地打卡目标：与健康侧指标一一对应
-    private let goals = HealthGoal.defaults
+    /// 本地打卡目标：与健康侧指标一一对应，饮水目标以「喝水记录」为准，睡眠目标以「睡前提醒」设置为准
+    private var goals: [HealthGoal] {
+        let waterGoal = dailyWaterGoalML > 0 ? dailyWaterGoalML : AppSettings.dailyWaterGoalML
+        let sleepGoal = sleepScheduler.sleepGoalMinutes > 0
+            ? Double(sleepScheduler.sleepGoalMinutes) / 60.0
+            : AppSettings.dailySleepGoalHours
+        return HealthGoal.defaults(waterGoalML: waterGoal, sleepGoalHours: sleepGoal)
+    }
+
+    /// 融合本地「喝水记录」后的当日快照：若今日在「喝水记录」中有记录，饮水指标优先以「喝水记录」的有效补水量为准
+    private var effectiveSnapshot: HealthDaySnapshot? {
+        health.snapshot?.overridingDietaryWater(todayEffectiveWaterML)
+    }
 
     private var todayFoodCalories: Double? {
         let cal = Calendar.current
@@ -103,11 +116,11 @@ struct HealthDataView: View {
         }
         .sheet(isPresented: $showShareSheet) {
             HealthShareSheet(
-                snapshot: health.snapshot,
+                snapshot: effectiveSnapshot,
                 vitality: vitalityEvaluation,
                 pleasure: health.pleasureEvaluation,
                 todayFoodCalories: todayFoodCalories,
-                todayWaterML: todayEffectiveWaterML,
+                todayWaterML: todayEffectiveWaterML ?? health.snapshot?.value(for: .dietaryWater)?.value,
                 goals: goals
             )
         }
@@ -143,7 +156,7 @@ struct HealthDataView: View {
         let cal = Calendar.current
         let today = waterRecords.filter { cal.isDateInToday($0.date) }
         let effectiveWater = Int(today.reduce(0.0) { $0 + $1.effectiveHydrationML }.rounded())
-        let goal = Int(AppSettings.dailyWaterGoalML)
+        let goal = Int(dailyWaterGoalML > 0 ? dailyWaterGoalML : AppSettings.dailyWaterGoalML)
 
         return NavigationLink {
             WaterTrackerView()
@@ -179,6 +192,7 @@ struct HealthDataView: View {
         let cal = Calendar.current
         let today = foodRecords.filter { cal.isDateInToday($0.date) }
         let totalCalories = Int(today.reduce(0.0) { $0 + $1.consumedCalories }.rounded())
+        let goal = Int((dailyCalorieGoal > 0 ? dailyCalorieGoal : AppSettings.dailyCalorieGoalKcal).rounded())
 
         return NavigationLink {
             FoodPhotoCalorieView()
@@ -193,7 +207,7 @@ struct HealthDataView: View {
                         .foregroundStyle(AppColor.text)
                     Text(today.isEmpty
                          ? "拍照或选图推测热量 · 没吃完可手动调整百分比"
-                         : "今日已记 \(today.count) 餐 · 共摄入约 \(totalCalories) 千卡")
+                         : "今日已记 \(today.count) 餐 · 共摄入约 \(totalCalories)/\(goal) 千卡")
                         .font(.caption)
                         .foregroundStyle(AppColor.secondaryText)
                 }
@@ -550,7 +564,7 @@ struct HealthDataView: View {
     // MARK: - 指标卡
 
     private var metricCards: some View {
-        let progresses = HealthMetrics.progress(for: health.snapshot!, goals: goals)
+        let progresses = HealthMetrics.progress(for: effectiveSnapshot ?? health.snapshot!, goals: goals)
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: AppSpacing.md),
                                   GridItem(.flexible(), spacing: AppSpacing.md)],
                           spacing: AppSpacing.md) {
@@ -1108,7 +1122,7 @@ struct HealthDataView: View {
     /// 让人知道「今天已经走了 8000 步」时，手动打卡就有了真实依据。
     private var todoCorrelationSection: some View {
         let items: [(HealthRelatedTodoType, HealthGoalProgress)] = HealthRelatedTodoType.allCases.compactMap { type in
-            guard let snapshot = health.snapshot,
+            guard let snapshot = effectiveSnapshot ?? health.snapshot,
                   let progress = HealthMetrics.progress(for: type, snapshot: snapshot, goals: goals) else {
                 return nil
             }

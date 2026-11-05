@@ -566,7 +566,7 @@ struct EditTodoSheet: View {
                 ) {
                     await MainActor.run {
                         item.calendarItemIdentifier = newCalID
-                        try? context.save()
+                        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                     }
                 }
             }
@@ -577,7 +577,10 @@ struct EditTodoSheet: View {
             }
         }
 
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存待办") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         dismiss()
     }
@@ -585,7 +588,10 @@ struct EditTodoSheet: View {
     private func deleteItem() {
         item.cleanupExternalIntegrations()
         context.delete(item)
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除待办") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.warning()
         dismiss()
     }

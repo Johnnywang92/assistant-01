@@ -109,7 +109,10 @@ struct TodayBriefingView: View {
                     TodayBriefingRow(item: item) {
                         // 统一走完成流程，周期待办需要自动生成下一期并取消旧通知。
                         item.markAsCompleted(in: context)
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "完成待办") }) else {
+                            Haptic.error()
+                            return
+                        }
                         Haptic.success()
                     }
                 }

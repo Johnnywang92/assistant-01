@@ -1419,7 +1419,10 @@ enum FoodRecordPeriodFilter: String, CaseIterable, Identifiable {
             imageData: imageData
         )
         context.insert(record)
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存饮食记录") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
 
         // 触发饮食记录入账微动效，并平滑收起当前估算草稿卡片
@@ -2139,7 +2142,10 @@ struct FoodIntakeRecordAdjustmentSheet: View {
                 Section {
                     Button(role: .destructive) {
                         context.delete(record)
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除饮食记录") }) else {
+                            Haptic.error()
+                            return
+                        }
                         Haptic.warning()
                         dismiss()
                     } label: {
@@ -2164,7 +2170,10 @@ struct FoodIntakeRecordAdjustmentSheet: View {
                         record.consumedRatio = FoodCalorieEstimator.clampRatio(consumedRatio)
                         record.consumedCalories = fullPortionCalories * record.consumedRatio
                         record.isManuallyAdjusted = true
-                        try? context.save()
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存饮食记录修改") }) else {
+                            Haptic.error()
+                            return
+                        }
                         Haptic.success()
                         dismiss()
                     }
