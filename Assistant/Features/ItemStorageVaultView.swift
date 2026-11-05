@@ -71,8 +71,6 @@ struct ItemStorageVaultView: View {
 
     /// 各区域物品数量缓存：单次循环统计，避免 ForEach(roomAreas) 内重复执行 8 次全量 filter
     private var areaCounts: [String: Int] {
-        let key = vaultKey
-        ensureVaultCacheCurrent(for: key)
         if let cached = vaultCache.areaCounts {
             return cached
         }
@@ -111,8 +109,6 @@ struct ItemStorageVaultView: View {
 
     /// 关联记账金额归集：itemID -> 该物品累计投入（购入价之外的后继投入）
     private var linkedTotals: [UUID: Double] {
-        let key = vaultKey
-        ensureVaultCacheCurrent(for: key)
         if let cached = vaultCache.linkedTotals {
             return cached
         }
@@ -128,8 +124,6 @@ struct ItemStorageVaultView: View {
 
     /// 已录入成本数据的物品摘要（用于顶部速览）
     private var costTrackedSummaries: [(item: StoredItem, summary: ItemCostSummary)] {
-        let key = vaultKey
-        ensureVaultCacheCurrent(for: key)
         if let cached = vaultCache.costTrackedSummaries {
             return cached
         }
@@ -152,8 +146,6 @@ struct ItemStorageVaultView: View {
     }
 
     private var filteredItems: [StoredItem] {
-        let key = vaultKey
-        ensureVaultCacheCurrent(for: key)
         if let cached = vaultCache.filteredItems {
             return cached
         }
@@ -265,6 +257,7 @@ struct ItemStorageVaultView: View {
         MedicineItemRow(
             medicine: med,
             showsChevron: showsChevron,
+            medPlans: medPlans,
             onTakeDose: (!med.isDisposed && !med.isExpired) ? {
                 let msg = MedicineStockHelper.takeOneDose(medicine: med, context: context)
                 showFeedback("\(med.name)：\(msg)")
@@ -275,8 +268,11 @@ struct ItemStorageVaultView: View {
                 Haptic.light()
             },
             onStopReminder: {
-                _ = MedicineStockHelper.stopReminder(for: med.name, context: context)
-                showFeedback("已停止「\(med.name)」服药提醒，常备药档案已保留")
+                // stopReminder 现在返回是否落库成功；失败时 helper 已弹失败横幅 + 错误触感，
+                // 这里不能再显示「已停止」。
+                if MedicineStockHelper.stopReminder(for: med.name, context: context) {
+                    showFeedback("已停止「\(med.name)」服药提醒，常备药档案已保留")
+                }
             }
         )
         .contentShape(Rectangle())
@@ -305,8 +301,9 @@ struct ItemStorageVaultView: View {
 
             if hasActiveReminder {
                 Button {
-                    _ = MedicineStockHelper.stopReminder(for: med.name, context: context)
-                    showFeedback("已停止「\(med.name)」服药提醒，常备药档案已保留")
+                    if MedicineStockHelper.stopReminder(for: med.name, context: context) {
+                        showFeedback("已停止「\(med.name)」服药提醒，常备药档案已保留")
+                    }
                 } label: {
                     Label("停止提醒", systemImage: "bell.slash.fill")
                 }
@@ -326,18 +323,26 @@ struct ItemStorageVaultView: View {
             Button(role: .destructive) {
                 Haptic.warning()
                 context.delete(med)
-                try? context.save()
+                guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除药品") }) else {
+                    Haptic.error()
+                    return
+                }
             } label: {
                 Label("删除", systemImage: "trash")
             }
             Button {
                 if !med.isDisposed && (med.isExpired || med.isExpiringSoon) {
-                    _ = MedicineStockHelper.disposeAndCreateRestockTodo(medicines: [med], context: context)
-                    showFeedback("已标记处理「\(med.name)」并加入买药待办")
+                    let created = MedicineStockHelper.disposeAndCreateRestockTodo(medicines: [med], context: context)
+                    if created > 0 {
+                        showFeedback("已标记处理「\(med.name)」并加入买药待办")
+                    }
                 } else {
                     med.isDisposed.toggle()
                     med.updatedAt = .now
-                    try? context.save()
+                    guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "标记药品状态") }) else {
+                        Haptic.error()
+                        return
+                    }
                     Haptic.light()
                 }
             } label: {
@@ -350,7 +355,17 @@ struct ItemStorageVaultView: View {
         }
     }
 
+    /// 每帧只算一次内容指纹。
+    ///
+    /// 性能（2026-11-05）：四个派生结果（areaCounts / linkedTotals / costTrackedSummaries /
+    /// filteredItems）以前各自 `let key = vaultKey`，而 vaultKey 要对全部物品 12 个字段 +
+    /// 全部关联记账做哈希 —— 单次渲染重复 10 次。现在 body 开头统一算一次、写进缓存键。
+    private func prepareRender() {
+        ensureVaultCacheCurrent(for: vaultKey)
+    }
+
     var body: some View {
+        let _ = prepareRender()
         List {
             // 1. 顶部场景引导与房间区域快速筛选栏
             Section {
@@ -501,7 +516,10 @@ struct ItemStorageVaultView: View {
                             Button(role: .destructive) {
                                 Haptic.warning()
                                 context.delete(item)
-                                try? context.save()
+                                guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除物品") }) else {
+                                    Haptic.error()
+                                    return
+                                }
                             } label: {
                                 Label("删除", systemImage: "trash")
                             }
@@ -526,7 +544,10 @@ struct ItemStorageVaultView: View {
                             Button(role: .destructive) {
                                 Haptic.warning()
                                 context.delete(item)
-                                try? context.save()
+                                guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除物品") }) else {
+                                    Haptic.error()
+                                    return
+                                }
                             } label: {
                                 Label("删除", systemImage: "trash")
                             }
@@ -622,7 +643,9 @@ struct ItemStorageVaultView: View {
                                 medicines: attentionMedicines,
                                 context: context
                             )
-                            showFeedback("已清理 \(count) 种过期/临期药（\(targetNames)），并生成补充买药待办")
+                            if count > 0 {
+                                showFeedback("已清理 \(count) 种过期/临期药（\(targetNames)），并生成补充买药待办")
+                            }
                         } label: {
                             Label("一键标记已清理并加入买药待办", systemImage: "cart.fill.badge.plus")
                                 .font(.caption.bold())
@@ -1166,7 +1189,7 @@ struct AddOrEditStoredItemSheet: View {
                             item.resalePrice = nil
                             item.resoldDate = nil
                             item.updatedAt = .now
-                            try? context.save()
+                            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
                         } label: {
                             Label("撤销转卖记录", systemImage: "arrow.uturn.backward")
                                 .font(.subheadline)
@@ -1294,7 +1317,11 @@ struct AddOrEditStoredItemSheet: View {
             context.insert(newItem)
         }
 
-        try? context.save()
+        // 保存失败时留在表单让用户重试，不要 dismiss、不要回调 onSaved（否则列表会显示一条不存在的物品）
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存物品") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         onSaved?(trimmedName, roomArea, trimmedLocation, itemToEdit != nil)
         dismiss()
@@ -1338,10 +1365,13 @@ enum RowThumbnailCache {
 private struct MedicineItemRow: View {
     let medicine: MedicineItem
     var showsChevron: Bool = true
+    /// 父视图已经 `@Query` 过同一张表，这里**必须复用**传进来的结果。
+    /// 性能（2026-11-05 审计 UI-08）：原先每行各自 `@Query medPlans`，
+    /// 等于每个药品行都建一份全表观察（N+1），药品多时列表滚动会明显掉帧。
+    var medPlans: [MedicationPlan] = []
     var onTakeDose: (() -> Void)? = nil
     var onEditReminder: (() -> Void)? = nil
     var onStopReminder: (() -> Void)? = nil
-    @Query private var medPlans: [MedicationPlan]
     @Environment(\.modelContext) private var context
 
     private var linkedPlan: MedicationPlan? {
@@ -2378,7 +2408,10 @@ struct MedicineEditorSheet: View {
             targetItem = item
         }
 
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加药品") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
 
         if enablePostAddReminder {

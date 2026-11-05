@@ -8,6 +8,7 @@ struct HabitAndMedicationView: View {
     @Query(sort: \PeriodicHabit.nextDueAt) private var habits: [PeriodicHabit]
     @Query private var medPlans: [MedicationPlan]
     @Query(sort: \FoodIntakeRecord.date, order: .reverse) private var foodRecords: [FoodIntakeRecord]
+    @Query(sort: \WaterIntakeRecord.date, order: .reverse) private var waterRecords: [WaterIntakeRecord]
 
     @State private var showingAddHabitSheet = false
     @State private var showingAddMedSheet = false
@@ -17,10 +18,17 @@ struct HabitAndMedicationView: View {
     /// 订阅健康服务：打卡页要显示「健康」侧的步数、饮水与睡眠数值
     @ObservedObject private var health = HealthKitService.shared
 
-    // 今日用餐快照（用于用药时效自适应计算）
+    private var todayEffectiveWaterML: Double? {
+        let cal = Calendar.current
+        let today = waterRecords.filter { cal.isDateInToday($0.date) }
+        guard !today.isEmpty else { return nil }
+        return today.reduce(0.0) { $0 + $1.effectiveHydrationML }
+    }
+
+    // 今日用餐与饮品快照（用于用药时效自适应计算，同步包含「喝水记录」中的咖啡/茶/奶茶）
     private var todayMeals: [RecentMealSnapshot] {
         let calendar = Calendar.current
-        return foodRecords
+        let foodSnapshots = foodRecords
             .filter { calendar.isDateInToday($0.date) }
             .map { record in
                 let name = record.foodName.lowercased()
@@ -44,17 +52,51 @@ struct HabitAndMedicationView: View {
                     hasAlcohol: hasAlcohol
                 )
             }
+        let waterSnapshots = waterRecords
+            .filter { calendar.isDateInToday($0.date) }
+            .compactMap { record -> RecentMealSnapshot? in
+                let name = (record.customName ?? record.beverageType.displayName).lowercased()
+                let hasCaffeine = record.caffeineMG > 0 || record.beverageType == .blackCoffee || record.beverageType == .latte || record.beverageType == .pureTea || record.beverageType == .milkTea
+                let hasDairy = record.beverageType == .milk || record.beverageType == .latte || record.beverageType == .milkTea || name.contains("拿铁") || name.contains("牛奶") || name.contains("奶")
+                let hasGrapefruit = name.contains("西柚") || name.contains("葡萄柚")
+                guard hasCaffeine || hasDairy || hasGrapefruit || record.calories > 0 else { return nil }
+                return RecentMealSnapshot(
+                    id: record.id.uuidString,
+                    date: record.date,
+                    foodName: record.customName ?? record.beverageType.displayName,
+                    calories: record.calories,
+                    hasCaffeine: hasCaffeine,
+                    hasGrapefruit: hasGrapefruit,
+                    hasDairy: hasDairy,
+                    hasAlcohol: false
+                )
+            }
+        return (foodSnapshots + waterSnapshots).sorted { $0.date > $1.date }
     }
 
     /// 当前最紧急或具有行动价值的自适应时效评估
-    private var topTimingEvaluation: MedicationTimingEvaluation? {
-        let evals = medPlans.filter { $0.isEnabled }.map {
-            MedicationFoodTimingAdvisor.evaluate(
-                plan: $0.toSnapshot(),
-                todayMeals: todayMeals,
+    /// 每帧只算一次：今日用餐快照 + 每个用药计划的时效评估。
+    ///
+    /// 性能（2026-11-05 审计 UI-06）：旧实现 `ForEach(medPlans)` 每行都重算 `todayMeals`
+    /// （对全部饮食/饮水记录 filter+map），`topTimingEvaluation` 又对每个启用计划各算一次，
+    /// `todayMeals` 内部再各扫一遍 —— 8 个药时单次渲染要扫 17 次全表。
+    /// 现在 body 里算一次 meals、算一次 evaluations，两边共用。
+    private func medEvaluations(meals: [RecentMealSnapshot]) -> [UUID: MedicationTimingEvaluation] {
+        var result: [UUID: MedicationTimingEvaluation] = [:]
+        result.reserveCapacity(medPlans.count)
+        for med in medPlans {
+            result[med.id] = MedicationFoodTimingAdvisor.evaluate(
+                plan: med.toSnapshot(),
+                todayMeals: meals,
                 now: .now
             )
         }
+        return result
+    }
+
+    private func topTimingEvaluation(from evaluations: [UUID: MedicationTimingEvaluation]) -> MedicationTimingEvaluation? {
+        // 保持原顺序语义：只看启用中的计划，按 medPlans 顺序取
+        let evals = medPlans.filter { $0.isEnabled }.compactMap { evaluations[$0.id] }
         // 冲突警示 > 漏服提醒 > 餐后黄金窗口 > 等餐顺延
         if let conflict = evals.first(where: {
             if case .conflictAlert = $0.status { return true }
@@ -84,6 +126,8 @@ struct HabitAndMedicationView: View {
     }
 
     var body: some View {
+        let meals = todayMeals
+        let medEvals = medEvaluations(meals: meals)
         List {
             // MARK: - Apple 健康参考数值
             if HealthKitService.isAvailable {
@@ -119,7 +163,7 @@ struct HabitAndMedicationView: View {
             // MARK: - 药物与保健品
             Section {
                 // 饮食时效自适应智能看板横幅
-                if let alertEval = topTimingEvaluation {
+                if let alertEval = topTimingEvaluation(from: medEvals) {
                     medicationTimingCard(alertEval)
                 }
 
@@ -127,16 +171,21 @@ struct HabitAndMedicationView: View {
                     Text("暂无药物或保健品提醒计划").foregroundStyle(.secondary)
                 } else {
                     ForEach(medPlans) { med in
-                        let eval = MedicationFoodTimingAdvisor.evaluate(
+                        let eval = medEvals[med.id] ?? MedicationFoodTimingAdvisor.evaluate(
                             plan: med.toSnapshot(),
-                            todayMeals: todayMeals,
+                            todayMeals: meals,
                             now: .now
                         )
                         MedicationRow(med: med, evaluation: eval) {
                             editingMed = med
                         } onMarkTaken: {
                             med.markTaken()
-                            try? context.save()
+                            // 打卡是「唯一事实源」：落库失败不能播成功震动，
+                            // 否则用户以为已服药、重启后记录又回滚。
+                            guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "服药打卡") }) else {
+                                Haptic.error()
+                                return
+                            }
                             Haptic.success()
                         }
                     }
@@ -180,7 +229,7 @@ struct HabitAndMedicationView: View {
 
     private func deleteHabits(at offsets: IndexSet) {
         for idx in offsets { context.delete(habits[idx]) }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "删除习惯") }
     }
 
     private func deleteMeds(at offsets: IndexSet) {
@@ -189,7 +238,8 @@ struct HabitAndMedicationView: View {
             HabitAndMedicationScheduler.cancelMedicationReminders(for: plan.id)
             context.delete(plan)
         }
-        try? context.save()
+        // 只有删成功才重排通知；失败时保留原计划的通知，避免「没删掉但提醒全没了」
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除药物") }) else { return }
         HabitAndMedicationScheduler(context: context).scheduleMedicationReminders()
     }
 
@@ -340,7 +390,7 @@ struct HabitAndMedicationView: View {
     }
 
     private var referenceMetrics: [ReferenceMetric] {
-        guard let snapshot = health.snapshot else { return [] }
+        guard let snapshot = health.snapshot?.overridingDietaryWater(todayEffectiveWaterML) else { return [] }
         let kinds: [HealthMetricKind] = [.stepCount, .dietaryWater, .sleep]
         return kinds.compactMap { kind in
             guard let value = snapshot.value(for: kind)?.value else { return nil }
@@ -500,7 +550,13 @@ struct MedicationRow: View {
                     _ = MedicineStockHelper.stopReminder(for: med.medName, context: context)
                 } else {
                     med.isEnabled = true
-                    try? context.save()
+                    // 落库成功才重排提醒与播成功反馈：失败时把开关状态回滚，
+                    // 避免「界面显示已恢复提醒、实际没落库」。
+                    guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "恢复提醒") }) else {
+                        med.isEnabled = false
+                        Haptic.error()
+                        return
+                    }
                     let scheduler = HabitAndMedicationScheduler(context: context)
                     scheduler.scheduleMedicationReminders()
                     scheduler.ensureTodayMedicationTodos(for: med)
@@ -653,7 +709,11 @@ struct HabitEditorSheet: View {
             context.insert(new)
         }
 
-        try? context.save()
+        // 保存失败时留在表单里让用户重试，不要 dismiss —— 直接关掉会让用户以为已保存。
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存习惯") }) else {
+            Haptic.error()
+            return
+        }
         dismiss()
     }
 
@@ -940,8 +1000,10 @@ struct MedicationEditorSheet: View {
                     Section {
                         Button(role: .destructive) {
                             if let m = med {
-                                _ = MedicineStockHelper.stopReminder(for: m.medName, context: context)
-                                dismiss()
+                                // 失败时 helper 已弹横幅 + 错误触感，不要关闭页面假装已停止。
+                                if MedicineStockHelper.stopReminder(for: m.medName, context: context) {
+                                    dismiss()
+                                }
                             }
                         } label: {
                             HStack {
@@ -1037,7 +1099,11 @@ struct MedicationEditorSheet: View {
         // 在收纳卡片与常备药列表同样可见；老数据重存一次即可回填
         ensureCabinetMedicine()
 
-        try? context.save()
+        // 落库失败就别排提醒、也别关页：否则会出现「通知已排、计划没落库」的幽灵提醒。
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存服药计划") }) else {
+            Haptic.error()
+            return
+        }
         let scheduler = HabitAndMedicationScheduler(context: context)
         if savedPlan.isEnabled {
             // 与推送同节奏：立即补建今日服药待办（首页「服药提醒」区），

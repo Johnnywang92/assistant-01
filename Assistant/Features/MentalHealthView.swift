@@ -47,20 +47,25 @@ struct MentalHealthView: View {
     private var healthKit = HealthKitService.shared
 
     var body: some View {
+        // 每帧只算一次：latestInsight 原在 body 与分享 sheet 各算一次
+        // （内部含 `recentAverageSleepHours` 的 SwiftData 查询）；
+        // 趋势点原在「可用量表筛选」与「每张卡」各算一次（每次都要给每条记录算分）。
+        let insight = latestInsight
+        let trendPointsByScale = allTrendPoints()
         ScrollView {
             VStack(spacing: AppSpacing.lg) {
                 dailyCheckInCard
                 companionEchoCardSection
                 scaleEntryCard
-                if let insight = latestInsight {
+                if let insight {
                     insightCard(insight)
                     if let combined = insight.combinedReading {
                         combinedReadingCard(combined)
                     }
                 }
                 // 分数趋势：两条量表各一张折线卡。
-                ForEach(availableTrendScales, id: \.self) { scaleID in
-                    PsychTrendChartCard(scaleID: scaleID, points: trendPoints(for: scaleID))
+                ForEach(availableTrendScales(from: trendPointsByScale), id: \.self) { scaleID in
+                    PsychTrendChartCard(scaleID: scaleID, points: trendPointsByScale[scaleID] ?? [])
                 }
                 if !moodCheckIns.isEmpty {
                     moodTrendCard
@@ -98,7 +103,7 @@ struct MentalHealthView: View {
                 todayMood: todayCheckIn.map { MoodCheckInEntry(day: $0.day, moodScore: $0.moodScore, energyScore: $0.energyScore, stressScore: $0.stressScore) },
                 moodEntries: PsychDataAdapter.moodEntries(from: moodCheckIns),
                 scaleScores: PsychDataAdapter.scaleScores(from: scaleRecords),
-                insight: latestInsight,
+                insight: insight,
                 physiology: healthKit.pleasureEvaluation
             )
         }
@@ -129,11 +134,19 @@ struct MentalHealthView: View {
 
     // MARK: - 趋势折线
 
-    /// 有历史数据的量表（按量表顺序）。
-    private var availableTrendScales: [PsychScaleID] {
-        PsychScaleID.allCases.filter { scaleID in
-            !trendPoints(for: scaleID).isEmpty
+    /// 有历史数据的量表（按量表顺序），复用 body 里已算好的趋势点。
+    private func availableTrendScales(from points: [PsychScaleID: [PsychTrendChartCard.Point]]) -> [PsychScaleID] {
+        PsychScaleID.allCases.filter { !(points[$0] ?? []).isEmpty }
+    }
+
+    /// 一次性算出所有量表的趋势点（每帧只调用一次）。
+    private func allTrendPoints() -> [PsychScaleID: [PsychTrendChartCard.Point]] {
+        var result: [PsychScaleID: [PsychTrendChartCard.Point]] = [:]
+        result.reserveCapacity(PsychScaleID.allCases.count)
+        for scaleID in PsychScaleID.allCases {
+            result[scaleID] = trendPoints(for: scaleID)
         }
+        return result
     }
 
     /// 某量表的得分点序列（按时间升序）。

@@ -469,7 +469,8 @@ struct AddMedicationReminderPopupSheet: View {
                         .padding(.vertical, 2)
 
                         Button(role: .destructive) {
-                            _ = MedicineStockHelper.stopReminder(for: medicine.name, context: context)
+                            // stopReminder 已内含 save 失败处理（横幅 + 错误触感）；失败时留在页内不 dismiss
+                            guard MedicineStockHelper.stopReminder(for: medicine.name, context: context) else { return }
                             dismiss()
                             onComplete()
                         } label: {
@@ -688,7 +689,7 @@ struct AddMedicationReminderPopupSheet: View {
             targetPlan = plan
         }
 
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
         let scheduler = HabitAndMedicationScheduler(context: context)
         // 「今日服药任务」走统一物化规则：当天全部时点都落待办（漏服的以逾期形态供补打卡），
         // 同名未完成/今日已打卡的自动去重，不再只生成「尚未到点」的条目。
@@ -1051,7 +1052,10 @@ enum MedicineStockHelper {
             }
         }
 
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "记录服药") }) else {
+            Haptic.error()
+            return "服药记录保存失败，请重试"
+        }
         Haptic.success()
         return feedbackParts.joined(separator: " · ")
     }
@@ -1067,7 +1071,10 @@ enum MedicineStockHelper {
             ensureRestockTodo(for: med, reason: reason, context: context)
             count += 1
         }
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "清理过期药品") }) else {
+            Haptic.error()
+            return 0
+        }
         Haptic.success()
         return count
     }
@@ -1111,7 +1118,6 @@ enum MedicineStockHelper {
         }
         for plan in plans {
             plan.isEnabled = false
-            HabitAndMedicationScheduler.cancelMedicationReminders(for: plan.id)
         }
 
         // 清理今日待办中关于该药品的未完成服药打卡任务
@@ -1127,7 +1133,14 @@ enum MedicineStockHelper {
             }
         }
 
-        try? context.save()
+        // 先落库成功，再撤销已排提醒并重排——否则 save 失败时提醒已被撤掉、档案却还在。
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "停止服药提醒") }) else {
+            Haptic.error()
+            return false
+        }
+        for plan in plans {
+            HabitAndMedicationScheduler.cancelMedicationReminders(for: plan.id)
+        }
         let scheduler = HabitAndMedicationScheduler(context: context)
         scheduler.scheduleMedicationReminders()
         Haptic.success()

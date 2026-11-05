@@ -180,8 +180,6 @@ struct ExpenseTrackerView: View {
     }
 
     private var summary: ExpenseSummary {
-        let key = analysisKey
-        ensureCacheCurrent(for: key)
         if let cached = analysisCache.summary {
             return cached
         }
@@ -285,8 +283,6 @@ struct ExpenseTrackerView: View {
 
     // 按日期分组记录（与 summary 共用内容指纹缓存，避免每次 body 重算全量分组）
     private var groupedRecords: [(key: String, items: [ExpenseRecord])] {
-        let key = analysisKey
-        ensureCacheCurrent(for: key)
         if let cached = analysisCache.grouped {
             return cached
         }
@@ -327,7 +323,17 @@ struct ExpenseTrackerView: View {
         return result
     }
 
+    /// 每帧只算一次内容指纹。
+    ///
+    /// 性能（2026-11-05）：`summary` 在 body 里被引用 5 次、`groupedRecords` 再引用 1 次，
+    /// 每次都重算 analysisKey（遍历全部账目 10 个字段哈希）—— 单次渲染 6 次。现在只在
+    /// body 开头算一次，写进缓存键；两个 getter 只读缓存。
+    private func prepareRenderKey() {
+        ensureCacheCurrent(for: analysisKey)
+    }
+
     var body: some View {
+        let _ = prepareRenderKey()
         let currentSummary = summary
         NavigationStack {
             List {
@@ -792,7 +798,12 @@ struct ExpenseTrackerView: View {
             ExpenseCalorieService.handleSaved(record, propose: results.count == 1, context: context)
             ExpenseWaterService.handleSaved(record, context: context)
         }
-        try? context.save()
+        // 保存失败时保留输入、不播成功、不追加成功文案：否则用户以为已记上，
+        // 重启后发现账目没了（原始单据/AA 分摊也一样）。
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "记账") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.success()
         quickInputText = ""
 
@@ -981,7 +992,10 @@ struct ExpenseTrackerView: View {
     private func confirmPendingRecord(_ item: ExpenseRecord) {
         AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
             item.isPending = false
-            try? context.save()
+        }
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "确认账目") }) else {
+            Haptic.error()
+            return
         }
         Haptic.success()
         showFeedback(item.isIncome ? "已确认到账" : "已确认交割")
@@ -1034,7 +1048,10 @@ struct ExpenseTrackerView: View {
         ExpenseCalorieService.handleDeleted(expenseID: item.id, context: context)
         ExpenseWaterService.handleDeleted(expenseID: item.id, context: context)
         context.delete(item)
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除账目") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.medium()
         showFeedback("已删除 1 笔账目记录")
     }
@@ -1046,7 +1063,7 @@ struct ExpenseTrackerView: View {
             ExpenseWaterService.handleDeleted(expenseID: item.id, context: context)
             context.delete(item)
         }
-        try? context.save()
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "批量删除账目") }
     }
 }
 
@@ -1405,7 +1422,13 @@ struct BudgetEditSheet: View {
                                 }
                                 Button("立即记一笔", systemImage: "plus.circle") {
                                     recurringManager.recordNow(item: item, in: context)
-                                    Haptic.success()
+                                    // 失败原因由 RecurringExpenseManager.lastSaveFailureMessage
+                                    // 承载，并已触发全局失败横幅；这里不能再播成功触感。
+                                    if recurringManager.lastSaveFailureMessage != nil {
+                                        Haptic.error()
+                                    } else {
+                                        Haptic.success()
+                                    }
                                 }
                                 Divider()
                                 Button("删除", systemImage: "trash", role: .destructive) {
@@ -1857,423 +1880,16 @@ struct AddOrEditExpenseSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                // 1. 收支类型与金额
-                Section {
-                    Picker("收支类型", selection: $isIncome) {
-                        Text("支出").tag(false)
-                        Text("收入").tag(true)
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: isIncome) { _, income in
-                        Haptic.selection()
-                        AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.75)) {
-                            if income {
-                                selectedCategory = .income
-                            } else {
-                                if selectedCategory.isIncome {
-                                    selectedCategory = availableCategories.first ?? .food
-                                }
-                            }
-                        }
-                    }
-
-                    HStack {
-                        Menu {
-                            ForEach(ExpenseCurrency.allCases) { cur in
-                                Button {
-                                    selectedCurrency = cur
-                                    exchangeRateString = cur.formatRateInput()
-                                    rateStatusMessage = nil
-                                    Haptic.selection()
-                                } label: {
-                                    HStack {
-                                        Text(cur.pickerLabel)
-                                        if cur == selectedCurrency {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(selectedCurrency.flag)
-                                Text(selectedCurrency.symbol)
-                                    .font(.title3.bold())
-                                    .foregroundStyle(isIncome ? Color.green : Color.red)
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
-                        }
-
-                        TextField("0.00", text: $amountString)
-                            .keyboardType(.decimalPad)
-                            .font(.system(.title2, design: .rounded).bold())
-
-                        Menu {
-                            Button {
-                                showingCamera = true
-                            } label: {
-                                Label("拍照识别单据/订单", systemImage: "camera")
-                            }
-
-                            Button {
-                                showingPhotoPicker = true
-                            } label: {
-                                Label("从相册选择小票/订单截图", systemImage: "photo")
-                            }
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "camera.viewfinder")
-                                    .font(.subheadline)
-                                Text("拍单据")
-                                    .font(.caption.bold())
-                            }
-                            .foregroundStyle(Color.accentColor)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(Color.accentColor.opacity(0.12), in: Capsule())
-                        }
-                    }
-
-                    if selectedCurrency != .cny {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text("折合人民币")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text(String(format: "¥%.2f", convertedCNYAmount))
-                                    .font(.system(.headline, design: .rounded).bold())
-                                    .foregroundStyle(isIncome ? Color.green : Color.orange)
-                                    .contentTransition(.numericText())
-                            }
-
-                            HStack(spacing: 8) {
-                                Text("汇率 (1 \(selectedCurrency.rawValue) = )")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                TextField(selectedCurrency.formatRateInput(), text: $exchangeRateString)
-                                    .keyboardType(.decimalPad)
-                                    .font(.caption.monospacedDigit().bold())
-                                    .multilineTextAlignment(.trailing)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.small))
-                                    .frame(minWidth: 68, idealWidth: 96, maxWidth: 96)
-                                Text("CNY")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Button {
-                                    syncOnlineExchangeRates()
-                                } label: {
-                                    HStack(spacing: 3) {
-                                        if isSyncingOnlineRates {
-                                            ProgressView().controlSize(.mini)
-                                        } else {
-                                            Image(systemName: "arrow.triangle.2.circlepath")
-                                        }
-                                        Text("实时汇率")
-                                    }
-                                    .font(.caption2.bold())
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.mini)
-                                .disabled(isSyncingOnlineRates)
-                            }
-
-                            HStack {
-                                Text(selectedCurrency.rateDisplayString(rate: parsedExchangeRate))
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                if selectedCurrency.hasCustomRate() || abs(parsedExchangeRate - selectedCurrency.defaultRateToCNY) > 0.00001 {
-                                    Button("恢复参考汇率") {
-                                        selectedCurrency.resetRateToDefault()
-                                        exchangeRateString = selectedCurrency.formatRateInput(selectedCurrency.defaultRateToCNY)
-                                        rateStatusMessage = nil
-                                        Haptic.light()
-                                    }
-                                    .font(.caption2)
-                                    .buttonStyle(.borderless)
-                                }
-                            }
-
-                            if let rateStatusMessage {
-                                Text(rateStatusMessage)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.top, 4)
-                    }
-                }
-
-                // 2. 分类与项目
-                Section("分类与项目") {
-                    Picker("分类", selection: $selectedCategory) {
-                        ForEach(availableCategories, id: \.self) { cat in
-                            Label(L10n.tr(cat.rawValue), systemImage: cat.icon).tag(cat)
-                        }
-                    }
-
-                    TextField("备注说明（如：麦当劳、打车、工资）", text: $title)
-                }
-
-                // 3. 原始单据与智能识别
-                Section("原始单据与智能识别") {
-                    if let data = receiptImageData, let image = UIImage(data: data) {
-                        HStack(spacing: 12) {
-                            Button {
-                                showingImagePreview = true
-                            } label: {
-                                Image(uiImage: image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 58, height: 58)
-                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: AppRadius.chip)
-                                            .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
-                                    )
-                            }
-                            .buttonStyle(.plain)
-
-                            VStack(alignment: .leading, spacing: 4) {
-                                if isRecognizingReceipt {
-                                    HStack(spacing: 6) {
-                                        ProgressView()
-                                            .controlSize(.mini)
-                                        Text("正在识别单据并提取信息…")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                } else if let msg = recognitionMessage {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "sparkles")
-                                            .foregroundStyle(Color.accentColor)
-                                        Text(msg)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                } else {
-                                    Text("已附上单据照片，点击缩略图可查看大图")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-
-                                if recognitionConfidence < 0.75 && recognitionConfidence > 0 {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "exclamationmark.triangle.fill")
-                                            .foregroundStyle(.orange)
-                                        Text("识别置信度较低（\(Int(recognitionConfidence * 100))%），请仔细核对")
-                                            .font(.caption2)
-                                            .foregroundStyle(.orange)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.vertical, 2)
-
-                        if !candidateAmounts.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("候选金额（点击快速切换）：")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 6) {
-                                        ForEach(candidateAmounts, id: \.self) { amt in
-                                            let isSelected = (parsedInputAmount > 0 && abs(parsedInputAmount - amt) < 0.001)
-                                            Button {
-                                                selectCandidateAmount(amt)
-                                            } label: {
-                                                HStack(spacing: 2) {
-                                                    if isSelected {
-                                                        Image(systemName: "checkmark")
-                                                            .font(.caption2)
-                                                    }
-                                                    Text(String(format: "¥%.2f", amt))
-                                                        .font(.caption.monospacedDigit().bold())
-                                                }
-                                            }
-                                            .buttonStyle(.bordered)
-                                            .tint(isSelected ? Color.accentColor : Color.secondary)
-                                            .controlSize(.mini)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        HStack(spacing: 12) {
-                            Button {
-                                reRecognizeCurrentReceipt()
-                            } label: {
-                                Label("重新识别", systemImage: "arrow.clockwise")
-                            }
-                            .font(.caption)
-                            .disabled(isRecognizingReceipt)
-
-                            Button {
-                                showingCamera = true
-                            } label: {
-                                Label("重拍", systemImage: "camera")
-                            }
-                            .font(.caption)
-
-                            Button {
-                                showingPhotoPicker = true
-                            } label: {
-                                Label("换图", systemImage: "photo")
-                            }
-                            .font(.caption)
-
-                            if recognizedRawText != nil {
-                                Button {
-                                    showingRawTextSheet = true
-                                } label: {
-                                    Label("原文", systemImage: "doc.text")
-                                }
-                                .font(.caption)
-                            }
-
-                            Spacer()
-
-                            Button(role: .destructive) {
-                                receiptImageData = nil
-                                selectedReceiptItem = nil
-                                candidateAmounts = []
-                                recognitionMessage = nil
-                                recognizedRawText = nil
-                            } label: {
-                                Label("移除", systemImage: "trash")
-                            }
-                            .font(.caption)
-                        }
-                        .buttonStyle(.borderless)
-                    } else {
-                        HStack(spacing: 12) {
-                            Button {
-                                showingCamera = true
-                            } label: {
-                                Label("拍照识别", systemImage: "camera.fill")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.borderedProminent)
-
-                            Button {
-                                showingPhotoPicker = true
-                            } label: {
-                                Label("相册导入", systemImage: "photo.on.rectangle")
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .buttonStyle(.bordered)
-                        }
-
-                        Text("支持发票、消费小票、收据以及淘宝、京东等购物订单截图，自动识别金额、商品商户、分类及时间。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if UIPasteboard.general.hasImages {
-                            Button {
-                                if let clipImg = UIPasteboard.general.image {
-                                    handlePickedReceiptImage(clipImg)
-                                }
-                            } label: {
-                                Label("识别剪贴板中的单据截图", systemImage: "doc.on.clipboard")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    }
-                }
-
-                // 2.5 关联收纳物品（计入该物品的日均持有成本）
-                if !isIncome && !storedItems.isEmpty {
-                    Section("关联收纳物品（可选）") {
-                        Picker("计入物品投入", selection: $linkedItemID) {
-                            Text("不关联").tag(UUID?.none)
-                            ForEach(storedItems) { item in
-                                Text(item.name).tag(UUID?.some(item.id))
-                            }
-                        }
-                        if linkedItemID != nil {
-                            Text("这笔支出将计入对应物品的累计投入，日均持有成本随之更新。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                // 3. 记账时间
-                Section("记账时间") {
-                    DatePicker("发生日期与时间", selection: $date)
-                }
-
-                if !isIncome {
-                    Section("AA 分摊（可选）") {
-                        TextField("参与人数", text: $splitCountString).keyboardType(.numberPad)
-                        TextField("参与人姓名（可选，用逗号分隔）", text: $splitParticipants)
-                        if let amount = Double(amountString), amount > 0, let count = Int(splitCountString), count > 1 {
-                            HStack {
-                                Text("每人应付")
-                                Spacer()
-                                Text(convertedCNYAmount / Double(count), format: .currency(code: "CNY")).fontWeight(.semibold)
-                            }
-                            .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                // 4. 编辑模式下提供删除账目入口
-                if isEditing {
-                    Section {
-                        Button(role: .destructive) {
-                            showingDeleteConfirm = true
-                        } label: {
-                            HStack {
-                                Spacer()
-                                Label("删除这笔账目记录", systemImage: "trash")
-                                    .foregroundStyle(AppColor.danger)
-                                Spacer()
-                            }
-                        }
-                    }
-                }
+                amountSection
+                categorySection
+                receiptSection
+                linkedItemSection
+                timeSection
+                splitSection
+                deleteSection
             }
             .onAppear {
-                guard !hasInitializedForm else { return }
-                hasInitializedForm = true
-                if let record = recordToEdit {
-                    isIncome = record.isIncome
-                    selectedCurrency = record.currency
-                    let displayAmt = record.isForeignCurrency ? (record.foreignAmount ?? record.amount) : record.amount
-                    if displayAmt.truncatingRemainder(dividingBy: 1) == 0 {
-                        amountString = String(format: "%.0f", displayAmt)
-                    } else {
-                        amountString = String(format: "%.2f", displayAmt)
-                    }
-                    let rate = record.exchangeRateToCNY ?? record.currency.currentRateToCNY
-                    exchangeRateString = record.currency.formatRateInput(rate)
-                    selectedCategory = record.category
-                    title = record.title
-                    date = record.date
-                    receiptImageData = record.receiptImageData
-                    linkedItemID = record.linkedItemID
-                    splitCountString = String(max(record.splitCount, 1))
-                    splitParticipants = record.splitParticipants
-                } else {
-                    let pref = ExpenseCurrency.preferred()
-                    selectedCurrency = pref
-                    exchangeRateString = pref.formatRateInput()
-                    if !isIncome {
-                        selectedCategory = availableCategories.first ?? .food
-                    }
-                }
+                initFormIfNeeded()
             }
             .navigationTitle(isEditing ? (isIncome ? "编辑收入" : "编辑支出") : (isIncome ? "记一笔收入" : "记一笔支出"))
             .navigationBarTitleDisplayMode(.inline)
@@ -2351,6 +1967,463 @@ struct AddOrEditExpenseSheet: View {
             }
         }
     }
+
+    private func initFormIfNeeded() {
+        guard !hasInitializedForm else { return }
+        hasInitializedForm = true
+        if let record = recordToEdit {
+            isIncome = record.isIncome
+            selectedCurrency = record.currency
+            let displayAmt = record.isForeignCurrency ? (record.foreignAmount ?? record.amount) : record.amount
+            if displayAmt.truncatingRemainder(dividingBy: 1) == 0 {
+                amountString = String(format: "%.0f", displayAmt)
+            } else {
+                amountString = String(format: "%.2f", displayAmt)
+            }
+            let rate = record.exchangeRateToCNY ?? record.currency.currentRateToCNY
+            exchangeRateString = record.currency.formatRateInput(rate)
+            selectedCategory = record.category
+            title = record.title
+            date = record.date
+            receiptImageData = record.receiptImageData
+            linkedItemID = record.linkedItemID
+            splitCountString = String(max(record.splitCount, 1))
+            splitParticipants = record.splitParticipants
+        } else {
+            let pref = ExpenseCurrency.preferred()
+            selectedCurrency = pref
+            exchangeRateString = pref.formatRateInput()
+            if !isIncome {
+                selectedCategory = availableCategories.first ?? .food
+            }
+        }
+    }
+
+    // MARK: - 表单分段
+
+    @ViewBuilder
+    private var currencyPickerLabel: some View {
+        HStack(spacing: 4) {
+            Text(selectedCurrency.flag)
+            Text(selectedCurrency.symbol)
+                .font(.title3.bold())
+                .foregroundStyle(isIncome ? Color.green : Color.red)
+            Image(systemName: "chevron.up.chevron.down")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
+    }
+
+    @ViewBuilder
+    private var captureReceiptMenu: some View {
+        Menu {
+            Button {
+                showingCamera = true
+            } label: {
+                Label("拍照识别单据/订单", systemImage: "camera")
+            }
+
+            Button {
+                showingPhotoPicker = true
+            } label: {
+                Label("从相册选择小票/订单截图", systemImage: "photo")
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "camera.viewfinder")
+                    .font(.subheadline)
+                Text("拍单据")
+                    .font(.caption.bold())
+            }
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(Color.accentColor.opacity(0.12), in: Capsule())
+        }
+    }
+
+    @ViewBuilder
+    private var foreignCurrencyDetails: some View {
+        if selectedCurrency != .cny {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("折合人民币")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(String(format: "¥%.2f", convertedCNYAmount))
+                        .font(.system(.headline, design: .rounded).bold())
+                        .foregroundStyle(isIncome ? Color.green : Color.orange)
+                        .contentTransition(.numericText())
+                }
+
+                HStack(spacing: 8) {
+                    Text("汇率 (1 \(selectedCurrency.rawValue) = )")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField(selectedCurrency.formatRateInput(), text: $exchangeRateString)
+                        .keyboardType(.decimalPad)
+                        .font(.caption.monospacedDigit().bold())
+                        .multilineTextAlignment(.trailing)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.small))
+                        .frame(minWidth: 68, idealWidth: 96, maxWidth: 96)
+                    Text("CNY")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        syncOnlineExchangeRates()
+                    } label: {
+                        HStack(spacing: 3) {
+                            if isSyncingOnlineRates {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                            }
+                            Text("实时汇率")
+                        }
+                        .font(.caption2.bold())
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .disabled(isSyncingOnlineRates)
+                }
+
+                HStack {
+                    Text(selectedCurrency.rateDisplayString(rate: parsedExchangeRate))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if selectedCurrency.hasCustomRate() || abs(parsedExchangeRate - selectedCurrency.defaultRateToCNY) > 0.00001 {
+                        Button("恢复参考汇率") {
+                            selectedCurrency.resetRateToDefault()
+                            exchangeRateString = selectedCurrency.formatRateInput(selectedCurrency.defaultRateToCNY)
+                            rateStatusMessage = nil
+                            Haptic.light()
+                        }
+                        .font(.caption2)
+                        .buttonStyle(.borderless)
+                    }
+                }
+
+                if let rateStatusMessage {
+                    Text(rateStatusMessage)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var amountSection: some View {
+        Section {
+            Picker("收支类型", selection: $isIncome) {
+                Text("支出").tag(false)
+                Text("收入").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: isIncome) { _, income in
+                Haptic.selection()
+                AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.75)) {
+                    if income {
+                        selectedCategory = .income
+                    } else {
+                        if selectedCategory.isIncome {
+                            selectedCategory = availableCategories.first ?? .food
+                        }
+                    }
+                }
+            }
+
+            HStack {
+                Menu {
+                    ForEach(ExpenseCurrency.allCases) { cur in
+                        Button {
+                            selectedCurrency = cur
+                            exchangeRateString = cur.formatRateInput()
+                            rateStatusMessage = nil
+                            Haptic.selection()
+                        } label: {
+                            HStack {
+                                Text(cur.pickerLabel)
+                                if cur == selectedCurrency {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    currencyPickerLabel
+                }
+
+                TextField("0.00", text: $amountString)
+                    .keyboardType(.decimalPad)
+                    .font(.system(.title2, design: .rounded).bold())
+
+                captureReceiptMenu
+            }
+
+            foreignCurrencyDetails
+        }
+    }
+
+    @ViewBuilder
+    private var categorySection: some View {
+        Section("分类与项目") {
+            Picker("分类", selection: $selectedCategory) {
+                ForEach(availableCategories, id: \.self) { cat in
+                    Label(L10n.tr(cat.rawValue), systemImage: cat.icon).tag(cat)
+                }
+            }
+
+            TextField("备注说明（如：麦当劳、打车、工资）", text: $title)
+        }
+    }
+
+    private var confidenceWarningText: String {
+        let percent = Int(recognitionConfidence * 100)
+        return "识别置信度较低（\(percent)%），请仔细核对"
+    }
+
+    @ViewBuilder
+    private var receiptSection: some View {
+        Section("原始单据与智能识别") {
+            if let data = receiptImageData, let image = UIImage(data: data) {
+                HStack(spacing: 12) {
+                    Button {
+                        showingImagePreview = true
+                    } label: {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 58, height: 58)
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppRadius.chip)
+                                    .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        if isRecognizingReceipt {
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                Text("正在识别单据并提取信息…")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else if let msg = recognitionMessage {
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles")
+                                    .foregroundStyle(Color.accentColor)
+                                Text(msg)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Text("已附上单据照片，点击缩略图可查看大图")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if recognitionConfidence < 0.75 && recognitionConfidence > 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                Text(confidenceWarningText)
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+
+                if !candidateAmounts.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("候选金额（点击快速切换）：")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(candidateAmounts, id: \.self) { amt in
+                                    let isSelected = (parsedInputAmount > 0 && abs(parsedInputAmount - amt) < 0.001)
+                                    Button {
+                                        selectCandidateAmount(amt)
+                                    } label: {
+                                        HStack(spacing: 2) {
+                                            if isSelected {
+                                                Image(systemName: "checkmark")
+                                                    .font(.caption2)
+                                            }
+                                            Text(String(format: "¥%.2f", amt))
+                                                .font(.caption.monospacedDigit().bold())
+                                        }
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(isSelected ? Color.accentColor : Color.secondary)
+                                    .controlSize(.mini)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HStack(spacing: 12) {
+                    Button {
+                        reRecognizeCurrentReceipt()
+                    } label: {
+                        Label("重新识别", systemImage: "arrow.clockwise")
+                    }
+                    .font(.caption)
+                    .disabled(isRecognizingReceipt)
+
+                    Button {
+                        showingCamera = true
+                    } label: {
+                        Label("重拍", systemImage: "camera")
+                    }
+                    .font(.caption)
+
+                    Button {
+                        showingPhotoPicker = true
+                    } label: {
+                        Label("换图", systemImage: "photo")
+                    }
+                    .font(.caption)
+
+                    if recognizedRawText != nil {
+                        Button {
+                            showingRawTextSheet = true
+                        } label: {
+                            Label("原文", systemImage: "doc.text")
+                        }
+                        .font(.caption)
+                    }
+
+                    Spacer()
+
+                    Button(role: .destructive) {
+                        receiptImageData = nil
+                        selectedReceiptItem = nil
+                        candidateAmounts = []
+                        recognitionMessage = nil
+                        recognizedRawText = nil
+                    } label: {
+                        Label("移除", systemImage: "trash")
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.borderless)
+            } else {
+                HStack(spacing: 12) {
+                    Button {
+                        showingCamera = true
+                    } label: {
+                        Label("拍照识别", systemImage: "camera.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button {
+                        showingPhotoPicker = true
+                    } label: {
+                        Label("相册导入", systemImage: "photo.on.rectangle")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Text("支持发票、消费小票、收据以及淘宝、京东等购物订单截图，自动识别金额、商品商户、分类及时间。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if UIPasteboard.general.hasImages {
+                    Button {
+                        if let clipImg = UIPasteboard.general.image {
+                            handlePickedReceiptImage(clipImg)
+                        }
+                    } label: {
+                        Label("识别剪贴板中的单据截图", systemImage: "doc.on.clipboard")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var linkedItemSection: some View {
+        if !isIncome && !storedItems.isEmpty {
+            Section("关联收纳物品（可选）") {
+                Picker("计入物品投入", selection: $linkedItemID) {
+                    Text("不关联").tag(UUID?.none)
+                    ForEach(storedItems) { item in
+                        Text(item.name).tag(UUID?.some(item.id))
+                    }
+                }
+                if linkedItemID != nil {
+                    Text("这笔支出将计入对应物品的累计投入，日均持有成本随之更新。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var timeSection: some View {
+        Section("记账时间") {
+            DatePicker("发生日期与时间", selection: $date)
+        }
+    }
+
+    @ViewBuilder
+    private var splitSection: some View {
+        if !isIncome {
+            Section("AA 分摊（可选）") {
+                TextField("参与人数", text: $splitCountString).keyboardType(.numberPad)
+                TextField("参与人姓名（可选，用逗号分隔）", text: $splitParticipants)
+                if let amount = Double(amountString), amount > 0, let count = Int(splitCountString), count > 1 {
+                    HStack {
+                        Text("每人应付")
+                        Spacer()
+                        Text(convertedCNYAmount / Double(count), format: .currency(code: "CNY")).fontWeight(.semibold)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var deleteSection: some View {
+        if isEditing {
+            Section {
+                Button(role: .destructive) {
+                    showingDeleteConfirm = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        Label("删除这笔账目记录", systemImage: "trash")
+                            .foregroundStyle(AppColor.danger)
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+
 
     private func handlePickedReceiptImage(_ image: UIImage) {
         guard let data = image.jpegData(compressionQuality: 0.82) else { return }
@@ -2498,7 +2571,10 @@ struct AddOrEditExpenseSheet: View {
             record.linkedItemID = linkedItemID
             record.splitCount = max(Int(splitCountString) ?? 1, 1)
             record.splitParticipants = splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
-            try? context.save()
+            guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存账目") }) else {
+                Haptic.error()
+                return
+            }
             ExpenseCalorieService.handleSaved(
                 record,
                 propose: record.title != oldTitle || !wasFoodExpense,
@@ -2524,7 +2600,10 @@ struct AddOrEditExpenseSheet: View {
             record.linkedItemID = linkedItemID
             record.splitCount = max(Int(splitCountString) ?? 1, 1)
             record.splitParticipants = splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
-            try? context.save()
+            guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "记账") }) else {
+                Haptic.error()
+                return
+            }
             ExpenseCalorieService.handleSaved(record, propose: true, context: context)
             ExpenseWaterService.handleSaved(record, context: context)
             Haptic.success()
@@ -2557,7 +2636,10 @@ struct AddOrEditExpenseSheet: View {
         ExpenseCalorieService.handleDeleted(expenseID: record.id, context: context)
         ExpenseWaterService.handleDeleted(expenseID: record.id, context: context)
         context.delete(record)
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除账目") }) else {
+            Haptic.error()
+            return
+        }
         Haptic.warning()
         dismiss()
     }
