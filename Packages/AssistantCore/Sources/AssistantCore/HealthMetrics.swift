@@ -148,14 +148,31 @@ public struct HealthGoal: Equatable, Sendable {
     }
 
     /// 默认目标。取值参考一般成年人建议量，可在设置里覆盖。
+    /// 饮水默认目标取 1700 毫升（与「喝水记录」默认目标一致）。
     /// 睡眠目标取 7 小时下限——低于 7 小时即视为未达标，不做「越多越好」的处理
     /// （睡眠时长不是线性收益指标，多睡不等于更健康）。
     public static let defaults: [HealthGoal] = [
         HealthGoal(kind: .stepCount, target: 8000),
         HealthGoal(kind: .activeEnergy, target: 400),
-        HealthGoal(kind: .dietaryWater, target: 2000),
+        HealthGoal(kind: .dietaryWater, target: 1700),
         HealthGoal(kind: .sleep, target: 7)
     ]
+
+    /// 按「喝水记录」中的每日饮水目标与「睡前提醒」中的睡眠目标生成目标列表（若传入值无效则回退默认值）。
+    public static func defaults(waterGoalML: Double, sleepGoalHours: Double = 7) -> [HealthGoal] {
+        let waterTarget = waterGoalML > 0 ? waterGoalML : 1700
+        let sleepTarget = sleepGoalHours > 0 ? sleepGoalHours : 7
+        return defaults.map { goal in
+            switch goal.kind {
+            case .dietaryWater:
+                return HealthGoal(kind: .dietaryWater, target: waterTarget)
+            case .sleep:
+                return HealthGoal(kind: .sleep, target: sleepTarget)
+            default:
+                return goal
+            }
+        }
+    }
 
     /// 目标是否有效（必须为正数，否则达成判定无意义）。
     public var isValid: Bool { target > 0 }
@@ -301,6 +318,19 @@ public struct HealthDaySnapshot: Equatable, Sendable {
     /// 空快照（请求过但什么都没读到）。
     public static func empty(day: Date) -> HealthDaySnapshot {
         HealthDaySnapshot(day: day, values: [:], workoutSummary: nil)
+    }
+
+    /// 用「喝水记录」的有效补水量覆盖或补充当日饮水指标（以喝水记录为准）。
+    public func overridingDietaryWater(_ waterML: Double?) -> HealthDaySnapshot {
+        guard let waterML else { return self }
+        var updated = values
+        updated[.dietaryWater] = HealthMetricValue(kind: .dietaryWater, value: waterML, day: day)
+        return HealthDaySnapshot(
+            day: day,
+            values: updated,
+            workoutSummary: workoutSummary,
+            sleepOnset: sleepOnset
+        )
     }
 
     // MARK: - 快捷计算属性

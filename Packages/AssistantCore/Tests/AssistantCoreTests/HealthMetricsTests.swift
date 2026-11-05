@@ -187,7 +187,26 @@ final class HealthMetricsTests: XCTestCase {
         let snapshot = HealthDaySnapshot(day: day, values: [.dietaryWater: value(.dietaryWater, 2500)])
         let p = HealthMetrics.progress(for: .hydration, snapshot: snapshot)
         XCTAssertEqual(p?.goal.kind, .dietaryWater)
+        XCTAssertEqual(p?.goal.target, 1700)
         XCTAssertEqual(p?.status, .achieved)
+    }
+
+    func testDefaultsWaterGoalMatchesWaterTrackerAndSupportsCustomOverride() {
+        let defaultWaterGoal = HealthGoal.defaults.first { $0.kind == .dietaryWater }
+        XCTAssertEqual(defaultWaterGoal?.target, 1700)
+
+        let customGoals = HealthGoal.defaults(waterGoalML: 2200, sleepGoalHours: 7.5)
+        XCTAssertEqual(customGoals.first { $0.kind == .dietaryWater }?.target, 2200)
+        XCTAssertEqual(customGoals.first { $0.kind == .sleep }?.target, 7.5)
+
+        let fallbackGoals = HealthGoal.defaults(waterGoalML: 0, sleepGoalHours: 0)
+        XCTAssertEqual(fallbackGoals.first { $0.kind == .dietaryWater }?.target, 1700)
+        XCTAssertEqual(fallbackGoals.first { $0.kind == .sleep }?.target, 7)
+
+        let baseSnapshot = HealthDaySnapshot(day: day, values: [.stepCount: value(.stepCount, 5000)])
+        let overridden = baseSnapshot.overridingDietaryWater(1800)
+        XCTAssertEqual(overridden.value(for: .dietaryWater)?.value, 1800)
+        XCTAssertEqual(overridden.value(for: .stepCount)?.value, 5000)
     }
 
     /// 未观测到的指标即使目标存在，也必须是 noData 而非 notAchieved。

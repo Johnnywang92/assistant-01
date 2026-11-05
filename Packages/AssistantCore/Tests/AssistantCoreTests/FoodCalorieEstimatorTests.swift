@@ -777,4 +777,46 @@ final class FoodCalorieEstimatorTests: XCTestCase {
         // 100g 生大米蒸熟后为 ~230g 熟米饭，热量约为熟米饭 100g 的 2.3 倍
         XCTAssertEqual(rawDish.fullPortionCalories, cookedDish.fullPortionCalories * 2.3, accuracy: 5.0)
     }
+
+    // MARK: - 回归（CORE-09）：同一食物重复出现要合并份量，不能丢菜
+
+    func testDuplicateDishMergesQuantityInsteadOfDropping() {
+        guard let one = FoodCalorieEstimator.estimateMeal(fromHint: "一个包子"),
+              let two = FoodCalorieEstimator.estimateMeal(fromHint: "两个包子"),
+              let twoPlusOne = FoodCalorieEstimator.estimateMeal(fromHint: "两个包子一个肉包") else {
+            return XCTFail("基础用例解析失败")
+        }
+        // 「肉包」是包子的同一食物条目：应合并成一道菜、热量等于 3 份
+        XCTAssertEqual(twoPlusOne.dishes.count, 1)
+        XCTAssertEqual(twoPlusOne.dishes.first?.food.id, two.dishes.first?.food.id)
+        XCTAssertEqual(twoPlusOne.consumedCalories,
+                       two.consumedCalories + one.consumedCalories,
+                       accuracy: 1.0)
+        XCTAssertTrue(twoPlusOne.unmatchedHints.isEmpty)
+    }
+
+    func testMixedMealKeepsAllDistinctDishes() {
+        let meal = FoodCalorieEstimator.estimateMeal(fromHint: "两个包子一碗粥一个肉包一杯豆浆两个鸡蛋")
+        guard let meal else { return XCTFail("多菜解析失败") }
+        // 包子（两份合并）+ 粥 + 豆浆 + 鸡蛋
+        XCTAssertEqual(meal.dishes.count, 4)
+        let bun = meal.dishes.first { $0.food.id.hasPrefix("steamed_bun") || $0.food.id == "steamed_bun" }
+        XCTAssertNotNil(bun)
+        if let bun {
+            let singleBun = FoodCalorieEstimator.estimateMeal(fromHint: "一个包子")
+            // 「两个包子 + 一个肉包」= 同一食物 3 份，热量应为单份的 3 倍
+            XCTAssertEqual(bun.fullPortionCalories,
+                           (singleBun?.fullPortionCalories ?? 0) * 3,
+                           accuracy: 3.0,
+                           "重复出现的同类菜应合并份量，而不是被丢弃")
+        }
+    }
+
+    func testUnmatchedFragmentsAreReported() {
+        let meal = FoodCalorieEstimator.estimateMeal(fromHint: "一个包子一盘恐龙肉")
+        guard let meal else { return XCTFail("解析失败") }
+        XCTAssertFalse(meal.unmatchedHints.isEmpty, "没认出来的片段应出现在 unmatchedHints 里")
+        XCTAssertTrue(meal.unmatchedHints.contains { $0.contains("恐龙肉") },
+                      "实际 hints：\(meal.unmatchedHints)")
+    }
 }

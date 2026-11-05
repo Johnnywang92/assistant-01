@@ -943,17 +943,79 @@ public enum FoodCatalog {
         }
     }
 
+    // MARK: - 预计算索引（性能：把「每次调用都 lowercased 全表」变成一次建表）
+    //
+    // `items(matchingName:)` 每次调用都会把 208 条条目的 name/nameEn/aliases 现场
+    // lowercased() 一遍（个别条目十几个别名），实测单次 ~335µs；而搜索/估算路径是
+    // 「每敲一个键/每识别一道菜」都走一次。`items` 与这些字段在初始化后不可变，
+    // 所以首次访问时建一次不可变索引，之后只做查表和已小写的包含匹配。
+    //
+    // 注意：这里**不改变匹配语义**，只是把大小写转换提前。
+    private struct IndexedFood {
+        let nameLower: String
+        let nameEnLower: String
+        let aliasesLower: [String]
+    }
+
+    private static let indexedFoods: [IndexedFood] = items.map { item in
+        IndexedFood(
+            nameLower: item.name.lowercased(),
+            nameEnLower: item.nameEn.lowercased(),
+            aliasesLower: item.aliases.map { $0.lowercased() }
+        )
+    }
+
+    /// 名称/英文名 -> 条目下标（按目录顺序，用于「完整名称优先」）。
+    private static let nameIndex: [String: [Int]] = {
+        var index: [String: [Int]] = [:]
+        for (i, food) in indexedFoods.enumerated() {
+            if !food.nameLower.isEmpty { index[food.nameLower, default: []].append(i) }
+            if !food.nameEnLower.isEmpty { index[food.nameEnLower, default: []].append(i) }
+        }
+        return index
+    }()
+
+    /// 别名 -> 条目下标（按目录顺序）。
+    private static let aliasIndex: [String: [Int]] = {
+        var index: [String: [Int]] = [:]
+        for (i, food) in indexedFoods.enumerated() {
+            for alias in food.aliasesLower where !alias.isEmpty {
+                index[alias, default: []].append(i)
+            }
+        }
+        return index
+    }()
+
+    /// Vision 类目标识符（小写）-> 条目下标。
+    private static let visionIdentifierIndex: [String: [Int]] = {
+        var index: [String: [Int]] = [:]
+        for (i, item) in items.enumerated() {
+            for identifier in item.visionIdentifiers {
+                let key = identifier.lowercased()
+                guard !key.isEmpty else { continue }
+                index[key, default: []].append(i)
+            }
+        }
+        return index
+    }()
+
+    private static let itemsByID: [String: FoodItem] = {
+        var map: [String: FoodItem] = [:]
+        for item in items where map[item.id] == nil { map[item.id] = item }
+        return map
+    }()
+
     /// 按 id 查找。
     public static func item(id: String) -> FoodItem? {
-        items.first { $0.id == id }
+        itemsByID[id]
     }
 
     /// 按 Vision 类目标识符查找食物。
     public static func items(matchingVisionIdentifier identifier: String) -> [FoodItem] {
         let key = identifier.lowercased()
-        return items.filter { item in
-            item.visionIdentifiers.contains { $0.lowercased() == key }
-        }
+        guard !key.isEmpty else { return [] }
+        // 索引里的下标按目录顺序追加，去重后仍是稳定顺序
+        return (visionIdentifierIndex[key] ?? []).map { items[$0] }
     }
 
     /// 按中文名或别名查找（用于 LLM 给出的菜名回查）。
@@ -961,16 +1023,39 @@ public enum FoodCatalog {
     /// 这是**宽松**匹配：别名只要被包含即命中，适合搜索场景。
     /// **不适合校验模型输出的菜名**——模型编造的「外星烧烤」会因包含
     /// 别名「烧烤」而被误判为合法。校验场景请用 `item(matchingNameStrict:)`。
+    ///
+    /// 性能（2026-11-05）：旧实现遍历 208 条 × 全部别名做 `key.contains(alias)`，
+    /// 命中与否都要把整张别名表过一遍（实测 ~340µs/次）。这里改成
+    /// **把「别名被 key 包含」反转为「枚举 key 的长度≥2 子串去查别名索引」**：
+    /// key 通常只有 3–8 个字，子串数量 ≤ 36，查表 O(1)，语义完全等价。
     public static func items(matchingName name: String) -> [FoodItem] {
         let key = name.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return [] }
-        return items.filter { item in
-            if item.name.lowercased() == key || item.nameEn.lowercased() == key { return true }
-            if item.aliases.contains(where: { $0.lowercased() == key }) { return true }
-            return item.aliases.contains { alias in
-                alias.count >= 2 && key.contains(alias.lowercased())
+
+        var matched = Set(nameIndex[key] ?? [])
+        matched.formUnion(aliasIndex[key] ?? [])
+        matched.formUnion(fuzzyAliasMatches(for: key))
+        guard !matched.isEmpty else { return [] }
+        // 按目录顺序返回，保持旧实现的顺序语义。
+        return matched.sorted().map { items[$0] }
+    }
+
+    /// 宽松包含匹配：返回「存在长度 ≥ 2 的别名被 key 包含」的条目下标。
+    ///
+    /// 等价于旧实现里的 `item.aliases.contains { $0.count >= 2 && key.contains($0) }`，
+    /// 但改成了对 key 的所有子串查 `aliasIndex`，复杂度从 O(条目数×别名数) 降到 O(|key|²)。
+    private static func fuzzyAliasMatches(for key: String) -> Set<Int> {
+        var result = Set<Int>()
+        let chars = Array(key)
+        guard chars.count >= 2 else { return result }
+        for start in 0..<(chars.count - 1) {
+            for end in (start + 2)...chars.count {
+                if let hits = aliasIndex[String(chars[start..<end])] {
+                    result.formUnion(hits)
+                }
             }
         }
+        return result
     }
 
     /// 严格匹配一个菜名到食物库。
@@ -989,19 +1074,15 @@ public enum FoodCatalog {
         let lowerKey = key.lowercased()
 
         // 规则 1：完整名称优先于宽泛旧条目的别名（例如「橙子」优先于「橙子/柑橘/柚子」）。
-        if let exact = items.first(where: { $0.name.lowercased() == lowerKey || $0.nameEn.lowercased() == lowerKey }) {
-            return exact
-        }
-        if let alias = items.first(where: { $0.aliases.contains(where: { $0.lowercased() == lowerKey }) }) {
-            return alias
-        }
+        if let index = nameIndex[lowerKey]?.first { return items[index] }
+        if let index = aliasIndex[lowerKey]?.first { return items[index] }
 
         // 规则 2：剥离量词/修饰后相等
         let stripped = stripPortionModifiers(key)
         guard stripped != key, !stripped.isEmpty else { return nil }
         let lowerStripped = stripped.lowercased()
-        return items.first(where: { $0.name.lowercased() == lowerStripped || $0.nameEn.lowercased() == lowerStripped })
-            ?? items.first(where: { $0.aliases.contains(where: { $0.lowercased() == lowerStripped }) })
+        if let index = nameIndex[lowerStripped]?.first { return items[index] }
+        return aliasIndex[lowerStripped]?.first.map { items[$0] }
     }
 
     /// 剥离中文菜名前后的量词与修饰词（如「一份」「小份」「这个」「一个」「200g」「二两」「半糖」「冰美式」）。
@@ -1010,32 +1091,32 @@ public enum FoodCatalog {
         guard !text.isEmpty else { return "" }
 
         // 移除括号内注释文字，如 "(1个，约80g)" 或 "（大包）"
-        text = text.replacingOccurrences(of: "\\([^)]*\\)", with: "", options: .regularExpression)
-        text = text.replacingOccurrences(of: "（[^）]*）", with: "", options: .regularExpression)
+        text = Regex.replace("\\([^)]*\\)", in: text, with: "")
+        text = Regex.replace("（[^）]*）", in: text, with: "")
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // 剥离前缀指示代词与修饰（这、那、的）
-        text = text.replacingOccurrences(of: "^[这那的]+", with: "", options: .regularExpression)
+        text = Regex.replace("^[这那的]+", in: text, with: "")
 
         // 剥离重量/体积单位前缀（如「200g」「200克」「500ml」「二两」「半斤」）
         let weightPattern = "^([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(?:g|克|千克|kg|ml|毫升|升|L|两|斤)\\s*"
-        text = text.replacingOccurrences(of: weightPattern, with: "", options: .regularExpression)
+        text = Regex.replace(weightPattern, in: text, with: "")
 
         // 剥离前缀数量与量词（如「一个」「2个」「两只」「半碗」「1碗」「一杯」）
         let prefixQtyPattern = "^([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客)\\s*"
-        text = text.replacingOccurrences(of: prefixQtyPattern, with: "", options: .regularExpression)
+        text = Regex.replace(prefixQtyPattern, in: text, with: "")
 
         // 剥离前缀份量级别（如「大份」「小份」「中份」「标准份」「大碗」「小碗」「大盘」「小盘」「大杯」「小杯」）
         let prefixPortionPattern = "^(大份|小份|中份|标准份|大碗|小碗|中碗|大盘|小盘|大杯|小杯|中杯|大罐|小罐|大瓶|小瓶)\\s*"
-        text = text.replacingOccurrences(of: prefixPortionPattern, with: "", options: .regularExpression)
+        text = Regex.replace(prefixPortionPattern, in: text, with: "")
 
         // 剥离糖度修饰（如「无糖」「微糖」「三分糖」「3分糖」「半糖」「五分糖」「少糖」「全糖」）
         let sugarPattern = "^(无糖|0糖|零糖|不加糖|微糖|三分糖|3分糖|半糖|五分糖|5分糖|少糖|七分糖|7分糖|全糖|正常糖|多糖)\\s*"
-        text = text.replacingOccurrences(of: sugarPattern, with: "", options: .regularExpression)
+        text = Regex.replace(sugarPattern, in: text, with: "")
 
         // 剥离温度/冰度修饰（如「冰镇」「去冰」「少冰」「常温」），并安全剥离「冰」「热」「温」「冷」
         let iceModifierPattern = "^(冰镇|去冰|少冰|常温)\\s*"
-        text = text.replacingOccurrences(of: iceModifierPattern, with: "", options: .regularExpression)
+        text = Regex.replace(iceModifierPattern, in: text, with: "")
         if text.hasPrefix("冰") && !text.hasPrefix("冰淇淋") && !text.hasPrefix("冰棒") && !text.hasPrefix("冰粉") && !text.hasPrefix("冰糖") {
             text = String(text.dropFirst())
         }
@@ -1048,18 +1129,18 @@ public enum FoodCatalog {
 
         // 剥离后缀糖度修饰
         let suffixSugarPattern = "\\s*(无糖|0糖|零糖|不加糖|微糖|三分糖|3分糖|半糖|五分糖|5分糖|少糖|七分糖|7分糖|全糖|正常糖|多糖)$"
-        text = text.replacingOccurrences(of: suffixSugarPattern, with: "", options: .regularExpression)
+        text = Regex.replace(suffixSugarPattern, in: text, with: "")
 
         // 剥离后缀数量与量词（如「一份」「2碗」「1只」）
         let suffixQtyPattern = "\\s*([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|斤|g|克|ml|毫升)$"
-        text = text.replacingOccurrences(of: suffixQtyPattern, with: "", options: .regularExpression)
+        text = Regex.replace(suffixQtyPattern, in: text, with: "")
 
         // 剥离后缀份量级别（如「大份」「小份」「大碗」）
         let suffixPortionPattern = "\\s*(大份|小份|中份|标准份|大碗|小碗|中碗|大盘|小盘|大杯|小杯|中杯|大罐|小罐|大瓶|小瓶)$"
-        text = text.replacingOccurrences(of: suffixPortionPattern, with: "", options: .regularExpression)
+        text = Regex.replace(suffixPortionPattern, in: text, with: "")
 
         // 剥离末尾的「的」
-        text = text.replacingOccurrences(of: "[的]+$", with: "", options: .regularExpression)
+        text = Regex.replace("[的]+$", in: text, with: "")
 
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -1504,6 +1585,11 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
     public let consumedCalories: Double
     /// 用户自定义的整餐展示名（若设置则覆盖自动生成的菜名拼接）
     public let customDisplayName: String?
+    /// 文本里出现、但**没有匹配到任何食物**的片段。
+    ///
+    /// 旧实现直接 `continue` 丢掉，用户以为估算已包含全部菜品，整餐热量被系统性低估。
+    /// UI 可用它提示「这些没认出来：…」，让缺口可见。
+    public let unmatchedHints: [String]
 
     /// 展示用菜品名称（单菜显示菜名，多菜显示「米饭 + 辣椒炒肉 + 凉拌海带丝」；若用户自定义了整餐名称则显示自定义名称）。
     public var displayName: String {
@@ -1591,7 +1677,8 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
                 confidence: Double,
                 consumedRatio: Double = 1.0,
                 fullPortionCaloriesOverride: Double? = nil,
-                customDisplayName: String? = nil) {
+                customDisplayName: String? = nil,
+                unmatchedHints: [String] = []) {
         let clamped = FoodCalorieEstimator.clampRatio(consumedRatio)
         let base = fullPortionCaloriesOverride
             ?? (food.standardServingCalories * portion.multiplier)
@@ -1610,10 +1697,14 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         self.fullPortionCalories = base
         self.consumedCalories = base * clamped
         self.customDisplayName = customDisplayName
+        self.unmatchedHints = unmatchedHints
     }
 
     /// 由多道菜品构造整餐热量估算（自动汇总所有菜品的整份热量与实际摄入热量）。
-    public init(dishes: [FoodDishEstimate], portion: FoodPortion? = nil, customDisplayName: String? = nil) {
+    public init(dishes: [FoodDishEstimate],
+                portion: FoodPortion? = nil,
+                customDisplayName: String? = nil,
+                unmatchedHints: [String] = []) {
         let validDishes = dishes.isEmpty
             ? [FoodDishEstimate(food: FoodCatalog.item(id: "rice") ?? FoodCatalog.items[0])]
             : dishes
@@ -1633,6 +1724,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         self.fullPortionCalories = totalFull
         self.consumedCalories = totalConsumed
         self.customDisplayName = customDisplayName
+        self.unmatchedHints = unmatchedHints
     }
 
     /// 修改整餐自定义名称
@@ -1640,7 +1732,8 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         FoodCalorieEstimate(
             dishes: dishes,
             portion: portion,
-            customDisplayName: name
+            customDisplayName: name,
+            unmatchedHints: unmatchedHints
         )
     }
 
@@ -1649,7 +1742,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         let updatedDishes = dishes.map { dish in
             dish.id == dishID ? dish.replacing(food: newFood) : dish
         }
-        return FoodCalorieEstimate(dishes: updatedDishes, portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: updatedDishes, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 更新某一道菜的名称与热量数值
@@ -1657,7 +1750,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         let updatedDishes = dishes.map { dish in
             dish.id == dishID ? dish.updating(name: name, calories: calories) : dish
         }
-        return FoodCalorieEstimate(dishes: updatedDishes, portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: updatedDishes, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 换算后的实际摄入热量（保留整份热量基准，包括多道菜品、LLM 或手动覆盖后的整份热量）。
@@ -1665,7 +1758,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         let clamped = FoodCalorieEstimator.clampRatio(ratio)
         if dishes.count > 1 {
             let updatedDishes = dishes.map { $0.withConsumedRatio(clamped) }
-            return FoodCalorieEstimate(dishes: updatedDishes, portion: portion, customDisplayName: customDisplayName)
+            return FoodCalorieEstimate(dishes: updatedDishes, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
         }
         return FoodCalorieEstimate(
             food: food,
@@ -1673,7 +1766,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
             confidence: confidence,
             consumedRatio: clamped,
             fullPortionCaloriesOverride: fullPortionCalories,
-            customDisplayName: customDisplayName
+            customDisplayName: customDisplayName, unmatchedHints: unmatchedHints
         )
     }
 
@@ -1681,9 +1774,9 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
     public func withPortion(_ newPortion: FoodPortion) -> FoodCalorieEstimate {
         if dishes.count > 1 {
             let updatedDishes = dishes.map { $0.withPortion(newPortion) }
-            return FoodCalorieEstimate(dishes: updatedDishes, portion: newPortion, customDisplayName: customDisplayName)
+            return FoodCalorieEstimate(dishes: updatedDishes, portion: newPortion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
         }
-        return FoodCalorieEstimate(food: food, portion: newPortion, confidence: confidence, consumedRatio: consumedRatio, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(food: food, portion: newPortion, confidence: confidence, consumedRatio: consumedRatio, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 用外部算出的热量覆盖基准值（保留份量、置信度与吃剩比例）。
@@ -1693,7 +1786,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
             let updatedDishes = dishes.map {
                 $0.withOverriddenCalories($0.fullPortionCalories * scale)
             }
-            return FoodCalorieEstimate(dishes: updatedDishes, portion: portion, customDisplayName: customDisplayName)
+            return FoodCalorieEstimate(dishes: updatedDishes, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
         }
         return FoodCalorieEstimate(
             food: food,
@@ -1701,7 +1794,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
             confidence: confidence,
             consumedRatio: consumedRatio,
             fullPortionCaloriesOverride: fullPortionCalories,
-            customDisplayName: customDisplayName
+            customDisplayName: customDisplayName, unmatchedHints: unmatchedHints
         )
     }
 
@@ -1710,7 +1803,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         let updated = dishes.map { dish in
             dish.id == dishID ? dish.withConsumedRatio(ratio) : dish
         }
-        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 调整某一道菜的份量（小份/标准份/大份）。
@@ -1718,7 +1811,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         let updated = dishes.map { dish in
             dish.id == dishID ? dish.withPortion(newPortion) : dish
         }
-        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 调整某一道菜的具体克数
@@ -1726,7 +1819,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         let updated = dishes.map { dish in
             dish.id == dishID ? dish.withCustomGrams(grams) : dish
         }
-        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 调整某一道菜的烹饪方式
@@ -1734,7 +1827,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         let updated = dishes.map { dish in
             dish.id == dishID ? dish.withCookingMethod(method) : dish
         }
-        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 调整某一道菜的用油/酱汁水平
@@ -1742,7 +1835,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         let updated = dishes.map { dish in
             dish.id == dishID ? dish.withOilSauceLevel(level) : dish
         }
-        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 综合配置某一道菜（名称、克数分量、烹饪方式、用油量、称量状态、手动卡路里）
@@ -1778,7 +1871,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
             }
             return d
         }
-        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 调整某一道菜的生熟称重状态
@@ -1786,7 +1879,7 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         let updated = dishes.map { dish in
             dish.id == dishID ? dish.withPreparationState(state) : dish
         }
-        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: updated, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 向本餐追加一道菜品（若已存在同 ID 菜品则更新它，避免重复叠加同一菜品）。
@@ -1794,16 +1887,16 @@ public struct FoodCalorieEstimate: Equatable, Sendable {
         if let idx = dishes.firstIndex(where: { $0.food.id == newDish.food.id }) {
             var copy = dishes
             copy[idx] = newDish
-            return FoodCalorieEstimate(dishes: copy, portion: portion, customDisplayName: customDisplayName)
+            return FoodCalorieEstimate(dishes: copy, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
         }
-        return FoodCalorieEstimate(dishes: dishes + [newDish], portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: dishes + [newDish], portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 
     /// 从本餐移除一道菜品（至少保留 1 道菜）。
     public func removingDish(dishID: String) -> FoodCalorieEstimate {
         let remaining = dishes.filter { $0.id != dishID }
         guard !remaining.isEmpty else { return self }
-        return FoodCalorieEstimate(dishes: remaining, portion: portion, customDisplayName: customDisplayName)
+        return FoodCalorieEstimate(dishes: remaining, portion: portion, customDisplayName: customDisplayName, unmatchedHints: unmatchedHints)
     }
 }
 
@@ -2009,11 +2102,10 @@ public enum FoodCalorieEstimator {
         }
 
         // 0. 紧邻数字/量词的空格是修饰关系，不是跨菜分隔符（如 "米饭 250克" -> "米饭250克"，"200g 米饭" -> "200g米饭"）
-        cleaned = cleaned.replacingOccurrences(
-            of: "(?<=[^0-9a-zA-Z一二两三四五六七八九十半])\\s+(?=[0-9一二两三四五六七八九十半]+(?:个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|斤|g|克|ml|毫升))",
-            with: "",
-            options: .regularExpression
-        )
+        cleaned = Regex.replace("(?<=[^0-9a-zA-Z一二两三四五六七八九十半])\\s+(?=[0-9一二两三四五六七八九十半]+(?:个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|斤|g|克|ml|毫升))", in: cleaned, with: "")
+        // 注意：这条模式的 lookbehind 是**变长**的（`[0-9一二…]+(?:量词)`），
+        // NSRegularExpression 会判非法（`Regex.compile` 直接 assertionFailure），
+        // 因此保留 ICU 的 `.regularExpression`，不要迁到 Regex.replace。
         cleaned = cleaned.replacingOccurrences(
             of: "(?<=[0-9一二两三四五六七八九十半]+(?:个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|斤|g|克|ml|毫升))\\s+(?=[^0-9a-zA-Z一二两三四五六七八九十半])",
             with: "",
@@ -2023,7 +2115,7 @@ public enum FoodCalorieEstimator {
         // 1. 先检查是否包含未用标点分隔的多菜口语表述（如「两个包子一碗粥」「一个肉包一杯豆浆」「两个鸡蛋一碗小米粥」）
         var preprocessed = cleaned
         let spokenBoundaryPattern = "(?<=[^\\s|，,、+＋/；;0-9一二两三四五六七八九十百千万半])(?=(?:[0-9]+|[一二两三四五六七八九十半]+)\\s*(?:个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|g|克|ml|毫升)\\s*[^\\s|，,、+＋/；;0-9一二两三四五六七八九十百千万半])"
-        if let boundaryRegex = try? NSRegularExpression(pattern: spokenBoundaryPattern) {
+        if let boundaryRegex = Regex.compile(spokenBoundaryPattern) {
             let range = NSRange(preprocessed.startIndex..., in: preprocessed)
             preprocessed = boundaryRegex.stringByReplacingMatches(in: preprocessed, range: range, withTemplate: "|")
         }
@@ -2031,7 +2123,7 @@ public enum FoodCalorieEstimator {
         // 2. 先尝试按常见分隔符拆分为多道菜
         let pattern = "[，,、+＋/；;\\s\n\r|]|(?:还有|加上|以及|配|加|和)"
         let rawParts: [String]
-        if let regex = try? NSRegularExpression(pattern: pattern) {
+        if let regex = Regex.compile(pattern) {
             let nsRange = NSRange(preprocessed.startIndex..., in: preprocessed)
             let replaced = regex.stringByReplacingMatches(in: preprocessed, range: nsRange, withTemplate: "|")
             rawParts = replaced.split(separator: "|").map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -2040,7 +2132,7 @@ public enum FoodCalorieEstimator {
         }
 
         var matchedDishes: [FoodDishEstimate] = []
-        var seen = Set<String>()
+        var unmatchedHints: [String] = []
         for part in rawParts {
             let parsed = parseDetailedQuantity(from: part)
             let queryName = parsed.cleanName.isEmpty ? part : parsed.cleanName
@@ -2048,46 +2140,72 @@ public enum FoodCalorieEstimator {
                 ?? FoodCatalog.items(matchingName: queryName).first
                 ?? FoodCatalog.item(matchingNameStrict: part)
                 ?? FoodCatalog.items(matchingName: part).first else {
+                // 没认出来的片段不再静默丢弃：收集起来供 UI 提示「这部分没计入热量」
+                let hint = part.trimmingCharacters(in: .whitespacesAndNewlines)
+                if hint.count >= 2, !unmatchedHints.contains(hint) {
+                    unmatchedHints.append(hint)
+                }
                 continue
             }
 
-            if !seen.contains(food.id) {
-                seen.insert(food.id)
-                let resolvedGrams: Double? = {
-                    if let grams = parsed.explicitGrams, grams > 0 {
-                        return grams
-                    } else if let pieceGrams = food.pieceGrams, let unit = parsed.unit, isPieceUnit(unit) {
-                        return pieceGrams * parsed.multiplier
-                    }
+            let resolvedGrams: Double? = {
+                if let grams = parsed.explicitGrams, grams > 0 {
+                    return grams
+                } else if let pieceGrams = food.pieceGrams, let unit = parsed.unit, isPieceUnit(unit) {
+                    return pieceGrams * parsed.multiplier
+                }
+                return nil
+            }()
+
+            let baseCal: Double
+            if let grams = resolvedGrams {
+                let edibleWeight = grams * food.edibleRatio
+                baseCal = (edibleWeight / 100.0) * food.caloriesPer100g
+            } else {
+                let dishPortion = parsed.portion != .regular ? parsed.portion : portion
+                baseCal = food.standardServingCalories * dishPortion.multiplier * parsed.multiplier
+            }
+
+            let finalCal: Double
+            if let sugarFactor = parsed.sugarFactor, food.category == .drink || food.id == "milk_tea" || food.id == "lemon_tea" {
+                finalCal = baseCal * sugarFactor
+            } else {
+                finalCal = baseCal
+            }
+
+            let dishPortion = parsed.portion != .regular ? parsed.portion : portion
+
+            // 同一食物重复出现（「两个包子一个肉包」里肉包是包子的别名）时**合并份量**，
+            // 而不是像旧实现那样直接丢弃第二份 —— 旧行为会把整餐热量系统性低估约一份。
+            if let index = matchedDishes.firstIndex(where: { $0.food.id == food.id }) {
+                let existing = matchedDishes[index]
+                let mergedGrams: Double? = {
+                    if let a = existing.customGrams, let b = resolvedGrams { return a + b }
                     return nil
                 }()
-
-                let baseCal: Double
-                if let grams = resolvedGrams {
-                    let edibleWeight = grams * food.edibleRatio
-                    baseCal = (edibleWeight / 100.0) * food.caloriesPer100g
-                } else {
-                    let dishPortion = parsed.portion != .regular ? parsed.portion : portion
-                    baseCal = food.standardServingCalories * dishPortion.multiplier * parsed.multiplier
-                }
-
-                let finalCal: Double
-                if let sugarFactor = parsed.sugarFactor, food.category == .drink || food.id == "milk_tea" || food.id == "lemon_tea" {
-                    finalCal = baseCal * sugarFactor
-                } else {
-                    finalCal = baseCal
-                }
-
-                let dishPortion = parsed.portion != .regular ? parsed.portion : portion
-                let dish = FoodDishEstimate(
+                matchedDishes[index] = FoodDishEstimate(
+                    id: existing.id,
                     food: food,
-                    portion: dishPortion,
-                    confidence: confidence,
+                    portion: existing.portion,
+                    confidence: max(existing.confidence, confidence),
                     consumedRatio: clampedRatio,
-                    fullPortionCaloriesOverride: finalCal,
-                    customGrams: resolvedGrams
+                    fullPortionCaloriesOverride: existing.fullPortionCalories + finalCal,
+                    cookingMethod: existing.cookingMethod,
+                    oilSauceLevel: existing.oilSauceLevel,
+                    preparationState: existing.preparationState,
+                    customGrams: mergedGrams
                 )
-                matchedDishes.append(dish)
+            } else {
+                matchedDishes.append(
+                    FoodDishEstimate(
+                        food: food,
+                        portion: dishPortion,
+                        confidence: confidence,
+                        consumedRatio: clampedRatio,
+                        fullPortionCaloriesOverride: finalCal,
+                        customGrams: resolvedGrams
+                    )
+                )
             }
         }
 
@@ -2136,10 +2254,10 @@ public enum FoodCalorieEstimator {
         }
 
         if matchedDishes.count == 1, let single = matchedDishes.first {
-            return FoodCalorieEstimate(dishes: [single], portion: single.portion)
+            return FoodCalorieEstimate(dishes: [single], portion: single.portion, unmatchedHints: unmatchedHints)
         }
 
-        return FoodCalorieEstimate(dishes: matchedDishes, portion: portion)
+        return FoodCalorieEstimate(dishes: matchedDishes, portion: portion, unmatchedHints: unmatchedHints)
     }
 
     /// 结构化解析后的菜品数量信息
@@ -2186,8 +2304,8 @@ public enum FoodCalorieEstimator {
         guard !text.isEmpty else { return ParsedFoodQuantity(cleanName: text) }
 
         // 移除括号内的补充文字，如 "(1个，约80–100g)" 或 "（约80g）"
-        text = text.replacingOccurrences(of: "\\([^)]*\\)", with: "", options: .regularExpression)
-        text = text.replacingOccurrences(of: "（[^）]*）", with: "", options: .regularExpression)
+        text = Regex.replace("\\([^)]*\\)", in: text, with: "")
+        text = Regex.replace("（[^）]*）", in: text, with: "")
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         var portion: FoodPortion = .regular
@@ -2225,7 +2343,7 @@ public enum FoodCalorieEstimator {
         ]
         for item in sugarList {
             let regexStr = "(?:\(item.pattern))"
-            if let regex = try? NSRegularExpression(pattern: regexStr),
+            if let regex = Regex.compile(regexStr),
                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
                 sugarFactor = item.factor
                 if let r = Range(match.range, in: text) {
@@ -2238,7 +2356,7 @@ public enum FoodCalorieEstimator {
 
         // 3. 检查冰度/温度修饰（支持前缀、中缀、后缀）
         let iceModifierPattern = "(?:冰镇|去冰|少冰|多冰|常温)"
-        if let regex = try? NSRegularExpression(pattern: iceModifierPattern),
+        if let regex = Regex.compile(iceModifierPattern),
            let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
            let r = Range(match.range, in: text) {
             text.removeSubrange(r)
@@ -2258,7 +2376,7 @@ public enum FoodCalorieEstimator {
 
         // 4. 检查显式重量/容量单位（前缀如 "200g", "150克", "500ml", "二两", "半斤"）
         let weightPattern = "^([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(g|克|千克|kg|ml|毫升|升|L|两|斤)\\s*"
-        if let regex = try? NSRegularExpression(pattern: weightPattern),
+        if let regex = Regex.compile(weightPattern),
            let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
            let numRange = Range(match.range(at: 1), in: text),
            let unitRange = Range(match.range(at: 2), in: text) {
@@ -2286,7 +2404,7 @@ public enum FoodCalorieEstimator {
         // 5. 若未匹配到显式重量，检查复合半量词（如 "一个半", "两碗半", "1个半", "2碗半"）
         if explicitGrams == nil {
             let compoundHalfPattern = "^([0-9]+|[一二两三四五六七八九十]+)\\s*(个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两)半\\s*"
-            if let regex = try? NSRegularExpression(pattern: compoundHalfPattern),
+            if let regex = Regex.compile(compoundHalfPattern),
                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
                let numRange = Range(match.range(at: 1), in: text),
                let uRange = Range(match.range(at: 2), in: text) {
@@ -2301,7 +2419,7 @@ public enum FoodCalorieEstimator {
         // 6. 检查前缀数量量词（如 "2个", "两个", "半个", "1颗", "一颗", "3只", "一根", "一杯", "10个", "十五个"）
         if explicitGrams == nil && multiplier == 1.0 && unit == nil {
             let qtyPattern = "^([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两)\\s*"
-            if let regex = try? NSRegularExpression(pattern: qtyPattern),
+            if let regex = Regex.compile(qtyPattern),
                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) {
                 if let numRange = Range(match.range(at: 1), in: text) {
                     multiplier = parseChineseQuantity(String(text[numRange]))
@@ -2315,7 +2433,7 @@ public enum FoodCalorieEstimator {
             } else {
                 // 检查纯数字空格前缀（如 "2 肉包", "10 饺子"）
                 let digitOnlyPattern = "^([0-9]+(?:\\.[0-9]+)?)\\s+"
-                if let regex = try? NSRegularExpression(pattern: digitOnlyPattern),
+                if let regex = Regex.compile(digitOnlyPattern),
                    let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
                    let numRange = Range(match.range(at: 1), in: text) {
                     if let val = Double(String(text[numRange])), val > 0 {
@@ -2331,7 +2449,7 @@ public enum FoodCalorieEstimator {
         // 7. 检查后缀数量量词（如 "肉包2个", "水饺10个", "面条二两"）
         if explicitGrams == nil && multiplier == 1.0 {
             let trailingQtyPattern = "\\s*([0-9]+(?:\\.[0-9]+)?|[一二两三四五六七八九十半]+)\\s*(个|只|块|片|条|根|碗|盘|杯|碟|袋|盒|瓶|串|颗|包|份|听|勺|笼|客|两|斤|g|克|ml|毫升)$"
-            if let regex = try? NSRegularExpression(pattern: trailingQtyPattern),
+            if let regex = Regex.compile(trailingQtyPattern),
                let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
                let numRange = Range(match.range(at: 1), in: text),
                let uRange = Range(match.range(at: 2), in: text) {
@@ -2366,8 +2484,8 @@ public enum FoodCalorieEstimator {
             }
         }
 
-        text = text.replacingOccurrences(of: "^[这那的]+", with: "", options: .regularExpression)
-        text = text.replacingOccurrences(of: "[的]+$", with: "", options: .regularExpression)
+        text = Regex.replace("^[这那的]+", in: text, with: "")
+        text = Regex.replace("[的]+$", in: text, with: "")
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return ParsedFoodQuantity(
@@ -2383,32 +2501,10 @@ public enum FoodCalorieEstimator {
 
     /// 解析中文数字表达与常见数量（如「半」「一」「两」「十」「十一」「二十五」）
     public static func parseChineseQuantity(_ str: String) -> Double {
-        if let d = Double(str), d > 0 { return d }
-        if str == "半" { return 0.5 }
-        let digits: [Character: Double] = [
-            "零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
-            "五": 5, "六": 6, "七": 7, "八": 8, "九": 9
-        ]
-        if str.count == 1, let char = str.first, let single = digits[char] { return single }
-
-        if str == "十" { return 10.0 }
-        if str.hasPrefix("十") {
-            if let secondChar = str.dropFirst().first {
-                return 10.0 + (digits[secondChar] ?? 0)
-            }
-            return 10.0
-        }
-        if str.contains("十") {
-            let parts = str.split(separator: "十", omittingEmptySubsequences: false)
-            let tensChar = parts[0].first
-            let tens = tensChar.flatMap { digits[$0] } ?? 1.0
-            let ones = parts.count > 1 && !parts[1].isEmpty
-                ? (parts[1].first.flatMap { digits[$0] } ?? 0.0)
-                : 0.0
-            return tens * 10.0 + ones
-        }
-
-        return 1.0
+        // 统一走 ChineseNumeralParser；无法解析时沿用旧语义「按一份算」，
+        // 但把「静默」收敛在这一个显式默认值上，而不是散落在四份实现里。
+        guard let value = ChineseNumeralParser.value(str), value > 0 else { return 1.0 }
+        return value
     }
 
     private static func parseQuantityNumber(_ str: String) -> Double {
