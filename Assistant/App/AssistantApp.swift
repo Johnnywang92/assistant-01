@@ -187,21 +187,25 @@ private final class ForegroundAuditCoordinator {
 
             let context = Persistence.shared.mainContext
 
-            // 0. 优先对账扩展侧（小组件/手表卡片）产生的指令
+            // 0. 优先对账扩展侧（小组件/手表卡片）产生的指令 —— 便宜且必须每次对账
             WidgetSnapshotSyncController.shared.processPendingCommands(context: context)
             StartupMetrics.mark("audit.widgetCommands")
+            await Task.yield()
+            guard !Task.isCancelled else { return }
 
             // 1. 共用 BackgroundRefreshCoordinator 幂等巡检（收件箱、防扣款/临期、周期记账、分享中转区、到站提醒）
+            //    其中全表审计 / WebDAV / 天气缓存路径按 `ForegroundAuditCadence` 节流（审计 SVC-08）。
             await BackgroundRefreshCoordinator.shared.performIdempotentAudits(context: context)
             StartupMetrics.mark("audit.idempotentAudits")
             guard !Task.isCancelled else { return }
 
-            // 2. 检查手机低电量 & 临期提醒
+            // 2. 检查手机低电量 & 临期提醒 —— 便宜，每次
             _ = BatteryReminderService(context: context).checkDeviceBattery()
             ExpiryReminder.schedule()
             StartupMetrics.mark("audit.batteryExpiry")
 
-            // 3. 评估周期性家务与服药日程（含按天物化首页服药待办）
+            // 3. 评估周期性家务与服药日程（含按天物化首页服药待办）—— 每次：
+            //    服药提醒已改差量对账，当天服药待办必须当天生效，不能延后。
             let scheduler = HabitAndMedicationScheduler(context: context)
             await scheduler.evaluatePeriodicHabits()
             StartupMetrics.mark("audit.periodicHabits")
@@ -209,28 +213,37 @@ private final class ForegroundAuditCoordinator {
             StartupMetrics.mark("audit.medicationReminders")
             scheduler.ensureTodayMedicationTodos()
             StartupMetrics.mark("audit.medicationTodos")
+            await Task.yield()
+            guard !Task.isCancelled else { return }
 
-            // 3.5 睡前提醒两层注册（兜底本夜+未来2夜，夜间进前台自动精修；每夜最多一条）
+            // 3.5 睡前提醒两层注册（兜底本夜+未来2夜，夜间进前台自动精修；每夜最多一条）。
+            //     28 夜 HealthKit 样本在调度器内部做 10 分钟缓存，不重复全量拉取（审计 SVC-08）。
             await SleepReminderScheduler.shared.syncSleepReminders()
             StartupMetrics.mark("audit.sleepReminders")
+            guard !Task.isCancelled else { return }
 
-            // 3.6 健康数据前台巡检（若此前已连接过则静默拉取今日最新指标）
-            if HealthKitService.isAvailable && HealthKitService.shared.hasEverConnected {
+            // 3.6 健康数据前台巡检（13 个 HealthKit 查询）—— 15 分钟节流
+            await ForegroundAuditCadence.runIfDue(.healthToday) {
+                guard HealthKitService.isAvailable && HealthKitService.shared.hasEverConnected else { return }
                 await HealthKitService.shared.refreshToday()
-                StartupMetrics.mark("audit.healthToday")
             }
+            StartupMetrics.mark("audit.healthToday")
 
-            // 4. 执行对话记录超期自动滚动清理 (7天/30天自动保留)
-            DialogueHistoryManager.shared.cleanExpiredRecords(context: context)
+            // 4. 执行对话记录超期自动滚动清理（7天/30天自动保留）—— 60 分钟节流（保留期是天级的）
+            await ForegroundAuditCadence.runIfDue(.dialogueCleanup) {
+                DialogueHistoryManager.shared.cleanExpiredRecords(context: context)
+            }
             StartupMetrics.mark("audit.dialogueCleanup")
 
-            // 5. 同步灵动岛/手表伴随通知状态
+            // 5. 同步灵动岛/手表伴随通知状态 —— 便宜，每次
             PickupCheckoutService.reconcile(context: context)
             LiveActivityControlNotifications.reconcile()
             StartupMetrics.mark("audit.liveActivityReconcile")
 
-            // 6. 同步定期复盘报告与待办通知排期（以及驿站地理围栏）
-            PeriodicReportManager.shared.scheduleNotifications()
+            // 6. 同步定期复盘报告通知排期（30 分钟节流）与待办通知排期（每次，内部差量对账）
+            await ForegroundAuditCadence.runIfDue(.reportNotifications) {
+                PeriodicReportManager.shared.scheduleNotifications()
+            }
             StartupMetrics.mark("audit.reportNotifications")
             TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
             StartupMetrics.mark("audit.todoNotifications")
@@ -248,13 +261,16 @@ private final class ForegroundAuditCoordinator {
                 LocationReminderService.shared.syncParcelStationGeofences(context: context)
                 // 7.5 天气评估搭在这次采样之后：首帧早已完成，此时位置要么真的拿到、
                 // 要么明确拿不到，不会再出现「首页等天气、天气等 GPS」的互相拖累。
+                // WeatherKit 是网络请求：与后台缓存路径分开计 15 分钟节流。
                 if let sampledCoordinate {
-                    await WeatherAlertService.shared.checkAlertsIfNeeded(
-                        location: CLLocation(
-                            latitude: sampledCoordinate.latitude,
-                            longitude: sampledCoordinate.longitude
+                    await ForegroundAuditCadence.runIfDue(.weatherLocated) {
+                        await WeatherAlertService.shared.checkAlertsIfNeeded(
+                            location: CLLocation(
+                                latitude: sampledCoordinate.latitude,
+                                longitude: sampledCoordinate.longitude
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
