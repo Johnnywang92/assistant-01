@@ -214,6 +214,11 @@ public struct ExpenseDTO: Codable {
     public var isPending: Bool?
     public var pendingDueDate: Date?
     public var projectTag: String?
+    /// 原始单据照片。可选：旧备份（V10 之前导出）没有这个键，合成解码时按 nil 处理。
+    public var receiptImageData: Data?
+    /// AA 分摊人数/参与人。同上，旧备份缺失时为 nil，还原时回落默认值。
+    public var splitCount: Int?
+    public var splitParticipants: String?
 }
 
 public struct IDDocumentDTO: Codable {

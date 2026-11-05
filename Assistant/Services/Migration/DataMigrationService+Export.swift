@@ -4,8 +4,15 @@ import UIKit
 import AssistantCore
 
 extension DataMigrationService {
-    /// 构建全量数据包模型
-    public func buildBackupPackage() throws -> BackupPackage {
+    /// 构建全量数据包模型。
+    ///
+    /// 并发约定（SVC-01）：`ModelContext` 不是 `Sendable`，不能把主线程的 context 丢进
+    /// `Task.detached` 取数，因此 43 张表的 fetch + DTO 映射仍留在主 actor；
+    /// 但每批表/每批附件之间主动 `await Task.yield()`，把一次「数十秒不呼吸」的同步大块
+    /// 拆成多次可被 UI 事件插入的机会，SwiftUI 能在这中间提交帧。
+    /// 纯值类型的重活（JSON 编码 + base64 + PBKDF2 + AES-GCM + 写封套）在
+    /// `exportEncryptedArchive` 里落到 `Task.detached`，不阻塞这里。
+    public func buildBackupPackage() async throws -> BackupPackage {
         let todos = try context.fetch(FetchDescriptor<TodoItem>())
         let subs = try context.fetch(FetchDescriptor<SubscriptionItem>())
         let expiries = try context.fetch(FetchDescriptor<ItemExpiryItem>())
@@ -19,12 +26,14 @@ extension DataMigrationService {
         let documents = try context.fetch(FetchDescriptor<IDDocumentItem>())
         let departures = try context.fetch(FetchDescriptor<DepartureCheckItem>())
         let voiceMemos = try context.fetch(FetchDescriptor<VoiceMemo>())
+        await Task.yield()
         let vehicles = try context.fetch(FetchDescriptor<VehicleProfile>())
         let storedItems = try context.fetch(FetchDescriptor<StoredItem>())
         let medicineStocks = try context.fetch(FetchDescriptor<MedicineItem>())
         let dialogueRecords = try context.fetch(FetchDescriptor<DialogueMessageRecord>())
         let rawMessages = try context.fetch(FetchDescriptor<RawMessage>())
         let locationSamples = try context.fetch(FetchDescriptor<LocationStaySample>())
+        await Task.yield()
         let skillPaths = try context.fetch(FetchDescriptor<SkillPath>())
         let skillStages = try context.fetch(FetchDescriptor<SkillStage>())
         let practiceLogs = try context.fetch(FetchDescriptor<SkillPracticeLog>())
@@ -35,6 +44,7 @@ extension DataMigrationService {
         let childMilestones = try context.fetch(FetchDescriptor<ChildMilestoneRecord>())
         let childHealthVisits = try context.fetch(FetchDescriptor<ChildHealthVisitRecord>())
         let childVaccinations = try context.fetch(FetchDescriptor<ChildVaccinationRecord>())
+        await Task.yield()
         let reminderActions = try context.fetch(FetchDescriptor<LifeReminderAction>())
         let lifeEventProjects = try context.fetch(FetchDescriptor<LifeEventProject>())
         let lifeEventStages = try context.fetch(FetchDescriptor<LifeEventStage>())
@@ -42,6 +52,7 @@ extension DataMigrationService {
         let lifeEventPeople = try context.fetch(FetchDescriptor<LifeEventPerson>())
         let lifeEventExpenses = try context.fetch(FetchDescriptor<LifeEventExpense>())
         let lifeEventGuests = try context.fetch(FetchDescriptor<LifeEventGuest>())
+        await Task.yield()
         let omniboxTransactions = try context.fetch(FetchDescriptor<OmniboxTransaction>())
         let foodIntakeRecords = try context.fetch(FetchDescriptor<FoodIntakeRecord>())
         let waterIntakeRecords = try context.fetch(FetchDescriptor<WaterIntakeRecord>())
@@ -49,6 +60,9 @@ extension DataMigrationService {
         let healthSnapshots = try context.fetch(FetchDescriptor<HealthDaySnapshotRecord>())
         let psychScaleRecords = try context.fetch(FetchDescriptor<PsychScaleRecord>())
         let moodCheckIns = try context.fetch(FetchDescriptor<MoodCheckInRecord>())
+
+        // 上面的 43 次全表 fetch 全部在主 actor 上同步完成；DTO 映射/附件读盘之前先让出一次。
+        await Task.yield()
 
         let todoDTOs = todos.map {
             TodoDTO(
@@ -159,16 +173,27 @@ extension DataMigrationService {
                 exchangeRateToCNY: $0.exchangeRateToCNY,
                 isPending: $0.isPending,
                 pendingDueDate: $0.pendingDueDate,
-                projectTag: $0.projectTag
+                projectTag: $0.projectTag,
+                // V10 起这两个字段是真持久化的；此前是 @Transient，导出等于恒为 nil
+                // （用户拍过的单据、填过的 AA 分摊在备份里从来没有过）。
+                receiptImageData: $0.receiptImageData,
+                splitCount: $0.splitCount,
+                splitParticipants: $0.splitParticipants
             )
         }
 
-        let documentDTOs = documents.map { doc in
+        // 证件正反面图片要逐张读盘（每张可能是几 MB 原图）。整段一次性 map 会在主线程上
+        // 连续做 N 次 Data(contentsOf:)；改成按批让出，证件多时也不至于整段冻住 UI。
+        await Task.yield()
+        var documentDTOs: [IDDocumentDTO] = []
+        documentDTOs.reserveCapacity(documents.count)
+        for (index, doc) in documents.enumerated() {
+            if index > 0, index % 8 == 0 { await Task.yield() }
             let frontData = IDPhotoStorage.loadData(fileName: doc.frontImageFileName)
                 ?? IDPhotoStorage.loadImage(fileName: doc.frontImageFileName)?.jpegData(compressionQuality: 0.88)
             let backData = IDPhotoStorage.loadData(fileName: doc.backImageFileName)
                 ?? IDPhotoStorage.loadImage(fileName: doc.backImageFileName)?.jpegData(compressionQuality: 0.88)
-            return IDDocumentDTO(
+            documentDTOs.append(IDDocumentDTO(
                 id: doc.id,
                 title: doc.title,
                 typeRaw: doc.typeRaw,
@@ -181,7 +206,7 @@ extension DataMigrationService {
                 backImageData: backData,
                 createdAt: doc.createdAt,
                 updatedAt: doc.updatedAt
-            )
+            ))
         }
 
         let departureDTOs = departures.map {
@@ -196,7 +221,12 @@ extension DataMigrationService {
             )
         }
 
-        let voiceMemoDTOs = voiceMemos.map { memo in
+        // 语音音频与笔记内嵌图片同样是逐文件读盘，按批让出主线程。
+        await Task.yield()
+        var voiceMemoDTOs: [VoiceMemoDTO] = []
+        voiceMemoDTOs.reserveCapacity(voiceMemos.count)
+        for (index, memo) in voiceMemos.enumerated() {
+            if index > 0, index % 8 == 0 { await Task.yield() }
             let audioData = VoiceMemoStorage.loadData(memo.audioFileName)
             // 笔记内嵌图片：把块里引用的图片一并带进备份包
             let imageFileNames = memo.document.blocks.compactMap { block -> String? in
@@ -206,7 +236,7 @@ extension DataMigrationService {
             let imageDTOs = imageFileNames.map { name in
                 VoiceMemoImageDTO(fileName: name, data: VoiceMemoImageStorage.loadData(name))
             }
-            return VoiceMemoDTO(
+            voiceMemoDTOs.append(VoiceMemoDTO(
                 id: memo.id,
                 title: memo.title,
                 duration: memo.duration,
@@ -219,8 +249,9 @@ extension DataMigrationService {
                 tagRaw: memo.tagRaw,
                 isBookmarked: memo.isBookmarked,
                 createdAt: memo.createdAt
-            )
+            ))
         }
+        await Task.yield()
 
         // 附件完整性核对（导出侧第一道关卡）。
         // 证件照片与语音音频存在沙盒文件里，读不到就会静默变成 nil——
@@ -612,47 +643,77 @@ extension DataMigrationService {
         )
     }
 
-    /// 必须使用 PIN 码加密导出全量备份数据包
-    public func exportEncryptedArchive(pin: String, hint: String? = nil) throws -> (data: Data, filename: String) {
+    /// 必须使用 PIN 码加密导出全量备份数据包。
+    ///
+    /// SVC-01 并发拆分（备份文件格式/DTO/封套字段一律不变，旧备份仍兼容）：
+    /// 1. **主 actor**：取数（`buildBackupPackage()` 内部分片让出）+ 导出后结构校验
+    ///    （`validate` 里会 `UIImage(data:)` 校验图片可解码，留在主 actor）。
+    /// 2. **`Task.detached(priority: .utility)`**：JSON 编码（附件 `Data` → base64，体积 ×1.33）、
+    ///    PBKDF2-HMAC-SHA256 310k 轮、AES-256-GCM、封套 base64 与 JSON 编码、文件名。
+    ///    这四步只依赖 `BackupPackage` / `String` / `Data` 等值类型，**不捕获 `ModelContext`**
+    ///    也不碰任何 `@Model` 对象——跨线程安全。
+    ///
+    /// 内存峰值仍是「附件原始字节 + JSON base64 + 密文 + 封套 base64」约 3–4 倍：
+    /// 备份格式要求附件与密文都进 JSON，没法不改格式就把峰值压到 1 倍。
+    /// 已知残留见 `audit-2026-11-05/perf-io-findings.md`（附件外置为后续项）。
+    ///
+    /// 失败/取消：不产出半成品、不写任何临时文件；调用方（DataMigrationView / WebDAVSyncService）
+    /// 负责清理自己写出的临时文件。取消点：取数分片之间、后台加密前。
+    public func exportEncryptedArchive(pin: String, hint: String? = nil) async throws -> (data: Data, filename: String) {
         let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
         // 口令长度与 KDF 参数由 Core 校验（8–64 位、迭代 10 万–200 万）
         try BackupEnvelopeCrypto.validatePin(cleanPin)
 
-        let package = try buildBackupPackage()
+        // 1) 主线程取数（分片让出）+ 导出后校验
+        let package = try await buildBackupPackage()
         // 导出后校验：与还原前校验同一套规则（ID 唯一、外键不悬挂、附件可解码）。
         // 导出侧也要拦——否则「坏备份 + 好加密」只会产出一个到还原时才发现的雷。
         try validate(package: package)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        let packageData = try encoder.encode(package)
+        try Task.checkCancellation()
 
-        // 每份备份独立 32 字节高熵随机盐（同一口令的两份备份密文也不同）
-        let saltData = BackupEnvelopeCrypto.makeSalt()
-        let combined = try BackupEnvelopeCrypto.seal(
-            packageData, pin: cleanPin, salt: saltData,
-            iterations: EncryptedBackupEnvelope.defaultIterations
-        )
+        let normalizedHint: String? = {
+            guard let hint else { return nil }
+            let trimmed = hint.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : hint
+        }()
 
-        let envelope = EncryptedBackupEnvelope(
-            saltBase64: saltData.base64EncodedString(),
-            payloadBase64: combined.base64EncodedString(),
-            exportedAt: package.metadata.exportedAt,
-            deviceModel: package.metadata.deviceModel,
-            appVersion: package.metadata.appVersion,
-            hint: (hint?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) ? hint : nil
-        )
+        // 2) 后台：编码 + 盐 + PBKDF2 + AES-GCM + 封套编码 + 文件名。
+        //    只捕获值类型（BackupPackage 是 Codable 值类型），不捕获 self / context。
+        return try await Task.detached(priority: .utility) {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            var packageData: Data? = try encoder.encode(package)
 
-        let envelopeEncoder = JSONEncoder()
-        envelopeEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        envelopeEncoder.dateEncodingStrategy = .iso8601
-        let envelopeData = try envelopeEncoder.encode(envelope)
+            // 每份备份独立 32 字节高熵随机盐（同一口令的两份备份密文也不同）
+            let saltData = BackupEnvelopeCrypto.makeSalt()
+            let combined = try BackupEnvelopeCrypto.seal(
+                packageData ?? Data(), pin: cleanPin, salt: saltData,
+                iterations: EncryptedBackupEnvelope.defaultIterations
+            )
+            // 显式释放明文 JSON，降低「明文 + 密文 + 两轮 base64」同时驻留的峰值。
+            packageData = nil
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd_HHmmss"
-        let timestamp = formatter.string(from: Date.now)
-        let filename = "Assistant_Migration_\(timestamp).json"
+            let payloadBase64 = combined.base64EncodedString()
 
-        return (envelopeData, filename)
+            let envelope = EncryptedBackupEnvelope(
+                saltBase64: saltData.base64EncodedString(),
+                payloadBase64: payloadBase64,
+                exportedAt: package.metadata.exportedAt,
+                deviceModel: package.metadata.deviceModel,
+                appVersion: package.metadata.appVersion,
+                hint: normalizedHint
+            )
+
+            let envelopeEncoder = JSONEncoder()
+            envelopeEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            envelopeEncoder.dateEncodingStrategy = .iso8601
+            let envelopeData = try envelopeEncoder.encode(envelope)
+
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyyMMdd_HHmmss"
+            let timestamp = formatter.string(from: Date.now)
+            return (data: envelopeData, filename: "Assistant_Migration_\(timestamp).json")
+        }.value
     }
 
     /// 兼容旧调用方，但拒绝生成含敏感数据的明文备份。

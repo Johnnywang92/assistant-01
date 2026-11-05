@@ -75,10 +75,29 @@ public final class ExpenseRecord {
     public var isPending: Bool = false      // 是否为待到账/待结算（如报销待到账、借出待还、项目尾款待收）
     public var pendingDueDate: Date?        // 预期到账/交割日期
     public var projectTag: String?          // 关联的项目/业务标签（如 "客户A"）
-    @Transient public var receiptImageData: Data?
-    // Kept out of the legacy ExpenseRecord schema so old stores can open safely.
-    @Transient public var splitCount: Int = 1
-    @Transient public var splitParticipants: String = ""
+    /// 原始单据照片（报销凭证）。
+    ///
+    /// 曾经是 `@Transient`（只存在内存）：用户拍的单据在重启后消失、不进备份，
+    /// 编辑页还会显示「这笔账单没有保存原始单据」。SchemaV10 起改为持久化。
+    /// 用 externalStorage 把字节放到库外的独立文件，避免把几 MB 图片塞进 SQLite 主库。
+    @Attribute(.externalStorage) public var receiptImageData: Data?
+    /// AA 分摊人数字段。存 `Int?` 而不是非可选 Int：旧库升级时新增非可选属性
+    /// 需要给存量行补默认值，可选属性是**纯加法**，轻量迁移最稳。
+    public var splitCountStored: Int?
+    public var splitParticipantsStored: String?
+
+    /// AA 分摊人数（对外接口保持原样，读写落到 `splitCountStored`）。
+    /// 计算属性不参与 SwiftData 持久化，不需要（也不能）标 @Transient。
+    public var splitCount: Int {
+        get { splitCountStored ?? 1 }
+        set { splitCountStored = newValue }
+    }
+
+    /// AA 分摊参与人（逗号分隔）。
+    public var splitParticipants: String {
+        get { splitParticipantsStored ?? "" }
+        set { splitParticipantsStored = newValue }
+    }
 
     public init(
         amount: Double,

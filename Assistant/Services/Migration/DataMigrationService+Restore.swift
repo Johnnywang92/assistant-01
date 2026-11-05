@@ -42,7 +42,14 @@ extension DataMigrationService {
     }
 
     /// 执行还原或合并数据
-    public func restore(from package: BackupPackage, strategy: RestoreStrategy) throws -> RestoreResultSummary {
+    /// 执行还原或合并数据。
+    ///
+    /// 并发约定（SVC-01）：`ModelContext` 不是 `Sendable`，还原的删除/插入/保存必须
+    /// 留在主 actor；但每个实体域、以及大表每 N 条记录之间 `await Task.yield()`，
+    /// 把「一次同步跑完几十个域」拆成可被 UI 事件插入的片段。真正的单次大停顿只剩
+    /// 最终 `context.save()`（SwiftData 主上下文落盘不能跨线程，属已知残留）。
+    /// 失败语义不变：异常向外抛，catch 里 `context.rollback()`，磁盘原库不受影响。
+    public func restore(from package: BackupPackage, strategy: RestoreStrategy) async throws -> RestoreResultSummary {
         try validate(package: package)
         guard strategy != .overwrite || package.metadata.schemaVersion >= 2 else {
             throw MigrationCryptoError.incompleteLegacyBackup
@@ -86,6 +93,18 @@ extension DataMigrationService {
             guard encryptedPasswords[password.id] == nil else { throw MigrationCryptoError.corruptedData }
             encryptedPasswords[password.id] = try PasswordVaultCrypto.encrypt(password.passwordEncrypted)
         }
+
+        // SVC-01 副作用防护：还原现在会在每个实体域之间 `await Task.yield()` 让出主线程，
+        // 而 SwiftUI 的主 `ModelContext` 默认开启 autosave。若中途让出时触发自动落盘，
+        // 「还原到一半」的状态就会被写进磁盘，之后任何失败调用 `rollback()` 也回不到原库，
+        // 「还原失败不动库」的既有承诺会被打破。因此整个还原事务期间关闭 autosave，
+        // 成功/失败/取消都由 defer 恢复原值。
+        let previousAutosave = context.autosaveEnabled
+        if previousAutosave { context.autosaveEnabled = false }
+        defer {
+            context.autosaveEnabled = previousAutosave
+        }
+
         do {
         if strategy == .overwrite {
             // 清理所有现有库中实体
@@ -99,6 +118,9 @@ extension DataMigrationService {
             try context.delete(model: PasswordVaultItem.self)
             try context.delete(model: DataUsageRecord.self)
             try context.delete(model: ExpenseRecord.self)
+            // 清库的 41 条 delete 也是同步 I/O；每 10 张表让出一次，
+            // 避免「覆盖还原」在真正插入数据前就整段冻住。
+            await Task.yield()
             try context.delete(model: IDDocumentItem.self)
             try context.delete(model: DepartureCheckItem.self)
             try context.delete(model: VoiceMemo.self)
@@ -109,6 +131,9 @@ extension DataMigrationService {
             try context.delete(model: RawMessage.self)
             try context.delete(model: LocationStaySample.self)
             try context.delete(model: SkillPath.self)
+            // 清库的 41 条 delete 也是同步 I/O；每 10 张表让出一次，
+            // 避免「覆盖还原」在真正插入数据前就整段冻住。
+            await Task.yield()
             try context.delete(model: SkillStage.self)
             try context.delete(model: SkillPracticeLog.self)
             try context.delete(model: PetProfile.self)
@@ -119,6 +144,9 @@ extension DataMigrationService {
             try context.delete(model: ChildHealthVisitRecord.self)
             try context.delete(model: ChildVaccinationRecord.self)
             try context.delete(model: LifeReminderAction.self)
+            // 清库的 41 条 delete 也是同步 I/O；每 10 张表让出一次，
+            // 避免「覆盖还原」在真正插入数据前就整段冻住。
+            await Task.yield()
             try context.delete(model: LifeEventProject.self)
             try context.delete(model: LifeEventStage.self)
             try context.delete(model: LifeEventTask.self)
@@ -129,6 +157,9 @@ extension DataMigrationService {
             try context.delete(model: FoodIntakeRecord.self)
             try context.delete(model: WaterIntakeRecord.self)
             try context.delete(model: OmniboxJudgmentFeedback.self)
+            // 清库的 41 条 delete 也是同步 I/O；每 10 张表让出一次，
+            // 避免「覆盖还原」在真正插入数据前就整段冻住。
+            await Task.yield()
             try context.delete(model: HealthDaySnapshotRecord.self)
         }
 
@@ -137,8 +168,11 @@ extension DataMigrationService {
 
         // 1. 待办事项
         var restoredTodos = 0
+        await Task.yield()
         let existingTodoIDs = Set(try context.fetch(FetchDescriptor<TodoItem>()).map(\.id))
-        for t in package.todos {
+        for (index, t) in package.todos.enumerated() {
+            // 大表分片：待办每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingTodoIDs.contains(t.id) { continue }
             let item = TodoItem(
                 type: TodoType(rawValue: t.typeRaw) ?? .general,
@@ -181,6 +215,7 @@ extension DataMigrationService {
 
         // 2. 订阅
         var restoredSubs = 0
+        await Task.yield()
         let existingSubIDs = Set(try context.fetch(FetchDescriptor<SubscriptionItem>()).map(\.id))
         for s in package.subscriptions {
             if strategy == .merge && existingSubIDs.contains(s.id) { continue }
@@ -198,6 +233,7 @@ extension DataMigrationService {
 
         // 3. 临期预警
         var restoredExpiries = 0
+        await Task.yield()
         let existingExpIDs = Set(try context.fetch(FetchDescriptor<ItemExpiryItem>()).map(\.id))
         for e in package.itemExpiries {
             if strategy == .merge && existingExpIDs.contains(e.id) { continue }
@@ -215,6 +251,7 @@ extension DataMigrationService {
 
         // 4. 纪念日
         var restoredAnnis = 0
+        await Task.yield()
         let existingAnniIDs = Set(try context.fetch(FetchDescriptor<AnniversaryItem>()).map(\.id))
         for a in package.anniversaries {
             if strategy == .merge && existingAnniIDs.contains(a.id) { continue }
@@ -232,6 +269,7 @@ extension DataMigrationService {
 
         // 5. 习惯与家务
         var restoredHabits = 0
+        await Task.yield()
         let existingHabitIDs = Set(try context.fetch(FetchDescriptor<PeriodicHabit>()).map(\.id))
         for h in package.habits {
             if strategy == .merge && existingHabitIDs.contains(h.id) { continue }
@@ -253,6 +291,7 @@ extension DataMigrationService {
 
         // 6. 服药计划
         var restoredMeds = 0
+        await Task.yield()
         let existingMedIDs = Set(try context.fetch(FetchDescriptor<MedicationPlan>()).map(\.id))
         for m in package.medications {
             if strategy == .merge && existingMedIDs.contains(m.id) { continue }
@@ -270,6 +309,7 @@ extension DataMigrationService {
 
         // 7. 密码
         var restoredPwds = 0
+        await Task.yield()
         let existingPwdIDs = Set(try context.fetch(FetchDescriptor<PasswordVaultItem>()).map(\.id))
         for p in package.passwords {
             if strategy == .merge && existingPwdIDs.contains(p.id) { continue }
@@ -289,6 +329,7 @@ extension DataMigrationService {
 
         // 8. 地点档案
         var restoredPlaces = 0
+        await Task.yield()
         let existingPlaceIDs = Set(try context.fetch(FetchDescriptor<LearnedPlace>()).map(\.id))
         for pl in package.learnedPlaces {
             if strategy == .merge && existingPlaceIDs.contains(pl.id) { continue }
@@ -314,6 +355,7 @@ extension DataMigrationService {
 
         // 9. 流量历史
         var restoredUsage = 0
+        await Task.yield()
         let existingUsageIDs = Set(try context.fetch(FetchDescriptor<DataUsageRecord>()).map(\.id))
         for u in package.dataUsageRecords {
             if strategy == .merge && existingUsageIDs.contains(u.id) { continue }
@@ -333,8 +375,11 @@ extension DataMigrationService {
 
         // 10. 收支记账
         var restoredExpenses = 0
+        await Task.yield()
         let existingExpenseIDs = Set(try context.fetch(FetchDescriptor<ExpenseRecord>()).map(\.id))
-        for ex in package.expenses ?? [] {
+        for (index, ex) in (package.expenses ?? []).enumerated() {
+            // 大表分片：记账每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingExpenseIDs.contains(ex.id) { continue }
             let item = ExpenseRecord(
                 amount: ex.amount,
@@ -353,6 +398,11 @@ extension DataMigrationService {
             item.isPending = ex.isPending ?? false
             item.pendingDueDate = ex.pendingDueDate
             item.projectTag = ex.projectTag
+            // V10 起单据与 AA 分摊是持久化字段；旧备份没有这些键，
+            // 回落 nil / 默认值即可（不要因为旧备份而丢掉新版本的还原能力）。
+            item.receiptImageData = ex.receiptImageData
+            if let count = ex.splitCount { item.splitCountStored = max(count, 1) }
+            if let participants = ex.splitParticipants { item.splitParticipantsStored = participants }
             context.insert(item)
             restoredExpenses += 1
         }
@@ -361,8 +411,11 @@ extension DataMigrationService {
 
         // 11. 重要证件
         var restoredDocs = 0
+        await Task.yield()
         let existingDocIDs = Set(try context.fetch(FetchDescriptor<IDDocumentItem>()).map(\.id))
-        for d in package.documents ?? [] {
+        for (index, d) in (package.documents ?? []).enumerated() {
+            // 大表分片：证件（逐张写盘）每 50 条让出主线程一次。
+            if index > 0, index % 50 == 0 { await Task.yield() }
             if strategy == .merge && existingDocIDs.contains(d.id) { continue }
             var frontFileName: String? = nil
             if let frontData = d.frontImageData {
@@ -396,6 +449,7 @@ extension DataMigrationService {
 
         // 12. 出门防丢装备清单
         var restoredDepartures = 0
+        await Task.yield()
         let existingDepartureIDs = Set(try context.fetch(FetchDescriptor<DepartureCheckItem>()).map(\.id))
         for dep in package.departureItems ?? [] {
             if strategy == .merge && existingDepartureIDs.contains(dep.id) { continue }
@@ -416,8 +470,11 @@ extension DataMigrationService {
 
         // 13. 语音备忘录
         var restoredVoiceMemos = 0
+        await Task.yield()
         let existingVoiceMemoIDs = Set(try context.fetch(FetchDescriptor<VoiceMemo>()).map(\.id))
-        for vm in package.voiceMemos ?? [] {
+        for (index, vm) in (package.voiceMemos ?? []).enumerated() {
+            // 大表分片：语音备忘（逐条写盘）每 50 条让出主线程一次。
+            if index > 0, index % 50 == 0 { await Task.yield() }
             if strategy == .merge && existingVoiceMemoIDs.contains(vm.id) { continue }
 
             var actualAudioFileName = vm.audioFileName
@@ -467,6 +524,7 @@ extension DataMigrationService {
         details.append("语音备忘: \(restoredVoiceMemos) 项")
         totalRestored += restoredVoiceMemos
 
+        await Task.yield()
         let existingVehicleIDs = Set(try context.fetch(FetchDescriptor<VehicleProfile>()).map(\.id))
         var restoredVehicles = 0
         for v in package.vehicles ?? [] {
@@ -491,9 +549,12 @@ extension DataMigrationService {
         details.append("爱车档案: \(restoredVehicles) 项")
         totalRestored += restoredVehicles
 
+        await Task.yield()
         let existingStoredIDs = Set(try context.fetch(FetchDescriptor<StoredItem>()).map(\.id))
         var restoredStoredItems = 0
-        for s in package.storedItems ?? [] {
+        for (index, s) in (package.storedItems ?? []).enumerated() {
+            // 大表分片：物品收纳每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingStoredIDs.contains(s.id) { continue }
             let item = StoredItem(name: s.name, location: s.location, roomArea: s.roomArea,
                                   notes: s.notes, imageData: s.imageData,
@@ -509,6 +570,7 @@ extension DataMigrationService {
         details.append("物品收纳: \(restoredStoredItems) 项")
         totalRestored += restoredStoredItems
 
+        await Task.yield()
         let existingMedicineIDs = Set(try context.fetch(FetchDescriptor<MedicineItem>()).map(\.id))
         var restoredMedicines = 0
         for m in package.medicines ?? [] {
@@ -530,9 +592,12 @@ extension DataMigrationService {
         details.append("家庭常备药: \(restoredMedicines) 项")
         totalRestored += restoredMedicines
 
+        await Task.yield()
         let existingDialogueIDs = Set(try context.fetch(FetchDescriptor<DialogueMessageRecord>()).map(\.id))
         var restoredDialogues = 0
-        for d in package.dialogueRecords ?? [] {
+        for (index, d) in (package.dialogueRecords ?? []).enumerated() {
+            // 大表分片：对话历史每 300 条让出主线程一次。
+            if index > 0, index % 300 == 0 { await Task.yield() }
             if strategy == .merge && existingDialogueIDs.contains(d.id) { continue }
             context.insert(DialogueMessageRecord(id: d.id, role: d.roleRaw, text: d.text,
                                                  timestamp: d.timestamp, sessionID: d.sessionID))
@@ -541,9 +606,12 @@ extension DataMigrationService {
         details.append("对话历史: \(restoredDialogues) 项")
         totalRestored += restoredDialogues
 
+        await Task.yield()
         let existingMessageIDs = Set(try context.fetch(FetchDescriptor<RawMessage>()).map(\.id))
         var restoredMessages = 0
-        for m in package.rawMessages ?? [] {
+        for (index, m) in (package.rawMessages ?? []).enumerated() {
+            // 大表分片：原始消息每 300 条让出主线程一次。
+            if index > 0, index % 300 == 0 { await Task.yield() }
             if strategy == .merge && existingMessageIDs.contains(m.id) { continue }
             let item = RawMessage(source: m.source, sender: m.sender, content: m.content)
             item.id = m.id
@@ -555,9 +623,12 @@ extension DataMigrationService {
         details.append("原始消息: \(restoredMessages) 项")
         totalRestored += restoredMessages
 
+        await Task.yield()
         let existingSampleIDs = Set(try context.fetch(FetchDescriptor<LocationStaySample>()).map(\.id))
         var restoredSamples = 0
-        for s in package.locationSamples ?? [] {
+        for (index, s) in (package.locationSamples ?? []).enumerated() {
+            // 大表分片：位置采样每 300 条让出主线程一次。
+            if index > 0, index % 300 == 0 { await Task.yield() }
             if strategy == .merge && existingSampleIDs.contains(s.id) { continue }
             let item = LocationStaySample(latitude: s.latitude, longitude: s.longitude,
                                           wifiSSID: s.wifiSSID, timestamp: s.timestamp)
@@ -571,9 +642,12 @@ extension DataMigrationService {
         totalRestored += restoredSamples
 
         // 17. 技能学习路径（先路径 → 再阶段 → 最后打卡流水，保证软关联完整）
+        await Task.yield()
         let existingPathIDs = Set(try context.fetch(FetchDescriptor<SkillPath>()).map(\.id))
         var restoredPaths = 0
-        for p in package.skillPaths ?? [] {
+        for (index, p) in (package.skillPaths ?? []).enumerated() {
+            // 大表分片：学习路径每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingPathIDs.contains(p.id) { continue }
             let item = SkillPath(
                 title: p.title,
@@ -595,6 +669,7 @@ extension DataMigrationService {
         details.append("学习路径: \(restoredPaths) 条")
         totalRestored += restoredPaths
 
+        await Task.yield()
         let existingStageIDs = Set(try context.fetch(FetchDescriptor<SkillStage>()).map(\.id))
         var restoredStages = 0
         for s in package.skillStages ?? [] {
@@ -618,9 +693,12 @@ extension DataMigrationService {
         details.append("学习阶段: \(restoredStages) 个")
         totalRestored += restoredStages
 
+        await Task.yield()
         let existingLogIDs = Set(try context.fetch(FetchDescriptor<SkillPracticeLog>()).map(\.id))
         var restoredLogs = 0
-        for l in package.practiceLogs ?? [] {
+        for (index, l) in (package.practiceLogs ?? []).enumerated() {
+            // 大表分片：练习打卡每 300 条让出主线程一次。
+            if index > 0, index % 300 == 0 { await Task.yield() }
             if strategy == .merge && existingLogIDs.contains(l.id) { continue }
             let item = SkillPracticeLog(
                 pathID: l.pathID,
@@ -636,6 +714,7 @@ extension DataMigrationService {
         totalRestored += restoredLogs
 
         // 宠物档案
+        await Task.yield()
         let existingPetIDs = Set(try context.fetch(FetchDescriptor<PetProfile>()).map(\.id))
         var restoredPets = 0
         for p in package.pets ?? [] {
@@ -659,9 +738,12 @@ extension DataMigrationService {
         totalRestored += restoredPets
 
         // 宠物成长与健康记录
+        await Task.yield()
         let existingPetRecordIDs = Set(try context.fetch(FetchDescriptor<PetRecord>()).map(\.id))
         var restoredPetRecords = 0
-        for r in package.petRecords ?? [] {
+        for (index, r) in (package.petRecords ?? []).enumerated() {
+            // 大表分片：宠物记录每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingPetRecordIDs.contains(r.id) { continue }
             let item = PetRecord(
                 id: r.id,
@@ -681,6 +763,7 @@ extension DataMigrationService {
         totalRestored += restoredPetRecords
 
         // 宝贝档案（先宝贝再四类记录：记录通过 ChildProfile.child 真关系挂载，父必须在先）
+        await Task.yield()
         let existingChildIDs = Set(try context.fetch(FetchDescriptor<ChildProfile>()).map(\.id))
         var restoredChildren = 0
         for c in package.children ?? [] {
@@ -703,6 +786,7 @@ extension DataMigrationService {
         // fetch 可见本上下文尚未 save 的插入，父对象（含合并时已存在的旧父）均在此映射中
         let childByID = Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<ChildProfile>()).map { ($0.id, $0) })
 
+        await Task.yield()
         let existingGrowthIDs = Set(try context.fetch(FetchDescriptor<ChildGrowthRecord>()).map(\.id))
         var restoredGrowth = 0
         for r in package.childGrowthRecords ?? [] {
@@ -720,6 +804,7 @@ extension DataMigrationService {
         details.append("成长测量: \(restoredGrowth) 条")
         totalRestored += restoredGrowth
 
+        await Task.yield()
         let existingMilestoneIDs = Set(try context.fetch(FetchDescriptor<ChildMilestoneRecord>()).map(\.id))
         var restoredMilestones = 0
         for r in package.childMilestones ?? [] {
@@ -737,6 +822,7 @@ extension DataMigrationService {
         details.append("成长里程碑: \(restoredMilestones) 条")
         totalRestored += restoredMilestones
 
+        await Task.yield()
         let existingVisitIDs = Set(try context.fetch(FetchDescriptor<ChildHealthVisitRecord>()).map(\.id))
         var restoredVisits = 0
         for r in package.childHealthVisits ?? [] {
@@ -754,6 +840,7 @@ extension DataMigrationService {
         details.append("就医随访: \(restoredVisits) 条")
         totalRestored += restoredVisits
 
+        await Task.yield()
         let existingVaccinationIDs = Set(try context.fetch(FetchDescriptor<ChildVaccinationRecord>()).map(\.id))
         var restoredVaccinations = 0
         for r in package.childVaccinations ?? [] {
@@ -772,9 +859,12 @@ extension DataMigrationService {
         totalRestored += restoredVaccinations
 
         // 生活提醒动作（完成/推迟实例状态，软引用来源档案）
+        await Task.yield()
         let existingReminderActionIDs = Set(try context.fetch(FetchDescriptor<LifeReminderAction>()).map(\.id))
         var restoredReminderActions = 0
-        for a in package.reminderActions ?? [] {
+        for (index, a) in (package.reminderActions ?? []).enumerated() {
+            // 大表分片：提醒动作每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingReminderActionIDs.contains(a.id) { continue }
             let item = LifeReminderAction(
                 kind: LifeReminderKind(rawValue: a.sourceKindRaw) ?? .habit,
@@ -792,6 +882,7 @@ extension DataMigrationService {
         totalRestored += restoredReminderActions
 
         // 人生大事（先项目 → 阶段 → 任务 → 人员/支出/宾客，任务挂阶段故阶段必须在先）
+        await Task.yield()
         let existingEventProjectIDs = Set(try context.fetch(FetchDescriptor<LifeEventProject>()).map(\.id))
         var restoredEventProjects = 0
         for p in package.lifeEventProjects ?? [] {
@@ -812,6 +903,7 @@ extension DataMigrationService {
         details.append("人生大事: \(restoredEventProjects) 个项目")
         totalRestored += restoredEventProjects
 
+        await Task.yield()
         let existingEventStageIDs = Set(try context.fetch(FetchDescriptor<LifeEventStage>()).map(\.id))
         var restoredEventStages = 0
         for s in package.lifeEventStages ?? [] {
@@ -825,6 +917,7 @@ extension DataMigrationService {
         details.append("大事阶段: \(restoredEventStages) 个")
         totalRestored += restoredEventStages
 
+        await Task.yield()
         let existingEventTaskIDs = Set(try context.fetch(FetchDescriptor<LifeEventTask>()).map(\.id))
         var restoredEventTasks = 0
         for t in package.lifeEventTasks ?? [] {
@@ -845,6 +938,7 @@ extension DataMigrationService {
         details.append("大事任务: \(restoredEventTasks) 项")
         totalRestored += restoredEventTasks
 
+        await Task.yield()
         let existingEventPersonIDs = Set(try context.fetch(FetchDescriptor<LifeEventPerson>()).map(\.id))
         var restoredEventPeople = 0
         for p in package.lifeEventPeople ?? [] {
@@ -861,6 +955,7 @@ extension DataMigrationService {
         details.append("大事人员: \(restoredEventPeople) 位")
         totalRestored += restoredEventPeople
 
+        await Task.yield()
         let existingEventExpenseIDs = Set(try context.fetch(FetchDescriptor<LifeEventExpense>()).map(\.id))
         var restoredEventExpenses = 0
         for e in package.lifeEventExpenses ?? [] {
@@ -877,6 +972,7 @@ extension DataMigrationService {
         details.append("大事支出: \(restoredEventExpenses) 笔")
         totalRestored += restoredEventExpenses
 
+        await Task.yield()
         let existingEventGuestIDs = Set(try context.fetch(FetchDescriptor<LifeEventGuest>()).map(\.id))
         var restoredEventGuests = 0
         for g in package.lifeEventGuests ?? [] {
@@ -894,9 +990,12 @@ extension DataMigrationService {
         totalRestored += restoredEventGuests
 
         // 投喂事务审计：动作快照 JSON 原样搬运，避免解码再编码造成表示漂移（同学习阶段模板的处理）
+        await Task.yield()
         let existingTxIDs = Set(try context.fetch(FetchDescriptor<OmniboxTransaction>()).map(\.id))
         var restoredTx = 0
-        for t in package.omniboxTransactions ?? [] {
+        for (index, t) in (package.omniboxTransactions ?? []).enumerated() {
+            // 大表分片：投喂事务每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingTxIDs.contains(t.id) { continue }
             // 全字段稍后逐个覆盖，构造仅取默认空动作列表
             let item = OmniboxTransaction(capture: OmniboxCapture(), actions: [], engine: t.engineRaw)
@@ -916,9 +1015,12 @@ extension DataMigrationService {
         totalRestored += restoredTx
 
         // 18. 饮食热量记录（Schema V4）
+        await Task.yield()
         let existingFoodIDs = Set(try context.fetch(FetchDescriptor<FoodIntakeRecord>()).map(\.id))
         var restoredFood = 0
-        for f in package.foodIntakeRecords ?? [] {
+        for (index, f) in (package.foodIntakeRecords ?? []).enumerated() {
+            // 大表分片：饮食记录每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingFoodIDs.contains(f.id) { continue }
             let item = FoodIntakeRecord(
                 date: f.date,
@@ -945,9 +1047,12 @@ extension DataMigrationService {
         }
 
         // 19. 饮水摄入记录（Schema V5）
+        await Task.yield()
         let existingWaterIDs = Set(try context.fetch(FetchDescriptor<WaterIntakeRecord>()).map(\.id))
         var restoredWater = 0
-        for w in package.waterIntakeRecords ?? [] {
+        for (index, w) in (package.waterIntakeRecords ?? []).enumerated() {
+            // 大表分片：饮水记录每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingWaterIDs.contains(w.id) { continue }
             let item = WaterIntakeRecord(
                 date: w.date,
@@ -973,9 +1078,12 @@ extension DataMigrationService {
         }
 
         // 20. 判别反馈语料（备份格式 V3 新增）。丢了阈值校准就得从零攒——优先级等同用户数据。
+        await Task.yield()
         let existingFeedbackIDs = Set(try context.fetch(FetchDescriptor<OmniboxJudgmentFeedback>()).map(\.id))
         var restoredFeedback = 0
-        for f in package.judgmentFeedbacks ?? [] {
+        for (index, f) in (package.judgmentFeedbacks ?? []).enumerated() {
+            // 大表分片：判别反馈每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingFeedbackIDs.contains(f.id) { continue }
             let record = JudgmentFeedback(
                 id: f.id,
@@ -997,9 +1105,12 @@ extension DataMigrationService {
         }
 
         // 21. 每日健康快照（备份格式 V4 新增）。HealthKit 不可回溯，趋势数据丢了补不回来。
+        await Task.yield()
         let existingHealthIDs = Set(try context.fetch(FetchDescriptor<HealthDaySnapshotRecord>()).map(\.id))
         var restoredHealth = 0
-        for h in package.healthSnapshots ?? [] {
+        for (index, h) in (package.healthSnapshots ?? []).enumerated() {
+            // 大表分片：健康快照每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingHealthIDs.contains(h.id) { continue }
             let record = HealthDaySnapshotRecord(day: h.day)
             record.id = h.id
@@ -1030,9 +1141,12 @@ extension DataMigrationService {
 
         // 21.5 心理量表与情绪微记录（备份格式 V8 新增）。
         // 心理追踪的价值在**纵向历史**——趋势断了就没意义了，所以必须还原。
+        await Task.yield()
         let existingPsychIDs = Set(try context.fetch(FetchDescriptor<PsychScaleRecord>()).map(\.id))
         var restoredPsych = 0
-        for r in package.psychScaleRecords ?? [] {
+        for (index, r) in (package.psychScaleRecords ?? []).enumerated() {
+            // 大表分片：心理量表每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingPsychIDs.contains(r.id) { continue }
             let record = PsychScaleRecord(
                 scaleID: PsychScaleID(rawValue: r.scaleIDRaw) ?? .phq9,
@@ -1047,9 +1161,12 @@ extension DataMigrationService {
             restoredPsych += 1
         }
 
+        await Task.yield()
         let existingMoodIDs = Set(try context.fetch(FetchDescriptor<MoodCheckInRecord>()).map(\.id))
         var restoredMood = 0
-        for r in package.moodCheckIns ?? [] {
+        for (index, r) in (package.moodCheckIns ?? []).enumerated() {
+            // 大表分片：情绪记录每 200 条让出主线程一次。
+            if index > 0, index % 200 == 0 { await Task.yield() }
             if strategy == .merge && existingMoodIDs.contains(r.id) { continue }
             let record = MoodCheckInRecord(
                 day: r.day,
@@ -1076,7 +1193,11 @@ extension DataMigrationService {
         // 22. 偏好设置（仅覆盖策略：合并策略只搬数据，不改本机行为）。
         // 放在 context.save() 之后：UserDefaults 无法随 context.rollback() 回滚，
         // 必须等数据库落库成功再动设置，避免「库回滚了、偏好却已写盘」的不一致。
+        // 单次 `context.save()` 是 SwiftData 主上下文唯一无法搬去后台的落盘点；
+        // 落盘前让出一次，保证「还原中」状态先渲染出来，而不是先冻住再变。
+        await Task.yield()
         try context.save()
+        await Task.yield()
 
         // 事务成功落库后，清理未被引用的沙盒孤儿证件照与语音文件（避免先删文件导致回滚丢失）
         if strategy == .overwrite {
@@ -1132,6 +1253,7 @@ extension DataMigrationService {
             details.append("附件缺失（备份内本就没有这部分文件）: \(missingAttachmentLabels.joined(separator: "、"))")
         }
 
+        await Task.yield()
         if strategy == .overwrite, let settings = package.settings {
             applySettingsSnapshot(settings)
             details.append("偏好设置: \(settings.itemCount) 项")

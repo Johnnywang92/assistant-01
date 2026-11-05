@@ -41,7 +41,7 @@ enum Persistence {
             } catch {
                 // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
                 storedRecoveryError = Self.diagnose(openError: error)
-                let memSchema = Schema(AssistantSchemaV9.models)
+                let memSchema = Schema(AssistantSchemaV10.models)
                 if let memContainer = try? ModelContainer(for: memSchema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
                     return memContainer
                 }
@@ -54,7 +54,7 @@ enum Persistence {
     /// 旧库（V1）经 lightweight 阶段自动升级到 V2；**任何失败都不动磁盘文件**，
     /// 由调用方走恢复页导出原库。详见 `AssistantMigrationPlan`。
     private static func openStore() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV9.models)
+        let schema = Schema(AssistantSchemaV10.models)
         let config = ModelConfiguration(schema: schema)
         #if DEBUG
         Self.assertSchemaCoverage()
@@ -66,7 +66,7 @@ enum Persistence {
 
     /// 单次直达轻量升级路径：仅反射当前最新 Schema 一次，消除多版本 Schema 反射堆叠。
     private static func openStoreAutoMigrate() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV9.models)
+        let schema = Schema(AssistantSchemaV10.models)
         let config = ModelConfiguration(schema: schema)
         #if DEBUG
         Self.assertSchemaCoverage()
@@ -97,7 +97,7 @@ enum Persistence {
     /// 删模型会让旧库升级后静默丢表。DEBUG 下断言，发布构建不增开销。
     private static func assertSchemaCoverage() {
         let v1 = Set(AssistantSchemaV1.models.map { String(describing: $0) })
-        let current = Set(AssistantSchemaV9.models.map { String(describing: $0) })
+        let current = Set(AssistantSchemaV10.models.map { String(describing: $0) })
         let missing = v1.subtracting(current)
         assert(missing.isEmpty, "V1 模型从当前版本消失，旧库升级会丢数据：\(missing.sorted())")
     }
@@ -269,6 +269,18 @@ enum AssistantSchemaV9: VersionedSchema {
     }
 }
 
+/// Schema V10：ExpenseRecord 的单据照片与 AA 分摊字段从 `@Transient`（只存内存）
+/// 改为持久化属性。纯加法（三个可选属性 + 外部存储），走 lightweight 迁移。
+///
+/// 为什么必须升版本：这三个字段以前根本不进 schema，用户拍的单据/填的分摊
+/// 重启即丢、不进备份（审计报告 PLT-01）。模型清单不变，只改属性。
+enum AssistantSchemaV10: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(10, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        AssistantSchemaV9.models
+    }
+}
+
 /// 显式版本化迁移计划。**不要再回到「打不开就删库重建」**——
 /// 旧代码首次失败即删 default.store，用户数据直接蒸发；现在失败走恢复页导出原库。
 enum AssistantMigrationPlan: SchemaMigrationPlan {
@@ -276,12 +288,13 @@ enum AssistantMigrationPlan: SchemaMigrationPlan {
         [
             AssistantSchemaV1.self, AssistantSchemaV2.self, AssistantSchemaV3.self,
             AssistantSchemaV4.self, AssistantSchemaV5.self, AssistantSchemaV6.self,
-            AssistantSchemaV7.self, AssistantSchemaV8.self, AssistantSchemaV9.self
+            AssistantSchemaV7.self, AssistantSchemaV8.self, AssistantSchemaV9.self,
+            AssistantSchemaV10.self
         ]
     }
 
     static var stages: [MigrationStage] {
-        // V1→V2→…→V9 全是「加字段（带默认值/可选）+ 加模型」，系统 lightweight 迁移可完成。
+        // V1→V2→…→V10 全是「加字段（带默认值/可选）+ 加模型」，系统 lightweight 迁移可完成。
         // 若未来出现不兼容变更（删字段/改类型），在此插自定义阶段，
         // 并把目标版本的该字段改回可选或提供默认值——不要静默丢数据。
         [
@@ -292,12 +305,13 @@ enum AssistantMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: AssistantSchemaV5.self, toVersion: AssistantSchemaV6.self),
             .lightweight(fromVersion: AssistantSchemaV6.self, toVersion: AssistantSchemaV7.self),
             .lightweight(fromVersion: AssistantSchemaV7.self, toVersion: AssistantSchemaV8.self),
-            .lightweight(fromVersion: AssistantSchemaV8.self, toVersion: AssistantSchemaV9.self)
+            .lightweight(fromVersion: AssistantSchemaV8.self, toVersion: AssistantSchemaV9.self),
+            .lightweight(fromVersion: AssistantSchemaV9.self, toVersion: AssistantSchemaV10.self)
         ]
     }
 }
 
-enum AppSettings {
+public enum AppSettings {
     /// 助手名称（用户可自定义，默认："小助" / "Assistant"）
     static var assistantName: String {
         get {
@@ -367,13 +381,30 @@ enum AppSettings {
     }
 
     /// 每日纯水补水目标（毫升，默认 1700ml 纯水）
-    static var dailyWaterGoalML: Double {
+    public static var dailyWaterGoalML: Double {
         get {
             let val = UserDefaults.standard.double(forKey: "daily_water_goal_ml")
             return val > 0 ? val : 1700
         }
         set {
             UserDefaults.standard.set(newValue, forKey: "daily_water_goal_ml")
+        }
+    }
+
+    /// 每日睡眠目标时长（小时，与「睡前提醒」sleepReminder.sleepGoalMinutes 同源，默认 7.0 小时）
+    public static var dailySleepGoalHours: Double {
+        let mins = UserDefaults.standard.object(forKey: "sleepReminder.sleepGoalMinutes") as? Int ?? 420
+        return mins > 0 ? Double(mins) / 60.0 : 7.0
+    }
+
+    /// 每日热量摄入目标（千卡，与「食物热量估算」daily_calorie_goal_kcal 同源，默认 2000 千卡）
+    public static var dailyCalorieGoalKcal: Double {
+        get {
+            let val = UserDefaults.standard.double(forKey: "daily_calorie_goal_kcal")
+            return val > 0 ? val : 2000
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "daily_calorie_goal_kcal")
         }
     }
 
