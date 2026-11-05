@@ -118,6 +118,9 @@ public final class RecurringExpenseManager: ObservableObject {
 
     @Published public private(set) var items: [RecurringExpenseItem] = []
 
+    /// 最近一次落库失败的原因（成功时清空）。视图可据此提示「保存失败」而不是播成功反馈。
+    @Published public private(set) var lastSaveFailureMessage: String?
+
     private init() {
         loadItems()
         if items.isEmpty {
@@ -209,6 +212,10 @@ public final class RecurringExpenseManager: ObservableObject {
     }
 
     /// 立即记入一笔（手动触发）
+    ///
+    /// 顺序约束（审计 SVC-04）：先落库、再推进 UserDefaults 里的排期、最后播成功震动。
+    /// 旧实现先 `saveItems()` 再 `try? context.save()`，落库失败时周期排期已被推进到下期、
+    /// 账本里却没有这笔记录，用户还收到了成功震动。
     public func recordNow(item: RecurringExpenseItem, in context: ModelContext) {
         let record = ExpenseRecord(
             amount: item.amount,
@@ -220,20 +227,35 @@ public final class RecurringExpenseManager: ObservableObject {
         )
         context.insert(record)
 
+        let saved = context.saveReportingFailure { error in
+            print("⚠️ [RecurringExpense] 手动记入落库失败: \(error.localizedDescription)")
+            Task { @MainActor in
+                SaveFailureCenter.shared.report(error, action: "记入固定支出")
+            }
+        }
+        guard saved else {
+            lastSaveFailureMessage = L10n.choose("记账保存失败，请重试。", "Saving the expense failed. Please try again.")
+            return
+        }
+
         if let idx = items.firstIndex(where: { $0.id == item.id }) {
             items[idx].lastRecordedDate = .now
             items[idx].nextDueDate = item.advanceToNextCycleDate(from: item.nextDueDate)
             saveItems()
         }
-
-        try? context.save()
+        lastSaveFailureMessage = nil
         Haptic.success()
     }
 
     /// 巡检查验并自动记账或排期提醒（在前台激活或每日定时巡检时执行）
+    ///
+    /// 顺序约束（审计 SVC-04）：一次 save 落库成功后，才推进 UserDefaults 排期并发「已自动记账」
+    /// 通知；失败则把内存里的排期回滚到本轮之前，避免出现「账本没记、排期却已跳期」的错位。
     public func processDueRecurringExpenses(in context: ModelContext) {
         let now = Date.now
         var didModify = false
+        let before = items
+        var recordedTitles: [String] = []
 
         for i in 0..<items.count {
             guard !items[i].isPaused else { continue }
@@ -252,12 +274,7 @@ public final class RecurringExpenseManager: ObservableObject {
                         date: due
                     )
                     context.insert(record)
-
-                    // 发送本地通知提示用户扣款已自动记账
-                    NotificationService.post(
-                        title: "固定支出已自动记账",
-                        body: "「\(items[i].title)」¥\(String(format: "%.2f", items[i].amount)) 已自动记入账本。"
-                    )
+                    recordedTitles.append(items[i].title)
                 }
 
                 items[i].lastRecordedDate = due
@@ -271,9 +288,25 @@ public final class RecurringExpenseManager: ObservableObject {
             }
         }
 
-        if didModify {
-            saveItems()
-            try? context.save()
+        guard didModify else { return }
+        let saved = context.saveReportingFailure { error in
+            print("⚠️ [RecurringExpense] 周期支出巡检落库失败，本轮排期不推进: \(error.localizedDescription)")
+            Task { @MainActor in
+                SaveFailureCenter.shared.report(error, action: "周期支出自动记账")
+            }
+        }
+        guard saved else {
+            // 落库失败：内存排期恢复到本轮之前，UserDefaults 不动（下次巡检会重试）。
+            items = before
+            return
+        }
+        saveItems()
+        for title in recordedTitles {
+            // 落库成功后才发「已自动记账」通知（审计 SVC-04）。
+            NotificationService.post(
+                title: "固定支出已自动记账",
+                body: "「\(title)」已自动记入账本。"
+            )
         }
     }
 }

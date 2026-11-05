@@ -107,7 +107,10 @@ final class PlaceLearningEngine {
             try reanalyzeAllPlaces()
             try context.save()
         } catch {
-            // 忽略单次保存异常
+            // 后台地点重算失败不阻断后续补名（下次回前台会重算），但必须回滚并留日志：
+            // 静默吞掉会让「合并/角色判定」看起来生效、实际没落库（审计 SVC-04）。
+            context.rollback()
+            print("⚠️ [PlaceLearning] 地点重算落库失败，已回滚待下次重试: \(error.localizedDescription)")
         }
 
         let places = (try? context.fetch(FetchDescriptor<LearnedPlace>(
@@ -117,7 +120,10 @@ final class PlaceLearningEngine {
         for place in places {
             await enrichPlaceNameIfNeeded(place, forceAI: useAI)
         }
-        try? context.save()
+        // 地名补全属于尽力而为：失败只记日志（下次回前台会再补），但不假装成功。
+        context.saveReportingFailure { error in
+            print("⚠️ [PlaceLearning] 地名补全落库失败: \(error.localizedDescription)")
+        }
     }
 
     /// 合并距离过近（<= 300m）或同 Wi‑Fi 的未手动确认碎片地点
@@ -348,7 +354,10 @@ final class PlaceLearningEngine {
             }
         }
 
-        try? context.save()
+        // 地名补全属于尽力而为的派生数据：失败只记日志（下次会再补），但不假装成功。
+        context.saveReportingFailure { error in
+            print("⚠️ [PlaceLearning] 地名补全落库失败: \(error.localizedDescription)")
+        }
     }
 
     /// 提取精炼的「区 + 街道/商圈/POI」可读地名

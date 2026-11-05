@@ -154,11 +154,20 @@ enum PickupCheckoutService {
         guard takeAll || response.actionIdentifier == actionTakeOne else { return }
 
         let taken = takeAll ? current.steps : Array(current.steps.prefix(1))
+        var marked: [UUID] = []
         for step in taken {
-            await markDone(id: step.id, context: context)
+            if markDoneInDB(id: step.id, context: context) {
+                marked.append(step.id)
+            }
         }
+        // 先落库、再推进会话与收岛/撤销提醒（审计 SVC-04）：
+        // 旧实现先 await 一堆外部副作用再 `try? save()`，保存失败时通知已被撤、会话却已推进，
+        // 用户点「已取件」后既没销号成功、原取件提醒也消失了。
+        guard context.saveReportingFailure({ error in
+            print("⚠️ [PickupCheckout] 取件销号落库失败，保留会话与通知待用户重试: \(error.localizedDescription)")
+            SaveFailureCenter.shared.report(error, action: "取件销号")
+        }) else { return }
         current.steps.removeFirst(taken.count)
-        try? context.save()
 
         if current.steps.isEmpty {
             // 全部取完：收起通知，实时活动由 PickupActivityHelper 自行判定并收岛
@@ -168,24 +177,30 @@ enum PickupCheckoutService {
             render()
         }
 
+        for id in marked {
+            // 同步灵动岛 / 手表卡片的已取件状态；全部取完时它会自动 end 活动。
+            // 逐件 await 保证多件一起销号时状态更新不互相覆盖。
+            await PickupActivityHelper.markCompleted(todoID: id)
+            // 清掉这条待办原本排期的到期提醒，避免取完还响
+            TodoNotificationManager.shared.cancelNotification(for: id)
+        }
+        // 动态同步驿站地理围栏（包裹取完后自动清理硬件围栏）
+        LocationReminderService.shared.syncParcelStationGeofences(context: context)
+
         Task { @MainActor in
             Haptic.success()
             WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
         }
     }
 
-    private static func markDone(id: UUID, context: ModelContext) async {
+    /// 只写内存模型（销号），返回是否真的改动了状态；落库与后续副作用由调用方负责。
+    private static func markDoneInDB(id: UUID, context: ModelContext) -> Bool {
         let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == id })
-        if let item = (try? context.fetch(descriptor))?.first, item.status == .active {
-            item.markAsCompleted(in: context)
+        guard let item = (try? context.fetch(descriptor))?.first, item.status == .active else {
+            return false
         }
-        // 同步灵动岛 / 手表卡片的已取件状态；全部取完时它会自动 end 活动。
-        // 逐件 await 保证多件一起销号时状态更新不互相覆盖。
-        await PickupActivityHelper.markCompleted(todoID: id)
-        // 清掉这条待办原本排期的到期提醒，避免取完还响
-        TodoNotificationManager.shared.cancelNotification(for: id)
-        // 动态同步驿站地理围栏（包裹取完后自动清理硬件围栏）
-        LocationReminderService.shared.syncParcelStationGeofences(context: context)
+        item.markAsCompleted(in: context)
+        return true
     }
 
     // MARK: - 对账

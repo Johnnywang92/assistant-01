@@ -119,10 +119,53 @@ public final class TodoNotificationManager {
         "todo-\(itemId.uuidString)-overdue-\(Int(offset))"
     }
 
+    /// 构造某条待办在 `now` 时刻应存在的全部通知请求（主提醒 + 逾期补提醒），不做任何系统调用。
+    /// 返回 nil 表示当前不该排期（主提醒 / 逾期补提醒全部落在过去）。
+    private func makeNotificationRequests(for item: TodoItem, now: Date) -> [UNNotificationRequest]? {
+        guard let dueAt = item.dueAt else { return nil }
+        // 提前量与 override 的取舍、是否还值得排期，均由 Core 纯函数判定。
+        guard let plannedReminder = TodoReminderSchedule.mainReminderDate(
+            dueAt: dueAt,
+            remindBeforeMinutes: item.remindBeforeMinutes,
+            reminderOverrideAt: item.reminderOverrideAt,
+            now: now
+        ) else { return nil }
+
+        var pendingRequests: [UNNotificationRequest] = []
+
+        // 仅当主提醒时刻仍在未来时排期主通知；若主提醒已过点（仅余逾期补提醒），
+        // 不再在回前台对账时按 1 秒立即补发，避免总在手机亮屏前台时消耗掉通知而无法镜像到手表。
+        if plannedReminder > now {
+            let content = makeMainNotificationContent(for: item, dueAt: dueAt)
+            let interval = max(1, plannedReminder.timeIntervalSince(now))
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+            pendingRequests.append(UNNotificationRequest(
+                identifier: notificationId(for: item.id),
+                content: content,
+                trigger: trigger
+            ))
+        }
+
+        // 到期后仍未完成时再提醒几次，避免一次通知被忽略后事项悄悄过期。
+        for offset in TodoReminderSchedule.futureOverdueOffsets(dueAt: dueAt, now: now) {
+            let fireDate = dueAt.addingTimeInterval(offset)
+            let overdueContent = makeOverdueNotificationContent(for: item, dueAt: dueAt, offset: offset)
+            let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            pendingRequests.append(UNNotificationRequest(
+                identifier: overdueNotificationId(for: item.id, offset: offset),
+                content: overdueContent,
+                trigger: trigger
+            ))
+        }
+
+        return pendingRequests
+    }
+
     /// 为单个待办事项排期提醒通知
     func scheduleNotification(for item: TodoItem, syncGeofences: Bool = true) {
-        // 仅对活跃且设定了未来截止时间的事项进行提醒排期
-        guard item.status == .active, let dueAt = item.dueAt else {
+        // 仅对活跃且设定了截止时间的事项进行提醒排期
+        guard item.status == .active, item.dueAt != nil else {
             cancelNotification(for: item.id)
             return
         }
@@ -137,52 +180,13 @@ public final class TodoNotificationManager {
         // 重排时先移除旧的主提醒和逾期提醒，避免编辑截止时间后留下旧通知。
         cancelNotification(for: item.id)
         let now = Date.now
-        // 提前量与 override 的取舍、是否还值得排期，均由 Core 纯函数判定。
-        guard let plannedReminder = TodoReminderSchedule.mainReminderDate(
-            dueAt: dueAt,
-            remindBeforeMinutes: item.remindBeforeMinutes,
-            reminderOverrideAt: item.reminderOverrideAt,
-            now: now
-        ) else {
-            cancelNotification(for: item.id)
-            return
-        }
-
-        var pendingRequests: [UNNotificationRequest] = []
-
-        // 仅当主提醒时刻仍在未来时排期主通知；若主提醒已过点（仅余逾期补提醒），
-        // 不再在回前台对账时按 1 秒立即补发，避免总在手机亮屏前台时消耗掉通知而无法镜像到手表。
-        if plannedReminder > now {
-            let content = makeMainNotificationContent(for: item, dueAt: dueAt)
-            let interval = max(1, plannedReminder.timeIntervalSince(now))
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
-            let request = UNNotificationRequest(
-                identifier: notificationId(for: item.id),
-                content: content,
-                trigger: trigger
-            )
-            pendingRequests.append(request)
-        }
+        guard let pendingRequests = makeNotificationRequests(for: item, now: now) else { return }
 
         // 如果是快递包裹待办，自动同步驿站地理围栏（批量排期时统一同步，避免循环内多次派发）
         if syncGeofences && (item.type == .parcel || item.type == .returnParcel) {
             Task { @MainActor in
                 LocationReminderService.shared.syncParcelStationGeofences()
             }
-        }
-
-        // 到期后仍未完成时再提醒几次，避免一次通知被忽略后事项悄悄过期。
-        for offset in TodoReminderSchedule.futureOverdueOffsets(dueAt: dueAt, now: now) {
-            let fireDate = dueAt.addingTimeInterval(offset)
-            let overdueContent = makeOverdueNotificationContent(for: item, dueAt: dueAt, offset: offset)
-            let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            let overdueRequest = UNNotificationRequest(
-                identifier: overdueNotificationId(for: item.id, offset: offset),
-                content: overdueContent,
-                trigger: trigger
-            )
-            pendingRequests.append(overdueRequest)
         }
 
         enqueueNotificationRequests(pendingRequests)
@@ -349,21 +353,29 @@ public final class TodoNotificationManager {
         case Self.actionMarkDone:
             // 标记完成当前待办，若为周期事项将自动生成下一期并注册下次通知
             item.markAsCompleted(in: context)
-            try? context.save()
-            Task { @MainActor in Haptic.success() }
+            // 落库成功才播「完成」震动；失败回滚并给失败震动（审计 SVC-04：
+            // 用户在锁屏点了动作，不能因为 `try?` 吞错就假装完成）。
+            let saved = saveAction(context)
+            Task { @MainActor in
+                if saved { Haptic.success() } else { Haptic.error() }
+            }
 
         case Self.actionSnooze10M:
             item.reminderOverrideAt = Date.now.addingTimeInterval(10 * 60)
-            scheduleNotification(for: item)
-            try? context.save()
-            Task { @MainActor in Haptic.light() }
+            let saved = saveAction(context)
+            if saved { scheduleNotification(for: item) }
+            Task { @MainActor in
+                if saved { Haptic.light() } else { Haptic.error() }
+            }
 
         case Self.actionSnooze1H:
             // 只推迟通知，不改变原截止时间。
             item.reminderOverrideAt = Calendar.current.date(byAdding: .hour, value: 1, to: .now)
-            scheduleNotification(for: item)
-            try? context.save()
-            Task { @MainActor in Haptic.light() }
+            let saved = saveAction(context)
+            if saved { scheduleNotification(for: item) }
+            Task { @MainActor in
+                if saved { Haptic.light() } else { Haptic.error() }
+            }
 
         case Self.actionSnoozeTomorrow:
             var components = Calendar.current.dateComponents([.year, .month, .day], from: .now)
@@ -371,9 +383,11 @@ public final class TodoNotificationManager {
             components.hour = 9
             components.minute = 0
             item.reminderOverrideAt = Calendar.current.date(from: components)
-            scheduleNotification(for: item)
-            try? context.save()
-            Task { @MainActor in Haptic.light() }
+            let saved = saveAction(context)
+            if saved { scheduleNotification(for: item) }
+            Task { @MainActor in
+                if saved { Haptic.light() } else { Haptic.error() }
+            }
 
         case Self.actionView, UNNotificationDefaultActionIdentifier:
             // 打开并路由至待办页面
@@ -386,9 +400,41 @@ public final class TodoNotificationManager {
         }
     }
 
-    /// 同步并排期所有活跃且在未来的待办事项通知（应用启动或回到前台时巡检）
+    /// 通知动作的统一落库出口：失败回滚 + 日志 + 顶部横幅（锁屏/横幅动作没有别的回执渠道）。
+    /// 调用方必须在成功之后才排通知/播成功震动（审计 SVC-04）。
+    @discardableResult
+    private func saveAction(_ context: ModelContext) -> Bool {
+        context.saveReportingFailure { error in
+            print("⚠️ [TodoNotification] 通知动作落库失败: \(error.localizedDescription)")
+            Task { @MainActor in
+                SaveFailureCenter.shared.report(error, action: "更新待办")
+            }
+        }
+    }
+
+    /// 同步并排期所有活跃且在未来的待办事项通知（应用启动或回到前台时巡检）。
+    ///
+    /// 审计 SVC-06 / SVC-08：旧实现每次前台都把 15 项 × 最多 4 条通知全量 `remove` / `add`
+    /// （约 90+ 次 usernoted XPC），并在无预算约束下最多占用 60 条系统名额。
+    /// 新实现是「期望集合 vs 现有待处理」的差量对账：
+    /// - 只删不在期望集合里的、只加缺失或内容已变化的（正常路径下不产生系统调用风暴）；
+    /// - 名额由 `NotificationBudget` 统一裁剪（待办是优先级最低的一档）；
+    /// - `add` 走 async 抛错版本，失败可观测。
     public func syncAllTodoNotifications(context: ModelContext) {
         registerCategories()
+        Task { @MainActor in
+            await TodoNotificationManager.reconcileTodoNotifications(context: context)
+        }
+        // 同步驿站地理围栏（与通知对账解耦，幂等）
+        Task { @MainActor in
+            LocationReminderService.shared.syncParcelStationGeofences(context: context)
+        }
+    }
+
+    /// 待办通知差量对账（主 actor、async）。取数仍留在主 actor，不把 ModelContext 带出。
+    @MainActor
+    private static func reconcileTodoNotifications(context: ModelContext) async {
+        let manager = TodoNotificationManager.shared
 
         // 只物化活跃待办：已完成/待确认历史无需参与通知排期对账
         let activeRaw = TodoStatus.active.rawValue
@@ -398,7 +444,7 @@ public final class TodoNotificationManager {
         let now = Date.now
         // 仅排除由 HabitAndMedicationScheduler 按日物化的服药计划待办；
         // 用户手动创建的独立用药待办仍纳入通用通知排期。
-        let schedulableItems = allItems.filter { !isManagedByMedicationScheduler($0) }
+        let schedulableItems = allItems.filter { !manager.isManagedByMedicationScheduler($0) }
         // 筛选、排序与 15 项截断口径下沉到 Core；这里只做快照转换与回填。
         let itemByID = Dictionary(schedulableItems.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let snapshots = schedulableItems.map {
@@ -411,24 +457,80 @@ public final class TodoNotificationManager {
         }
         // iOS 对应用待处理通知数量有限制；每项最多 4 个请求，因此优先排期最近的 15 项。
         let scheduledSnapshots = TodoReminderSchedule.selectItemsForRescheduling(snapshots, now: now)
-        let validIDs = Set(scheduledSnapshots.flatMap { item in
-            [notificationId(for: item.id)] + overdueOffsets.map { overdueNotificationId(for: item.id, offset: $0) }
-        })
-        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
-            let stale = requests.map(\.identifier).filter { $0.hasPrefix("todo-") && !validIDs.contains($0) }
-            if !stale.isEmpty {
-                UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: stale)
-            }
-        }
+
+        // 期望集合：identifier -> 请求。内容由同一构造器生成，可与系统里的存量做指纹比较。
+        var expected: [String: UNNotificationRequest] = [:]
         for snapshot in scheduledSnapshots {
-            if let item = itemByID[snapshot.id] {
-                scheduleNotification(for: item, syncGeofences: false)
+            guard let item = itemByID[snapshot.id],
+                  let requests = manager.makeNotificationRequests(for: item, now: now) else { continue }
+            for request in requests {
+                expected[request.identifier] = request
             }
         }
 
-        // 同步驿站地理围栏
-        Task { @MainActor in
-            LocationReminderService.shared.syncParcelStationGeofences(context: context)
+        let center = UNUserNotificationCenter.current()
+        let pending = await center.pendingNotificationRequests()
+        let existingTodoRequests = pending.filter { $0.identifier.hasPrefix("todo-") }
+        let existingIDs = Set(existingTodoRequests.map(\.identifier))
+
+        var staleIDs = Set<String>()
+        var toAdd: [UNNotificationRequest] = []
+        for request in existingTodoRequests {
+            if let desired = expected[request.identifier] {
+                if NotificationBudget.fingerprint(of: request) != NotificationBudget.fingerprint(of: desired) {
+                    // 同 identifier 但内容（标题/副标题/详情等）变了：删旧加新。
+                    staleIDs.insert(request.identifier)
+                    toAdd.append(desired)
+                }
+            } else {
+                // 已完成 / 已删除 / 已不在 15 项窗口 / 触发时刻全部过去：撤掉旧通知。
+                staleIDs.insert(request.identifier)
+            }
+        }
+        for (identifier, desired) in expected where !existingIDs.contains(identifier) {
+            toAdd.append(desired)
+        }
+
+        // 待办是预算里最低优先级：主提醒高于逾期补提醒；只占用空额，不裁剪更高优先级模块的通知。
+        let admission = NotificationBudget.admit(
+            pending: pending.filter { !staleIDs.contains($0.identifier) },
+            requested: toAdd.map { request in
+                NotificationBudget.Item(
+                    request: request,
+                    priority: request.identifier.contains("-overdue-") ? .todoOverdue : .todo
+                )
+            },
+            source: "todoSync"
+        )
+        let removals = staleIDs.union(admission.evictedIdentifiers)
+        if !removals.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: Array(removals))
+        }
+        await submitAuthorized(admission.accepted.map(\.request))
+    }
+
+    /// 确保已取得系统通知授权后再入队（与单条排期路径 `enqueueNotificationRequests` 语义一致），
+    /// 并用 async 抛错 API 记录每条失败（审计 SVC-06：`add` 失败必须可观测）。
+    @MainActor
+    private static func submitAuthorized(_ requests: [UNNotificationRequest]) async {
+        guard !requests.isEmpty else { return }
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        if settings.authorizationStatus == .notDetermined {
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                guard granted else { return }
+            } catch {
+                print("Failed to request notification authorization for todo sync: \(error)")
+                return
+            }
+        }
+        for request in requests {
+            do {
+                try await center.add(request)
+            } catch {
+                print("Failed to schedule todo notification (\(request.identifier)): \(error)")
+            }
         }
     }
 }

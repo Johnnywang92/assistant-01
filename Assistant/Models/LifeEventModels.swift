@@ -360,6 +360,10 @@ final class LifeEventGuest {
 }
 
 enum LifeEventTemplateFactory {
+    /// 最近一次创建项目落库失败的原因（成功时清空）。Feature 层可据此提示失败，
+    /// 而不必改动 `createProject` 的非可选返回签名（会波及视图调用点）。
+    @MainActor static private(set) var lastSaveFailureMessage: String?
+
     @MainActor
     static func createProject(title: String, template: LifeEventTemplate, targetDate: Date, location: String?, budgetLimit: Double, in context: ModelContext) -> LifeEventProject {
         let project = LifeEventProject(title: title, template: template, targetDate: targetDate, location: location, budgetLimit: budgetLimit)
@@ -373,7 +377,24 @@ enum LifeEventTemplateFactory {
             let stage = stages[min(index, stages.count - 1)]
             context.insert(LifeEventTask(projectID: project.id, stageID: stage.id, title: taskTitle))
         }
-        try? context.save()
+        let saved = context.saveReportingFailure { error in
+            print("⚠️ [LifeEvent] 人生大事项目落库失败: \(error.localizedDescription)")
+            SaveFailureCenter.shared.report(error, action: "创建人生大事项目")
+        }
+        guard saved else {
+            // 落库失败（审计 SVC-04 同类）：saveReportingFailure 已回滚，project 及阶段/任务
+            // 都成了失效对象，不能再交给调用方（读属性可能触发 SwiftData 失效断言）。
+            // 返回一份未插入的等价占位对象以保持签名不变；失败文案走 lastSaveFailureMessage。
+            lastSaveFailureMessage = L10n.choose("项目创建失败，请重试。", "Creating the project failed. Please try again.")
+            return LifeEventProject(
+                title: title,
+                template: template,
+                targetDate: targetDate,
+                location: location,
+                budgetLimit: budgetLimit
+            )
+        }
+        lastSaveFailureMessage = nil
         return project
     }
 }

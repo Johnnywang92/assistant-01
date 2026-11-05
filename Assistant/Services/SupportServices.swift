@@ -16,31 +16,90 @@ enum InboxService {
         }
     }
 
-    /// 读取并导入收件箱中的所有条目，然后清空。返回导入条数。
-    /// 文件协调与读取放到后台线程（NSFileCoordinator 是跨进程同步阻塞调用，
+    /// 读取并导入收件箱中的所有条目，只把「已成功消费」的条目从文件移除，返回新导入条数。
+    ///
+    /// 事务语义（审计 SVC-03）：旧实现先把 inbox.txt 覆盖成空、再逐条 `try? ingest`，
+    /// 落库失败时原文已被清空 —— 用户输入永久丢失且没有任何提示。现在：
+    /// - 逐条 `do/catch` 落库：失败条目原文留在文件里，下次回前台自动重试；
+    /// - `skippedDuplicate`（ImportService 的原文去重命中）算「已消费」，必须移除，
+    ///   否则同一条会在每次巡检时被反复解析；
+    /// - 清理文件前重读当前内容、按「本次消费掉的原文」逐段删除，
+    ///   避免把快捷指令在读取之后新追加的条目一并覆盖掉；
+    /// - 写回文件失败不当作消费成功：原文仍在文件里，下次重试；
+    ///   重复导入由 ImportService 的原文去重兜底，不会产生重复数据。
+    ///
+    /// 文件协调与读写放到后台线程（NSFileCoordinator 是跨进程同步阻塞调用，
     /// 在主线程执行会在回前台时卡住 UI）；落库仍在调用方的主线程上下文进行。
     @MainActor
     @discardableResult
     static func drain(context: ModelContext) async -> Int {
-        let content = await Task.detached(priority: .utility) { () -> String in
+        let content = await readInboxContent()
+        let entries = InboxFormat.entries(from: content)
+        guard !entries.isEmpty else { return 0 }
+
+        let service = ImportService(context: context)
+        var imported = 0
+        var consumed: [String: Int] = [:]
+        for entry in entries {
+            do {
+                let result = try service.ingest(entry, source: "inbox")
+                consumed[entry, default: 0] += 1
+                if !result.skippedDuplicate { imported += 1 }
+            } catch {
+                // 本条落库失败：回滚本条未提交的 insert。不回滚的话，后续条目的 save
+                // 会把「失败的条目」一起提交，造成「报失败但其实入库了」的假象。
+                context.rollback()
+                print("⚠️ [Inbox] 条目落库失败，原文保留待下次重试: \(error.localizedDescription)")
+            }
+        }
+        if !consumed.isEmpty {
+            await removeConsumedEntries(consumed)
+        }
+        return imported
+    }
+
+    /// 后台读取收件箱原文（只读，不清空文件）。
+    private static func readInboxContent() async -> String {
+        await Task.detached(priority: .utility) { () -> String in
             ensureFile()
             let coordinator = NSFileCoordinator()
             var content = ""
             var coordError: NSError?
-            coordinator.coordinate(writingItemAt: fileURL, options: .forReplacing, error: &coordError) { url in
+            coordinator.coordinate(readingItemAt: fileURL, options: .withoutChanges, error: &coordError) { url in
                 content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-                if !content.isEmpty { try? Data().write(to: url) }
             }
             return content
         }.value
-        let entries = InboxFormat.entries(from: content)
-        guard !entries.isEmpty else { return 0 }
-        let service = ImportService(context: context)
-        var count = 0
-        for entry in entries {
-            if let r = try? service.ingest(entry, source: "inbox"), !r.skippedDuplicate { count += 1 }
-        }
-        return count
+    }
+
+    /// 后台把「本次已消费的条目」从收件箱文件移除；其余条目（含读取后新追加的）原样保留。
+    private static func removeConsumedEntries(_ consumed: [String: Int]) async {
+        await Task.detached(priority: .utility) {
+            var pending = consumed
+            let coordinator = NSFileCoordinator()
+            var coordError: NSError?
+            coordinator.coordinate(writingItemAt: fileURL, options: .forReplacing, error: &coordError) { url in
+                // 重读再删：快捷指令可能在 drain 读取之后又追加了新条目，不能覆盖掉。
+                let current = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+                var kept: [String] = []
+                for segment in current.components(separatedBy: InboxFormat.separator) {
+                    let text = segment.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if text.isEmpty { continue }
+                    if let left = pending[text], left > 0 {
+                        pending[text] = left - 1
+                        continue
+                    }
+                    kept.append(segment)
+                }
+                let remainder = kept.isEmpty ? "" : kept.joined(separator: InboxFormat.separator)
+                do {
+                    try Data(remainder.utf8).write(to: url)
+                } catch {
+                    // 写回失败不做任何「已清理」的假设：文件里仍是原文，下次重试时由原文去重兜底。
+                    print("⚠️ [Inbox] 已导入条目清理失败（下次会重复导入，原文去重会跳过）: \(error.localizedDescription)")
+                }
+            }
+        }.value
     }
 }
 

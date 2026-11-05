@@ -112,11 +112,28 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
     nonisolated public static let expectedSizeApproxBytes: Int64 = LLMModelPreset.qwen3_1_7b.expectedSizeApproxBytes
     private static let selectedPresetKey = "llm_selected_model_preset_v1"
 
-    // 模型存储目录
+    /// 本进程内是否已经给模型目录打过「排除 iCloud 备份」标记（避免每次访问一次系统调用）。
+    private var didMarkModelsDirectoryExcludedFromBackup = false
+
+    // 模型存储目录。
+    //
+    // SVC-07：模型文件是 1–4GB 的可重新下载物，绝不能进 iCloud/iTunes 备份——
+    // 旧实现只有「下载完成」路径打 `isExcludedFromBackup`，走「从文件导入」的用户
+    // 目录从未标记过，备份体积会被模型占满。这里在目录创建时 + 本进程首次访问时
+    // 幂等补打一次，下载/导入两条路径都覆盖。
     public var modelsDirectory: URL {
         let dir = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
+        var needsMark = false
         if !FileManager.default.fileExists(atPath: dir.path) {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            needsMark = true
+        }
+        if needsMark || !didMarkModelsDirectoryExcludedFromBackup {
+            var mutableDir = dir
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? mutableDir.setResourceValues(values)
+            didMarkModelsDirectoryExcludedFromBackup = true
         }
         return dir
     }
@@ -509,23 +526,44 @@ public final class LLMModelManager: NSObject, ObservableObject, URLSessionDownlo
         Haptic.warning()
     }
 
-    /// 从「文件」App 导入外部已有模型文件
-    public func importModel(from sourceURL: URL) throws {
+    /// 从「文件」App 导入外部已有模型文件。
+    ///
+    /// SVC-07：旧实现是 `@MainActor` 上的同步方法——`copyItem` 数 GB + 全文件 SHA-256
+    /// 全在主线程，数秒到数十秒无响应，前后台切换/锁屏时可能直接被系统杀掉。
+    /// 现在改成 `async`：copy + 校验一起放进 `Task.detached(priority: .utility)`，
+    /// 只把校验结果回主 actor 做「先挪旧、再换新」的原子替换。
+    /// 失败/取消：校验失败会清掉候选临时文件，旧模型未经移动、原封不动留在磁盘上。
+    public func importModel(from sourceURL: URL) async throws {
         guard sourceURL.startAccessingSecurityScopedResource() else {
             throw NSError(domain: "LLMModelManager", code: 401, userInfo: [NSLocalizedDescriptionKey: "无法访问所选文件权限"])
         }
-        defer { sourceURL.stopAccessingSecurityScopedResource() }
 
         _ = modelsDirectory
         let candidate = modelsDirectory.appendingPathComponent(UUID().uuidString + ".gguf")
+        // 兜底：任何路径提前返回/抛错都不能把候选 GB 文件留在 Documents/Models
+        // （成功换名后 candidate 已不存在，删除是 no-op）。
         defer { try? FileManager.default.removeItem(at: candidate) }
-        try FileManager.default.copyItem(at: sourceURL, to: candidate)
-        // 先校验再替换：校验不通过时抛错，旧模型原封不动留在磁盘上
-        let validated = try ModelFileValidation.validate(
-            at: candidate,
-            minSizeBytes: selectedPreset.minValidSizeBytes,
-            releases: selectedPreset.publishedReleases
-        )
+        let preset = selectedPreset
+        // `sourceURL` 的安全作用域访问必须覆盖整个后台拷贝过程，所以在 detached 任务里释放，
+        // 不能在这个 async 方法返回前同步释放。
+        // 先校验再替换：校验不通过就抛错，旧模型未经移动、原封不动留在磁盘上。
+        let validated: ModelFileValidation.Validated
+        do {
+            validated = try await Task.detached(priority: .utility) {
+                defer { sourceURL.stopAccessingSecurityScopedResource() }
+                try FileManager.default.copyItem(at: sourceURL, to: candidate)
+                return try ModelFileValidation.validate(
+                    at: candidate,
+                    minSizeBytes: preset.minValidSizeBytes,
+                    releases: preset.publishedReleases
+                )
+            }.value
+        } catch {
+            // 校验失败：候选文件由函数级 defer 清掉，旧模型未经移动、原封不动留在磁盘上。
+            throw error
+        }
+
+        // 回到主 actor 只做文件换名与状态更新（毫秒级）。先挪走旧的，换新失败再挪回来。
         let oldModel = modelsDirectory.appendingPathComponent(UUID().uuidString + ".previous")
         let hadOldModel = FileManager.default.fileExists(atPath: localModelURL.path)
         if hadOldModel { try FileManager.default.moveItem(at: localModelURL, to: oldModel) }

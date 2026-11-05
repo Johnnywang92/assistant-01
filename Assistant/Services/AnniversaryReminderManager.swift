@@ -129,7 +129,9 @@ public final class AnniversaryReminderManager: ObservableObject {
         return set.contains("\(id)_\(year)")
     }
 
-    public func addPreparationTodos(for upcoming: UpcomingAnniversaryInfo, in context: ModelContext) {
+    /// 生成筹备待办；返回是否落库成功（调用方据此决定是否提示「已加入」）。
+    @discardableResult
+    public func addPreparationTodos(for upcoming: UpcomingAnniversaryInfo, in context: ModelContext) -> Bool {
         let cal = Calendar.current
         let anniDate = upcoming.targetDate
 
@@ -165,11 +167,18 @@ public final class AnniversaryReminderManager: ObservableObject {
             dueAt: flowerDue
         )
         context.insert(flowerTodo)
+
+        // 顺序约束（审计 SVC-04）：先落库，成功后才排通知 / 记「已生成筹备待办」标记 / 播成功震动。
+        // 旧实现先排通知再 `try? save()`，保存失败时三条待办都不存在，标记却已写入
+        // UserDefaults，本年度周期内再也不会提示生成筹备清单。
+        guard context.saveReportingFailure({ error in
+            print("⚠️ [Anniversary] 筹备待办落库失败，不标记已生成、不排通知: \(error.localizedDescription)")
+            SaveFailureCenter.shared.report(error, action: "生成纪念日筹备待办")
+        }) else { return false }
+
         TodoNotificationManager.shared.scheduleNotification(for: restaurantTodo)
         TodoNotificationManager.shared.scheduleNotification(for: cakeTodo)
         TodoNotificationManager.shared.scheduleNotification(for: flowerTodo)
-
-        try? context.save()
 
         // 标记该年度周期已生成筹备待办
         var list = UserDefaults.standard.stringArray(forKey: prepAddedKey) ?? []
@@ -185,6 +194,7 @@ public final class AnniversaryReminderManager: ObservableObject {
             }
         }
         Haptic.success()
+        return true
     }
 
     // MARK: - 每天一次本地推送提醒 (限频控流)

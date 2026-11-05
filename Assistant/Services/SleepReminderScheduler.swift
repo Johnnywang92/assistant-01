@@ -43,6 +43,18 @@ final class SleepReminderScheduler: ObservableObject {
         static let lastRemindedNight = "sleepReminder.lastRemindedNightKey"
     }
 
+    /// 28 夜样本缓存有效期（秒）：睡眠债这类修正项以夜为单位变化，10 分钟足够新鲜。
+    private static let sleepSampleRefreshSeconds: TimeInterval = 10 * 60
+
+    /// 28 夜样本的内存缓存（审计 SVC-08：此前每次回前台都在主 actor 上重新拉取）。
+    /// 样本本身不落盘（`SleepNightSample` 是纯计算值），所以冷启动必然重新拉一次；
+    /// 同一进程内重复进前台则按上面的有效期命中缓存。
+    private var cachedSleepSamples: [SleepNightSample] = []
+    private var cachedSamplesAt: Date?
+    private var cachedSamplesNightKey: Date?
+    /// 是否已经真正拉取过一次（即便结果为空，也按间隔节流，避免无数据用户每次前台都打 HealthKit）。
+    private var hasFetchedSleepSamples = false
+
     /// 通知交互分类：「推迟 20 分钟」（用户显式要求的补提醒，不受「每夜一次」限制）
     static let categoryIdentifier = "SLEEP_BEDTIME_CATEGORY"
     static let actionSnooze20M = "ACTION_SLEEP_SNOOZE_20M"
@@ -191,7 +203,10 @@ final class SleepReminderScheduler: ObservableObject {
 
         let now = Date.now
         let calendar = Calendar.current
-        let samples = await HealthKitService.shared.fetchSleepNights(days: 28)
+        // 关键修复：白天使用 upcomingNightKey 锁定今日即将到来的夜晚，避免清晨命中已过期的昨夜。
+        // 先算出来再取样本，样本缓存按「夜归属日 + 有效期」命中。
+        let tonightKey = SleepNightNormalizer.upcomingNightKey(for: now, calendar: calendar)
+        let samples = await sleepSamples(nightKey: tonightKey, now: now, calendar: calendar)
         let userDesiredOffset = desiredBedtimeHHmm.flatMap { SleepNightNormalizer.offset(hourMinute: $0) }
 
         // 提取昨夜/最近一次的实际入睡起始时间点与总时长
@@ -210,9 +225,6 @@ final class SleepReminderScheduler: ObservableObject {
         }
         let desiredOffset = userDesiredOffset
             ?? pseudoDesiredHHmm.flatMap { SleepNightNormalizer.offset(hourMinute: $0) }
-
-        // 关键修复：白天使用 upcomingNightKey 锁定今日即将到来的夜晚，避免清晨命中已过期的昨夜
-        let tonightKey = SleepNightNormalizer.upcomingNightKey(for: now, calendar: calendar)
 
         // 查已送达（每夜最多一次的权威依据）
         let deliveredIDs = Set(await center.deliveredNotifications().map(\.request.identifier))
@@ -268,6 +280,37 @@ final class SleepReminderScheduler: ObservableObject {
 
     // MARK: 私有
 
+    /// 取 28 夜睡眠样本：带内存缓存 + 最小间隔节流（审计 SVC-08）。
+    ///
+    /// 为什么不是每次回前台都拉：`fetchSleepNights(days: 28)` 要跨 28 夜取全部睡眠样本
+    /// 并在主 actor 上按夜分组归一；而「睡眠债」这类修正项以夜为单位变化。
+    /// 缓存命中条件：同一夜归属日 + `sleepSampleRefreshSeconds`（600s）内。
+    /// 拉取为空时保留旧缓存，避免一次 HealthKit 抖动把计划算成「零睡眠」。
+    /// 冷启动缓存为空，必然拉一次——因此这里不需要（也无法靠）持久化时间戳跳过拉取。
+    private func sleepSamples(nightKey: Date, now: Date, calendar: Calendar) async -> [SleepNightSample] {
+        if hasFetchedSleepSamples,
+           let cachedAt = cachedSamplesAt,
+           let cachedNightKey = cachedSamplesNightKey,
+           calendar.isDate(cachedNightKey, inSameDayAs: nightKey),
+           now.timeIntervalSince(cachedAt) < Self.sleepSampleRefreshSeconds {
+            return cachedSleepSamples
+        }
+
+        let fetched = await HealthKitService.shared.fetchSleepNights(days: 28)
+        hasFetchedSleepSamples = true
+        cachedSamplesAt = now
+        cachedSamplesNightKey = nightKey
+        if !fetched.isEmpty {
+            cachedSleepSamples = fetched
+            return fetched
+        }
+        // 拉取失败或确实没有数据：有旧缓存就继续用旧的（宁可计划略旧，也别把睡眠债清零）。
+        if !cachedSleepSamples.isEmpty {
+            print("⚠️ [SleepReminder] 睡眠样本刷新为空，沿用 \(cachedSleepSamples.count) 夜缓存")
+        }
+        return cachedSleepSamples
+    }
+
     /// 汇聚今日情景感知各维因素
     private func collectContextFactors(
         context: ModelContext,
@@ -302,6 +345,21 @@ final class SleepReminderScheduler: ObservableObject {
                 let isCaff = caffeineKeywords.contains { lower.contains($0) }
                 let hr = calendar.component(.hour, from: record.date)
                 return isCaff && hr >= 14
+            }
+        }
+
+        // 同步检查「喝水记录」中的午后咖啡因摄入（14:00 后记录的咖啡/茶/奶茶）
+        if !hasLateCaffeine {
+            let waterDesc = FetchDescriptor<WaterIntakeRecord>(
+                predicate: #Predicate<WaterIntakeRecord> { record in
+                    record.date >= todayStart && record.date < tomorrowStart
+                }
+            )
+            if let waters = try? context.fetch(waterDesc) {
+                hasLateCaffeine = waters.contains { record in
+                    let hr = calendar.component(.hour, from: record.date)
+                    return record.caffeineMG > 0 && hr >= 14
+                }
             }
         }
 

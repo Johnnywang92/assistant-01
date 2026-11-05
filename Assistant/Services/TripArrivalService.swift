@@ -198,6 +198,8 @@ final class TripArrivalService {
         let delivered = await deliveredIdentifiers(matching: identifiers)
 
         var needsMotionWatch = false
+        // 待补发的即时提醒：等 save 成功后再投递（审计 SVC-04）
+        var fired: [(TodoItem, TripArrivalSchedule.Trigger)] = []
         for item in items {
             let kind = item.arrivalTransportKind
             // 系统横幅已经弹过但没写回时间（用户在通知里直接划掉）：按已提醒处理，不再补发
@@ -222,7 +224,10 @@ final class TripArrivalService {
             )
             switch outcome {
             case .fire(let trigger):
-                fire(item: item, trigger: trigger, now: now)
+                // 先落库、后补发通知（审计 SVC-04）：保存失败时 `arrivalCheckFiredAt`
+                // 会回滚，下一轮会重新判定并补发，不会留下已提醒但没落库的中间态。
+                item.arrivalCheckFiredAt = now
+                fired.append((item, trigger))
             case .notYet(let reason):
                 if reason == .awaitingStopEvidence, kind.supportsMotionEvidence {
                     needsMotionWatch = true
@@ -232,13 +237,19 @@ final class TripArrivalService {
             }
         }
 
-        try? context.save()
+        let saved = context.saveReportingFailure { error in
+            print("⚠️ [TripArrival] 到站提醒状态落库失败，本轮不发即时提醒: \(error.localizedDescription)")
+        }
+        if saved {
+            for (item, trigger) in fired {
+                postFireNotification(item: item, trigger: trigger)
+            }
+        }
         updateMotionMonitoring(needsWatch: needsMotionWatch)
     }
 
-    /// 提前量窗口内由运动证据或到点触发的即时提醒
-    private func fire(item: TodoItem, trigger: TripArrivalSchedule.Trigger, now: Date) {
-        item.arrivalCheckFiredAt = now
+    /// 提前量窗口内由运动证据或到点触发的即时提醒（通知投递，不写库）
+    private func postFireNotification(item: TodoItem, trigger: TripArrivalSchedule.Trigger) {
         let id = Self.notificationId(for: item.id)
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [id, Self.snoozeNotificationId(for: item.id)])
@@ -360,8 +371,13 @@ final class TripArrivalService {
         let now = Date.now
         switch actionId {
         case actionSnooze10M:
-            // 只再问一次：改写触发时间并撤掉本次排期，不改动到达时间本身
+            // 只再问一次：改写触发时间并撤掉本次排期，不改动到达时间本身。
+            // 先落库、后重排通知（审计 SVC-04）：保存失败就不要再排一次提醒。
             item.arrivalCheckFiredAt = now
+            guard context.saveReportingFailure({ error in
+                print("⚠️ [TripArrival] 再提醒落库失败，不重排通知: \(error.localizedDescription)")
+                SaveFailureCenter.shared.report(error, action: "稍后再提醒")
+            }) else { return }
             let center = UNUserNotificationCenter.current()
             center.removePendingNotificationRequests(withIdentifiers: [notificationId(for: todoId)])
             let content = UNMutableNotificationContent()
@@ -375,11 +391,13 @@ final class TripArrivalService {
                 content: content,
                 trigger: UNTimeIntervalNotificationTrigger(timeInterval: 10 * 60, repeats: false)
             ))
-            try? context.save()
 
         default:
             item.arrivalCheckFiredAt = now
-            try? context.save()
+            guard context.saveReportingFailure({ error in
+                print("⚠️ [TripArrival] 「开始清点」落库失败，不推灵动岛: \(error.localizedDescription)")
+                SaveFailureCenter.shared.report(error, action: "开始清点")
+            }) else { return }
             Task { @MainActor in
                 NavigationRouter.shared.selectedTab = .departure
                 // 抬腕/锁屏点「开始清点」时顺手把清单推上灵动岛，摘下手机也能逐项确认

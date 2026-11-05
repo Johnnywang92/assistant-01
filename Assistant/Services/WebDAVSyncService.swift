@@ -127,9 +127,11 @@ final class WebDAVSyncService: ObservableObject {
 
         let targetContext = context ?? Persistence.shared.mainContext
 
-        // 1. 本地生成强加密备份包
+        // 1. 本地生成强加密备份包。
+        //    `exportEncryptedArchive` 现在把取数分片留在主线程、编码/PBKDF2/AES-GCM 放到
+        //    后台 detached；这里 await 期间主线程可继续处理 UI，后台任务不会挡 NAS 上传。
         let migrationService = DataMigrationService(context: targetContext)
-        let archive = try migrationService.exportEncryptedArchive(pin: pin, hint: hint)
+        let archive = try await migrationService.exportEncryptedArchive(pin: pin, hint: hint)
 
         // 2. 检查或创建远端目录
         guard let dirURL = WebDAVRequestFactory.makeDirectoryURL(

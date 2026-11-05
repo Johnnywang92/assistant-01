@@ -37,20 +37,24 @@ enum ExpenseCalorieService {
     /// 账单保存（新建或编辑）后调用。
     /// - Parameter propose: 是否需要（重新）估算并请用户确认——
     ///   新建、标题变了、或刚被改成餐饮类时为 true。
+    ///
+    /// 允许失败的派生路径（审计 SVC-04 明确豁免）：主账单由调用方先落库，
+    /// 这里只维护「记账 → 热量」的联动记录 / 待确认建议，失败不阻断主流程；
+    /// 但不能用 `try?` 静默吞错——统一走 `saveLinked` 回滚 + 日志。
     static func handleSaved(_ expense: ExpenseRecord, propose: Bool, context: ModelContext) {
         let linked = linkedRecord(for: expense.id, context: context)
 
         guard isEligible(expense) else {
             if let linked {
                 context.delete(linked)
-                try? context.save()
+                _ = saveLinked(context, action: "删除非餐饮的联动热量记录")
             }
             return
         }
 
         if let linked, linked.date != expense.date, !propose {
             linked.date = expense.date
-            try? context.save()
+            _ = saveLinked(context, action: "同步热量记录日期")
         }
         guard propose else { return }
 
@@ -65,7 +69,7 @@ enum ExpenseCalorieService {
                 // 标题变了但估不出来：旧热量记录已与账单不符，移除
                 if let existingID, let stale = record(id: existingID, context: context) {
                     context.delete(stale)
-                    try? context.save()
+                    _ = saveLinked(context, action: "删除过期热量记录")
                 }
                 return
             }
@@ -103,7 +107,7 @@ enum ExpenseCalorieService {
                 changed = true
             }
         }
-        if changed { try? context.save() }
+        if changed { _ = saveLinked(context, action: "清理孤儿热量记录") }
     }
 
     // MARK: 确认 / 拒绝
@@ -137,15 +141,18 @@ enum ExpenseCalorieService {
                 linkedExpenseID: pending.expenseID
             ))
         }
-        try? context.save()
-        ExpenseCalorieCenter.shared.pending = nil
+        // 用户点了「记录」：落库成功才关闭待确认弹窗；失败则保留 pending 让用户重试
+        // （审计 SVC-04：保存失败不能表现为「已记录」）。
+        if saveLinked(context, action: "确认热量记录") {
+            ExpenseCalorieCenter.shared.pending = nil
+        }
     }
 
     /// 用户拒绝。若是对已有记录的更新，旧记录与新账单不符，一并移除。
     static func decline(_ pending: PendingCalorieSuggestion, context: ModelContext) {
         if let id = pending.existingRecordID, let stale = record(id: id, context: context) {
             context.delete(stale)
-            try? context.save()
+            _ = saveLinked(context, action: "拒绝时删除旧热量记录")
         }
         ExpenseCalorieCenter.shared.pending = nil
     }
@@ -199,5 +206,14 @@ enum ExpenseCalorieService {
         var descriptor = FetchDescriptor<FoodIntakeRecord>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         return try? context.fetch(descriptor).first
+    }
+
+    /// 派生联动落库的统一出口：允许失败（主账单已落库），但不静默吞错。
+    /// 失败时回滚并记一条日志；调用方可据此决定是否保留待确认建议 / 跳过后续动作。
+    @discardableResult
+    private static func saveLinked(_ context: ModelContext, action: String) -> Bool {
+        context.saveReportingFailure { error in
+            print("⚠️ [ExpenseCalorie] \(action)落库失败（派生联动允许失败，下次编辑账单会重建）: \(error.localizedDescription)")
+        }
     }
 }

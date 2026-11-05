@@ -32,6 +32,10 @@ struct SkillProgress {
 final class SkillPathManager {
     static let shared = SkillPathManager()
 
+    /// 最近一次保存的失败原因（成功时清空）。Feature 层可据此展示失败文案；
+    /// 保留它是为了在不改 `save` 非可选返回签名（会波及视图调用点）的前提下让失败可观测。
+    private(set) var lastSaveFailureMessage: String?
+
     private init() {}
 
     // MARK: - 保存
@@ -62,10 +66,37 @@ final class SkillPathManager {
             )
         }
 
+        var inserted: [TodoItem] = []
         if let first = draft.stages.first {
-            materialize(stageIndex: first.index, tasks: first.tasks, path: path, context: context)
+            // 通知要等落库成功后再排（审计 SVC-04）：先排会留下指向不存在待办的提醒。
+            inserted = materialize(
+                stageIndex: first.index,
+                tasks: first.tasks,
+                path: path,
+                context: context
+            )
         }
-        try? context.save()
+        let saved = context.saveReportingFailure { error in
+            print("⚠️ [SkillPath] 学习路径落库失败: \(error.localizedDescription)")
+            SaveFailureCenter.shared.report(error, action: "创建学习路径")
+        }
+        guard saved else {
+            lastSaveFailureMessage = L10n.choose("学习路径保存失败，请重试。", "Saving the learning path failed. Please try again.")
+            // saveReportingFailure 已回滚，上面插入的 path 已被移出 context（再读其属性可能触发
+            // SwiftData 失效断言）。返回一份等价的未插入对象，保证调用方读取字段不崩溃；
+            // 真正的失败文案由调用方读 lastSaveFailureMessage 展示。
+            return SkillPath(
+                title: draft.title,
+                category: draft.category,
+                goal: draft.goal,
+                weeklyMinutes: draft.weeklyMinutes,
+                totalWeeks: draft.totalWeeks
+            )
+        }
+        lastSaveFailureMessage = nil
+        for item in inserted {
+            TodoNotificationManager.shared.scheduleNotification(for: item)
+        }
         Haptic.success()
         return path
     }
@@ -73,14 +104,18 @@ final class SkillPathManager {
     // MARK: - 展开阶段任务
 
     /// 把某阶段的任务写成真实待办：里程碑带截止日，练习打卡带重复规则
+    /// - Returns: 本次新建的待办。通知由调用方在落库成功后统一排
+    ///   （先排会留下指向不存在待办的提醒，见审计 SVC-04）。
+    @discardableResult
     private func materialize(
         stageIndex: Int,
         tasks: [PlannedSkillTask],
         path: SkillPath,
         context: ModelContext
-    ) {
+    ) -> [TodoItem] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: .now)
+        var created: [TodoItem] = []
 
         for (order, task) in tasks.enumerated() {
             var item: TodoItem
@@ -123,8 +158,9 @@ final class SkillPathManager {
                 )
             }
             context.insert(item)
-            TodoNotificationManager.shared.scheduleNotification(for: item)
+            created.append(item)
         }
+        return created
     }
 
     // MARK: - 推进与统计
@@ -141,17 +177,26 @@ final class SkillPathManager {
         ))) ?? []
         let logs = (try? context.fetch(FetchDescriptor<SkillPracticeLog>())) ?? []
 
+        var inserted: [TodoItem] = []
         for path in paths where path.status == .active {
-            refresh(path: path, stages: stages, todos: todos, logs: logs, context: context)
+            inserted += refresh(path: path, stages: stages, todos: todos, logs: logs, context: context)
         }
-        try? context.save()
+        // 后台进度重算：失败只记日志、不排通知（下次巡检会重算），但不假装成功。
+        let saved = context.saveReportingFailure { error in
+            print("⚠️ [SkillPath] 进度重算落库失败: \(error.localizedDescription)")
+        }
+        if saved {
+            for item in inserted {
+                TodoNotificationManager.shared.scheduleNotification(for: item)
+            }
+        }
     }
 
     /// 检查当前阶段是否通关；通关则解锁并展开下一阶段（按 pathID 定向取数，不扫全表）
     func refresh(path: SkillPath, context: ModelContext) {
         let pid = path.id
         let pathIDFilter: UUID? = pid
-        refresh(
+        let inserted = refresh(
             path: path,
             stages: (try? context.fetch(FetchDescriptor<SkillStage>(
                 predicate: #Predicate { $0.pathID == pid }
@@ -164,18 +209,28 @@ final class SkillPathManager {
             ))) ?? [],
             context: context
         )
-        try? context.save()
+        // 单条路径推进：同 refreshAll，失败记日志不阻断、成功后才排新阶段通知。
+        let saved = context.saveReportingFailure { error in
+            print("⚠️ [SkillPath] 阶段推进落库失败: \(error.localizedDescription)")
+        }
+        if saved {
+            for item in inserted {
+                TodoNotificationManager.shared.scheduleNotification(for: item)
+            }
+        }
     }
 
+    @discardableResult
     private func refresh(
         path: SkillPath,
         stages allStages: [SkillStage],
         todos allTodos: [TodoItem],
         logs allLogs: [SkillPracticeLog],
         context: ModelContext
-    ) {
+    ) -> [TodoItem] {
         let stages = allStages.filter { $0.pathID == path.id }.sorted { $0.index < $1.index }
         let todos = allTodos.filter { $0.skillPathID == path.id }
+        var inserted: [TodoItem] = []
 
         for stage in stages where stage.isUnlocked && !stage.isCompleted {
             let milestones = todos.filter { $0.skillStageIndex == stage.index && !$0.isSkillPractice }
@@ -190,7 +245,7 @@ final class SkillPathManager {
             if let next = stages.first(where: { $0.index == path.currentStageIndex + 1 }) {
                 if !next.isUnlocked {
                     next.isUnlocked = true
-                    materialize(stageIndex: next.index, tasks: next.plannedTasks, path: path, context: context)
+                    inserted = materialize(stageIndex: next.index, tasks: next.plannedTasks, path: path, context: context)
                 }
                 path.currentStageIndex = next.index
             } else {
@@ -202,6 +257,7 @@ final class SkillPathManager {
         path.practiceCount = logs.count
         path.practiceStreakDays = Self.streakDays(from: logs.map { $0.practicedAt }, now: .now)
         path.lastPracticedAt = logs.map { $0.practicedAt }.max()
+        return inserted
     }
 
     /// 一次性算出所有路径的进度，供列表使用（避免每行各扫一次全表）

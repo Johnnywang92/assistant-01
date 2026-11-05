@@ -26,10 +26,21 @@ struct DailyPainPointAuditor {
         auditVehicleCare()
         auditPetCare()
         auditChildVaccines()
-        // 巡检期间新增的待办只在主线程做一次同步落盘，避免每条命中一次 fsync
+        // 巡检期间新增的待办只在主线程做一次同步落盘，避免每条命中一次 fsync。
+        // 顺序（审计 SVC-04）：落库成功后才投递提醒；失败则丢弃本轮提醒队列，下次巡检重来。
+        let saved: Bool
         if insertFlag.didInsert {
             insertFlag.didInsert = false
-            try? context.save()
+            saved = context.saveReportingFailure { error in
+                print("⚠️ [DailyPainPoint] 巡检待办落库失败，本轮不发提醒: \(error.localizedDescription)")
+            }
+        } else {
+            saved = true
+        }
+        if saved {
+            flushPendingNotifications()
+        } else {
+            pendingNotifications.items.removeAll()
         }
         AnniversaryReminderManager.shared.checkAndSendDailyNotifications(context: context)
         TravelTicketReminderManager.shared.checkAndSendDailyNotifications(context: context)
@@ -41,6 +52,13 @@ struct DailyPainPointAuditor {
     }
 
     private let insertFlag = InsertFlagBox()
+
+    /// 本轮巡检待投递的提醒（落库成功后才真正推送）
+    private final class PendingNotificationsBox {
+        var items: [(id: String, title: String, body: String)] = []
+    }
+
+    private let pendingNotifications = PendingNotificationsBox()
 
     /// 1. 自动续费与订阅被动扣费防范
     private func auditSubscriptions() {
@@ -316,15 +334,26 @@ struct DailyPainPointAuditor {
         }
     }
 
+    /// 先把提醒排进待发队列，等本轮落库成功后再真正推送。
+    /// 审计 SVC-04：旧顺序是「先 post 通知 → 最后 try? save」，保存失败时用户收到
+    /// 「已生成提醒」的通知，待办却不存在。限频标记也一起延后写，失败下轮可重发。
     private func postThrottledNotification(id: String, title: String, body: String) {
-        let dateKey = "audit_notif_date_\(id)"
+        pendingNotifications.items.append((id: id, title: title, body: body))
+    }
+
+    /// 落库成功后才投递本轮巡检提醒；同日同 id 只发一次（原限频逻辑，只是延后到成功之后）。
+    private func flushPendingNotifications() {
         let cal = Calendar.current
-        if let lastDate = UserDefaults.standard.object(forKey: dateKey) as? Date,
-           cal.isDateInToday(lastDate) {
-            return
+        for note in pendingNotifications.items {
+            let dateKey = "audit_notif_date_\(note.id)"
+            if let lastDate = UserDefaults.standard.object(forKey: dateKey) as? Date,
+               cal.isDateInToday(lastDate) {
+                continue
+            }
+            UserDefaults.standard.set(Date.now, forKey: dateKey)
+            NotificationService.post(title: note.title, body: note.body, id: note.id)
         }
-        UserDefaults.standard.set(Date.now, forKey: dateKey)
-        NotificationService.post(title: title, body: body, id: id)
+        pendingNotifications.items.removeAll()
     }
 
     private func upsertTodo(type: TodoType, title: String, detail: String, dueAt: Date) {

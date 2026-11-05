@@ -28,7 +28,11 @@ struct BatteryReminderService {
         // 如果没有充电，且电量低于阈值（默认 20%）
         if state != .charging && state != .full && level <= threshold {
             let title = "手机电量仅剩 \(percent)%，请及时充电"
-            upsertChargingTodo(device: .phone, title: title, detail: "低于 \(Int(threshold * 100))% 预警")
+            // 先落库、再发低电量通知（审计 SVC-04）：保存失败时不发一条指向不存在待办的通知，
+            // 返回 nil 表示本轮没有产出提醒。
+            guard upsertChargingTodo(device: .phone, title: title, detail: "低于 \(Int(threshold * 100))% 预警") else {
+                return nil
+            }
             NotificationService.post(title: "⚡ 低电量提醒", body: title, id: "battery-phone")
             return title
         } else if state == .charging || state == .full {
@@ -46,7 +50,9 @@ struct BatteryReminderService {
     ) -> String? {
         if !isCharging && percent <= 20 {
             let title = "\(device.rawValue) 电量仅剩 \(percent)%，别忘充电"
-            upsertChargingTodo(device: device, title: title, detail: "\(device.rawValue) 离线电量汇报")
+            guard upsertChargingTodo(device: device, title: title, detail: "\(device.rawValue) 离线电量汇报") else {
+                return nil
+            }
             NotificationService.post(title: "⚡ 设备低电量预警", body: title, id: "battery-\(device.rawValue)")
             return title
         } else if isCharging || percent >= 95 {
@@ -55,7 +61,9 @@ struct BatteryReminderService {
         return nil
     }
 
-    private func upsertChargingTodo(device: ChargeDeviceType, title: String, detail: String) {
+    /// 写入低电量充电待办，返回是否落库成功（失败回滚 + 日志，调用方据此决定是否发通知）。
+    @discardableResult
+    private func upsertChargingTodo(device: ChargeDeviceType, title: String, detail: String) -> Bool {
         let charging = TodoType.charging.rawValue
         let active = TodoStatus.active.rawValue
         let descriptor = FetchDescriptor<TodoItem>(
@@ -69,7 +77,9 @@ struct BatteryReminderService {
             let item = TodoItem(type: .charging, status: .active, title: title, detail: detail)
             context.insert(item)
         }
-        try? context.save()
+        return context.saveReportingFailure { error in
+            print("⚠️ [Battery] 低电量待办落库失败: \(error.localizedDescription)")
+        }
     }
 
     private func resolveChargingTodo(device: ChargeDeviceType) {
@@ -82,6 +92,9 @@ struct BatteryReminderService {
         for item in existings where item.title.contains(device.rawValue) || (device == .phone && item.title.contains("手机")) {
             item.status = .done
         }
-        try? context.save()
+        // 充电后自动完成待办属于尽力而为：失败只记日志，下次电量检查会再判一次。
+        _ = context.saveReportingFailure { error in
+            print("⚠️ [Battery] 充电后完成待办落库失败: \(error.localizedDescription)")
+        }
     }
 }

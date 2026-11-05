@@ -157,8 +157,9 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
     @discardableResult
     private func processCommandBatch(_ commands: [WidgetCommand], context: ModelContext) -> CommandBatchResult {
         var result = CommandBatchResult()
+        var notifications: [TodoItem] = []
         for command in commands {
-            switch apply(command, context: context) {
+            switch apply(command, context: context, deferredNotifications: &notifications) {
             case .applied, .consumed:
                 result.consumed += 1
             case .retry:
@@ -166,14 +167,25 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
                 // 已处理成功的队首前缀照常落库并摘除；失败的那条及之后的指令全部保留
                 if result.consumed > 0, !commit(result.consumed, context: context) {
                     result.consumed = 0
+                    return result
                 }
+                scheduleDeferredNotifications(notifications)
                 return result
             }
         }
         if result.consumed > 0, !commit(result.consumed, context: context) {
             result.consumed = 0
+            return result
         }
+        scheduleDeferredNotifications(notifications)
         return result
+    }
+
+    /// 落库成功后才排通知（审计 SVC-04：先排会留下指向不存在待办的提醒）。
+    private func scheduleDeferredNotifications(_ items: [TodoItem]) {
+        for item in items {
+            TodoNotificationManager.shared.scheduleNotification(for: item)
+        }
     }
 
     private func commit(_ count: Int, context: ModelContext) -> Bool {
@@ -188,16 +200,24 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         return true
     }
 
-    private func apply(_ command: WidgetCommand, context: ModelContext) -> CommandOutcome {
+    private func apply(
+        _ command: WidgetCommand,
+        context: ModelContext,
+        deferredNotifications: inout [TodoItem]
+    ) -> CommandOutcome {
         switch command {
         case .completeTodo(let id):
             return completeInDB(id: id, context: context)
 
         case .snoozeTodo(let id, let minutes):
-            return snoozeInDB(id: id, minutes: minutes, tomorrow: false, context: context)
+            let result = snoozeInDB(id: id, minutes: minutes, tomorrow: false, context: context)
+            if let item = result.item { deferredNotifications.append(item) }
+            return result.outcome
 
         case .snoozeTomorrow(let id):
-            return snoozeInDB(id: id, minutes: 0, tomorrow: true, context: context)
+            let result = snoozeInDB(id: id, minutes: 0, tomorrow: true, context: context)
+            if let item = result.item { deferredNotifications.append(item) }
+            return result.outcome
 
         case .toggleDeparture(let id, let isChecked):
             return toggleDepartureInDB(id: id, isChecked: isChecked, context: context)
@@ -206,7 +226,9 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             return quickAddExpenseInDB(text: text, context: context)
 
         case .quickAddTodo(let text):
-            return quickAddTodoInDB(text: text, context: context) == nil ? .consumed : .applied
+            guard let item = quickAddTodoInDB(text: text, context: context) else { return .consumed }
+            deferredNotifications.append(item)
+            return .applied
         }
     }
 
@@ -231,16 +253,22 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         return .applied
     }
 
-    @discardableResult
-    private func snoozeInDB(id: UUID, minutes: Int, tomorrow: Bool, context: ModelContext) -> CommandOutcome {
+    /// 稍后提醒：只改内存字段并返回待排期的条目，通知由调用方在落库成功后统一排
+    /// （审计 SVC-04：先排通知再 save，失败会留下指向未落库时间的提醒）。
+    private func snoozeInDB(
+        id: UUID,
+        minutes: Int,
+        tomorrow: Bool,
+        context: ModelContext
+    ) -> (outcome: CommandOutcome, item: TodoItem?) {
         let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == id })
         let item: TodoItem
         do {
-            guard let found = try context.fetch(descriptor).first else { return .consumed }
+            guard let found = try context.fetch(descriptor).first else { return (.consumed, nil) }
             item = found
         } catch {
             print("⚠️ [WidgetSync] 稍后提醒查询失败，保留队列重试: \(error.localizedDescription)")
-            return .retry
+            return (.retry, nil)
         }
         if tomorrow {
             var components = Calendar.current.dateComponents([.year, .month, .day], from: .now)
@@ -251,8 +279,7 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         } else {
             item.reminderOverrideAt = Date.now.addingTimeInterval(TimeInterval(max(1, minutes)) * 60)
         }
-        TodoNotificationManager.shared.scheduleNotification(for: item)
-        return .applied
+        return (.applied, item)
     }
 
     @discardableResult
@@ -292,7 +319,7 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         return .applied
     }
 
-    @discardableResult
+    /// 快速加待办：只建对象不排通知——通知必须在落库成功后由调用方排（审计 SVC-04）。
     private func quickAddTodoInDB(text: String, context: ModelContext) -> TodoItem? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -309,35 +336,62 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             recurrenceIntervalDays: parsed.customIntervalDays
         )
         context.insert(item)
-        TodoNotificationManager.shared.scheduleNotification(for: item)
         return item
     }
 
     // MARK: - WidgetBridgeAppHook（AppIntent 在主应用进程执行时走这里）
 
+    /// App hook 的统一落库出口：失败回滚 + 日志；返回是否成功，成功后才刷新快照/排通知。
+    /// - Parameter reportToBanner: 返回 Void 的 hook（完成/推迟/出门清点）没有别的回执渠道，
+    ///   走全局失败横幅让用户看见；返回文案的 quick-add 已有失败回复，不重复弹。
+    @discardableResult
+    private func saveHook(_ context: ModelContext, action: String, reportToBanner: Bool = false) -> Bool {
+        context.saveReportingFailure { error in
+            print("⚠️ [WidgetSync] \(action)落库失败: \(error.localizedDescription)")
+            if reportToBanner {
+                SaveFailureCenter.shared.report(error, action: action)
+            }
+        }
+    }
+
     func handleCompleteTodo(id: UUID) {
         let context = Persistence.shared.mainContext
-        completeInDB(id: id, context: context)
-        try? context.save()
-        refreshSnapshot(context: context)
+        switch completeInDB(id: id, context: context) {
+        case .retry:
+            return // 查询失败：不落库，下次前台巡检重试
+        case .applied, .consumed:
+            if saveHook(context, action: "完成待办", reportToBanner: true) {
+                refreshSnapshot(context: context)
+            }
+        }
     }
 
     func handleSnoozeTodo(id: UUID, minutes: Int) {
         let context = Persistence.shared.mainContext
-        snoozeInDB(id: id, minutes: minutes, tomorrow: false, context: context)
-        try? context.save()
+        let result = snoozeInDB(id: id, minutes: minutes, tomorrow: false, context: context)
+        if case .applied = result.outcome, let item = result.item,
+           saveHook(context, action: "稍后提醒", reportToBanner: true) {
+            TodoNotificationManager.shared.scheduleNotification(for: item)
+        }
     }
 
     func handleSnoozeTomorrow(id: UUID) {
         let context = Persistence.shared.mainContext
-        snoozeInDB(id: id, minutes: 0, tomorrow: true, context: context)
-        try? context.save()
+        let result = snoozeInDB(id: id, minutes: 0, tomorrow: true, context: context)
+        if case .applied = result.outcome, let item = result.item,
+           saveHook(context, action: "稍后提醒（明早）", reportToBanner: true) {
+            TodoNotificationManager.shared.scheduleNotification(for: item)
+        }
     }
 
     func handleToggleDeparture(id: UUID, isChecked: Bool) {
         let context = Persistence.shared.mainContext
-        toggleDepartureInDB(id: id, isChecked: isChecked, context: context)
-        try? context.save()
+        switch toggleDepartureInDB(id: id, isChecked: isChecked, context: context) {
+        case .retry:
+            return
+        case .applied, .consumed:
+            _ = saveHook(context, action: "出门清点勾选", reportToBanner: true)
+        }
     }
 
     func handleQuickAddExpense(text: String) async -> String? {
@@ -362,7 +416,10 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             if !result.isIncome { totalExpense += result.amount }
             titles.append(result.title)
         }
-        try? context.save()
+        // 先落库再回执（审计 SVC-04）：失败如实返回失败文案，不刷新快照、不报「已记账」。
+        guard saveHook(context, action: "快捷记账") else {
+            return "记账失败，请稍后重试"
+        }
         refreshSnapshot(context: context)
 
         if results.count == 1, let result = results.first {
@@ -386,7 +443,11 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
     func handleQuickAddTodo(text: String) async -> String? {
         let context = Persistence.shared.mainContext
         guard let item = quickAddTodoInDB(text: text, context: context) else { return nil }
-        try? context.save()
+        // 先落库、再排通知 + 回执：失败时通知不排，也不报「已创建」。
+        guard saveHook(context, action: "快捷加待办") else {
+            return "待办保存失败，请稍后重试"
+        }
+        TodoNotificationManager.shared.scheduleNotification(for: item)
         refreshSnapshot(context: context)
         if let due = item.dueAt {
             let dueStr = due.formatted(date: .abbreviated, time: .shortened)

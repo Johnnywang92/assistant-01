@@ -697,13 +697,18 @@ public final class TravelTicketReminderManager: ObservableObject {
     }
 
     /// 用户显式确认后，将勾选的事项批量写入待办清单
+    ///
+    /// 顺序约束（审计 SVC-05）：SwiftData 与 UserDefaults 不在同一事务里，
+    /// 必须「先落库成功、再排通知 / 记已加入标记」。旧实现先排通知、`try? save()`
+    /// 后无条件 `markTodoAdded`，保存失败时待办不存在却永久标记「已加入」，
+    /// 整个出行周期内再也收不到提醒。现在保存失败会回滚并返回 0（不排通知、不改标记）。
     @discardableResult
     public func confirmAndInsertTicketTodos(
         _ items: [ProposedTicketTodo],
         for info: UpcomingTravelTicketInfo,
         context: ModelContext
     ) -> Int {
-        var count = 0
+        var inserted: [TodoItem] = []
         for item in items where item.isSelected {
             let noteSuffix = item.isCustomized ? "\n（注：预约时间已由用户核对并自定义确认）" : ""
             let fullDetail = item.detail + noteSuffix
@@ -716,14 +721,24 @@ public final class TravelTicketReminderManager: ObservableObject {
                 remindBeforeMinutes: item.remindBeforeMinutes
             )
             context.insert(todo)
-            TodoNotificationManager.shared.scheduleNotification(for: todo)
-            count += 1
+            inserted.append(todo)
         }
 
-        try? context.save()
+        let saved = context.saveReportingFailure { error in
+            print("⚠️ [TravelTicket] 出行待办落库失败，不标记已加入、不排通知: \(error.localizedDescription)")
+            SaveFailureCenter.shared.report(error, action: "加入出行待办")
+        }
+        guard saved else {
+            // 返回 0：调用方据此展示失败文案（而不是「已加入」）；本出行周期仍会继续提醒。
+            return 0
+        }
+
+        for todo in inserted {
+            TodoNotificationManager.shared.scheduleNotification(for: todo)
+        }
         markTodoAdded(id: info.id)
         self.activeUpcomingTicket = nil
-        return count
+        return inserted.count
     }
 
     /// 一键将出行购票与文博景区预约提醒加入系统待办清单（全量新增快捷方法）

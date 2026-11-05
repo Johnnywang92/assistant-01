@@ -13,6 +13,10 @@ public enum ExpenseWaterService {
     // MARK: - 记账保存后联动
 
     /// 账单保存（新建或编辑）后调用。
+    ///
+    /// 允许失败的派生路径（审计 SVC-04 明确豁免）：主账单已由调用方先落库，
+    /// 这里只维护「记账 → 饮水」的派生联动记录，失败不阻断主流程；
+    /// 但不能再 `try?` 静默吞错——统一走 `saveLinked` 回滚 + 日志。
     public static func handleSaved(_ expense: ExpenseRecord, context: ModelContext) {
         let linked = linkedRecord(for: expense.id, context: context)
 
@@ -20,7 +24,7 @@ public enum ExpenseWaterService {
         guard isEligible(expense) else {
             if let linked {
                 context.delete(linked)
-                try? context.save()
+                _ = saveLinked(context, action: "删除非餐饮的联动饮水记录")
             }
             return
         }
@@ -30,7 +34,7 @@ public enum ExpenseWaterService {
             // 若用户将标题改成了非饮品（如「拉面」），则移除先前的饮水记录
             if let linked {
                 context.delete(linked)
-                try? context.save()
+                _ = saveLinked(context, action: "删除不再匹配饮品的联动记录")
             }
             return
         }
@@ -46,7 +50,7 @@ public enum ExpenseWaterService {
             existing.calories = suggestion.calories
             existing.customName = suggestion.customName
             existing.note = "记账自动联动（\(expense.title)）"
-            try? context.save()
+            _ = saveLinked(context, action: "同步饮水记录")
         } else {
             // 不存在联动记录：新建并插入
             let newRecord = WaterIntakeRecord(
@@ -60,7 +64,11 @@ public enum ExpenseWaterService {
                 linkedExpenseID: expense.id
             )
             context.insert(newRecord)
-            try? context.save()
+            guard saveLinked(context, action: "新建联动饮水记录") else {
+                // 联动记录没落库就不要再去写 Apple 健康，否则健康数据里会出现一条
+                // 账本/待办都找不到来源的孤立饮水记录。
+                return
+            }
 
             // 尝试同步到 Apple 健康（HealthKit）
             Task {
@@ -71,7 +79,7 @@ public enum ExpenseWaterService {
                 if success {
                     await MainActor.run {
                         newRecord.syncedToHealthKit = true
-                        try? context.save()
+                        _ = saveLinked(context, action: "回写已同步 HealthKit 标记")
                     }
                 }
             }
@@ -106,7 +114,16 @@ public enum ExpenseWaterService {
             }
         }
         if changed {
-            try? context.save()
+            _ = saveLinked(context, action: "清理孤儿饮水记录")
+        }
+    }
+
+    /// 派生联动落库的统一出口：允许失败（主账单已落库），但不静默吞错。
+    /// 失败时回滚并记一条日志；调用方可据此跳过后续派生动作（如 HealthKit 写入）。
+    @discardableResult
+    private static func saveLinked(_ context: ModelContext, action: String) -> Bool {
+        context.saveReportingFailure { error in
+            print("⚠️ [ExpenseWater] \(action)落库失败（派生联动允许失败，下次编辑账单会重建）: \(error.localizedDescription)")
         }
     }
 

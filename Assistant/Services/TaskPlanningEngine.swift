@@ -544,6 +544,10 @@ final class TaskPlanningEngine {
     }
 
     /// 批量保存勾选的子任务至 SwiftData 模型并自动排期通知
+    ///
+    /// 顺序约束（审计 SVC-04）：先一次 save 落库，成功后再逐条排通知 + 成功震动。
+    /// 旧实现通知在 save 之前排、`try?` 吞错后照旧 `Haptic.success()` 并返回条数，
+    /// 调用方据此播报「已添加」，但磁盘满/库损坏时一条都没落库。失败现在返回 0。
     func savePlanToTodos(plan: TaskPlanningPlan, context: ModelContext) -> Int {
         let selected = plan.subtasks.filter { $0.isSelected }
         guard !selected.isEmpty else { return 0 }
@@ -551,6 +555,7 @@ final class TaskPlanningEngine {
         let now = Date()
         let anchor = plan.anchorDate ?? Calendar.current.date(byAdding: .day, value: 14, to: now) ?? now
 
+        var inserted: [TodoItem] = []
         for (idx, subtask) in selected.enumerated() {
             let phaseType: PlanningPhaseType
             switch subtask.phase {
@@ -576,12 +581,21 @@ final class TaskPlanningEngine {
                 sortOrder: idx
             )
             context.insert(item)
-            TodoNotificationManager.shared.scheduleNotification(for: item)
+            inserted.append(item)
         }
 
-        try? context.save()
+        guard context.saveReportingFailure({ error in
+            print("⚠️ [TaskPlanning] 规划待办落库失败: \(error.localizedDescription)")
+            SaveFailureCenter.shared.report(error, action: "加入规划待办")
+        }) else {
+            // 返回 0：调用方据此提示「加入失败」，而不是播报「已添加 N 项」。
+            return 0
+        }
+        for item in inserted {
+            TodoNotificationManager.shared.scheduleNotification(for: item)
+        }
         Haptic.success()
-        return selected.count
+        return inserted.count
     }
 
     func extractCustomTopic(from text: String) -> String {

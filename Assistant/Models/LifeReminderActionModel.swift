@@ -39,7 +39,9 @@ enum LifeReminderActionStore {
         return actions.first { $0.sourceKindRaw == kind.rawValue && $0.sourceID == sourceID && abs($0.occurrenceDate.timeIntervalSince(occurrenceDate)) < 30 }
     }
 
-    static func complete(kind: LifeReminderKind, sourceID: UUID, occurrenceDate: Date, in context: ModelContext) {
+    /// 标记完成；返回是否落库成功（调用方据此决定播不播成功震动）。
+    @discardableResult
+    static func complete(kind: LifeReminderKind, sourceID: UUID, occurrenceDate: Date, in context: ModelContext) -> Bool {
         let item = action(kind: kind, sourceID: sourceID, occurrenceDate: occurrenceDate, in: context) ?? {
             let created = LifeReminderAction(kind: kind, sourceID: sourceID, occurrenceDate: occurrenceDate)
             context.insert(created)
@@ -48,16 +50,31 @@ enum LifeReminderActionStore {
         item.statusRaw = "done"
         item.completedAt = .now
         item.snoozedUntil = nil
-        try? context.save()
+        // 提醒实例的状态是「生活提醒」卡片的派生数据：失败不阻断主流程，但必须
+        // 回滚 + 留日志 + 顶部横幅，不能 `try?` 假装成功（审计 SVC-04）。
+        return context.saveReportingFailure { error in
+            print("⚠️ [LifeReminder] 完成状态落库失败: \(error.localizedDescription)")
+            Task { @MainActor in
+                SaveFailureCenter.shared.report(error, action: "完成提醒")
+            }
+        }
     }
 
-    static func snooze(kind: LifeReminderKind, sourceID: UUID, occurrenceDate: Date, in context: ModelContext) {
+    /// 推迟提醒；返回是否落库成功（调用方据此决定播不播成功震动）。
+    @discardableResult
+    static func snooze(kind: LifeReminderKind, sourceID: UUID, occurrenceDate: Date, in context: ModelContext) -> Bool {
         let item = action(kind: kind, sourceID: sourceID, occurrenceDate: occurrenceDate, in: context) ?? {
             let created = LifeReminderAction(kind: kind, sourceID: sourceID, occurrenceDate: occurrenceDate)
             context.insert(created)
             return created
         }()
         item.snoozedUntil = Calendar.current.date(byAdding: .hour, value: 1, to: .now)
-        try? context.save()
+        // 同上：允许失败的派生状态，回滚 + 日志 + 顶部横幅。
+        return context.saveReportingFailure { error in
+            print("⚠️ [LifeReminder] 推迟状态落库失败: \(error.localizedDescription)")
+            Task { @MainActor in
+                SaveFailureCenter.shared.report(error, action: "推迟提醒")
+            }
+        }
     }
 }

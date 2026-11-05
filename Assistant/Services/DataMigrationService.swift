@@ -89,6 +89,13 @@ public enum BackupFileInspection {
     case legacyPlaintext(package: BackupPackage, summary: BackupInspectionSummary)
 }
 
+/// 后台线程解析出的中间结果（不含摘要——摘要需要主 actor 的 `buildSummary`）：
+/// 让 JSON 解码能在 detached 任务里完成，再回主 actor 生成用户可见摘要。
+private enum BackupFilePayloadInspection {
+    case encrypted(envelope: EncryptedBackupEnvelope)
+    case legacyPlaintext(package: BackupPackage)
+}
+
 /// 备份与迁移功能的本地解锁 PIN 门禁（首次冷启动强制设置）。
 ///
 /// 设计要点：
@@ -239,8 +246,64 @@ final class DataMigrationService {
         ]
     }
 
-    /// 探测备份文件类型（加密封套还是旧版未加密）
+    /// 探测备份文件类型（加密封套还是旧版未加密）。
+    ///
+    /// 同步版本保留给「已经在主线程、且文件很小」的旧调用方；大文件请用
+    /// `inspectBackupFileAsync`——旧版明文包可能整包几十 MB，JSON 解析在主线程很贵。
     public func inspectBackupFile(from data: Data) throws -> BackupFileInspection {
+        try buildInspection(from: Self.inspectBackupFilePayload(from: data))
+    }
+
+    /// 后台版本：JSON 解析放到 detached，只把已解码的值类型回主 actor 做摘要。
+    public func inspectBackupFileAsync(from data: Data) async throws -> BackupFileInspection {
+        let payload = try await Task.detached(priority: .utility) {
+            try Self.inspectBackupFilePayload(from: data)
+        }.value
+        return try buildInspection(from: payload)
+    }
+
+    private func buildInspection(from payload: BackupFilePayloadInspection) throws -> BackupFileInspection {
+        switch payload {
+        case .encrypted(let envelope):
+            return .encrypted(envelope: envelope)
+        case .legacyPlaintext(let package):
+            let summary = buildSummary(package: package, isEncryptedWithPIN: false)
+            return .legacyPlaintext(package: package, summary: summary)
+        }
+    }
+
+    /// 使用输入的 PIN 码解锁并解析加密备份（同步版，保留旧调用方）。
+    public func unlockEncryptedArchive(envelope: EncryptedBackupEnvelope, pin: String) throws -> (package: BackupPackage, summary: BackupInspectionSummary) {
+        let package = try Self.openPackage(envelope: envelope, pin: pin)
+        let summary = buildSummary(package: package, isEncryptedWithPIN: true)
+        return (package, summary)
+    }
+
+    /// SVC-01：解锁路径的 PBKDF2 + AES-GCM + 整包 JSON decode 全是纯值类型运算，
+    /// 放到后台 detached，主线程不再为「输完 PIN 后 0.2–0.5s + 大包 decode」卡住。
+    public func unlockEncryptedArchiveAsync(envelope: EncryptedBackupEnvelope, pin: String) async throws -> (package: BackupPackage, summary: BackupInspectionSummary) {
+        let package = try await Task.detached(priority: .utility) {
+            try Self.openPackage(envelope: envelope, pin: pin)
+        }.value
+        let summary = buildSummary(package: package, isEncryptedWithPIN: true)
+        return (package, summary)
+    }
+
+    /// 校验并预览备份文件内容
+    public func inspectArchive(from data: Data) throws -> (package: BackupPackage, summary: BackupInspectionSummary) {
+        let inspection = try inspectBackupFile(from: data)
+        switch inspection {
+        case .encrypted:
+            throw MigrationCryptoError.missingPin
+        case .legacyPlaintext(let package, let summary):
+            return (package, summary)
+        }
+    }
+
+    // MARK: - 后台线程可用的纯解析入口（不碰 ModelContext / @Model）
+
+    /// 只解码封套或旧版明文包，不产生任何主 actor 状态；供同步入口与 detached 入口复用。
+    private nonisolated static func inspectBackupFilePayload(from data: Data) throws -> BackupFilePayloadInspection {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
@@ -250,15 +313,14 @@ final class DataMigrationService {
         }
 
         if let package = try? decoder.decode(BackupPackage.self, from: data) {
-            let summary = buildSummary(package: package, isEncryptedWithPIN: false)
-            return .legacyPlaintext(package: package, summary: summary)
+            return .legacyPlaintext(package: package)
         }
 
         throw MigrationCryptoError.corruptedData
     }
 
-    /// 使用输入的 PIN 码解锁并解析加密备份
-    public func unlockEncryptedArchive(envelope: EncryptedBackupEnvelope, pin: String) throws -> (package: BackupPackage, summary: BackupInspectionSummary) {
+    /// 解密并解码备份包（PBKDF2 310k 轮 + AES-GCM + JSON decode），纯函数、无主 actor 状态。
+    private nonisolated static func openPackage(envelope: EncryptedBackupEnvelope, pin: String) throws -> BackupPackage {
         let cleanPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanPin.isEmpty else {
             throw MigrationCryptoError.missingPin
@@ -290,21 +352,9 @@ final class DataMigrationService {
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let package = try decoder.decode(BackupPackage.self, from: decryptedData)
-        let summary = buildSummary(package: package, isEncryptedWithPIN: true)
-        return (package, summary)
+        return try decoder.decode(BackupPackage.self, from: decryptedData)
     }
 
-    /// 校验并预览备份文件内容
-    public func inspectArchive(from data: Data) throws -> (package: BackupPackage, summary: BackupInspectionSummary) {
-        let inspection = try inspectBackupFile(from: data)
-        switch inspection {
-        case .encrypted:
-            throw MigrationCryptoError.missingPin
-        case .legacyPlaintext(let package, let summary):
-            return (package, summary)
-        }
-    }
 
     // MARK: - 外部纯文本 / CSV 批量导入
 

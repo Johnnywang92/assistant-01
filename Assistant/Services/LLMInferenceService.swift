@@ -972,10 +972,14 @@ public final class LLMInferenceService: ObservableObject {
         let deferred = actionable.filter { $0.needsConfirmation || disputedInput }
 
         if executable.isEmpty {
-            // 留痕（planned 状态事务），历史页可追溯这次语音投喂，而不是凭空消失
+            // 留痕（planned 状态事务），历史页可追溯这次语音投喂，而不是凭空消失。
+            // 审计 SVC-04：这条 save 只写「理解记录」，失败不影响回执（动作本来就没执行），
+            // 但必须显式记录、不再用 `try?` 假装成功。
             let trace = OmniboxTransaction(capture: capture, actions: actionable, engine: planResult.engine)
             context.insert(trace)
-            try? context.save()
+            _ = context.saveReportingFailure { error in
+                print("⚠️ [LLM] 语音理解留痕落库失败: \(error.localizedDescription)")
+            }
             let names = deferred.map(\.summary).joined(separator: "；")
             return "已理解：\(names)。涉及修改/取消或把握不足的动作需要你确认，请到万能投喂口确认后执行。"
         }
@@ -983,13 +987,17 @@ public final class LLMInferenceService: ObservableObject {
         // 拓扑执行并获取回执
         let outcomes = OmniboxExecutor.executeTopologically(executable, context: context)
 
-        // 落事务记录（含原始输入与撤销令牌），与投喂口历史页完全合流、可一键撤销
+        // 落事务记录（含原始输入与撤销令牌），与投喂口历史页完全合流、可一键撤销。
+        // 动作本身已在 OmniboxExecutor 内部各自 `try context.save()` 落库；这里失败只丢
+        // 历史留痕与撤销令牌，故不阻断回执，但要在回执里如实告诉用户「撤销入口没存上」。
         let transaction = OmniboxTransaction(capture: capture, actions: executable, engine: planResult.engine)
         transaction.status = .executed
         transaction.executedAt = .now
         transaction.undoJSON = try? JSONEncoder().encode(outcomes.filter(\.succeeded).map(\.undo))
         context.insert(transaction)
-        try? context.save()
+        let traceSaved = context.saveReportingFailure { error in
+            print("⚠️ [LLM] 语音执行事务留痕落库失败（动作已执行，但历史/撤销不可用）: \(error.localizedDescription)")
+        }
 
         var summaries = outcomes.compactMap { outcome -> String? in
             if outcome.succeeded {
@@ -1001,6 +1009,9 @@ public final class LLMInferenceService: ObservableObject {
         }
         if !deferred.isEmpty {
             summaries.append("（\(deferred.map(\.summary).joined(separator: "；"))）需要确认，请到万能投喂口处理")
+        }
+        if !traceSaved {
+            summaries.append("（本次执行的记录保存失败，可能无法在历史里一键撤销）")
         }
         guard !summaries.isEmpty else { return nil }
         return summaries.joined(separator: "；")

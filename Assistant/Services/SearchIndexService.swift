@@ -14,7 +14,10 @@ import SwiftUI
 public final class SearchIndexService: ObservableObject {
     public static let shared = SearchIndexService()
 
-    public let engine = SearchIndexEngine()
+    /// 当前生效的倒排索引。重建时先构建新的 `SearchIndexEngine`，全部 add 完再原子替换，
+    /// 避免旧实现「先 clear 再重建」期间搜索返回空结果（SVC-09）。
+    /// `SearchIndexEngine` 内部自带锁，引用替换本身在主 actor 上同步完成。
+    public private(set) var engine = SearchIndexEngine()
 
     @Published public var totalIndexedCount: Int = 0
     @Published public var isIndexing: Bool = false
@@ -24,6 +27,10 @@ public final class SearchIndexService: ObservableObject {
     private let recentSearchesKey = "unified_search_recent_queries_v2"
     private var isIndexInitialized = false
     private var hasIndexedStaticSettings = false
+    /// 上次成功建索引时对应的「数据变更令牌」（各表行数 + 最新时间戳）。
+    private var indexChangeToken: Int?
+    /// 最近一次检索请求：重建完成后用它在新引擎上重跑，避免用户看到「无结果」且不自动补算。
+    private var lastSearchRequest: (query: String, category: SearchIndexCategory)?
 
     private init() {
         loadRecentSearches()
@@ -33,6 +40,14 @@ public final class SearchIndexService: ObservableObject {
 
     /// 索引全部设置模块与子功能项，赋予高优先级及丰富的中英文拼音关键词
     public func indexStaticSettings() {
+        engine.add(Self.staticSettingsDocuments())
+        hasIndexedStaticSettings = true
+        totalIndexedCount = engine.count
+    }
+
+    /// 静态设置索引文档列表（纯数据）。抽成静态函数是为了重建时先注入**新引擎**、
+    /// 全部构建完后再原子替换旧引擎，而不是先 clear 旧引擎（SVC-09）。
+    private static func staticSettingsDocuments() -> [SearchIndexDocument] {
         let settingsDocs: [SearchIndexDocument] = [
             SearchIndexDocument(
                 id: "setting_assistant_name",
@@ -256,24 +271,38 @@ public final class SearchIndexService: ObservableObject {
             )
         ]
 
-        engine.add(settingsDocs)
-        hasIndexedStaticSettings = true
-        totalIndexedCount = engine.count
+        return settingsDocs
     }
 
     // MARK: - 全域数据索引重建
 
-    /// 全面扫描 App 全部业务数据表，构建高性能跨模块倒排索引
-    /// 采用分片让出主线程（`Task.yield()`）策略，杜绝冷启动或页面切换时全表拉取 + 拼音分词阻塞主线程导致白屏。
-    public func rebuildIndex(context: ModelContext) async {
+    /// 全面扫描 App 全部业务数据表，构建高性能跨模块倒排索引。
+    ///
+    /// SVC-09 两个行为变化：
+    /// 1. **按需重建**：`force == false` 且「已有索引 + 数据变更令牌未变」时直接返回，
+    ///    不再每次打开搜索都重新拉 16 张表 + 重做拼音分词；手动刷新按钮传 `force: true`。
+    /// 2. **原子替换**：先把新文档灌进一个全新的 `SearchIndexEngine`，全部完成后才
+    ///    `self.engine = newEngine`；旧实现先 `engine.clear()`，构建窗口里搜索会返回空。
+    ///
+    /// 令牌用「每张表的行数 + 最新时间戳」：新增/删除由行数覆盖，编辑由时间戳覆盖，
+    /// 都是 COUNT / LIMIT 1 索引查询，比重建轻一个数量级；任何一次令牌查询失败都
+    /// 退化为「重建」（安全侧）。
+    public func rebuildIndex(context: ModelContext, force: Bool = false) async {
         guard !isIndexing else { return }
+
+        // 变更令牌必须在构建前取：构建期间数据若又变了，下次打开会因令牌不一致再次重建，
+        // 而不是把「构建前的旧状态」误标成最新。
+        let startToken = currentChangeToken(context: context)
+        if !force, isIndexInitialized, let startToken, startToken == indexChangeToken {
+            return
+        }
+
         isIndexing = true
         defer { isIndexing = false }
 
-        // 重新初始化清空并注入设置项
-        engine.clear()
-        hasIndexedStaticSettings = false
-        indexStaticSettings()
+        // 构建到全新引擎：设置项先注入，旧引擎在整个构建期间继续可搜索。
+        let newEngine = SearchIndexEngine()
+        newEngine.add(Self.staticSettingsDocuments())
         await Task.yield()
 
         var batch: [SearchIndexDocument] = []
@@ -662,14 +691,106 @@ public final class SearchIndexService: ObservableObject {
         let chunkSize = 80
         var offset = 0
         while offset < batch.count {
+            // 取消时直接返回：self.engine 仍是旧索引（完整可用），不会留半成品。
             if Task.isCancelled { return }
             let end = min(offset + chunkSize, batch.count)
-            engine.add(Array(batch[offset..<end]))
+            newEngine.add(Array(batch[offset..<end]))
             offset = end
             await Task.yield()
         }
-        totalIndexedCount = engine.count
+        if Task.isCancelled { return }
+
+        // 原子替换：搜索侧要么看到旧引擎、要么看到完整新引擎。
+        self.engine = newEngine
+        hasIndexedStaticSettings = true
+        totalIndexedCount = newEngine.count
         isIndexInitialized = true
+        indexChangeToken = startToken
+
+        // 构建期间用户可能已经输入过查询：用新引擎把最近一次检索重跑一遍，
+        // 避免「输入了却没结果、索引补齐后也不自动重算」（SVC-09 的可见症状）。
+        if let request = lastSearchRequest {
+            _ = search(query: request.query, category: request.category)
+        }
+    }
+
+    // MARK: - 数据变更令牌（SVC-09 增量判断）
+
+    /// 轻量变更令牌：每张索引表「行数 + 最新时间戳」。任何一步查询失败返回 nil（= 强制重建）。
+    private func currentChangeToken(context: ModelContext) -> Int? {
+        do {
+            var hasher = Hasher()
+            try mixChange(TodoItem.self, context: context,
+                          sortBy: [SortDescriptor(\.createdAt, order: .reverse)],
+                          date: { $0.createdAt }, into: &hasher)
+            try mixChange(ExpenseRecord.self, context: context,
+                          sortBy: [SortDescriptor(\.date, order: .reverse)],
+                          date: { $0.date }, into: &hasher)
+            try mixChange(StoredItem.self, context: context,
+                          sortBy: [SortDescriptor(\.updatedAt, order: .reverse)],
+                          date: { $0.updatedAt }, into: &hasher)
+            try mixChange(IDDocumentItem.self, context: context,
+                          sortBy: [SortDescriptor(\.updatedAt, order: .reverse)],
+                          date: { $0.updatedAt }, into: &hasher)
+            try mixChange(VoiceMemo.self, context: context,
+                          sortBy: [SortDescriptor(\.createdAt, order: .reverse)],
+                          date: { $0.createdAt }, into: &hasher)
+            try mixChange(PasswordVaultItem.self, context: context,
+                          sortBy: [SortDescriptor(\.lastRotatedAt, order: .reverse)],
+                          date: { $0.lastRotatedAt }, into: &hasher)
+            try mixChange(FoodIntakeRecord.self, context: context,
+                          sortBy: [SortDescriptor(\.date, order: .reverse)],
+                          date: { $0.date }, into: &hasher)
+            try mixChange(PeriodicHabit.self, context: context,
+                          sortBy: [SortDescriptor(\.nextDueAt, order: .reverse)],
+                          date: { $0.nextDueAt }, into: &hasher)
+            try mixChange(MedicationPlan.self, context: context,
+                          sortBy: [SortDescriptor(\.lastTakenAt, order: .reverse)],
+                          date: { $0.lastTakenAt }, into: &hasher)
+            try mixChange(AnniversaryItem.self, context: context,
+                          sortBy: [SortDescriptor(\.targetDate, order: .reverse)],
+                          date: { $0.targetDate }, into: &hasher)
+            try mixChange(VehicleProfile.self, context: context,
+                          sortBy: [SortDescriptor(\.lastMaintenanceDate, order: .reverse)],
+                          date: { $0.lastMaintenanceDate }, into: &hasher)
+            try mixChange(PetProfile.self, context: context,
+                          sortBy: [SortDescriptor(\.createdAt, order: .reverse)],
+                          date: { $0.createdAt }, into: &hasher)
+            try mixChange(ChildProfile.self, context: context,
+                          sortBy: [SortDescriptor(\.createdAt, order: .reverse)],
+                          date: { $0.createdAt }, into: &hasher)
+            try mixChange(DepartureCheckItem.self, context: context,
+                          sortBy: [SortDescriptor(\.createdAt, order: .reverse)],
+                          date: { $0.createdAt }, into: &hasher)
+            try mixChange(SkillPath.self, context: context,
+                          sortBy: [SortDescriptor(\.startedAt, order: .reverse)],
+                          date: { $0.startedAt }, into: &hasher)
+            try mixChange(HealthDaySnapshotRecord.self, context: context,
+                          sortBy: [SortDescriptor(\.day, order: .reverse)],
+                          date: { $0.day }, into: &hasher)
+            return hasher.finalize()
+        } catch {
+            return nil
+        }
+    }
+
+    /// 把一张表「行数 + 最新时间戳」混入令牌。取 `LIMIT 1` 的最新行，只读一个日期字段。
+    private func mixChange<T: PersistentModel>(
+        _ type: T.Type,
+        context: ModelContext,
+        sortBy: [SortDescriptor<T>],
+        date: (T) -> Date?,
+        into hasher: inout Hasher
+    ) throws {
+        hasher.combine(String(describing: T.self))
+        hasher.combine(try context.fetchCount(FetchDescriptor<T>()))
+        var descriptor = FetchDescriptor<T>(sortBy: sortBy)
+        descriptor.fetchLimit = 1
+        if let latest = try context.fetch(descriptor).first, let latestDate = date(latest) {
+            hasher.combine(latestDate.timeIntervalSince1970)
+        } else {
+            hasher.combine(-1.0)
+        }
     }
 
     // MARK: - 检索接口
@@ -684,6 +805,8 @@ public final class SearchIndexService: ObservableObject {
             self.searchResults = []
             return []
         }
+        // 记录最近一次检索：索引重建完成后由 rebuildIndex 用新引擎重跑，避免结果残缺。
+        lastSearchRequest = (query: trimmed, category: category)
         let matches = engine.search(query: trimmed, category: category, limit: limit)
         self.searchResults = matches
         return matches

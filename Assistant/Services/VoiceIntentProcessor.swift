@@ -247,8 +247,14 @@ struct VoiceIntentProcessor {
         )
 
         context.insert(item)
+        // 先落库、再排通知（审计 SVC-04）：保存失败还排通知会留下指向不存在待办的提醒，
+        // 而且下面的回执会假报「已记下」。
+        guard context.saveReportingFailure({ error in
+            print("⚠️ [Voice] 待办落库失败: \(error.localizedDescription)")
+        }) else {
+            return L10n.choose("抱歉，待办保存失败，请再试一次。", "Sorry, saving the to-do failed. Please try again.")
+        }
         TodoNotificationManager.shared.scheduleNotification(for: item)
-        try? context.save()
 
         if L10n.isEnglish {
             var feedback = "Got it! Added to-do \"\(parsed.title)\""
@@ -351,7 +357,12 @@ struct VoiceIntentProcessor {
             if !item.isIncome { totalExpense += item.amount }
             titles.append(item.title)
         }
-        try? context.save()
+        // 多笔是同一个事务：任一笔失败整体回滚（helper 已回滚），不再播报「已为你记入 N 笔」。
+        guard context.saveReportingFailure({ error in
+            print("⚠️ [Voice] 多笔记账落库失败: \(error.localizedDescription)")
+        }) else {
+            return L10n.choose("抱歉，这笔账保存失败，请再试一次。", "Sorry, saving the expense failed. Please try again.")
+        }
         if L10n.isEnglish {
             return "Recorded \(parsed.count) expenses totaling ¥\(formatAmount(totalExpense)) (\(titles.joined(separator: ", ")))."
         } else {
@@ -373,7 +384,12 @@ struct VoiceIntentProcessor {
             exchangeRateToCNY: parsed.exchangeRateToCNY
         )
         context.insert(record)
-        try? context.save()
+        // 先落库再算「今天/本月累计」并播报（审计 SVC-04）：保存失败还报「已为你记录」= 假成功。
+        guard context.saveReportingFailure({ error in
+            print("⚠️ [Voice] 记账落库失败: \(error.localizedDescription)")
+        }) else {
+            return L10n.choose("抱歉，这笔账保存失败，请再试一次。", "Sorry, saving the expense failed. Please try again.")
+        }
 
         let dayLabel = relativeDayLabel(for: parsed.date, calendar: cal)
         let amountText = formatAmount(parsed.amount)
