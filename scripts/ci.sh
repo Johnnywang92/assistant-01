@@ -15,6 +15,7 @@ STEPS=(
   "偏好键覆盖闸门|python3 scripts/check_settings_keys.py"
   "圆角令牌闸门|python3 scripts/check_radius_tokens.py"
   "备份口令字面量闸门|python3 scripts/check_backup_pin_literals.py"
+  "落库吞错闸门|python3 scripts/check_save_swallow.py"
   "AssistantCore 单元测试|cd Packages/AssistantCore && swift test"
   "心理视图类型检查|python3 scripts/typecheck-views.py Assistant/Features/PsychCombinedReadingCard.swift Assistant/Features/PsychTrendChartCard.swift Assistant/Features/MentalHealthView.swift Assistant/Features/PsychScaleResultView.swift Assistant/Features/PsychExportSheet.swift Assistant/Features/PsychScaleTestView.swift Assistant/Services/PsychReliefCopy.swift"
 )

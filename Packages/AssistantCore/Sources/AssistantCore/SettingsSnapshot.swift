@@ -72,6 +72,7 @@ public enum AssistantSettingsKeys {
         "sleepReminder.desiredBedtime",        // 期望入睡时间 HH:mm
         "sleepReminder.pseudoDesiredBedtime",  // 由作息推算出的入睡时间
         "weather_morning_push_time",           // 早间天气推送时间 HH:mm
+        "selected_companion_persona",          // 拟真社交搭子选择的性格预设
         ExpenseCurrency.preferredCurrencyKey   // 记账默认币种（出国游偏好）
     ]
 
@@ -131,6 +132,7 @@ public enum AssistantSettingsKeys {
         // 只迁移 raw 不迁移时间戳会让还原后的场景被当成不是今天选的（见 SituationalContextEngine 的当日判定）。
         "departure_selected_scene_timestamp",
         "daily_water_goal_ml",                   // 每日纯水目标
+        "daily_calorie_goal_kcal",               // 每日热量摄入目标
         "intent_threshold_min_top",              // 判别阈值校准覆盖 · top1 下限
         "intent_threshold_min_margin"            // 判别阈值校准覆盖 · 与次选最小差
     ] + ExpenseCurrency.allCases.filter { $0 != .cny }.map(\.customRateDefaultsKey)  // gate:dynamic_regex expense_exchange_rate_[A-Z]{3}

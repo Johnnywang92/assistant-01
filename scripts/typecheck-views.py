@@ -193,6 +193,36 @@ final class PsychStubReminderScheduler: ObservableObject {
 
 enum PsychStubHaptic {
     static func success() {}
+    static func light() {}
+    static func selection() {}
+}
+
+/// 视图依赖的其它 App 侧组件桩：**签名必须与真实实现对齐**
+/// （`CompanionEchoCard` 见 Features/Share/，`PsychShareSheet` 见 Features/PsychShareCardView.swift）。
+/// 桩一旦落后于真实签名，闸门就会「通不过」——这是有意为之：宁可红，也不要假绿。
+struct PsychStubCompanionCard: View {
+    var moodRecord: PsychStubMoodRecord?
+    var completedTodosCount: Int
+    var pendingTodosCount: Int
+    var todayExpenseAmount: Double
+    var body: some View { EmptyView() }
+}
+
+struct PsychStubShareSheet: View {
+    var date: Date
+    var todayMood: MoodCheckInEntry?
+    var moodEntries: [MoodCheckInEntry]
+    var scaleScores: [PsychScaleScore]
+    var insight: MentalHealthInsight?
+    var physiology: PleasureIndexEvaluation?
+    var body: some View { EmptyView() }
+}
+
+extension View {
+    /// 真实实现见 Services/AppBackgroundManager.swift
+    func themedAppBackground() -> some View { self }
+    /// 真实实现见 Theme/AppTheme.swift
+    func responsiveAnimation(_ animation: Animation?, value: some Equatable) -> some View { self }
 }
 
 @MainActor
@@ -287,6 +317,21 @@ extension View {
 
 enum AppMotion {
     static let standardSpring: Animation = .spring(response: 0.35, dampingFraction: 0.8)
+    static let reduceMotion: Bool = false
+}
+
+/// `@Query` 元素类型的桩：视图里按 `$0.status == .done`、`$0.isIncome` 这类
+/// 成员读，桩必须把用到的成员备齐（见 MentalHealthView 的计数函数）。
+final class PsychStubTodo {
+    enum Status { case done, active }
+    var status: Status = .active
+    var completedAt: Date?
+}
+
+final class PsychStubExpense {
+    var isIncome: Bool = false
+    var date: Date = .now
+    var amount: Double = 0
 }
 
 enum L10n {
@@ -343,6 +388,8 @@ MODEL_ALIASES = {
     "PsychScaleRecord": "PsychStubScaleRecord",
     "MoodCheckInRecord": "PsychStubMoodRecord",
     "HealthDaySnapshotRecord": "PsychStubSnapshotRecord",
+    "TodoItem": "PsychStubTodo",
+    "ExpenseRecord": "PsychStubExpense",
 }
 
 APP_ALIASES = {
@@ -351,6 +398,9 @@ APP_ALIASES = {
     "Haptic": "PsychStubHaptic",
     "PsychReliefTodoBuilder": "PsychStubReliefTodoBuilder",
     "PsychDataAdapter": "PsychStubDataAdapter",
+    # 视图依赖但不在本次类型检查文件集里的 App 组件（含跨文件使用的视图）
+    "CompanionEchoCard": "PsychStubCompanionCard",
+    "PsychShareSheet": "PsychStubShareSheet",
 }
 
 
@@ -363,6 +413,11 @@ def alias_models(source: str) -> str:
         # 排序键等 key path 里的类型名：`\Model.field`
         out = re.sub(rf'\\{re.escape(real)}\.', rf'\\{stub}.', out)
     for real, stub in APP_ALIASES.items():
+        out = re.sub(rf'\b{re.escape(real)}\b', stub, out)
+    # 兜底：模型类型还可能出现在返回类型、泛型实参等位置
+    # （`-> MoodCheckInRecord?`、`[MoodCheckInRecord]` 之外的各种写法）。
+    # 上面的定点替换已经覆盖了绝大多数，这里只清理残留的独立标识符。
+    for real, stub in MODEL_ALIASES.items():
         out = re.sub(rf'\b{re.escape(real)}\b', stub, out)
     return out
 
@@ -388,6 +443,13 @@ def rewrite(source: str) -> str:
     # 所以按括号配平手动扫描。
     out = replace_attribute_calls(out, "@Query", lambda args, name, type_text:
                                    f"private var {name}: {type_text} = []")
+    # 裸 `@Query`（不带参数，声明在下一行）：`replace_attribute_calls` 只认 `@Query(`，
+    # 这类无参写法会漏过去，宏展开失败会直接报
+    # "external macro implementation type 'SwiftDataMacros.QueryMacro' could not be found"。
+    out = re.sub(
+        r'^[ \t]*@Query[ \t]*\r?\n([ \t]*)(private var \w+:[^\n{=]+?)[ \t]*$',
+        r'\1\2 = []',
+        out, flags=re.M)
 
     # @State 存**集合类型**（数组 / 字典）时不能用 Binding 表达——
     # `Binding` 的 subscript 只读，写不进 `answers[i] = x`。
@@ -420,6 +482,19 @@ def rewrite(source: str) -> str:
     # @State private var x: T?      →   private var x = Binding<T?>.constant(nil)
     out = re.sub(r'@State[ \t]+private var (\w+):\s*([A-Za-z_][\w<>\[\], .?]*\?)\s*$',
                  r'private var \1 = Binding<\2>.constant(nil)', out, flags=re.M)
+    # @State private var x: T（非可选、无初值，值在 init 里通过 `_x = State(initialValue:)` 给）
+    #   →   private var x: Binding<T>! = nil
+    # 用隐式解包可选而非 `Binding<T>.constant(...)`：这里拿不到 T 的默认值，
+    # 而 IUO 既能满足「按值读取」（`x.wrappedValue`）、也能满足「按 Binding 传递」
+    # （`$x` 投影后直接当 `Binding<T>` 用）。真正的初值在下面 `_x = State(...)` 规则里丢弃。
+    out = re.sub(r'@State[ \t]+private var (\w+):\s*([A-Za-z_][\w<>\[\], .?]*)\s*$',
+                 r'private var \1: Binding<\2>! = nil', out, flags=re.M)
+
+    # init 里的 `_x = State(initialValue: expr)`：属性宏已移除，`_x` 是这个宏生成的
+    # 存储属性，改写后不再存在。保留表达式本身（仍参与类型检查），赋值语义对
+    # 类型检查无意义——声明处已有初值或用 IUO 兜底。
+    out = re.sub(r'^([ \t]*)_(\w+) = State\(initialValue: (.+)\)[ \t]*$',
+                 r'\1_ = (\3)', out, flags=re.M)
     # @State private var x = v（无显式类型）
     # 用 `Binding.constant(v)`：类型由初值推断。
     # 枚举成员（`PsychExportFormat.markdown`）会缺上下文，
@@ -438,16 +513,58 @@ def rewrite(source: str) -> str:
     # `x =` 不是赋值，改了会产出 `private var x.wrappedValue = ...` 这种非法声明。
     # 所以逐行处理，跳过以 `private var` / `let` / `var` 开头的声明行。
     state_names = re.findall(r'private var (\w+) = Binding', out)
+    # 「init 里给初值」的 @State 被改写成了 `private var x: Binding<T>! = nil`（IUO）。
+    # 这些名字同样需要按 `Binding` 打补丁，否则 `moodScore: mood` 会把
+    # `Binding<Int>?` 直接当 `Int` 传进去（漏了 `.wrappedValue`）。
+    state_names += re.findall(r'private var (\w+): Binding<[^\n]*?>!', out)
+    state_names = list(dict.fromkeys(state_names))
     # 字典型 `@State`（改写成了 PsychStateDict）——传给期望普通字典的参数时
     # 要用 `.asDictionary`（真实 @State 读出来就是字典）。
     dict_names = re.findall(r'private var (\w+) = PsychStateDict', out)
+
+    # 按顶层类型分段：@State 的补丁只能作用在**声明它的那个类型**里。
+    # 否则别的类型里同名的局部绑定（`if let note = record.note`）会被误改写成
+    # `if let note.wrappedValue = ...`，报一堆看不懂的错。
+    type_decl = re.compile(
+        r'^(?:@\w+[^\n]*\n\s*)*(?:public\s+|private\s+|internal\s+|final\s+)*'
+        r'(?:struct|class|enum|extension)\s+\w+')
+    seg_of_line = []
+    seg = 0
+    for ln in out.split("\n"):
+        if type_decl.match(ln):
+            seg += 1
+        seg_of_line.append(seg)
+    # 每个 state 名字归属的分段（取声明行所在段）
+    state_seg = {}
+    for i, ln in enumerate(out.split("\n")):
+        m = re.match(r'^[ \t]*private var (\w+)(?:\s*:\s*Binding<[^\n]*?>!|\s*=\s*Binding\b)', ln)
+        if m and m.group(1) in state_names:
+            state_seg[m.group(1)] = seg_of_line[i]
+    dict_seg = {}
+    for i, ln in enumerate(out.split("\n")):
+        m = re.match(r'^[ \t]*private var (\w+) = PsychStateDict\b', ln)
+        if m:
+            dict_seg[m.group(1)] = seg_of_line[i]
+
+    # 只跳过**改写产物自身的声明行**。
+    #
+    # 早期版本跳过了所有以 `let` / `var` / `private var` 开头的行，想保护
+    # `private var x = Binding.constant(...)` 这种声明不被改坏；副作用是 body 里的
+    # `let periodRecords = Array(...prefix(selectedTrendPeriod)...)` 也被跳过了，
+    # 于是 `prefix(Binding<Int>)` 漏改写、闸门报「Binding<Int> 不可转 Int」。
+    # 现在只按「声明里赋的是 Binding / PsychStateDict / PsychTypeCheckStub」判定。
+    decl_line = re.compile(
+        r'^(?:@\w+|(?:private\s+|public\s+|fileprivate\s+|internal\s+)?'
+        r'(?:var|let)\s+\w+\s*=\s*(?:Binding|PsychStateDict|PsychTypeCheckStub)\b)')
+
     if dict_names:
         lines = out.split("\n")
         for i, line in enumerate(lines):
-            stripped = line.lstrip()
-            if stripped.startswith(("private var", "var ", "let ", "@")):
+            if decl_line.match(line.lstrip()):
                 continue
             for name in dict_names:
+                if dict_seg.get(name) != seg_of_line[i]:
+                    continue  # 别的类型里的同名局部变量，不动
                 # 实参位置：`PsychScaleResultView(answers: answers)` → `.asDictionary`
                 line = re.sub(rf'(\b\w+:\s*)({re.escape(name)})(?![.\w])',
                               rf'\1\2.asDictionary', line)
@@ -457,13 +574,31 @@ def rewrite(source: str) -> str:
     if state_names:
         lines = out.split("\n")
         for i, line in enumerate(lines):
-            stripped = line.lstrip()
-            if stripped.startswith(("private var", "var ", "let ", "@")):
+            if decl_line.match(line.lstrip()):
                 continue
             for name in state_names:
-                # 赋值
-                line = re.sub(rf'(?<![\w.]){re.escape(name)} = (?![=])',
-                              f'{name}.wrappedValue = ', line)
+                if state_seg.get(name) != seg_of_line[i]:
+                    continue  # 不是声明它的那个类型里的同名变量，不动
+                # 本行若用同名局部绑定遮蔽了它（`if let note = record.note`），
+                # 后续出现的 `note` 是绑定值（String）而不是 @State，
+                # 再打 `.wrappedValue` 就会报 "String has no member 'wrappedValue'"。
+                if re.search(rf'\b(?:if|guard)\s+let\s+{re.escape(name)}\b', line):
+                    continue
+                # 条件绑定：`guard let day = selectedTrendDay else`
+                # 真实 `@State` 是 `Date?`，桩里是 `Binding<Date?>`，必须解包。
+                line = re.sub(rf'(\b(?:if|guard)\s+let\s+\w+\s*=\s*)({re.escape(name)})(?![.\w])',
+                              rf'\1\2.wrappedValue', line)
+                # 无标签实参：`prefix(selectedTrendPeriod)` / `suffix(...)`
+                line = re.sub(
+                    rf'(\b(?:prefix|suffix|dropFirst|dropLast|indices|contains)\(\s*)({re.escape(name)})(?=[,)])',
+                    rf'\1\2.wrappedValue', line)
+                # 裸实参：`onSaved?(mood, energy, stress)` / `foo(1, note)`
+                line = re.sub(rf'(\(|,\s*)({re.escape(name)})(?=[,)])',
+                              rf'\1\2.wrappedValue', line)
+                # 赋值（排除 `if let x =` / `guard let x =` / `for x in` 的左侧绑定名）
+                line = re.sub(
+                    rf'(?<![\w.])(?<!\blet )(?<!\bvar )(?<!\bcase ){re.escape(name)} = (?![=])',
+                    f'{name}.wrappedValue = ', line)
                 # 比较：Binding 不可直接与值比较（真实 @State 可以）
                 line = re.sub(rf'(?<![\w.])({re.escape(name)}) == (?![=])',
                               rf'\1.wrappedValue == ', line)
@@ -514,9 +649,12 @@ def rewrite(source: str) -> str:
 
 
 def main() -> int:
-    files = [a for a in sys.argv[1:] if not a.startswith("--")]
+    args = sys.argv[1:]
+    # `--keep` 保留改写产物目录：桩腐化时靠它把编译器行号映射回原文件。
+    keep = "--keep" in args
+    files = [a for a in args if not a.startswith("--")]
     if not files:
-        print("用法: typecheck-views.py <文件...>")
+        print("用法: typecheck-views.py [--keep] <文件...>")
         return 2
 
     core_dir = build_ios_core_module()
@@ -551,7 +689,10 @@ def main() -> int:
         print(f"✅ 类型检查通过（iOS 目标）：{names}")
         return 0
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        if keep:
+            print(f"（--keep：改写产物保留在 {tmp}）")
+        else:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

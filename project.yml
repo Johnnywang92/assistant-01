@@ -60,6 +60,11 @@ targets:
     info:
       path: Assistant/Info.plist
       properties:
+        # 版本号必须在这里显式引用构建设置：XcodeGen 会给生成的 Info.plist 写死
+        # 1.0/1，而不是读取 MARKETING_VERSION。此前 MARKETING_VERSION: "0.1.0"
+        # 是一份死配置——改它不会进 IPA（主包与两个扩展已实测都恒为 1.0）。
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         BGTaskSchedulerPermittedIdentifiers:
           - com.yifanwang.assistant01.refresh
         # 只登记标识还不够：系统要求同时声明后台模式，否则 BGTaskScheduler.submit 直接抛错，
@@ -168,6 +173,8 @@ targets:
     info:
       path: AssistantWidgetExtension/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: 小助小组件
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -192,6 +199,8 @@ targets:
     info:
       path: ShareExtension/Info.plist
       properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: 发送到小助
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services

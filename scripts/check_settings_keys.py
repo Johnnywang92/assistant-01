@@ -133,6 +133,18 @@ def collect_used_keys():
     def note(key: str, where: str):
         usage.setdefault(key, []).append(where)
 
+    def note_key(key: str, where: str):
+        """插值键模板（如 "\\(digestKey)_mtime"）无法逐键判定，只汇报不判红。
+
+        设计上 `@AppStorage`、`forKey:`、键名常量三条路径必须一致；此前只有常量
+        路径做了这个判别，于是模型缓存这类按摘要拼出来的键会被当成「未登记的偏好」
+        判红（b147d9b 起闸门一直红）。这里把三条路径收敛到同一个出口。
+        """
+        if "\\(" in key:
+            DYNAMIC_KEYS.append((key, where))
+        else:
+            note(key, where)
+
     for path in swift_files():
         text = read_text(path)
         corpus += text
@@ -140,7 +152,7 @@ def collect_used_keys():
         line_of = lambda pos: text[:pos].count("\n") + 1
 
         for m in re.finditer(r'@AppStorage\(\s*"([^"]+)"', text):
-            note(m.group(1), f"{rel}:{line_of(m.start())}")
+            note_key(m.group(1), f"{rel}:{line_of(m.start())}")
 
         aliases = set(re.findall(r'(?:let|var)\s+(\w+)\s*=\s*UserDefaults(?:\.standard|\(suiteName)', text))
         # 长接收者放前面，否则 `UserDefaults.standard.string(forKey:)` 会被
@@ -152,7 +164,7 @@ def collect_used_keys():
             re.S,
         )
         for m in call.finditer(text):
-            note(m.group("key"), f"{rel}:{line_of(m.start())}")
+            note_key(m.group("key"), f"{rel}:{line_of(m.start())}")
 
         forKey_lines = [ln for ln in text.splitlines() if "forKey" in ln]
         for m in re.finditer(r'(?:static\s+)?let\s+(\w+)\s*=\s*"([^"]+)"', text):

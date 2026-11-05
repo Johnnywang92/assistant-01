@@ -105,7 +105,7 @@ public struct StoredItemShareCard: View {
                 Image("AssistantAppIcon")
                     .resizable()
                     .frame(width: 20, height: 20)
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.badge, style: .continuous))
 
                 Text("小助 · 记所想，助所行")
                     .font(.system(size: 10.5, weight: .medium))
