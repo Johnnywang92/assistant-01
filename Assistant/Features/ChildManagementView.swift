@@ -72,75 +72,27 @@ struct ChildManagementView: View {
     // MARK: - 顶部概览
 
     private var overviewHeaderCard: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(Color.pink.opacity(0.12))
-                    .frame(width: 50, height: 50)
-                Image(systemName: "figure.and.child.holdinghands")
-                    .font(.title2)
-                    .foregroundStyle(.pink)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("国家免疫规划疫苗与成长记录")
-                    .font(.headline)
-
-                Text("按月龄自动推算计划免疫接种节点，过敏史与身体指标关怀")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
+        ProfileOverviewHeaderCard(
+            icon: "figure.and.child.holdinghands",
+            tint: .pink,
+            title: "国家免疫规划疫苗与成长记录",
+            subtitle: "按月龄自动推算计划免疫接种节点，过敏史与身体指标关怀"
         )
     }
 
     // MARK: - 空状态
 
     private var emptyStateCard: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "figure.child.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.pink.opacity(0.6))
-                .padding(.top, 16)
-
-            Text("暂未录入宝贝档案")
-                .font(.headline)
-
-            Text("录入宝宝生日后，系统将为您按月龄智能排期《国家免疫规划》17 剂核心疫苗并设置适龄接种提醒。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-
-            Button {
-                showAddChild = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus.circle.fill")
-                    Text("添加宝贝档案")
-                }
-                .font(.subheadline.bold())
-                .foregroundStyle(.white)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(Color.pink)
-                .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .padding(.bottom, 16)
+        ProfileEmptyStateCard(
+            icon: "figure.child.circle.fill",
+            iconColor: .pink,
+            title: "暂未录入宝贝档案",
+            message: "录入宝宝生日后，系统将为您按月龄智能排期《国家免疫规划》17 剂核心疫苗并设置适龄接种提醒。",
+            buttonTitle: "添加宝贝档案",
+            buttonColor: .pink
+        ) {
+            showAddChild = true
         }
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
-                .fill(Color(.secondarySystemGroupedBackground))
-        )
-        .padding(.vertical, 12)
     }
 
     // MARK: - 宝贝独立卡片
@@ -298,7 +250,10 @@ struct ChildManagementView: View {
         return Button {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
                 child.toggleVaccineCompletion(id: item.id)
-                try? context.save()
+                guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "记录疫苗打卡") }) else {
+                    Haptic.error()
+                    return
+                }
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 if !isDone {
                     showToast("已完成打卡【\(item.vaccineName)】！")
@@ -340,7 +295,10 @@ struct ChildManagementView: View {
     private func deleteChild(_ child: ChildProfile) {
         withAnimation {
             context.delete(child)
-            try? context.save()
+            guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除宝贝档案") }) else {
+                Haptic.error()
+                return
+            }
             showToast("已删除宝贝档案")
         }
     }
@@ -351,88 +309,27 @@ struct ChildManagementView: View {
     }
 
     private func recordsSection(for child: ChildProfile) -> some View {
-        VStack(spacing: 8) {
-            Button {
-                openRecords(for: child, type: .growth)
-            } label: {
-                HStack(spacing: 10) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.pink.opacity(0.12))
-                            .frame(width: 36, height: 36)
-                        Image(systemName: "heart.text.square.fill")
-                            .font(.subheadline)
-                            .foregroundStyle(.pink)
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text("宝贝成长记录与健康档案")
-                                .font(.subheadline.bold())
-                                .foregroundStyle(.primary)
-
-                            let totalCount = child.growthRecords.count + child.milestones.count + child.healthVisits.count
-                            if totalCount > 0 {
-                                Text("\(totalCount) 项")
-                                    .font(.caption2.bold())
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 1)
-                                    .background(Capsule().fill(Color.pink.opacity(0.15)))
-                                    .foregroundStyle(.pink)
-                            }
-                        }
-
-                        Text("记录身高体重曲线 · 第一次翻身/走路等里程碑 · 门诊病历")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.caption.bold())
-                        .foregroundStyle(.secondary)
-                }
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
-                        .fill(Color(.tertiarySystemGroupedBackground))
-                )
-            }
-            .buttonStyle(.plain)
-
-            HStack(spacing: 8) {
-                quickActionButton(title: "记成长测量", icon: "ruler", color: .pink) {
+        ProfileRecordsSection(
+            tint: .pink,
+            title: "宝贝成长记录与健康档案",
+            subtitle: "记录身高体重曲线 · 第一次翻身/走路等里程碑 · 门诊病历",
+            count: child.growthRecords.count + child.milestones.count + child.healthVisits.count,
+            onOpenAll: { openRecords(for: child, type: .growth) },
+            actions: [
+                ProfileRecordsAction(title: "记成长测量", icon: "ruler", color: .pink) {
                     openRecords(for: child, type: .growth)
-                }
-                quickActionButton(title: "记里程碑", icon: "flag.fill", color: .orange) {
+                },
+                ProfileRecordsAction(title: "记里程碑", icon: "flag.fill", color: .orange) {
                     openRecords(for: child, type: .milestones)
-                }
-                quickActionButton(title: "记就医看诊", icon: "cross.case.fill", color: .blue) {
+                },
+                ProfileRecordsAction(title: "记就医看诊", icon: "cross.case.fill", color: .blue) {
                     openRecords(for: child, type: .health)
                 }
-            }
-        }
+            ]
+        )
     }
 
-    private func quickActionButton(title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.caption2)
-                Text(title)
-                    .font(.caption2.bold())
-            }
-            .foregroundStyle(color)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
-                    .fill(color.opacity(0.08))
-            )
-        }
-        .buttonStyle(.plain)
-    }
+
 
     private func showToast(_ message: String) {
         toastMessage = message
@@ -576,7 +473,10 @@ struct AddEditChildSheet: View {
             )
             context.insert(newChild)
         }
-        try? context.save()
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "添加宝贝档案") }) else {
+            Haptic.error()
+            return
+        }
         dismiss()
     }
 }

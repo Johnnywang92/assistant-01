@@ -160,26 +160,13 @@ public struct ExpenseShareCardView: View {
                     .frame(height: 0.8)
 
                 HStack(alignment: .center, spacing: 10) {
-                    Image("AssistantAppIcon")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 34, height: 34)
-                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
-                        .shadow(color: Color.black.opacity(0.12), radius: 3, y: 1)
-
-                    VStack(alignment: .leading, spacing: 1.5) {
-                        Text("小助 Assistant")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color(red: 0.18, green: 0.16, blue: 0.14))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-
-                        Text("记所想，助所行")
-                            .font(.system(size: 9))
-                            .foregroundStyle(Color(red: 0.5, green: 0.46, blue: 0.42))
-                            .lineLimit(1)
-                    }
-
+                    ShareCardBrandIdentity(
+                        title: "小助 Assistant",
+                        titleColor: Color(red: 0.18, green: 0.16, blue: 0.14),
+                        subtitleColor: Color(red: 0.5, green: 0.46, blue: 0.42),
+                        titleSpacing: 1.5,
+                        iconShadowOpacity: 0.12
+                    )
                     Spacer(minLength: 8)
 
                     VStack(alignment: .trailing, spacing: 1) {

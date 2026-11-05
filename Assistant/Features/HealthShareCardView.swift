@@ -23,7 +23,10 @@ public struct HealthShareCardView: View {
         pleasure: PleasureIndexEvaluation? = nil,
         todayFoodCalories: Double? = nil,
         todayWaterML: Double? = nil,
-        goals: [HealthGoal] = HealthGoal.defaults
+        goals: [HealthGoal] = HealthGoal.defaults(
+            waterGoalML: AppSettings.dailyWaterGoalML,
+            sleepGoalHours: AppSettings.dailySleepGoalHours
+        )
     ) {
         self.date = date
         self.snapshot = snapshot
@@ -67,22 +70,29 @@ public struct HealthShareCardView: View {
         return "日常行走"
     }
 
+    private var effectiveWaterML: Double? {
+        todayWaterML ?? snapshot?.value(for: .dietaryWater)?.value
+    }
+
     /// 睡眠副标：无数据不许判成「睡得少」（旧版 `(sleep ?? 0) >= 7` 把没数据当 0 小时）
     private var sleepBrief: String {
         guard let sleep else { return "暂无数据" }
         if let target = goalTarget(.sleep) {
+            let targetText = target.truncatingRemainder(dividingBy: 1) == 0
+                ? "\(Int(target))"
+                : String(format: "%.1f", target)
             return sleep >= target
-                ? "已达 \(Int(target)) 小时目标"
-                : String(format: "距 %.1f 小时目标还差 %.1f", target, target - sleep)
+                ? "已达 \(targetText) 小时目标"
+                : String(format: "距 %@ 小时目标还差 %.1f", targetText, target - sleep)
         }
         return sleep >= 7 ? "睡眠充足恢复好" : "建议稍早作息"
     }
 
     /// 饮水副标：目标进度
     private var waterBrief: String {
-        guard let todayWaterML else { return "暂无数据" }
+        guard let water = effectiveWaterML else { return "暂无数据" }
         if let target = goalTarget(.dietaryWater) {
-            return "目标 \(Int(target)) ml · \(Int((min(todayWaterML / target, 1) * 100).rounded()))%"
+            return "目标 \(Int(target)) ml · \(Int((min(water / target, 1) * 100).rounded()))%"
         }
         return "有效补水折算"
     }
@@ -240,7 +250,7 @@ public struct HealthShareCardView: View {
                     icon: "drop.fill",
                     tint: Color(red: 0.12, green: 0.52, blue: 0.72),
                     title: "今日饮水",
-                    value: todayWaterML.map { "\(Int($0.rounded())) ml" } ?? "待记录",
+                    value: effectiveWaterML.map { "\(Int($0.rounded())) ml" } ?? "待记录",
                     subtitle: waterBrief
                 )
 
@@ -275,45 +285,16 @@ public struct HealthShareCardView: View {
                     .frame(height: 0.8)
 
                 HStack(alignment: .center, spacing: 10) {
-                    Image("AssistantAppIcon")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 34, height: 34)
-                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
-                        .shadow(color: Color.black.opacity(0.12), radius: 3, y: 1)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("小助 · 个人智能生活助理")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(ink)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-
-                        Text("记所想，助所行")
-                            .font(.system(size: 9))
-                            .foregroundStyle(ink.opacity(0.55))
-                            .lineLimit(1)
-                    }
-
+                    ShareCardBrandIdentity(
+                        titleColor: ink,
+                        subtitleColor: ink.opacity(0.55),
+                        titleSpacing: 2,
+                        iconShadowOpacity: 0.12
+                    )
                     Spacer(minLength: 8)
 
                     // 专属网站标识胶囊
-                    HStack(spacing: 4) {
-                        Image(systemName: "globe")
-                            .font(.system(size: 9))
-                        Text("JohnnyBoyStudio")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4.5)
-                    .background(vitalityTint.opacity(0.12))
-                    .foregroundStyle(vitalityTint)
-                    .clipShape(Capsule())
-                    .overlay(
-                        Capsule().strokeBorder(vitalityTint.opacity(0.3), lineWidth: 0.6)
-                    )
-                    .fixedSize(horizontal: true, vertical: true)
+                    ShareCardStudioBadge(tint: vitalityTint, backgroundOpacity: 0.12)
                 }
             }
         }
@@ -448,7 +429,10 @@ public struct HealthShareCardView: View {
 
     private func goalChip(todoType: HealthRelatedTodoType) -> some View {
         let isAchieved: Bool = {
-            guard let snapshot else { return false }
+            if todoType == .hydration, let water = effectiveWaterML, let target = goalTarget(.dietaryWater) {
+                return water >= target
+            }
+            guard let snapshot = snapshot?.overridingDietaryWater(todayWaterML) else { return false }
             return HealthMetrics.progress(for: todoType, snapshot: snapshot, goals: goals)?.isAchieved ?? false
         }()
 
@@ -493,7 +477,10 @@ public struct HealthShareSheet: View {
         pleasure: PleasureIndexEvaluation? = nil,
         todayFoodCalories: Double? = nil,
         todayWaterML: Double? = nil,
-        goals: [HealthGoal] = HealthGoal.defaults
+        goals: [HealthGoal] = HealthGoal.defaults(
+            waterGoalML: AppSettings.dailyWaterGoalML,
+            sleepGoalHours: AppSettings.dailySleepGoalHours
+        )
     ) {
         self.snapshot = snapshot
         self.vitality = vitality

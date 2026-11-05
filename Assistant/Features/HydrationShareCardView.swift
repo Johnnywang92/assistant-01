@@ -17,7 +17,7 @@ public struct HydrationShareCardView: View {
     public init(
         date: Date = .now,
         records: [WaterIntakeRecord],
-        targetML: Double = 2000.0,
+        targetML: Double = AppSettings.dailyWaterGoalML,
         effectiveML: Double,
         caffeineMG: Double
     ) {
@@ -230,45 +230,16 @@ public struct HydrationShareCardView: View {
                     .frame(height: 0.8)
 
                 HStack(alignment: .center, spacing: 10) {
-                    Image("AssistantAppIcon")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 34, height: 34)
-                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
-                        .shadow(color: Color.black.opacity(0.2), radius: 3, y: 1)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("小助 · 个人智能生活助理")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-
-                        Text("记所想，助所行")
-                            .font(.system(size: 9))
-                            .foregroundStyle(Color.white.opacity(0.6))
-                            .lineLimit(1)
-                    }
-
+                    ShareCardBrandIdentity(
+                        titleColor: .white,
+                        subtitleColor: Color.white.opacity(0.6),
+                        titleSpacing: 2,
+                        iconShadowOpacity: 0.2
+                    )
                     Spacer(minLength: 8)
 
                     // 专属网站标识胶囊
-                    HStack(spacing: 4) {
-                        Image(systemName: "globe")
-                            .font(.system(size: 9))
-                        Text("JohnnyBoyStudio")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4.5)
-                    .background(Color.cyan.opacity(0.18))
-                    .foregroundStyle(Color.cyan)
-                    .clipShape(Capsule())
-                    .overlay(
-                        Capsule().strokeBorder(Color.cyan.opacity(0.3), lineWidth: 0.6)
-                    )
-                    .fixedSize(horizontal: true, vertical: true)
+                    ShareCardStudioBadge(tint: .cyan, backgroundOpacity: 0.18)
                 }
             }
         }
@@ -308,7 +279,7 @@ public struct HydrationShareSheet: View {
 
     public init(
         records: [WaterIntakeRecord],
-        targetML: Double = 2000.0,
+        targetML: Double = AppSettings.dailyWaterGoalML,
         effectiveML: Double,
         caffeineMG: Double
     ) {
