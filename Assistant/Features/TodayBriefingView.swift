@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 
@@ -16,7 +17,8 @@ struct TodayBriefingView: View {
         let prioritized: [TodoItem]
         let visible: [TodoItem]
         let overdueCount: Int
-        let timedCountWithin3Days: Int
+        /// 今天需要完成的待办数，口径与首页「今日待办」分组、Tab 角标一致。
+        let todayDueCount: Int
     }
 
     private var isDismissedToday: Bool {
@@ -32,7 +34,7 @@ struct TodayBriefingView: View {
 
     private func makeSnapshot() -> BriefingSnapshot {
         let now = Date.now
-        let start = calendar.startOfDay(for: .now)
+        let start = calendar.startOfDay(for: now)
         // “今日安排”只展示逾期、今天和未来三天内的事项，避免十几天后的活动过早打扰。
         let horizon = calendar.date(byAdding: .day, value: 4, to: start) ?? .distantFuture
         let prioritized = items
@@ -50,11 +52,21 @@ struct TodayBriefingView: View {
                 }
             }
         var overdue = 0
-        var timed = 0
         for item in prioritized {
-            if let due = item.dueAt {
-                if due < now { overdue += 1 }
-                if due < horizon { timed += 1 }
+            if let due = item.dueAt, due < now { overdue += 1 }
+        }
+        // 计数在原始 items 上独立统计，不依赖 prioritized 的「未来三天」过滤：
+        // 列表范围以后怎么调，都不该悄悄改变这个数字。
+        let todayDueCount = items.reduce(into: 0) { count, item in
+            guard item.status == .active else { return }
+            if TodoShareContent.isTodayItem(
+                dueAt: item.dueAt,
+                reminderOverrideAt: item.reminderOverrideAt,
+                createdAt: item.createdAt,
+                now: now,
+                calendar: calendar
+            ) {
+                count += 1
             }
         }
         let visible = isExpanded ? Array(prioritized.prefix(6)) : Array(prioritized.prefix(3))
@@ -62,7 +74,7 @@ struct TodayBriefingView: View {
             prioritized: prioritized,
             visible: visible,
             overdueCount: overdue,
-            timedCountWithin3Days: timed
+            todayDueCount: todayDueCount
         )
     }
 
@@ -165,8 +177,9 @@ struct TodayBriefingView: View {
     }
 
     private func reminderCountText(for snapshot: BriefingSnapshot) -> String {
-        let count = snapshot.timedCountWithin3Days
-        return count == 0 ? "未来 3 天暂无定时待办" : "未来 3 天 \(count) 项"
+        let count = snapshot.todayDueCount
+        if count == 0 { return L10n.tr("今天暂无待完成事项") }
+        return String(format: L10n.tr("今天 %lld 项待完成"), Int64(count))
     }
 
     @ViewBuilder

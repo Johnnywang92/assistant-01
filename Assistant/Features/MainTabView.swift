@@ -287,10 +287,24 @@ struct MainTabView: View {
 
     // MARK: - 动态角标徽标
 
+    /// 首页角标只提示「今天需要完成」的事项，不再把未来几天与无日期的存量待办全算上。
+    /// 判定规则复用 Core 的唯一实现，与首页「今日待办」分组、今日摘要计数同源。
     private func badgeCount(for tab: NavigationRouter.AppTab) -> Int {
         switch tab {
         case .todos:
-            return activeTodos.isEmpty ? 0 : activeTodos.count
+            let now = Date.now
+            let cal = Calendar.current
+            return activeTodos.reduce(into: 0) { count, item in
+                if TodoShareContent.isTodayItem(
+                    dueAt: item.dueAt,
+                    reminderOverrideAt: item.reminderOverrideAt,
+                    createdAt: item.createdAt,
+                    now: now,
+                    calendar: cal
+                ) {
+                    count += 1
+                }
+            }
         default:
             return 0
         }

@@ -168,6 +168,31 @@ final class TodoShareContentTests: XCTestCase {
         XCTAssertTrue(beforeNow, "今天之前到期的仍算今天该做的")
     }
 
+    /// 首页 Tab 角标与今日摘要计数都走这条规则：只算今天该做的，
+    /// 未来几天的事项和「很早以前创建、没有日期」的存量待办都不该把数字顶上去。
+    func testTodayDueCountMatchesTodayRule() {
+        let now = date(2026, 10, 5)
+        let candidates: [(dueAt: Date?, override: Date?, createdAt: Date)] = [
+            (date(2026, 10, 5, 9), nil, date(2026, 9, 1)),   // 今天到期
+            (date(2026, 10, 2), nil, date(2026, 9, 1)),       // 逾期，今天仍要处理
+            (nil, nil, date(2026, 10, 5, 8)),                  // 无日期但今天创建
+            (nil, date(2026, 10, 5, 18), date(2026, 9, 1)),   // 改期到今天
+            (date(2026, 10, 6), nil, date(2026, 9, 1)),       // 明天
+            (date(2026, 11, 5), nil, date(2026, 9, 1)),       // 下月
+            (nil, nil, date(2026, 9, 1))                       // 历史无日期存量
+        ]
+        let count = candidates.filter {
+            TodoShareContent.isTodayItem(
+                dueAt: $0.dueAt,
+                reminderOverrideAt: $0.override,
+                createdAt: $0.createdAt,
+                now: now,
+                calendar: calendar
+            )
+        }.count
+        XCTAssertEqual(count, 4)
+    }
+
     func testGeneralCategoryFiltersByTodayRule() {
         let items = [
             item("今天到期", dueAt: date(2026, 10, 5)),

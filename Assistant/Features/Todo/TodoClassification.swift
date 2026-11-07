@@ -73,11 +73,18 @@ struct TodoClassification {
         overdue.sort { ($0.dueAt ?? .now) < ($1.dueAt ?? .now) }
 
         let cal = Calendar.current
-        let startOfToday = cal.startOfDay(for: now)
 
         // 各活跃分组直接沿用已排好序的 active 流进行分发，天然保持正确优先级，避免 15 次冗余全量排序
         for item in active {
-            if Self.isTodayItem(item, cal: cal, startOfToday: startOfToday) {
+            // 「今天需要完成」的规则只有一份，放在 AssistantCore：首页分组、Tab 角标、
+            // 今日摘要计数共用，避免两处各写一份 isDateInToday 后口径静默漂移。
+            if TodoShareContent.isTodayItem(
+                dueAt: item.dueAt,
+                reminderOverrideAt: item.reminderOverrideAt,
+                createdAt: item.createdAt,
+                now: now,
+                calendar: cal
+            ) {
                 todayTodos.append(item)
             }
             if item.isRecurring { recurring.append(item) }
@@ -101,17 +108,5 @@ struct TodoClassification {
             default: others.append(item)
             }
         }
-    }
-
-    static func isTodayItem(_ item: TodoItem, cal: Calendar, startOfToday: Date) -> Bool {
-        if let override = item.reminderOverrideAt {
-            if cal.isDateInToday(override) || override < startOfToday {
-                return true
-            }
-        }
-        if let due = item.dueAt {
-            return cal.isDateInToday(due) || due < startOfToday
-        }
-        return cal.isDateInToday(item.createdAt)
     }
 }

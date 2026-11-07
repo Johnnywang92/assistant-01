@@ -1,6 +1,40 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
+    "今天暂无待完成事项" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing due today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天暂无待完成事项"
+          }
+        }
+      }
+    },
+    "今天 %lld 项待完成" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld to finish today"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "今天 %lld 项待完成"
+          }
+        }
+      }
+    },
     "" : {
 
     },
