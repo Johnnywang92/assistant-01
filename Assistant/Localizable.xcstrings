@@ -1522,16 +1522,6 @@
         }
       }
     },
-    "%@ · ¥%@" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · ¥%2$@"
-          }
-        }
-      }
-    },
     "%@ · 单人实际摄入估算" : {
 
     },
@@ -5816,9 +5806,6 @@
         }
       }
     },
-    "🏝️ 上灵动岛（同步手表）" : {
-
-    },
     "🐾 毛孩子体外驱虫提醒" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8782,9 +8769,6 @@
         }
       }
     },
-    "一日 %lld 次" : {
-
-    },
     "一条短信触发多个自动化？" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8824,9 +8808,6 @@
           }
         }
       }
-    },
-    "一键停止提醒（病好了停服）" : {
-
     },
     "一键停止提醒（病愈停服）" : {
 
@@ -9182,6 +9163,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上海文博：上海博物馆提前7天12:00放票、迪士尼提前10-30天早鸟票、中华艺术宫提前实名预约"
+          }
+        }
+      }
+    },
+    "上灵动岛（同步手表）" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show on Dynamic Island (sync to Watch)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上灵动岛（同步手表）"
           }
         }
       }
@@ -11705,6 +11703,23 @@
         }
       }
     },
+    "仅保存原文" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save text only"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅保存原文"
+          }
+        }
+      }
+    },
     "仅剩1天" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12493,9 +12508,6 @@
           }
         }
       }
-    },
-    "从家庭药箱直接点选（自动带入用法）" : {
-
     },
     "从容惬意 ☕️" : {
       "extractionState" : "manual",
@@ -13519,6 +13531,9 @@
       }
     },
     "保存到相册" : {
+
+    },
+    "保存到相册只保存手账卡片，不含原始单据" : {
 
     },
     "保存卡片到相册" : {
@@ -16534,6 +16549,23 @@
         }
       }
     },
+    "出示预约凭证" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show booking pass"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "出示预约凭证"
+          }
+        }
+      }
+    },
     "出行" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -18967,8 +18999,22 @@
         }
       }
     },
-    "助手会自动根据周期推算下次时间，并在到期当天生成待办。运动与药物、保健品提醒可以长期持续记录。轻触任意记录可编辑。" : {
-
+    "助手会自动根据周期推算下次运动时间，并在到期当天生成待办。轻触任意记录可编辑。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your next workout is scheduled automatically, with a to-do on the day it's due. Tap any entry to edit."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "助手会自动根据周期推算下次运动时间，并在到期当天生成待办。轻触任意记录可编辑。"
+          }
+        }
+      }
     },
     "助手即将过期" : {
       "extractionState" : "manual",
@@ -19416,9 +19462,6 @@
 
     },
     "单据识别原文" : {
-
-    },
-    "单次用量（滑动点选）" : {
 
     },
     "单词短语" : {
@@ -19883,6 +19926,23 @@
     },
     "原文" : {
 
+    },
+    "原文不会丢，稍后可以在收集箱里再处理" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your text is safe. You can deal with it later in the inbox."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "原文不会丢，稍后可以在收集箱里再处理"
+          }
+        }
+      }
     },
     "厦门" : {
       "extractionState" : "manual",
@@ -20604,6 +20664,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "口袋或桌面充电座"
+          }
+        }
+      }
+    },
+    "只存原文" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep text only"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只存原文"
           }
         }
       }
@@ -21648,9 +21725,6 @@
           }
         }
       }
-    },
-    "商户或消费项目（如：麦当劳早餐）" : {
-
     },
     "喝咖啡、奶茶算不算喝水？" : {
 
@@ -22834,9 +22908,6 @@
           }
         }
       }
-    },
-    "备选提取金额（点击快捷填入）：" : {
-
     },
     "备齐 2B 铅笔、黑色签字笔与橡皮" : {
       "extractionState" : "manual",
@@ -29979,6 +30050,23 @@
         }
       }
     },
+    "已记录这次没读懂，用来改进识别" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noted — this helps improve recognition."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已记录这次没读懂，用来改进识别"
+          }
+        }
+      }
+    },
     "已记支出" : {
 
     },
@@ -30618,9 +30706,6 @@
         }
       }
     },
-    "常用药快捷预设" : {
-
-    },
     "常用触发关键词" : {
 
     },
@@ -31251,9 +31336,6 @@
           }
         }
       }
-    },
-    "开启每日服药定时提醒" : {
-
     },
     "开启每日用药提醒" : {
 
@@ -33105,6 +33187,23 @@
     "忘记 PIN 码？重置门禁" : {
 
     },
+    "快捷动作" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quick actions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷动作"
+          }
+        }
+      }
+    },
     "快捷命名：" : {
 
     },
@@ -33283,6 +33382,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "快递取件"
+          }
+        }
+      }
+    },
+    "快递取件短信 · 本机规则识别" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parcel pickup SMS · recognized on device"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快递取件短信 · 本机规则识别"
           }
         }
       }
@@ -33646,9 +33762,6 @@
       }
     },
     "恢复推荐 (2000)" : {
-
-    },
-    "恢复提醒" : {
 
     },
     "恢复系统默认背景" : {
@@ -35688,6 +35801,23 @@
         }
       }
     },
+    "拖拽排序" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reorder by dragging"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拖拽排序"
+          }
+        }
+      }
+    },
     "拙政园" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35823,6 +35953,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "指定上客点"
+          }
+        }
+      }
+    },
+    "按事项类型出现，不占用首页长按菜单。" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shown based on the item type, without cluttering the home long-press menu."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按事项类型出现，不占用首页长按菜单。"
           }
         }
       }
@@ -36107,6 +36254,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "换个搜索词试试，如：钥匙、羽绒服、工具箱"
+          }
+        }
+      }
+    },
+    "换个类别" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a category"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "换个类别"
           }
         }
       }
@@ -37246,9 +37410,6 @@
         }
       }
     },
-    "提醒设置" : {
-
-    },
     "插入" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -37700,16 +37861,10 @@
         }
       }
     },
-    "支持下方自由修改金额、分类或直接点选候选金额：" : {
-
-    },
     "支持信用卡账单与还款" : {
 
     },
     "支持发票、消费小票、收据以及淘宝、京东等购物订单截图，自动识别金额、商品商户、分类及时间。" : {
-
-    },
-    "支持小票、发票以及淘宝、京东等购物订单截图。小票较长时，请分段拍摄或选多张。" : {
 
     },
     "支持拼音首字母检索（如输入 sm 搜「睡眠提醒」、zd 搜「账单」、sz 搜「设置」），毫秒级直达全应用功能与数据。" : {
@@ -41725,9 +41880,6 @@
         }
       }
     },
-    "服用频次与时间" : {
-
-    },
     "服药" : {
 
     },
@@ -43283,9 +43435,6 @@
     "查看生活调养建议" : {
 
     },
-    "查看识别到的小票原文" : {
-
-    },
     "查看身心减压建议" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -43604,9 +43753,6 @@
           }
         }
       }
-    },
-    "核对记账数据" : {
-
     },
     "核对购房资格与征信" : {
       "extractionState" : "manual",
@@ -44588,9 +44734,6 @@
     "正在识别单据并提取信息…" : {
 
     },
-    "正在识别小票…" : {
-
-    },
     "正在识别时间、地点与票务信息…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -45300,9 +45443,6 @@
       }
     },
     "每日 %lld 次定时提醒已启用" : {
-
-    },
-    "每日: %@" : {
 
     },
     "每日%lld次" : {
@@ -46506,6 +46646,23 @@
     "没有识别出格式化的行动待办，可整理成「- 待办内容」一行一条后再解析。" : {
 
     },
+    "没看懂这条，帮我选一下" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not sure what this is — can you help?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没看懂这条，帮我选一下"
+          }
+        }
+      }
+    },
     "没能同步到小助，请打开小助再试" : {
 
     },
@@ -47051,13 +47208,7 @@
         }
       }
     },
-    "消费分类" : {
-
-    },
     "消费支出" : {
-
-    },
-    "消费时间" : {
 
     },
     "消费类别" : {
@@ -47121,9 +47272,6 @@
 
     },
     "消费趋势时间范围" : {
-
-    },
-    "消费金额" : {
 
     },
     "消费预算" : {
@@ -50953,9 +51101,6 @@
     "病愈后一键停止提醒：常备药档案与保质期监控完整保留，立即撤销每日定时通知并清理今日未服待办。后续若需再次服药可随时重新开启。" : {
 
     },
-    "病愈后一键停用每日推送与打卡任务，用药档案与设置完整保留，无需删除药品。" : {
-
-    },
     "百天" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -53532,9 +53677,6 @@
         }
       }
     },
-    "第%lld次" : {
-
-    },
     "第一声清晰地喊出爸/妈" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -53914,6 +54056,9 @@
           }
         }
       }
+    },
+    "系统分享时一并发送卡片与原始图片" : {
+
     },
     "系统定时推送提醒" : {
 
@@ -55128,9 +55273,6 @@
         }
       }
     },
-    "编辑服药提醒" : {
-
-    },
     "编辑档案" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -56165,6 +56307,23 @@
     },
     "自定义饮品名（如：薄荷茶、冰美式）" : {
 
+    },
+    "自己改" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit myself"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自己改"
+          }
+        }
+      }
     },
     "自提" : {
       "extractionState" : "manual",
@@ -59202,9 +59361,6 @@
         }
       }
     },
-    "识别并提取数据" : {
-
-    },
     "识别并预览" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -59255,9 +59411,6 @@
           }
         }
       }
-    },
-    "识别置信度较低（%lld%%）" : {
-
     },
     "识别质量" : {
 
@@ -62808,6 +62961,23 @@
     "选中日" : {
 
     },
+    "选完类别会重新拆解，清掉上一类残留的参数" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choosing a category re-parses the input and clears stale fields."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选完类别会重新拆解，清掉上一类残留的参数"
+          }
+        }
+      }
+    },
     "选定目标房源" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -64487,6 +64657,9 @@
         }
       }
     },
+    "附带原始单据 / 小票" : {
+
+    },
     "附近已感知设备：" : {
 
     },
@@ -65808,16 +65981,6 @@
         }
       }
     },
-    "预览：%@，每次 %@ %@，每天 %lld 次（%@ · %@）" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "预览：%1$@，每次 %2$@ %3$@，每天 %4$lld 次（%5$@ · %6$@）"
-          }
-        }
-      }
-    },
     "预览亮码" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -66167,12 +66330,6 @@
 
     },
     "饮食偏好画像" : {
-
-    },
-    "饮食时效自适应联动" : {
-
-    },
-    "饮食时效要求（防伤胃与吸收自适应）" : {
 
     },
     "饮食记录" : {

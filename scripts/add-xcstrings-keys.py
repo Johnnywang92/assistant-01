@@ -44,11 +44,13 @@ def build_entry(key, en, zh_hans, indent, auto_extracted=False):
     （`%1$@ %2$lld`）。这类串是 Xcode 从源码里抓的，
     位置参数保证参数重排时不错乱——手写成 `%@ %lld` 会丢掉这个保证。
     """
-    pad = "    " * indent
-    inner = "    " * (indent + 1)
-    inner2 = "    " * (indent + 2)
-    inner3 = "    " * (indent + 3)
-    inner4 = "    " * (indent + 4)
+    # Xcode 的层级是 4 / 6 / 8 / 10 / 12 空格（每层 +2），不是 4 的倍数。
+    # 写成 4/8/12 虽然 JSON 合法，但会让新增键与文件其余部分风格不一致。
+    pad = "  " * (indent * 2)
+    inner = pad + "  "
+    inner2 = pad + "    "
+    inner3 = pad + "      "
+    inner4 = pad + "        "
     pairs = [("en", en), ("zh-Hans", zh_hans)]
     pairs = [(loc, value) for loc, value in pairs if value is not None]
     if not pairs:
@@ -62,7 +64,10 @@ def build_entry(key, en, zh_hans, indent, auto_extracted=False):
     for idx, (loc, value) in enumerate(pairs):
         lines.append(f'{inner2}{escape(loc)} : {{')
         lines.append(f'{inner3}"stringUnit" : {{')
-        lines.append(f'{inner4}"state" : {"new" if auto_extracted else "translated"},')
+        # 值必须是合法 JSON 字符串：曾经漏写引号，写出 `"state" : translated,`
+        # 这种坏 JSON，且当时是在写回文件之后才校验，直接把 xcstrings 写坏了。
+        state = "new" if auto_extracted else "translated"
+        lines.append(f'{inner4}"state" : "{state}",')
         lines.append(f'{inner4}"value" : {escape(value)}')
         lines.append(f'{inner3}}}')
         # localizations 内各语言之间用行尾逗号分隔
@@ -124,11 +129,15 @@ def main():
     insertion = ",\n".join(blocks) + ",\n"
     new_raw = raw[:insert_pos] + insertion + raw[insert_pos:]
 
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(new_raw)
+    # ---- 先校验再落盘 ----
+    # 生成的块一旦非法，绝不能把坏 JSON 写进文件（xcstrings 是工程唯一本地化源）。
+    try:
+        after = json.loads(new_raw)
+    except json.JSONDecodeError as exc:
+        print(f"!! 生成结果不是合法 JSON，已放弃写入：{exc}")
+        sys.exit(1)
 
     # ---- diff 三查 ----
-    after = json.loads(new_raw)
     after_keys = list(after["strings"].keys())
     removed = [k for k in before_keys if k not in after["strings"]]
     changed = [
@@ -146,6 +155,20 @@ def main():
         print("!! 有已有键被改动或删除，请检查")
         sys.exit(1)
     print("OK：已有键零改动")
+
+    # ---- 全部校验通过后才落盘 ----
+    # 曾经把校验前置时漏掉了写入语句：脚本一路打印 OK，文件却一个字节没变，
+    # 新文案全部静默失效。落盘后必须复读确认新键真的在文件里。
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(new_raw)
+
+    with open(path, encoding="utf-8") as f:
+        persisted = json.load(f)
+    missing = [k for k in to_add if k not in persisted["strings"]]
+    if missing:
+        print(f"!! 写入后仍缺少新键：{missing}")
+        sys.exit(1)
+    print(f"已写入 {len(to_add)} 个新键 -> {path}")
 
 
 if __name__ == "__main__":
