@@ -184,48 +184,13 @@ struct PeriodicReportView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        Menu {
-                            Button {
-                                showingImageShareSheet = true
-                                Haptic.light()
-                            } label: {
-                                Label("生成图片分享卡片", systemImage: "photo.badge.plus")
-                            }
-
-                            Divider()
-
-                            Button {
-                                exportAsMarkdownFile()
-                            } label: {
-                                Label("导出为 .md 文档 (保存/分享)", systemImage: "doc.badge.arrow.up")
-                            }
-
-                            Button {
-                                exportAndCopy()
-                            } label: {
-                                Label("复制 Markdown 全文", systemImage: "doc.on.doc")
-                            }
-
-                            Button {
-                                showingPreviewSheet = true
-                                Haptic.light()
-                            } label: {
-                                Label("预览 Markdown 格式", systemImage: "eye")
-                            }
-                        } label: {
-                            Image(systemName: "square.and.arrow.up")
-                        }
-                        .accessibilityLabel("导出并分享报告")
-
-                        Button {
-                            showingSettingsSheet = true
-                            Haptic.light()
-                        } label: {
-                            Image(systemName: "gearshape")
-                        }
-                        .accessibilityLabel("报告提醒设置")
+                    Button {
+                        showingSettingsSheet = true
+                        Haptic.light()
+                    } label: {
+                        Image(systemName: "gearshape")
                     }
+                    .accessibilityLabel("报告提醒设置")
                 }
             }
             .sheet(isPresented: $showingImageShareSheet) {
@@ -298,6 +263,7 @@ struct PeriodicReportView: View {
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(Color(.secondarySystemFill)))
             }
+            .iconButton("上一期报告")
             .buttonStyle(.plain)
 
             Spacer()
@@ -327,6 +293,7 @@ struct PeriodicReportView: View {
                     .frame(width: 32, height: 32)
                     .background(Circle().fill(Color(.secondarySystemFill)))
             }
+            .iconButton("下一期报告")
             .buttonStyle(.plain)
 
             // 回到今天快捷按钮
