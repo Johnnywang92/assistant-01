@@ -110,6 +110,8 @@ public struct TodoDTO: Codable {
     public var arrivalTransportRaw: String?
     public var arrivalCheckFiredAt: Date?
     public var tags: [String]?
+    /// 结构化日程 JSON（V11 起）；旧备份包为 nil，恢复后按 legacy 语义解释。
+    public var scheduleRaw: String?
 }
 
 public struct SubscriptionDTO: Codable {

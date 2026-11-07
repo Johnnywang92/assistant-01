@@ -110,7 +110,7 @@ struct TodoCapabilityProvider: CapabilityProvider {
             todo.detail = newDetail
         }
         if let due = Self.resolveDueAt(params: action.params) {
-            todo.dueAt = due
+            todo.rescheduleDueDate(due)
             TodoNotificationManager.shared.scheduleNotification(for: todo)
         }
         try context.save()
@@ -226,7 +226,7 @@ struct TodoCapabilityProvider: CapabilityProvider {
             newDate = Calendar.current.date(byAdding: .hour, value: 1, to: baseDate) ?? baseDate
         }
 
-        todo.dueAt = newDate
+        todo.rescheduleDueDate(newDate)
         TodoNotificationManager.shared.scheduleNotification(for: todo)
         try context.save()
 
@@ -280,9 +280,9 @@ struct TodoCapabilityProvider: CapabilityProvider {
                     LifeEventTodoLink.syncTask(for: todo, in: context)
                 }
                 if let dueAtISO = snapshot["dueAtISO"] {
-                    todo.dueAt = ISO8601DateFormatter().date(from: dueAtISO)
+                    todo.rescheduleDueDate(ISO8601DateFormatter().date(from: dueAtISO))
                 } else if snapshot.keys.contains("dueAtISO") {
-                    todo.dueAt = nil
+                    todo.rescheduleDueDate(nil)
                 }
                 TodoNotificationManager.shared.scheduleNotification(for: todo)
             } else {

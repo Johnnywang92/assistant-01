@@ -207,6 +207,10 @@ extension DataMigrationService {
             item.reminderOverrideAt = t.reminderOverrideAt
             item.arrivalCheckFiredAt = t.arrivalCheckFiredAt
             item.tags = t.tags ?? []
+            // 日程快照直接还原，不经过 schedule setter：dueAt/规则散字段已由上面的
+            // init 从 DTO 逐项恢复，再走 setter 会用快照里的值二次覆盖，导致旧备份
+            // 与新备份对同一条记录解释不一致。
+            item.scheduleRaw = t.scheduleRaw
             context.insert(item)
             restoredTodos += 1
         }

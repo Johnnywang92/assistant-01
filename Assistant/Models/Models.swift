@@ -222,6 +222,10 @@ final class TodoItem {
     var arrivalCheckFiredAt: Date?
     /// 任务标签列表（如 ["客户A", "原型交付"]，不含 # 前缀）
     var tags: [String] = []
+    /// 结构化日程（时间点/时间段/全天 + 日历锚点重复）的 JSON 快照。
+    /// nil = 存量数据，按 legacy 语义（单时间点 + 完成后顺延）解释，行为与改造前一致。
+    /// 只存一个可选字符串而非多个字段：Schema V11 为纯加法轻量迁移，旧库升级零负担。
+    var scheduleRaw: String?
 
     init(type: TodoType, status: TodoStatus = .active, title: String, detail: String? = nil,
          pickupCode: String? = nil, courier: String? = nil, station: String? = nil, location: String? = nil,
@@ -263,6 +267,60 @@ final class TodoItem {
         self.arrivalReminderAt = arrivalReminderAt
         self.arrivalTransportRaw = arrivalTransportRaw
         self.tags = tags
+        self.scheduleRaw = nil
+    }
+
+    /// 结构化日程读写。**唯一写入口**：setter 同步 dueAt / 重复规则散字段，
+    /// 避免「日程与截止时间两份真相」漂移。旧数据（scheduleRaw == nil）回落 legacy 解释。
+    var schedule: TodoSchedule {
+        get {
+            guard let decoded = TodoScheduleCodec.decode(scheduleRaw) else {
+                return .legacy(
+                    dueAt: dueAt,
+                    ruleRaw: recurrenceRuleRaw,
+                    customDays: recurrenceIntervalDays
+                )
+            }
+            // 读时自愈：逾期分流、票面改签、投喂口撤销等历史入口仍会直接写 dueAt。
+            // 以 dueAt 为唯一事实修正快照，避免「通知按新时间、重复按旧时间」；
+            // 自愈不改库，下一次落库（生成下一期/导出备份）时会写入修正后的快照。
+            if decoded.matches(dueAt: dueAt) { return decoded }
+            guard let due = dueAt else { return decoded.clearingTime() }
+            return decoded.rescheduled(to: due)
+        }
+        set {
+            let value = newValue.normalized()
+            scheduleRaw = TodoScheduleCodec.encode(value)
+            dueAt = value.effectiveDueAt
+            recurrenceRuleRaw = value.recurrence.rule == .none ? nil : value.recurrence.rule.rawValue
+            recurrenceIntervalDays = value.recurrence.rule == .custom
+                ? max(1, value.recurrence.customDays)
+                : 0
+        }
+    }
+
+    func applySchedule(_ value: TodoSchedule) {
+        schedule = value
+    }
+
+    /// 改期唯一入口。直接写 `dueAt` 会让日程快照与截止时间分叉，
+    /// 需要改时间的调用点一律走这里；存量数据没有快照时仍只写散字段，行为不变。
+    func rescheduleDueDate(_ date: Date?) {
+        guard scheduleRaw != nil else {
+            dueAt = date
+            return
+        }
+        if let date {
+            applySchedule(schedule.rescheduled(to: date))
+        } else {
+            applySchedule(schedule.clearingTime())
+        }
+    }
+
+    /// 是否按日历锚点重复（UI 与通知文案据此区分「每周一」与「完成后 7 天」）。
+    var isCalendarAnchored: Bool {
+        let config = schedule.recurrence
+        return config.rule != .none && config.mode == .calendarAnchor && config.hasUsableAnchor
     }
 
     /// 到站提醒的交通方式；未知时按 unknown 走时间兜底，不会丢提醒
@@ -341,20 +399,35 @@ final class TodoItem {
     }
 
     var recurrenceSummaryText: String {
-        if recurrenceRule == .custom {
-            return L10n.tr("每\(max(1, recurrenceIntervalDays))天")
+        let config = schedule.recurrence
+        if config.rule == .custom {
+            return L10n.tr("每\(max(1, config.customDays))天")
         }
-        return L10n.tr(recurrenceRule.rawValue)
+        let base = L10n.tr(config.rule.rawValue)
+        guard isCalendarAnchored else { return base }
+        let cal = Calendar.current
+        let detail: String
+        switch config.rule {
+        case .weekly, .biweekly:
+            // shortWeekdaySymbols 随系统 locale 变化，中英文都不需要额外本地化键
+            detail = config.normalizedWeekdays.compactMap { weekday -> String? in
+                let index = weekday - 1
+                guard cal.shortWeekdaySymbols.indices.contains(index) else { return nil }
+                return cal.shortWeekdaySymbols[index]
+            }.joined(separator: "、")
+        case .monthly:
+            detail = config.normalizedMonthDays.map { day -> String in
+                day == -1 ? L10n.tr("月末") : String(day)
+            }.joined(separator: "、")
+        default:
+            return base
+        }
+        return detail.isEmpty ? base : "\(base)（\(detail)）"
     }
 
-    /// 计算下一次循环的截止时间（薄适配：判定逻辑在 AssistantCore.RecurrencePlan，可单测）
+    /// 计算下一次循环的截止时间（薄适配：规则在 AssistantCore.TodoScheduleRule，可单测）
     func nextRecurringDueDate(from referenceDate: Date = .now) -> Date {
-        RecurrencePlan.nextDueDate(
-            dueAt: dueAt,
-            rule: recurrenceRule,
-            customDays: recurrenceIntervalDays,
-            referenceDate: referenceDate
-        )
+        TodoScheduleRule.nextDueDate(for: schedule, after: referenceDate) ?? referenceDate
     }
 
     /// 全库最小 sortOrder：新建待办以 min-1 插入置顶。
@@ -416,6 +489,10 @@ final class TodoItem {
             isSkillPractice: next.isSkillPractice,
             skillPracticeMinutes: next.skillPracticeMinutes
         )
+        // 下一期必须继承结构化日程，否则日历锚点只在第一期生效、第二期起退回顺延。
+        // 直接写 scheduleRaw 而不是走 schedule setter：dueAt / 规则散字段已在上面的
+        // TodoItem(...) 里按 next 赋值，再走 setter 会二次覆盖，是两份真相的经典漂移点。
+        nextItem.scheduleRaw = next.scheduleRaw
         context.insert(nextItem)
         TodoNotificationManager.shared.scheduleNotification(for: nextItem)
         return nextItem
@@ -456,7 +533,10 @@ extension RecurringTodoRecord {
             skillPathID: item.skillPathID,
             skillStageIndex: item.skillStageIndex,
             isSkillPractice: item.isSkillPractice,
-            skillPracticeMinutes: item.skillPracticeMinutes
+            skillPracticeMinutes: item.skillPracticeMinutes,
+            // 用 `item.schedule`（读时自愈后的值）而非原始快照，避免外部直接改过
+            // dueAt 的待办在生成下一期时又拿旧 endAt 去算锚点。存量数据保持 nil。
+            scheduleRaw: item.scheduleRaw == nil ? nil : TodoScheduleCodec.encode(item.schedule)
         )
     }
 }

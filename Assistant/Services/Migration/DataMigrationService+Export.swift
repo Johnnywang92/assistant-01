@@ -88,7 +88,8 @@ extension DataMigrationService {
                 arrivalReminderAt: $0.arrivalReminderAt,
                 arrivalTransportRaw: $0.arrivalTransportRaw,
                 arrivalCheckFiredAt: $0.arrivalCheckFiredAt,
-                tags: $0.tags
+                tags: $0.tags,
+                scheduleRaw: $0.scheduleRaw
             )
         }
 

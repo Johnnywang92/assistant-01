@@ -41,7 +41,7 @@ enum Persistence {
             } catch {
                 // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
                 storedRecoveryError = Self.diagnose(openError: error)
-                let memSchema = Schema(AssistantSchemaV10.models)
+                let memSchema = Schema(AssistantSchemaV11.models)
                 if let memContainer = try? ModelContainer(for: memSchema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
                     return memContainer
                 }
@@ -54,7 +54,7 @@ enum Persistence {
     /// 旧库（V1）经 lightweight 阶段自动升级到 V2；**任何失败都不动磁盘文件**，
     /// 由调用方走恢复页导出原库。详见 `AssistantMigrationPlan`。
     private static func openStore() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV10.models)
+        let schema = Schema(AssistantSchemaV11.models)
         let config = ModelConfiguration(schema: schema)
         #if DEBUG
         Self.assertSchemaCoverage()
@@ -66,7 +66,7 @@ enum Persistence {
 
     /// 单次直达轻量升级路径：仅反射当前最新 Schema 一次，消除多版本 Schema 反射堆叠。
     private static func openStoreAutoMigrate() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV10.models)
+        let schema = Schema(AssistantSchemaV11.models)
         let config = ModelConfiguration(schema: schema)
         #if DEBUG
         Self.assertSchemaCoverage()
@@ -97,7 +97,7 @@ enum Persistence {
     /// 删模型会让旧库升级后静默丢表。DEBUG 下断言，发布构建不增开销。
     private static func assertSchemaCoverage() {
         let v1 = Set(AssistantSchemaV1.models.map { String(describing: $0) })
-        let current = Set(AssistantSchemaV10.models.map { String(describing: $0) })
+        let current = Set(AssistantSchemaV11.models.map { String(describing: $0) })
         let missing = v1.subtracting(current)
         assert(missing.isEmpty, "V1 模型从当前版本消失，旧库升级会丢数据：\(missing.sorted())")
     }
@@ -281,6 +281,17 @@ enum AssistantSchemaV10: VersionedSchema {
     }
 }
 
+/// Schema V11：TodoItem 新增 `scheduleRaw: String?`，承载时间点/时间段/全天与日历锚点重复。
+/// 纯加法（单个可选字符串属性），模型清单不变，lightweight 迁移可完成；
+/// 旧库该列为 NULL，`TodoItem.schedule` 自动回落 legacy 解释，行为与 V10 完全一致。
+/// 刻意不新增 Date / [Int] 等多个列：日后扩展日程字段无需再升 Schema。
+enum AssistantSchemaV11: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(11, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        AssistantSchemaV10.models
+    }
+}
+
 /// 显式版本化迁移计划。**不要再回到「打不开就删库重建」**——
 /// 旧代码首次失败即删 default.store，用户数据直接蒸发；现在失败走恢复页导出原库。
 enum AssistantMigrationPlan: SchemaMigrationPlan {
@@ -289,12 +300,12 @@ enum AssistantMigrationPlan: SchemaMigrationPlan {
             AssistantSchemaV1.self, AssistantSchemaV2.self, AssistantSchemaV3.self,
             AssistantSchemaV4.self, AssistantSchemaV5.self, AssistantSchemaV6.self,
             AssistantSchemaV7.self, AssistantSchemaV8.self, AssistantSchemaV9.self,
-            AssistantSchemaV10.self
+            AssistantSchemaV10.self, AssistantSchemaV11.self
         ]
     }
 
     static var stages: [MigrationStage] {
-        // V1→V2→…→V10 全是「加字段（带默认值/可选）+ 加模型」，系统 lightweight 迁移可完成。
+        // V1→V2→…→V11 全是「加字段（带默认值/可选）+ 加模型」，系统 lightweight 迁移可完成。
         // 若未来出现不兼容变更（删字段/改类型），在此插自定义阶段，
         // 并把目标版本的该字段改回可选或提供默认值——不要静默丢数据。
         [
@@ -306,7 +317,8 @@ enum AssistantMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: AssistantSchemaV6.self, toVersion: AssistantSchemaV7.self),
             .lightweight(fromVersion: AssistantSchemaV7.self, toVersion: AssistantSchemaV8.self),
             .lightweight(fromVersion: AssistantSchemaV8.self, toVersion: AssistantSchemaV9.self),
-            .lightweight(fromVersion: AssistantSchemaV9.self, toVersion: AssistantSchemaV10.self)
+            .lightweight(fromVersion: AssistantSchemaV9.self, toVersion: AssistantSchemaV10.self),
+            .lightweight(fromVersion: AssistantSchemaV10.self, toVersion: AssistantSchemaV11.self)
         ]
     }
 }

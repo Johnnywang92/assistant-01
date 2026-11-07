@@ -307,21 +307,23 @@ struct OverdueTriageSheet: View {
 
         switch action {
         case .doToday:
-            item.dueAt = todayDueDate(for: item)
+            // 统一走改期入口：直接写 dueAt 会让结构化日程的快照停留在旧日期，
+            // 通知按新时间、下一期却按旧锚点算。
+            item.rescheduleDueDate(todayDueDate(for: item))
             item.reminderOverrideAt = nil
             Haptic.success()
         case .pushToWeekend:
-            item.dueAt = weekendDate(for: item)
+            item.rescheduleDueDate(weekendDate(for: item))
             item.reminderOverrideAt = nil
             Haptic.medium()
         case .reschedule(let date):
-            item.dueAt = date
+            item.rescheduleDueDate(date)
             item.reminderOverrideAt = nil
             Haptic.light()
         case .giveUp:
             if item.isRecurring {
                 // 周期性待办不能"不做"，只跳过这一期
-                item.dueAt = item.nextRecurringDueDate(from: .now)
+                item.rescheduleDueDate(item.nextRecurringDueDate(from: .now))
                 item.reminderOverrideAt = nil
                 Haptic.warning()
             } else {
