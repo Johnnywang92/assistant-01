@@ -302,10 +302,13 @@ enum NotificationBudget {
         let cap = clampedLimit(override)
         let scheduled = pending.filter { $0.trigger != nil }
 
-        var victims: [String] = []
-        if scheduled.count > cap {
-            // 优先级从低到高；同档位先删「离触发最远」的，保住更近的提醒。
-            victims = scheduled
+        // Swift 6 并发检查：`withLock` 的闭包按「并发执行代码」处理，捕获外层可变
+        // `var` 即使只读也会报错。所以 victims 用 `let` 一次成型，闭包内要用的计数
+        // 也先在闭包外提取成 Sendable 局部 `let` —— 顺带不捕获非 Sendable 的
+        // `[UNNotificationRequest]`，也不在临界区里嵌套拿 suppressionLock。
+        // 排序：优先级从低到高；同档位先删「离触发最远」的，保住更近的提醒。
+        let victims: [String] = scheduled.count > cap
+            ? scheduled
                 .map { Item(request: $0, priority: priority(for: $0)) }
                 .sorted { lhs, rhs in
                     if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
@@ -313,18 +316,22 @@ enum NotificationBudget {
                 }
                 .prefix(scheduled.count - cap)
                 .map { $0.request.identifier }
-        }
+            : []
         if !victims.isEmpty {
             suppress(victims)
             center.removePendingNotificationRequests(withIdentifiers: victims)
         }
+        let pendingCount = pending.count
+        let scheduledCount = scheduled.count
+        let trimmedCount = victims.count
+        let suppressedTotal = activeSuppressions().count
         reconcileLock.withLock {
             $0 = ReconcileSnapshot(
-                pendingBefore: pending.count,
-                scheduled: scheduled.count,
-                trimmed: victims.count,
+                pendingBefore: pendingCount,
+                scheduled: scheduledCount,
+                trimmed: trimmedCount,
                 limit: cap,
-                suppressedTotal: activeSuppressions().count,
+                suppressedTotal: suppressedTotal,
                 timestamp: .now
             )
         }
@@ -341,7 +348,7 @@ enum NotificationBudget {
                 source: source
             ))
         }
-        return victims.count
+        return trimmedCount
     }
 
     // MARK: - 指纹（差量对账用）
