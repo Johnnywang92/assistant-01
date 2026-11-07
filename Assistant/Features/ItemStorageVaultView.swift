@@ -558,6 +558,10 @@ struct ItemStorageVaultView: View {
 
             // 4. 药品与健康储备（重点跟踪有效期与用药方法）
             Section {
+                // 饮食时效自适应看板：药品入口收敛到本页后，从原「运动与药物保健品」页迁入。
+                // 复用本页已有的 medPlans 查询结果，避免再建一份全表观察。
+                MedicationTimingCard(medPlans: medPlans)
+
                 if let toast = actionFeedbackToast {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.seal.fill")
@@ -733,7 +737,7 @@ struct ItemStorageVaultView: View {
         .sheet(item: $reminderTarget) { target in
             AddMedicationReminderPopupSheet(medicine: target.medicine, usageDraft: target.usageDraft)
         }
-        .sheet(isPresented: Binding(
+        .fullScreenCover(isPresented: Binding(
             get: { previewImageData != nil },
             set: { if !$0 { previewImageData = nil } }
         )) {
@@ -1239,9 +1243,10 @@ struct AddOrEditStoredItemSheet: View {
                     StoredItemShareSheet(item: item)
                 }
             }
-            .sheet(isPresented: $showingCamera) {
+            .fullScreenCover(isPresented: $showingCamera) {
                 VaultCameraPicker { captured in
                     selectedImageData = captured.jpegData(compressionQuality: 0.78)
+                    showingCamera = false
                     Task {
                         await recognizeStoredItemText(from: captured)
                     }
@@ -2262,9 +2267,10 @@ struct MedicineEditorSheet: View {
                                   || storageLocation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .sheet(isPresented: $showingMedicineCamera) {
+            .fullScreenCover(isPresented: $showingMedicineCamera) {
                 VaultCameraPicker { captured in
                     selectedImageData = captured.jpegData(compressionQuality: 0.78)
+                    showingMedicineCamera = false
                     Task {
                         await recognizeMedicineBox(from: captured)
                     }

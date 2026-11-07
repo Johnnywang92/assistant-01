@@ -108,7 +108,7 @@ public enum ModuleRegistry {
         ModuleDescriptor(
             id: .habits,
             tabBar: nil,
-            vaultCard: .init(title: "运动与药物保健品", icon: "figure.run", category: "健康与习惯"),
+            vaultCard: .init(title: "运动", icon: "figure.run", category: "健康与习惯"),
             promptBlockIDs: [.habit]
         ),
         ModuleDescriptor(

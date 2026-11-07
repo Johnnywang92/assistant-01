@@ -523,7 +523,9 @@ public final class SearchIndexService: ObservableObject {
                         keywords: ["药品", "吃药", "用药", "处方", "服药提醒", "药片"],
                         date: m.lastTakenAt,
                         isSensitive: true,
-                        route: .vault(destination: "habits"),
+                        // 药品功能已收敛到「物品收纳 → 药品与健康储备」这一个入口，
+                        // 不能再指向纯运动页，否则搜索结果点进去找不到药。
+                        route: .vault(destination: "storage"),
                         badge: "用药"
                     )
                 )

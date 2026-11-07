@@ -17,7 +17,7 @@ public enum LifeVaultCardType: String, CaseIterable, Identifiable, Codable, Hash
     case learnedPlaces = "learnedPlaces"   // 常用地点
     case foodCalorie = "foodCalorie"       // 饮食热量估算
     case healthData = "healthData"         // 健康数据
-    case habits = "habits"                 // 运动与药物保健品
+    case habits = "habits"                 // 周期性运动计划
     case pets = "pets"                     // 宠物管家
     case children = "children"             // 亲子育儿
     case vehicles = "vehicles"             // 爱车管理
@@ -258,7 +258,6 @@ struct LifeVaultView: View {
     @Query private var passwords: [PasswordVaultItem]
     @Query private var anniversaries: [AnniversaryItem]
     @Query private var habits: [PeriodicHabit]
-    @Query private var medications: [MedicationPlan]
     @Query private var subscriptions: [SubscriptionItem]
     @Query private var expiries: [ItemExpiryItem]
     @Query private var places: [LearnedPlace]
@@ -299,7 +298,6 @@ struct LifeVaultView: View {
         var needCareVehicles = 0
         var nearestAnniversary: (item: AnniversaryItem, days: Int)?
         var expiringDocs = 0
-        var activeMeds = 0
         var needAttentionPets = 0
         var pendingVaccineDoses = 0
     }
@@ -325,7 +323,6 @@ struct LifeVaultView: View {
             .sorted { $0.days < $1.days }
             .first
         s.expiringDocs = documents.reduce(0) { $0 + ($1.isExpiringSoon || $1.isExpired ? 1 : 0) }
-        s.activeMeds = medications.reduce(0) { $0 + ($1.isEnabled ? 1 : 0) }
         s.needAttentionPets = pets.reduce(0) { $0 + ($1.needsAttention ? 1 : 0) }
         s.pendingVaccineDoses = children.reduce(0) { $0 + $1.pendingVaccines.count }
         statsCache.stats = s
@@ -347,9 +344,6 @@ struct LifeVaultView: View {
 
     // 临期证件数量
     private var expiringDocCount: Int { stats.expiringDocs }
-
-    // 活跃服药计划
-    private var activeMedCount: Int { stats.activeMeds }
 
     /// 收纳档案中的未处理常备药数量（已用完/丢弃的不计）
     private var cabinetMedicineCount: Int { medicineItems.reduce(0) { $0 + ($1.isDisposed ? 0 : 1) } }
@@ -498,7 +492,7 @@ struct LifeVaultView: View {
                         Button {
                             navigateTo(.habits)
                         } label: {
-                            statPill(title: "习惯", count: "\(habits.count + activeMedCount)", icon: "heart.fill", color: .purple)
+                            statPill(title: "运动", count: "\(habits.count)", icon: "figure.run", color: .purple)
                         }
                         .buttonStyle(.borderless)
                     }
@@ -930,7 +924,7 @@ struct LifeVaultView: View {
         case .healthData:
             return (card.title, healthStatusSummary, false)
         case .habits:
-            return (card.title, "\(habits.count) 项运动 · \(activeMedCount) 项药物与保健品", false)
+            return (card.title, "\(habits.count) 项运动计划", false)
         case .pets:
             let attentionSuffix = stats.needAttentionPets > 0 ? " · \(stats.needAttentionPets) 项待处理" : ""
             let petStatus = pets.isEmpty ? "未录入爱宠 · 每月驱虫/疫苗提醒" : "\(pets.count) 只毛孩子\(attentionSuffix)"
