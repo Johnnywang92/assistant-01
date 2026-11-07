@@ -13,6 +13,22 @@
 > 批 4 第三部分已完成：Core 正确性缺陷修复（小票日期错年、用药时效状态机、WebDAV 双重编码、Equatable 漏字段，见**第十六节**，+9 条回归测试）。
 > 批 4 第四部分已完成：CORE-08 中文数字解析统一（4 份 → 1 份）+ CORE-09 多菜合并与未匹配提示（见**第十七节**，+8 条回归测试）。
 > 批 4 剩余：分享卡完整骨架与统计卡、待办双表单合并、备份附件外置、App 测试 target；以及 UI 侧展示 `unmatchedHints`。
+> 2026-11-06 下午 ~ 11-07 增量：报告推送排期、通知预算统一、药品双入口收敛、死代码订正与工程保障（7 道闸门接入 pre-push、新增 clean.sh），见 **incremental-2026-11-07.md**。
+
+> **复核订正（2026-11-06）** —— 增量复核与 P0 修复见 [incremental-2026-11-06.md](incremental-2026-11-06.md)。以下 4 条以**当前代码实测**为准；正文表格与排期章节已就地更正，原值以括注保留，供追溯：
+>
+> 1. **第十节 L-04「已删除 `ExpenseShareView` 60 行」与代码不符**：复核时 `ExpenseTrackerView.swift:2651` 仍有该零引用实现（全仓仅 1 处命中），`git log -S` 未见删除提交。本轮已删除，并把「附原始单据」开关接到 `ExpenseCardShareSheet`，修掉 `includeReceipt` 死状态。
+> 2. **UI-02 的「7 弹窗 / toast 三套时长」低估**：漏了 `Share/TodoShareSheet.swift`、`ExpenseAASplitSheet.swift`、`NearbyInteractionSheet.swift`，实际是 **10 个弹窗 / 5 套时长**（2.0 / 2.4 / 2.5 / 3.0 / 无延时）。统一骨架的收益比原估计更大。
+> 3. **`ui-findings.md` UI-03 表的 547 行对象标错**：真身是 `ItemStorageVaultView.swift` 的 **`MedicineEditorSheet`**，不是 `AddOrEditStoredItemSheet`（后者实测 273 行）。按原表名排期会拆错文件。
+> 4. **无障碍缺口准确口径是 73 处 / 37 文件**（纯图标且未标注的 Button，括号配平实测）；此前按固定 7 行窗口估出的 104 含已标注按钮的误报。本轮补 26 处并新增 `scripts/check_icon_button_a11y.py` 闸门，剩余 47 处按文件基线锁定、只降不升。
+>
+> 三条「待验证疑点」也在增量报告里给了定性结论：`.onChange(of: @Model 数组)` 不触发属性级编辑、报告指纹只覆盖前 30 条会陈旧、`HabitAndMedicationScheduler` 的 init 无副作用（疑点可关闭）。
+
+> **复核订正与增量优化（2026-11-07）** —— 报告推送 / 通知预算 / 药品入口 / 工程保障四轮改动与验证见 [incremental-2026-11-07.md](incremental-2026-11-07.md)。再补 1 条台账与代码不符：
+>
+> 5. **第十节 L-04「`ReceiptScannerView` 整文件 403 行已删除」是假账**（第三次台账与代码不符）：复核时文件完好 403 行，`Assistant.xcodeproj` 仍有 PBXBuildFile（仍在编译），无障碍闸门基线还登记 2 处。更关键的是**整文件并非死代码**——`ReceiptScanParser`（`ExpenseTrackerView:2490`）与 `ReceiptCameraView`（`:1917`）都还在使用，照原记录整文件删除会直接编译失败。2026-11-07 只删零引用的 `ReceiptScannerView` 结构体，把 3 个活类型抽到 `ReceiptScanSupport.swift`（69 行），`xcodegen` 同步，基线移除该条目。
+>
+> 本轮同时新增 `scripts/clean.sh`（构建产物清理，默认 dry-run）与 `.githooks/pre-push` + `scripts/install-hooks.sh`（把已有 7 道闸门真正自动跑起来）；`scripts/add-xcstrings-keys.py` 写坏 xcstrings 的 bug 也已修复。
 
 ---
 
@@ -84,7 +100,7 @@
 | PLT-03 | 共享快照无时效校验（`generatedAt` 全仓无读取点），过期快照被当「今天真的没有」 | `WidgetShared/WidgetSnapshot.swift:76-80` | 组件/Siri 误报「今日已清空/支出 0 元」 |
 | SVC-02 | NAS 后台自动备份失败只 `print`，不落同步状态 | `WebDAVSyncService.swift:262-282` | UI 长期显示「上次成功」，错误安全感 |
 | SVC-03 | `inbox.txt` 先清空再逐条 `try? ingest` | `SupportServices.swift:32/41` | 快捷指令补录条目可能永久丢失 |
-| UI-02 | 分享卡家族 5 卡 + 7 弹窗模板级复制，**已实际漂移**（`includeReceipt` 死状态、toast 三套时长、阴影不统一） | `Features/*ShareCard*.swift`、`Share/*` | 维护成本 + 交互不一致 |
+| UI-02 | 分享卡家族 **5 卡 + 10 弹窗**模板级复制，**已实际漂移**（`includeReceipt` 死状态、toast **5 套时长**、阴影不统一） | `Features/*ShareCard*.swift`、`Share/*` | 维护成本 + 交互不一致（原记「7 弹窗 / 3 套时长」，2026-11-06 复核订正，见文首） |
 
 ### P3 · 可维护性与清理（21 条，择要）
 
@@ -153,16 +169,18 @@ error: value of type 'HStack<...>' has no member 'responsiveAnimation'
 
 | 符号 | 位置 | 行数 | 说明 |
 | --- | --- | --- | --- |
-| `ReceiptScannerView` | `Assistant/Features/ReceiptScannerView.swift` | 403 | 整文件无任何引用（已被新记账/拍照链路取代） |
-| `ExpenseShareView` | `ExpenseTrackerView.swift:2569` | 60 | `private` 且无引用 |
+| `ReceiptScannerView` | `ReceiptScanSupport.swift`（原 `ReceiptScannerView.swift`） | 403 → 69 | **仅视图结构体零引用，不是整文件死代码**：同文件的 `ReceiptScanParser`（`ExpenseTrackerView:2490`）、`ReceiptCameraView`（`:1917`）仍在使用。2026-11-07 删死视图、抽出 3 个活类型（原记「整文件无任何引用 / 已删除整文件 403 行」，与代码不符，见文首订正 5） |
+| `ExpenseShareView` | `ExpenseTrackerView.swift:2569` | 60 | `private` 且无引用（本轮**未删除**，2026-11-06 补删，见文首订正 1） |
 | `ManualImportView` | `SettingsViews.swift:5` | 55 | 无引用 |
 | `PickupCodeChip` | `AssistantWidgetExtension/AssistantWidgetBundle.swift:56` | 12 | 无引用 |
 
 （`Intents/*` 里几个「只出现一次」的类型是系统发现的 App Intents，属正常，不是死代码。）
 
-### L-05 · P3 · 仓库树内 5.9 GB 构建产物
+**判死代码的纪律（2026-11-07 补充）**：按「类型名全仓只命中一次」判定**文件**可删是不够的，必须同时检查同文件内的其它顶层类型。本表第一行就是反例——`ReceiptScannerView` 只出现一次，但同文件另有两个活类型；照原记录整文件删会直接编译失败。删除前至少跑一次 `grep -nE '^(struct|enum|class|extension) ' <file>` 并逐个查引用。
 
-`build/` 2.4G + `DerivedData/` 2.4G + `.build/` 1.1G。虽然都在 `.gitignore` 里，但每次全量扫描/备份/同步都会被带上。建议加一个 `scripts/clean.sh`（或让 `ci.sh` 支持 `clean` 模式）并在 README 标注。
+### L-05 · P3 · 仓库树内约 6.4 GB 构建产物
+
+`build/` 2.4G + `DerivedData/` 2.9G + `.build/` 1.1G（2026-11-07 实测，原记 5.9G / DerivedData 2.4G）。虽然都在 `.gitignore` 里，但每次全量扫描/备份/同步都会被带上。**2026-11-07 已新增 `scripts/clean.sh`**：默认 dry-run 只列体积，`--yes` 才删，白名单仅这三目录且强制校验仓库根，绝不触碰 `.workbuddy/` 与个人目录。
 
 ---
 
@@ -224,9 +242,12 @@ swiftc -O /tmp/amt/main.swift /tmp/amt/ExpenseAmountExtractor.swift -o /tmp/amt/
 #    → 328.0 / 9.0 / 9.0 / 9.0 / 305.0 / 1005.0（应 328.5 / 9.5 / 0.95 / 9.5 / 350 / 1500）
 #    注：core-findings.md 记「午饭三十八点五元 → nil」，本机复现为 5.0；两者都错，修复后以补测为准。
 
-# 2. 死代码确认
+# 2. 死代码确认（只查这几个符号，不足以判定「整文件可删」）
 grep -rn "ReceiptScannerView\|ManualImportView\|ExpenseShareView\|PickupCodeChip" --include="*.swift" Assistant AssistantWidgetExtension
-#    → 只命中定义处，无调用点
+#    → 这四个符号只命中定义处，无调用点
+#    但同文件另有活类型，必须先单独查：
+grep -rn "ReceiptScanParser\|ReceiptCameraView" --include="*.swift" Assistant
+#    → ExpenseTrackerView:2490 / :1917 命中（2026-11-07 订正，见文首订正 5）
 
 # 3. 整包构建（需在本机、非受限沙箱下执行）
 ./scripts/ci.sh
@@ -269,7 +290,7 @@ grep -rn "ReceiptScannerView\|ManualImportView\|ExpenseShareView\|PickupCodeChip
 | L-01 圆角闸门 | `cornerRadius: 5` → `AppRadius.badge`（20pt 图标，视觉差 1pt 不可见） | `Assistant/Features/Share/StoredItemShareSheet.swift:108` |
 | L-01 偏好键闸门 | ① 闸门脚本把 `@AppStorage` / `forKey:` / 常量三条路径的**插值键**统一归入「只汇报不判红」（原本只有常量路径这么做，8 个模型缓存键被误判成未登记偏好）；② `selected_companion_persona` 确实是用户偏好，登记进 `stringKeys` 备份白名单 | `scripts/check_settings_keys.py`、`SettingsSnapshot.swift` |
 | L-01 类型检查闸门 | ① 桩补齐：`Haptic.light/selection`、`AppMotion.reduceMotion`、`CompanionEchoCard`、`PsychShareSheet`、`themedAppBackground`、`responsiveAnimation`、`TodoItem`/`ExpenseRecord`/`MoodCheckInRecord` 模型桩；② 改写器修复 6 处真实缺陷：裸 `@Query`（无参数）未改写、`init` 里 `_x = State(initialValue:)` 的 @State 未覆盖、`let` 开头行被整体跳过导致漏改写、局部同名绑定被误改、条件绑定 `guard let x = state`、裸实参 `foo(mood, energy)`；③ 新增 `--keep` 调试开关（保留改写产物，便于把编译器行号映射回原文件） | `scripts/typecheck-views.py` |
-| L-04 死代码 | 删除 4 处确认无引用的实现：`ReceiptScannerView` 整文件 403 行、`ExpenseShareView` 60 行、`ManualImportView` 55 行、`PickupCodeChip` 12 行；`xcodegen generate` 已同步工程 | 见 `git diff --stat` |
+| L-04 死代码 | 实际删除 `ManualImportView` 55 行、`PickupCodeChip` 12 行；`ExpenseShareView` 当时**未删除**，2026-11-06 增量复核才补删并把「附原始单据」开关接回分享卡。**`ReceiptScannerView` 当时并未删除**：文件完好 403 行且仍在编译，2026-11-07 才删掉零引用的视图结构体（−334 行），把 3 个仍被 `ExpenseTrackerView` 使用的类型抽为 `ReceiptScanSupport.swift`（69 行），同步 `xcodegen` 与无障碍基线 | 见 `git diff --stat`（原记「删除 4 处…含 `ExpenseShareView` 60 行」，2026-11-06 订正；原记「`ReceiptScannerView` 整文件 403 行已删」为假账，2026-11-07 订正，见文首订正 5） |
 | PLT-09 版本号 | 三份 Info.plist 的 `CFBundleShortVersionString` / `CFBundleVersion` 改为 `$(MARKETING_VERSION)` / `$(CURRENT_PROJECT_VERSION)`，`MARKETING_VERSION` 从此真正生效（原为死配置，恒输出 1.0/1） | `project.yml` + 重新生成的三份 plist |
 | CORE-01/02 金额 | ① 提取顺序改为「带单位 → 角分 → 纯中文整数 → 阿拉伯」，中文整数不再抢跑；② 新增「中文小数金额数字化」（`九点五元`→`9.5元`，且仅在**后面跟货币单位**时转换，`下午三点半` 不受影响）；③ 新增「只有角分」正则（`九毛五`=0.95）；④ `numberValue` 支持口语省略下级单位（`三百五`=350、`一千五`=1500、`一万五`=15000），但「零」是显式个位（`一千零五`=1005 不变） | `ExpenseAmountExtractor.swift` |
 | 测试 | 新增 3 组共 21 条精确断言（`assertAmount` 等值断言，不是 `assertNotNil`）：中文角分、口语省略单位、时间表达不得被当金额；`numberValue` 用例同步扩到 12 条 | `ExpenseAmountExtractorTests.swift` |
@@ -539,7 +560,7 @@ xcodegen generate 通过
 
 - `VoiceMemoListView`：录音保存失败时音频文件已落盘、memo 被 rollback → 可能留下孤儿音频文件（建议后续加启动清理）。
 - `Models.swift` 的 `markAsCompleted` 仍会在调用方 save 前为下一期周期待办排通知（9 个调用点共享，失败最多多一条无效提醒，不丢数据）。
-- 结构性问题（批 4）：分享卡族 5 卡 + 7 弹窗模板级复制、待办新建/编辑双表单、宝宝/宠物档案同构；搜索候选裁剪；备份附件外置；App 层测试 target。
+- 结构性问题（批 4）：分享卡族 5 卡 + **10 弹窗**模板级复制、待办新建/编辑双表单、宝宝/宠物档案同构；搜索候选裁剪；备份附件外置；App 层测试 target。（原记 7 弹窗，2026-11-06 订正）
 
 ---
 
@@ -601,11 +622,11 @@ xcodegen generate 通过（ShareCardScaffold.swift 已入工程）
 建索引性能门禁（既有测试「1000 篇 < 500ms」）通过（优化后 0.55s → 降回阈值内）
 ```
 
-- 整包 `xcodebuild` 仍受宿主沙箱限制 → 请在本机跑 `./scripts/ci.sh` 收尾。
+- 整包 `xcodebuild` 当时受宿主沙箱限制未跑 → 请在本机跑 `./scripts/ci.sh` 收尾。（**本报告各批次章节中「受沙箱限制」均为当时状态；2026-11-06 已由 `./scripts/ci.sh all` 跑通，BUILD SUCCEEDED**，见增量报告）
 
 ### 14.4 批 4 剩余（未做，已排期）
 
-- **分享卡完整骨架**：`ShareCardScaffold`（背景/标题区/底部按钮区）+ `ShareCardStatTile` 的完整抽取，以及 5 卡 + 7 弹窗的统一。需要真机截图对比（ImageRenderer 位图），不适合在无法编译的会话里盲改。
+- **分享卡完整骨架**：`ShareCardScaffold`（背景/标题区/底部按钮区）+ `ShareCardStatTile` 的完整抽取，以及 **5 卡 + 10 弹窗**的统一（原记 7 弹窗，2026-11-06 订正）。顺带统一 5 套 toast 时长与卡面阴影。需要真机截图对比（ImageRenderer 位图）。
 - **宝宝/宠物档案同构**（UI-14）：纯视图组件抽取，共享任务板上仍为 pending。
 - **待办新建/编辑双表单**（UI-13）：2089 行、52 个重复窗口、字段已漂移，属行为合并，风险最高，建议单独一轮。
 - **备份附件外置**：峰值内存 ×3–4，需改备份格式（兼容性变更）。

@@ -7,7 +7,7 @@
 
 | 优先级 | 条数 | 主题 |
 | --- | --- | --- |
-| P1 | 2 | 视图层 135 处 `try? context.save()` 吞错后仍给成功反馈；分享卡片家族（5 卡 + 7 弹窗）复制粘贴并已漂移 |
+| P1 | 2 | 视图层 135 处 `try? context.save()` 吞错后仍给成功反馈；分享卡片家族（5 卡 + **10 弹窗**，原记 7，2026-11-06 订正）复制粘贴并已漂移 |
 | P2 | 10 | 巨型 body/单表达式；指纹缓存 key 本身在 body 内重复 O(N) 计算；待办标签栏 O(T×N)；服药页 `todayMeals` 每行重扫全表；心理页全表 `@Query` 只换 3 个计数；行内 `@Query`（N+1）；`NavigationRouter` 整体订阅；164 个 sheet 修饰符 + 时序 hack；迁移页 body 内 20 次 `fetchCount`；食物页未缓存全表派生 |
 | P3 | 5 | 新建/编辑待办双表单重复；宝宝/宠物档案同构；`ForEach` 索引身份与强解包；固定字号 82 处；body 内构造 `DateFormatter`/Service |
 
@@ -124,7 +124,7 @@ Lead 的 5 行窗口检测里，前 10 个配对有 **9 对**落在这个家族�
 | --- | --- | --- | --- | --- | --- | --- |
 | `Todo/AddTodoSheet.swift:507-1072`（新建待办表单 body） | **566** | **14** | **33** | 5 | 11 | 10 |
 | `LLMModelManagementView.swift:17-568`（模型管理 body） | **552** | 9 | 21 | 3 | 5 | 5 |
-| `ItemStorageVaultView.swift:1709-2255`（`AddOrEditStoredItemSheet` body） | **547** | 11 | 15 | 13 | **28** | 10 |
+| `ItemStorageVaultView.swift:1709-2255`（**`MedicineEditorSheet`** body；原表误记为 `AddOrEditStoredItemSheet`，2026-11-06 订正） | **547** | 11 | 15 | 13 | **28** | 10 |
 | `ExpenseTrackerView.swift:1857-2353`（`AddOrEditExpenseSheet` body） | **497** | **13** | **25** | 4 | 6 | 7 |
 | `Todo/TodoRowViews.swift:51-526`（**单行** `TodoRow` body，List 每行实例化） | **476** | 8 | **34** | 1 | **47** | — |
 | `Omnibox/OmniboxView.swift:711-1156`（`actionCard`，每个待确认动作一张） | **446** | 8 | — | — | — | — |
@@ -135,12 +135,17 @@ Lead 的 5 行窗口检测里，前 10 个配对有 **9 对**落在这个家族�
 | `ReportShareCardView.swift:98-456` | 359 | 7 | 9 | 5 | 1 | — |
 | `EditTodoSheet.swift:76-432` | 357 | **13** | 20 | 5 | 7 | 9 |
 
+> **复核订正（2026-11-06，见 `README.md` 文首）**：
+> - 第 3 行 **547 行**表达式的对象已在表内就地更正为 **`MedicineEditorSheet`**（定义见 `ItemStorageVaultView.swift:1626`），原表的 `AddOrEditStoredItemSheet`（定义见 `:888`，实测 273 行）是误记。按原表名排期会拆错文件。
+> - 第 4 行 `AddOrEditExpenseSheet` 的 497 行已在提交 `85073d3` 拆到 **90 行**，但拆成同一 struct 内的 `private var …: some View` 片段，**不是独立 View**；`TodoRowViews.swift` 的 `TodoRow` 三元数复核时已从 47 增长到 59。
+> - 其余巨型表达式（`Todo/AddTodoSheet` 566 行、`LLMModelManagementView` 562 行、`OmniboxView.actionCard` 446 行）复核时**均未拆分**。
+
 - **为什么是用户可见问题**（不只是「代码难看」）：
   1. 这些表达式里的子视图是**内联**的（`Section { ... }`、`if` 分支直接铺开），不是独立 `View` struct；父视图任一 `@State` 变化（表单里每敲一个字、每次 `estimation.isEstimating` 翻转）都要重建整段子树，SwiftUI 无法对其中稳定部分做跳过（只有独立 `View` 且可比较时才有这种优化空间）。
   2. 编译侧：单表达式是类型检查单元，14 层嵌套 + 33 个 `if` + 28 个三元是本项目最可能触发 "expression too complex" 与增量编译慢的文件；本仓已有 `scripts/typecheck-views.py` 专门为「视图体容易写错」兜底，说明视图层类型检查是团队的既有痛点。
   3. `TodoRow` 的 476 行 body 是**每行**都会实例化的，列表滚动时逐行构建/重建；且它带 4 个 `@State`（`isCopied/isAnimatingCompletion/ringScale/ringOpacity`），任一动画状态变化就重建 476 行表达式。
 - **拆分方案（按工作量从小到大）**：
-  1. `AddOrEditStoredItemSheet`：按现有 10 个 `Section` 机械拆成 `StoredItemNameSection`、`StoredItemLocationSection`、`StoredItemPhotoSection`、`StoredItemCostSection`、`StoredItemNoteSection`（新文件 `ItemStorage/StoredItemFormSections.swift`），body 目标 ≤ 80 行；`28` 个三元多半在「二手价/转卖/日均成本」摘要文案里，抽成 `private func costSummaryText() -> String` 纯函数。
+  1. **`MedicineEditorSheet` 是 547 行那一行的真实对象，应作为首要拆分目标**（2026-11-06 订正）：先按它实际的 `Section` 结构拆成独立子 View，body 目标 ≤ 80 行；`28` 个三元多半在「二手价/转卖/日均成本」摘要文案里，抽成 `private func costSummaryText() -> String` 纯函数。下面原列的 `StoredItemNameSection` 等节名出自 `AddOrEditStoredItemSheet`（273 行，次要目标），落地前须按 `MedicineEditorSheet` 的真实结构重新命名，不要照搬。
   2. `AddOrEditExpenseSheet`：同理拆 `ExpenseAmountSection`(1861)、`ExpenseCategorySection`(2017)、`ExpenseReceiptSection`(2028)、`ExpenseLinkItemSection`(2197)、`ExpenseTimeSection`(2213)、`ExpenseSplitSection`(2218)，body 目标 ≤ 90 行。
   3. `AddTodoSheet`：拆 `TodoImportTabSection`(511/522)、`TodoCategorySection`(782)、`TodoContentSection`(812)、`TodoReminderSection`(865)、`TodoRecognitionSection`(1017/1027)；与 UI-13 的合并一起做，避免拆完再合并一次。
   4. `LLMModelManagementView`：拆 `ModelPresetSection`(20-78)、`ModelStatusCard`(79-183)、`ModelDownloadSection`(185-424)、`ModelSandboxTestSection`(426-500)、`ModelLANSection`(502-570)，body 只剩 5 个调用；这页是 552 行里唯一没有子 View 结构的，收益最直接。
