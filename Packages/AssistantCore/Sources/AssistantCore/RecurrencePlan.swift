@@ -23,6 +23,8 @@ public struct RecurringTodoRecord: Hashable, Sendable {
     public var skillStageIndex: Int
     public var isSkillPractice: Bool
     public var skillPracticeMinutes: Int
+    /// 结构化日程 JSON；nil = 存量数据走历史顺延规则，下一期也不写该字段。
+    public var scheduleRaw: String?
 
     public init(
         typeRaw: String,
@@ -42,7 +44,8 @@ public struct RecurringTodoRecord: Hashable, Sendable {
         skillPathID: UUID?,
         skillStageIndex: Int,
         isSkillPractice: Bool,
-        skillPracticeMinutes: Int
+        skillPracticeMinutes: Int,
+        scheduleRaw: String?
     ) {
         self.typeRaw = typeRaw
         self.statusRaw = statusRaw
@@ -62,6 +65,7 @@ public struct RecurringTodoRecord: Hashable, Sendable {
         self.skillStageIndex = skillStageIndex
         self.isSkillPractice = isSkillPractice
         self.skillPracticeMinutes = skillPracticeMinutes
+        self.scheduleRaw = scheduleRaw
     }
 }
 
@@ -87,6 +91,8 @@ public struct NextOccurrenceFields: Hashable, Sendable {
     public var skillStageIndex: Int
     public var isSkillPractice: Bool
     public var skillPracticeMinutes: Int
+    /// 结构化日程 JSON；nil = 存量数据走历史顺延规则，下一期也不写该字段。
+    public var scheduleRaw: String?
 
     public init(
         typeRaw: String,
@@ -106,7 +112,8 @@ public struct NextOccurrenceFields: Hashable, Sendable {
         skillPathID: UUID?,
         skillStageIndex: Int,
         isSkillPractice: Bool,
-        skillPracticeMinutes: Int
+        skillPracticeMinutes: Int,
+        scheduleRaw: String?
     ) {
         self.typeRaw = typeRaw
         self.statusRaw = statusRaw
@@ -126,6 +133,7 @@ public struct NextOccurrenceFields: Hashable, Sendable {
         self.skillStageIndex = skillStageIndex
         self.isSkillPractice = isSkillPractice
         self.skillPracticeMinutes = skillPracticeMinutes
+        self.scheduleRaw = scheduleRaw
     }
 }
 
@@ -176,13 +184,33 @@ public enum RecurrencePlan {
         let rule = rule(fromRaw: parent.recurrenceRuleRaw)
         guard rule != .none else { return nil }
 
-        let nextDue = nextDueDate(
+        var nextDue = nextDueDate(
             dueAt: parent.dueAt,
             rule: rule,
             customDays: parent.recurrenceIntervalDays,
             referenceDate: referenceDate,
             calendar: calendar
         )
+
+        // 有结构化日程时，下一次触发由日历锚点决定，且下一期必须继承整个日程
+        // （时间段时长、锚点、重复截止），否则第二期就会悄悄退回「完成后顺延」。
+        // 存量数据 scheduleRaw == nil 完全走上面的历史规则，行为不变。
+        var nextScheduleRaw: String?
+        if let parentSchedule = TodoScheduleCodec.decode(parent.scheduleRaw) {
+            guard let rolled = TodoScheduleRule.nextSchedule(
+                from: parentSchedule,
+                after: referenceDate,
+                calendar: calendar
+            ) else {
+                // 已过重复截止日：不再生成下一期，也不再排通知
+                return nil
+            }
+            nextScheduleRaw = TodoScheduleCodec.encode(rolled)
+            if let scheduledDue = rolled.effectiveDueAt {
+                nextDue = scheduledDue
+            }
+        }
+
         return NextOccurrenceFields(
             typeRaw: parent.typeRaw,
             statusRaw: activeStatusRaw,
@@ -201,7 +229,8 @@ public enum RecurrencePlan {
             skillPathID: parent.skillPathID,
             skillStageIndex: parent.skillStageIndex,
             isSkillPractice: parent.isSkillPractice,
-            skillPracticeMinutes: parent.skillPracticeMinutes
+            skillPracticeMinutes: parent.skillPracticeMinutes,
+            scheduleRaw: nextScheduleRaw
         )
     }
 }

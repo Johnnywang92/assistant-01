@@ -35,7 +35,8 @@ final class RecurrencePlanTests: XCTestCase {
         skillPathID: UUID? = nil,
         skillStageIndex: Int = 0,
         isSkillPractice: Bool = false,
-        skillPracticeMinutes: Int = 0
+        skillPracticeMinutes: Int = 0,
+        scheduleRaw: String? = nil
     ) -> RecurringTodoRecord {
         RecurringTodoRecord(
             typeRaw: "general",
@@ -55,7 +56,8 @@ final class RecurrencePlanTests: XCTestCase {
             skillPathID: skillPathID,
             skillStageIndex: skillStageIndex,
             isSkillPractice: isSkillPractice,
-            skillPracticeMinutes: skillPracticeMinutes
+            skillPracticeMinutes: skillPracticeMinutes,
+            scheduleRaw: scheduleRaw
         )
     }
 
@@ -204,7 +206,7 @@ final class RecurrencePlanTests: XCTestCase {
         let outputNames = Set(Swift.Mirror(reflecting: fields).children.compactMap { $0.label })
 
         XCTAssertFalse(recordNames.isEmpty, "待复制字段集合不应为空")
-        XCTAssertEqual(recordNames.count, 18, "母记录快照应有 18 个字段；新增字段请同时更新显式清单与本断言")
+        XCTAssertEqual(recordNames.count, 19, "母记录快照应有 19 个字段；新增字段请同时更新显式清单与本断言")
 
         let skillManifest: Set<String> = ["skillPathID", "skillStageIndex", "isSkillPractice", "skillPracticeMinutes"]
         XCTAssertTrue(skillManifest.isSubset(of: recordNames), "母记录必须携带技能路径四项: \(recordNames)")
@@ -213,10 +215,66 @@ final class RecurrencePlanTests: XCTestCase {
         let explicitManifest: Set<String> = [
             "typeRaw", "statusRaw", "title", "detail", "pickupCode", "courier", "station", "location",
             "dueAt", "sourceText", "sortOrder", "recurrenceRuleRaw", "recurrenceIntervalDays",
-            "remindBeforeMinutes", "skillPathID", "skillStageIndex", "isSkillPractice", "skillPracticeMinutes"
+            "remindBeforeMinutes", "skillPathID", "skillStageIndex", "isSkillPractice", "skillPracticeMinutes",
+            "scheduleRaw"
         ]
         XCTAssertEqual(recordNames, explicitManifest, "待复制字段清单发生变化，请确认 app 侧 TodoItem 与输出结构同步更新")
         XCTAssertTrue(recordNames.isSubset(of: outputNames),
                       "输出缺少母记录携带的字段: \(recordNames.subtracting(outputNames))")
+    }
+
+    // MARK: - 结构化日程随下一期传递
+
+    func testLegacyRecordWithoutScheduleRawKeepsOldBehavior() throws {
+        let record = makeRecord(
+            dueAt: reference - day,
+            recurrenceRuleRaw: TodoRecurrenceRule.daily.rawValue
+        )
+        let fields = try XCTUnwrap(nextFields(from: record))
+        XCTAssertNil(fields.scheduleRaw, "存量数据不应凭空多出结构化日程")
+        XCTAssertEqual(
+            fields.dueAt,
+            RecurrencePlan.nextDueDate(
+                dueAt: record.dueAt, rule: .daily, customDays: 0,
+                referenceDate: reference, calendar: utcCalendar
+            )
+        )
+    }
+
+    func testCalendarAnchorNextFieldsUseAnchorDateAndInheritSchedule() throws {
+        // 2026-06-01 是周一；选周一+周三，参考时刻为周一中午，下一次应是周三同一时刻
+        var config = TodoRecurrenceConfig(rule: .weekly, mode: .calendarAnchor)
+        config.weekdays = [2, 4]
+        let schedule = TodoSchedule(
+            mode: .range,
+            startAt: reference - 3600,
+            endAt: reference,
+            recurrence: config
+        )
+        let record = makeRecord(
+            dueAt: schedule.effectiveDueAt,
+            recurrenceRuleRaw: TodoRecurrenceRule.weekly.rawValue,
+            scheduleRaw: TodoScheduleCodec.encode(schedule)
+        )
+
+        let fields = try XCTUnwrap(nextFields(from: record))
+        XCTAssertEqual(fields.dueAt, reference + 2 * day, "下一次应按周三锚点，而不是完成时刻 +7 天")
+        let inherited = try XCTUnwrap(TodoScheduleCodec.decode(fields.scheduleRaw))
+        XCTAssertEqual(inherited.recurrence.weekdays, [2, 4], "第二期不能悄悄退回完成后顺延")
+        XCTAssertEqual(inherited.mode, .range)
+        XCTAssertEqual(inherited.endAt.timeIntervalSince(inherited.startAt), 3600)
+    }
+
+    func testPastRecurrenceEndDateStopsNextFields() {
+        var config = TodoRecurrenceConfig(rule: .weekly, mode: .calendarAnchor)
+        config.weekdays = [2]
+        config.endAt = reference - day // 重复截止已过
+        let schedule = TodoSchedule(mode: .point, startAt: reference, endAt: reference, recurrence: config)
+        let record = makeRecord(
+            dueAt: reference,
+            recurrenceRuleRaw: TodoRecurrenceRule.weekly.rawValue,
+            scheduleRaw: TodoScheduleCodec.encode(schedule)
+        )
+        XCTAssertNil(nextFields(from: record), "超过重复截止不应再生成下一期")
     }
 }
