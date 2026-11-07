@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# pre-push：把 scripts/ci.sh 里已有的 7 道质量闸门 + AssistantCore 单测真正跑起来。
+#
+# 启用方式（每个 clone 只需一次）：./scripts/install-hooks.sh
+# 手动验证：                      .githooks/pre-push
+#
+# 紧急跳过（仅限宿主 sandbox-exec 不可用等环境故障，事后必须补跑 ci.sh test）：
+#   WORKBUDDY_SKIP_PRE_PUSH=1 git push
+#
+# 注意：这里只跑 `ci.sh test`，不做 xcodebuild —— pre-push 应保持秒级到分钟级，
+# 真机构建由 ./scripts/ci.sh all 或 CI 负责。
+set -euo pipefail
+
+# git 会把待推送的 ref 列表写到 stdin；不读也无妨，但消费掉可避免管道提前关闭的噪声。
+# 手动执行时 stdin 是终端，跳过以免阻塞。
+if [ ! -t 0 ]; then
+    cat >/dev/null 2>&1 || true
+fi
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+if [ "${WORKBUDDY_SKIP_PRE_PUSH:-0}" = "1" ]; then
+    echo "⚠️  [pre-push] 已按 WORKBUDDY_SKIP_PRE_PUSH=1 跳过质量闸门；请事后补跑 ./scripts/ci.sh test" >&2
+    exit 0
+fi
+
+if [ ! -x "$ROOT/scripts/ci.sh" ]; then
+    echo "❌ [pre-push] 找不到可执行的 scripts/ci.sh，无法验证；请先运行 ./scripts/install-hooks.sh" >&2
+    exit 1
+fi
+
+echo "==> [pre-push] 质量闸门 + AssistantCore 单测"
+if ! "$ROOT/scripts/ci.sh" test; then
+    echo "" >&2
+    echo "❌ [pre-push] 质量闸门未通过，已阻止本次推送。" >&2
+    echo "   先运行 ./scripts/ci.sh test 看具体失败步骤并修复。" >&2
+    echo "   确认是环境故障（如 sandbox-exec 不可用）才可用 WORKBUDDY_SKIP_PRE_PUSH=1 临时跳过。" >&2
+    exit 1
+fi
+
+echo "✅ [pre-push] 全部通过，允许推送"
