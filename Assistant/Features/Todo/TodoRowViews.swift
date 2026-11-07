@@ -10,9 +10,6 @@ struct TodoRow: View {
     let item: TodoItem
     var isHighlighted: Bool = false
     var onMoveToTop: (() -> Void)? = nil
-    var onMoveUp: (() -> Void)? = nil
-    var onMoveDown: (() -> Void)? = nil
-    var onEnterReorder: (() -> Void)? = nil
     var onEdit: (() -> Void)? = nil
     var onShowQRCode: (() -> Void)? = nil
     var onShare: (() -> Void)? = nil
@@ -402,87 +399,17 @@ struct TodoRow: View {
         .responsiveAnimation(.easeInOut(duration: 0.2), value: item.status)
         .padding(.vertical, 5)
         .contextMenu {
-            if item.hasQRCodeOrTicket {
-                Button("出示预约二维码 / 凭证", systemImage: "qrcode.viewfinder") {
-                    onShowQRCode?()
-                    Haptic.medium()
-                }
-            }
-
-            // 一键把取件码/行程倒计时推上灵动岛，并自动同步到 Apple Watch 智能叠放
-            if item.status == .active,
-               item.type == .parcel || item.type == .returnParcel || item.type == .travelBooking || item.type == .event {
-                Button("🏝️ 上灵动岛（同步手表）", systemImage: "platter.filled.top.iphone") {
-                    let started: Bool
-                    if item.type == .travelBooking || item.type == .event {
-                        started = LiveActivityService.startTravelActivity(for: item)
-                    } else {
-                        started = LiveActivityService.startPickupActivity(for: [item])
-                    }
-                    if started { Haptic.success() } else { Haptic.warning() }
-                }
-            }
-
-            if item.status == .active && WeChatCommunicationHelper.isWeChatCommunication(title: item.title, detail: item.detail) {
-                let kind = WeChatCommunicationHelper.communicationKind(title: item.title, detail: item.detail)
-                Button(kind.buttonTitle, systemImage: kind.iconName) {
-                    if let url = URL(string: WeChatCommunicationHelper.weChatURLScheme) {
-                        UIApplication.shared.open(url)
-                        Haptic.light()
-                    }
-                }
-            }
-
-            Button("编辑事项", systemImage: "pencil") {
-                onEdit?()
-                Haptic.light()
-            }
-
-            Divider()
-
-            Section("调整排序") {
-                if let onMoveToTop {
-                    Button("移至顶部 (置顶)", systemImage: "arrow.up.to.line") {
-                        onMoveToTop()
-                    }
-                }
-                if let onMoveUp {
-                    Button("上移一位", systemImage: "arrow.up") {
-                        onMoveUp()
-                    }
-                }
-                if let onMoveDown {
-                    Button("下移一位", systemImage: "arrow.down") {
-                        onMoveDown()
-                    }
-                }
-                if let onEnterReorder {
-                    Button("进入拖拽排序模式", systemImage: "arrow.up.arrow.down") {
-                        onEnterReorder()
-                    }
-                }
-            }
-
-            Divider()
-
-            if let code = item.pickupCode {
-                Button(item.type == .returnParcel ? "复制寄件码" : "复制取件码", systemImage: "doc.on.doc") {
-                    UIPasteboard.general.string = code
-                    Haptic.light()
-                }
-            }
-            if let src = item.sourceText {
-                Button("复制原文", systemImage: "text.quote") {
-                    UIPasteboard.general.string = src
-                    Haptic.light()
-                }
-            }
+            // 手势层只保留「分享」：编辑走点按行，置顶走左侧滑，其余能力
+            // 统一收进编辑页的「快捷动作」区，避免同一能力散落在三处入口。
             Button("分享此待办卡片", systemImage: "square.and.arrow.up") {
                 onShare?()
                 Haptic.light()
             }
+        } preview: {
+            sharePreview
         }
-        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+        // 单按钮且非破坏性，放开整滑：手一划到底即可置顶，不必瞄准 72pt 按钮。
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if let onMoveToTop {
                 Button {
                     onMoveToTop()
@@ -491,35 +418,9 @@ struct TodoRow: View {
                 }
                 .tint(.orange)
             }
-
-            if let onMoveUp {
-                Button {
-                    onMoveUp()
-                } label: {
-                    Label("上移", systemImage: "arrow.up")
-                }
-                .tint(.blue)
-            }
-
-            if let onMoveDown {
-                Button {
-                    onMoveDown()
-                } label: {
-                    Label("下移", systemImage: "arrow.down")
-                }
-                .tint(.indigo)
-            }
-
-            if let onEnterReorder {
-                Button {
-                    onEnterReorder()
-                } label: {
-                    Label("排序", systemImage: "arrow.up.arrow.down")
-                }
-                .tint(.teal)
-            }
         }
-        .swipeActions(edge: .trailing) {
+        // 删除不可整滑直达：默认 allowsFullSwipe 为 true，一划到底会直接落库且无撤销。
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
                 Haptic.warning()
                 item.cleanupExternalIntegrations()
@@ -528,6 +429,41 @@ struct TodoRow: View {
             } label: { Label("删除", systemImage: "trash") }
         }
         .themedRow()
+    }
+
+    /// 长按预览只展示卡片内容，不放可点操作：菜单里唯一的动作就是分享。
+    private var sharePreview: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if item.type == .parcel || item.type == .returnParcel,
+               let code = item.pickupCode, !code.isEmpty {
+                Text(code)
+                    .font(.title3.monospaced().bold())
+                Text(item.displayConciseTitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            } else {
+                Text(item.displayConciseTitle)
+                    .font(.headline)
+                    .lineLimit(2)
+            }
+
+            if let place = item.location ?? item.station, !place.isEmpty {
+                Label(place, systemImage: "mappin.and.ellipse")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            if let due = item.dueAt {
+                Text(due, style: .date)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 240, alignment: .leading)
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground))
     }
 
     @ViewBuilder

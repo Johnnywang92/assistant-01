@@ -265,17 +265,24 @@ struct TodoListView: View {
         return ids.compactMap { byID[$0] }
     }
 
-    /// 早间逾期清道夫：每天首次进入待办页时，若有逾期事项则弹出发牌器
-    private func maybePresentOverdueTriage() {
+    /// 当天的逾期整理键，写入与读取口径必须同源
+    private var todayTriageKey: String {
         let comps = Calendar.current.dateComponents([.year, .month, .day], from: .now)
-        let key = "\(comps.year ?? 0)-\(comps.month ?? 0)-\(comps.day ?? 0)"
+        return "\(comps.year ?? 0)-\(comps.month ?? 0)-\(comps.day ?? 0)"
+    }
+
+    /// 早间逾期清道夫：每天首次进入待办页时，若有逾期事项则弹出发牌器。
+    ///
+    /// 日期键只在整理卡**真正出现**时写入（见 .sheet 的 onAppear）。
+    /// 旧实现先写键再延时 0.9s 弹层：一旦转场被其他 sheet 抢占、或用户中途切 Tab，
+    /// 弹层没呈现，当天却已被标记成「已整理」，用户整天都收不到提醒。
+    private func maybePresentOverdueTriage() {
+        let key = todayTriageKey
         guard lastTriageDateKey != key, !overdueTodos.isEmpty else { return }
-        lastTriageDateKey = key
         // 延迟弹出，避免抢在页面转场动画与其他首次弹窗之前
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
-            if !showOverdueTriage {
-                showOverdueTriage = true
-            }
+            guard lastTriageDateKey != key, !showOverdueTriage else { return }
+            showOverdueTriage = true
         }
     }
     private var review: [TodoItem] { classified.review }
@@ -391,6 +398,8 @@ struct TodoListView: View {
             }
             .sheet(isPresented: $showOverdueTriage) {
                 OverdueTriageSheet(items: triageItemsOverride ?? overdueTodos)
+                    // 只有卡片真正呈现才消耗「今天已整理」，避免留下假状态。
+                    .onAppear { lastTriageDateKey = todayTriageKey }
                     .onDisappear { triageItemsOverride = nil }
             }
             .sheet(item: $selectedTimeBucket) { kind in
@@ -412,9 +421,11 @@ struct TodoListView: View {
                 )
             }
             .sheet(item: $itemToEdit) { item in
-                EditTodoSheet(item: item)
+                EditTodoSheet(item: item) {
+                    AppMotion.animate { isReordering = true }
+                }
             }
-            .sheet(item: $itemForQRCode) { item in
+            .fullScreenCover(item: $itemForQRCode) { item in
                 TodoQRCodeQuickSheet(item: item)
             }
             .sheet(item: $confirmingTicketInfo) { info in
@@ -540,37 +551,12 @@ struct TodoListView: View {
         }
     }
 
-    private func moveItemUp(_ item: TodoItem, within items: [TodoItem]) {
-        var mutable = items
-        guard let idx = mutable.firstIndex(where: { $0.id == item.id }), idx > 0 else { return }
-        mutable.swapAt(idx, idx - 1)
-        for (index, todo) in mutable.enumerated() {
-            todo.sortOrder = index
-        }
-        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
-        Haptic.selection()
-    }
-
-    private func moveItemDown(_ item: TodoItem, within items: [TodoItem]) {
-        var mutable = items
-        guard let idx = mutable.firstIndex(where: { $0.id == item.id }), idx < mutable.count - 1 else { return }
-        mutable.swapAt(idx, idx + 1)
-        for (index, todo) in mutable.enumerated() {
-            todo.sortOrder = index
-        }
-        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
-        Haptic.selection()
-    }
-
     @ViewBuilder
     private func todoRow(_ item: TodoItem, within items: [TodoItem]) -> some View {
         TodoRow(
             item: item,
             isHighlighted: highlightedTodoID == item.id,
             onMoveToTop: { moveItemToTop(item, within: items) },
-            onMoveUp: { moveItemUp(item, within: items) },
-            onMoveDown: { moveItemDown(item, within: items) },
-            onEnterReorder: { AppMotion.animate { isReordering = true } },
             onEdit: { itemToEdit = item },
             onShowQRCode: { itemForQRCode = item },
             onShare: { itemToShare = item }

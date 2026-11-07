@@ -11,6 +11,10 @@ struct EditTodoSheet: View {
 
     @Bindable var item: TodoItem
 
+    /// 首页长按菜单收敛后，「拖拽排序」改由编辑页快捷动作区触发。
+    /// 其余调用点（时间聚合页、已完成历史）不传，默认 nil，该行自动隐藏。
+    var onEnterReorder: (() -> Void)? = nil
+
     @State private var title: String
     @State private var type: TodoType
     @State private var detail: String
@@ -45,8 +49,9 @@ struct EditTodoSheet: View {
 
     @State private var showingDeleteConfirmation: Bool = false
 
-    init(item: TodoItem) {
+    init(item: TodoItem, onEnterReorder: (() -> Void)? = nil) {
         self.item = item
+        self.onEnterReorder = onEnterReorder
         self._title = State(initialValue: item.title)
         self._type = State(initialValue: item.type)
         self._detail = State(initialValue: item.detail ?? "")
@@ -93,6 +98,7 @@ struct EditTodoSheet: View {
                                             Image(systemName: "xmark.circle.fill")
                                                 .font(.caption2)
                                         }
+                                        .iconButton("移除标签")
                                         .buttonStyle(.plain)
                                     }
                                     .padding(.horizontal, 8)
@@ -133,6 +139,67 @@ struct EditTodoSheet: View {
                             TextField("场馆 / 地点（选填，如：西岸国际会展中心）", text: $station)
                         }
                     }
+                }
+
+                // 1.5 快捷动作：首页长按菜单收敛后，条件性专属能力统一归到此处
+                Section {
+                    if canStartLiveActivity {
+                        Button {
+                            let started: Bool
+                            if item.type == .travelBooking || item.type == .event {
+                                started = LiveActivityService.startTravelActivity(for: item)
+                            } else {
+                                started = LiveActivityService.startPickupActivity(for: [item])
+                            }
+                            if started { Haptic.success() } else { Haptic.warning() }
+                        } label: {
+                            Label("上灵动岛（同步手表）", systemImage: "platter.filled.top.iphone")
+                        }
+                    }
+
+                    if hasVisualCredential {
+                        Button {
+                            showingQRPreview = true
+                            Haptic.medium()
+                        } label: {
+                            Label("出示预约凭证", systemImage: "qrcode.viewfinder")
+                        }
+                    }
+
+                    if item.status == .active,
+                       WeChatCommunicationHelper.isWeChatCommunication(title: item.title, detail: item.detail) {
+                        let kind = WeChatCommunicationHelper.communicationKind(title: item.title, detail: item.detail)
+                        Button {
+                            if let url = URL(string: WeChatCommunicationHelper.weChatURLScheme) {
+                                UIApplication.shared.open(url)
+                                Haptic.light()
+                            }
+                        } label: {
+                            Label(kind.buttonTitle, systemImage: kind.iconName)
+                        }
+                    }
+
+                    if let src = item.sourceText, !src.isEmpty {
+                        Button {
+                            UIPasteboard.general.string = src
+                            Haptic.light()
+                        } label: {
+                            Label("复制原文", systemImage: "text.quote")
+                        }
+                    }
+
+                    if let onEnterReorder {
+                        Button {
+                            dismiss()
+                            onEnterReorder()
+                        } label: {
+                            Label("拖拽排序", systemImage: "arrow.up.arrow.down")
+                        }
+                    }
+                } header: {
+                    Text("快捷动作")
+                } footer: {
+                    Text("按事项类型出现，不占用首页长按菜单。")
                 }
 
                 // 2. 预约二维码与凭证截图
@@ -237,6 +304,7 @@ struct EditTodoSheet: View {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundStyle(.secondary)
                                 }
+                                .iconButton("关闭置信度提示")
                                 .buttonStyle(.plain)
                             }
 
@@ -409,7 +477,7 @@ struct EditTodoSheet: View {
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .sheet(isPresented: $showingQRPreview) {
+            .fullScreenCover(isPresented: $showingQRPreview) {
                 TodoQRCodeQuickSheet(
                     title: title,
                     locationText: station.isEmpty ? nil : station,
@@ -429,6 +497,15 @@ struct EditTodoSheet: View {
                 Text("删除后将无法恢复。")
             }
         }
+    }
+
+    private var canStartLiveActivity: Bool {
+        item.status == .active &&
+        (item.type == .parcel || item.type == .returnParcel || item.type == .travelBooking || item.type == .event)
+    }
+
+    private var hasVisualCredential: Bool {
+        qrCodeImageData != nil || attachmentImageData != nil || !(qrCodePayload?.isEmpty ?? true)
     }
 
     private func loadAndRecognizePhoto(_ pickerItem: PhotosPickerItem) async {
