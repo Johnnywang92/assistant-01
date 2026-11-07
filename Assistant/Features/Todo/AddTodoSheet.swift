@@ -36,6 +36,17 @@ struct AddTodoSheet: View {
     @State private var pickupCode: String = ""
     @State private var station: String = ""
 
+    // 结构化日程：时间形态由 hasDueDate + isTimeRange 派生，
+    // 这样剪贴板识别、票面识别等 ~10 处 `hasDueDate = true` 赋值点无需改动、也不会失配。
+    @State private var isTimeRange: Bool = false
+    @State private var startDate: Date
+    @State private var isAllDay: Bool = false
+    @State private var recurrenceMode: TodoRecurrenceMode = .afterCompletion
+    @State private var selectedWeekdays: Set<Int> = []
+    @State private var selectedMonthDays: Set<Int> = []
+    @State private var hasRecurrenceEnd: Bool = false
+    @State private var recurrenceEndDate: Date
+
     // 图片/预约截图识别状态
     @State private var selectedPhotoItem: PhotosPickerItem? = nil
     @State private var isRecognizingImage: Bool = false
@@ -131,9 +142,113 @@ struct AddTodoSheet: View {
         self._type = State(initialValue: defaultType)
         self._hasDueDate = State(initialValue: defaultHasDueDate)
         self._dueDate = State(initialValue: defaultDue)
+        self._startDate = State(initialValue: Calendar.current.date(byAdding: .hour, value: -1, to: defaultDue) ?? defaultDue)
+        self._recurrenceEndDate = State(initialValue: Calendar.current.date(byAdding: .month, value: 3, to: defaultDue) ?? defaultDue)
         if initialCategory == .recurring {
             self._recurrenceRule = State(initialValue: .weekly)
         }
+    }
+
+    // MARK: - 结构化日程表单辅助
+
+    /// 时间形态由两个既有状态派生，避免与识别链路的 `hasDueDate = true` 赋值点打架。
+    private var timeForm: Binding<TodoTimeMode> {
+        Binding(
+            get: { hasDueDate ? (isTimeRange ? .range : .point) : .none },
+            set: { form in
+                switch form {
+                case .none:
+                    hasDueDate = false
+                    isTimeRange = false
+                case .point:
+                    hasDueDate = true
+                    isTimeRange = false
+                case .range:
+                    hasDueDate = true
+                    isTimeRange = true
+                    if startDate >= dueDate {
+                        startDate = Calendar.current.date(byAdding: .hour, value: -1, to: dueDate) ?? dueDate
+                    }
+                }
+            }
+        )
+    }
+
+    private var currentSchedule: TodoSchedule {
+        TodoSchedule(
+            mode: hasDueDate ? (isTimeRange ? .range : .point) : .none,
+            startAt: isTimeRange ? startDate : dueDate,
+            endAt: dueDate,
+            isAllDay: isAllDay,
+            recurrence: TodoRecurrenceConfig(
+                rule: recurrenceRule,
+                customDays: customIntervalDays,
+                mode: recurrenceMode,
+                weekdays: Array(selectedWeekdays),
+                monthDays: Array(selectedMonthDays),
+                endAt: hasRecurrenceEnd && recurrenceRule != .none ? recurrenceEndDate : nil
+            )
+        )
+    }
+
+    /// 周锚点按「周一开始」展示，取值仍是 Calendar.component(.weekday) 口径（1 = 周日）。
+    private var orderedWeekdays: [Int] { [2, 3, 4, 5, 6, 7, 1] }
+
+    private func weekdayLabel(_ weekday: Int) -> String {
+        let symbols = Calendar.current.veryShortWeekdaySymbols
+        let index = weekday - 1
+        return symbols.indices.contains(index) ? symbols[index] : "\(weekday)"
+    }
+
+    /// 无障碍播报用系统完整星期名，随 locale 变化，不制造动态本地化 key。
+    private func weekdayFullLabel(_ weekday: Int) -> String {
+        let symbols = Calendar.current.weekdaySymbols
+        let index = weekday - 1
+        return symbols.indices.contains(index) ? symbols[index] : "\(weekday)"
+    }
+
+    private var quickMonthDays: [Int] { [1, 5, 10, 15, 20, 25, -1] }
+
+    private func monthDayLabel(_ day: Int) -> String {
+        day == -1 ? L10n.tr("月末") : "\(day)"
+    }
+
+    private var showsWeekdayAnchor: Bool {
+        recurrenceMode == .calendarAnchor && (recurrenceRule == .weekly || recurrenceRule == .biweekly)
+    }
+
+    private var showsMonthDayAnchor: Bool {
+        recurrenceMode == .calendarAnchor && recurrenceRule == .monthly
+    }
+
+    private func toggleWeekday(_ weekday: Int) {
+        if selectedWeekdays.contains(weekday) {
+            selectedWeekdays.remove(weekday)
+        } else {
+            selectedWeekdays.insert(weekday)
+        }
+    }
+
+    private func toggleMonthDay(_ day: Int) {
+        if selectedMonthDays.contains(day) {
+            selectedMonthDays.remove(day)
+        } else {
+            selectedMonthDays.insert(day)
+        }
+    }
+
+    private var recurrenceHint: String {
+        guard recurrenceRule != .none else { return "" }
+        if recurrenceMode == .calendarAnchor {
+            if showsWeekdayAnchor && selectedWeekdays.isEmpty {
+                return L10n.tr("还没选星期几，将按完成后顺延处理")
+            }
+            if showsMonthDayAnchor && selectedMonthDays.isEmpty {
+                return L10n.tr("还没选日期，将按完成后顺延处理")
+            }
+            return L10n.tr("按日历固定日期重复，不随完成时间漂移")
+        }
+        return L10n.tr("完成此待办后，按间隔自动生成下一期")
     }
 
     // MARK: - 分类对应候选子类型集合
@@ -778,38 +893,8 @@ struct AddTodoSheet: View {
                         }
                     }
 
-                    // 2. 所属板块分段选择（自动对应首页当前分类）
-                    Section("事项所属板块") {
-                        Picker("所属板块", selection: Binding(
-                            get: { selectedCategory },
-                            set: { onCategoryChanged($0) }
-                        )) {
-                            ForEach(TodoFilterCategory.allCases) { cat in
-                                Text(L10n.tr(cat.rawValue)).tag(cat)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-
-                        // 具体类型选择（根据板块智能收敛选项）
-                        if availableTypesForCategory.count > 1 {
-                            Picker("具体类型", selection: $type) {
-                                ForEach(availableTypesForCategory, id: \.self) { t in
-                                    Label(t.displayName, systemImage: t.icon).tag(t)
-                                }
-                            }
-                        } else if type == .parcel {
-                            HStack {
-                                Label("快递取件", systemImage: "shippingbox.fill")
-                                Spacer()
-                                Text("已自动匹配快递模式")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    // 3. 待办内容填写与高频快捷胶囊
-                    Section("待办内容与地点") {
+                    // ① 是什么：标题、快捷预设、地点/取件码、备注
+                    Section("是什么") {
                         TextField(contextualPlaceholder, text: $title)
 
                         // 常用快捷预设横向滑动标签
@@ -859,19 +944,91 @@ struct AddTodoSheet: View {
                                 TextField("场馆 / 地点（选填，如：西岸国际会展中心）", text: $station)
                             }
                         }
-                    }
 
-                    // 4. 详情与提醒时间
-                    Section("详情与提醒时间") {
                         TextField("补充备注/详情说明（选填）", text: $detail, axis: .vertical)
                             .lineLimit(2...4)
+                    }
 
-                        Toggle("设置提醒时间", isOn: $hasDueDate)
-                            .onChange(of: hasDueDate) { _, enabled in
-                                if enabled { Task { await NotificationService.requestAuthorization() } }
+                    // ② 归到哪：把 10 个中文标签从 segmented 收敛成「常用 + 更多」两层菜单
+                    Section("归到哪") {
+                        Menu {
+                            Section("常用") {
+                                ForEach(TodoFilterCategory.commonCreationCases) { cat in
+                                    Button { onCategoryChanged(cat) } label: {
+                                        if cat == selectedCategory {
+                                            Label(L10n.tr(cat.rawValue), systemImage: "checkmark")
+                                        } else {
+                                            Text(L10n.tr(cat.rawValue))
+                                        }
+                                    }
+                                }
                             }
+                            Section("更多板块") {
+                                ForEach(TodoFilterCategory.moreCreationCases) { cat in
+                                    Button { onCategoryChanged(cat) } label: {
+                                        if cat == selectedCategory {
+                                            Label(L10n.tr(cat.rawValue), systemImage: "checkmark")
+                                        } else {
+                                            Text(L10n.tr(cat.rawValue))
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text("所属板块")
+                                Spacer()
+                                Text(L10n.tr(selectedCategory.rawValue))
+                                    .foregroundStyle(.secondary)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+
+                        if availableTypesForCategory.count > 1 {
+                            Picker("具体类型", selection: $type) {
+                                ForEach(availableTypesForCategory, id: \.self) { t in
+                                    Label(t.displayName, systemImage: t.icon).tag(t)
+                                }
+                            }
+                        } else if type == .parcel {
+                            HStack {
+                                Label("快递取件", systemImage: "shippingbox.fill")
+                                Spacer()
+                                Text("已自动匹配快递模式")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    // ③ 什么时候：不设时间 / 某个时间点 / 时间段，支持全天
+                    Section("什么时候") {
+                        Picker("时间形态", selection: timeForm) {
+                            Text(L10n.tr("不设时间")).tag(TodoTimeMode.none)
+                            Text(L10n.tr("某个时间点")).tag(TodoTimeMode.point)
+                            Text(L10n.tr("时间段")).tag(TodoTimeMode.range)
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: hasDueDate) { _, enabled in
+                            if enabled { Task { await NotificationService.requestAuthorization() } }
+                        }
+
                         if hasDueDate {
-                            DatePicker("截止时间", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                            Toggle("全天", isOn: $isAllDay)
+                            let components: DatePickerComponents = isAllDay ? [.date] : [.date, .hourAndMinute]
+                            if isTimeRange {
+                                DatePicker("开始", selection: $startDate, displayedComponents: components)
+                                DatePicker("结束", selection: $dueDate, displayedComponents: components)
+                                if startDate >= dueDate {
+                                    Text(L10n.tr("开始需早于结束，保存时会自动调整"))
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
+                            } else {
+                                DatePicker("截止", selection: $dueDate, displayedComponents: components)
+                            }
                             Picker("提前提醒", selection: $remindBeforeMinutes) {
                                 Text("到期时").tag(0)
                                 Text("提前 5 分钟").tag(5)
@@ -996,7 +1153,10 @@ struct AddTodoSheet: View {
                                 .padding(.vertical, 4)
                             }
                         }
+                    }
 
+                    // ④ 重复吗：两套语义显式二选一，锚点真正驱动下一期与通知
+                    Section("重复吗") {
                         Picker("重复周期", selection: $recurrenceRule) {
                             ForEach(TodoRecurrenceRule.allCases) { rule in
                                 Label(L10n.tr(rule.rawValue), systemImage: rule.icon).tag(rule)
@@ -1008,7 +1168,84 @@ struct AddTodoSheet: View {
                         }
 
                         if recurrenceRule != .none {
-                            Text("完成此待办后，将自动按「\(recurrenceRule.displayLabel(customDays: customIntervalDays))」生成下一期事项。")
+                            Picker("重复方式", selection: $recurrenceMode) {
+                                Text(L10n.tr("完成后顺延")).tag(TodoRecurrenceMode.afterCompletion)
+                                Text(L10n.tr("按日历固定")).tag(TodoRecurrenceMode.calendarAnchor)
+                            }
+                            .pickerStyle(.segmented)
+
+                            if showsWeekdayAnchor {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(L10n.tr("选择星期几"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 5) {
+                                        ForEach(orderedWeekdays, id: \.self) { weekday in
+                                            Button {
+                                                toggleWeekday(weekday)
+                                            } label: {
+                                                Text(weekdayLabel(weekday))
+                                                    .font(.caption.bold())
+                                                    .frame(maxWidth: .infinity)
+                                                    .padding(.vertical, 7)
+                                                    .background(selectedWeekdays.contains(weekday)
+                                                                ? Color.accentColor : Color(.tertiarySystemFill))
+                                                    .foregroundStyle(selectedWeekdays.contains(weekday) ? Color.white : Color.primary)
+                                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
+                                            }
+                                            .buttonStyle(.plain)
+                                            .accessibilityLabel(weekdayFullLabel(weekday))
+                                            .accessibilityAddTraits(selectedWeekdays.contains(weekday) ? .isSelected : [])
+                                        }
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+
+                            if showsMonthDayAnchor {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(L10n.tr("选择每月几号"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 7), spacing: 5) {
+                                        ForEach(quickMonthDays, id: \.self) { day in
+                                            Button {
+                                                toggleMonthDay(day)
+                                            } label: {
+                                                Text(monthDayLabel(day))
+                                                    .font(.caption.bold())
+                                                    .frame(maxWidth: .infinity)
+                                                    .padding(.vertical, 7)
+                                                    .background(selectedMonthDays.contains(day)
+                                                                ? Color.accentColor : Color(.tertiarySystemFill))
+                                                    .foregroundStyle(selectedMonthDays.contains(day) ? Color.white : Color.primary)
+                                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    Menu("更多日期") {
+                                        ForEach(1...31, id: \.self) { day in
+                                            Button { toggleMonthDay(day) } label: {
+                                                if selectedMonthDays.contains(day) {
+                                                    Label("\(day) 日", systemImage: "checkmark")
+                                                } else {
+                                                    Text("\(day) 日")
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .font(.caption)
+                                }
+                                .padding(.vertical, 2)
+                            }
+
+                            Toggle("设置结束日期", isOn: $hasRecurrenceEnd)
+                            if hasRecurrenceEnd {
+                                DatePicker("重复截止", selection: $recurrenceEndDate, displayedComponents: [.date])
+                            }
+
+                            Text(recurrenceHint)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -1169,6 +1406,9 @@ struct AddTodoSheet: View {
             attachmentImageData: attachmentImageData,
             tags: extractedTags
         )
+        // 唯一写入口：结构化日程落库的同时同步 dueAt / 重复规则散字段，
+        // 保证通知、列表排序、下一期生成看到的是同一份时间真相。
+        item.applySchedule(currentSchedule)
         context.insert(item)
         // 通知与到站提醒统一挪到落库成功后（见函数末尾），避免 save 失败留下指向不存在对象的提醒
         var pendingArrivalSync = false

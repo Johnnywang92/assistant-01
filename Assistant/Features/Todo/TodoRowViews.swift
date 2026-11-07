@@ -115,10 +115,20 @@ struct TodoRow: View {
         }
 
         if let due = item.dueAt {
-            pieces.append(MetadataPiece(
-                text: due.formatted(date: .numeric, time: .shortened),
-                isDanger: due < .now && !isEffectivelyDone
-            ))
+            // 存量数据 scheduleRaw == nil 时不做 JSON 解码，列表滚动零额外开销。
+            let schedule: TodoSchedule? = item.scheduleRaw == nil ? nil : item.schedule
+            let cal = Calendar.current
+            let timeText: String
+            if let start = schedule?.effectiveStartAt, cal.isDate(start, inSameDayAs: due), !(schedule?.isAllDay ?? false) {
+                timeText = "\(start.formatted(date: .numeric, time: .shortened))–\(due.formatted(date: .omitted, time: .shortened))"
+            } else if let start = schedule?.effectiveStartAt, !(schedule?.isAllDay ?? false) {
+                timeText = "\(start.formatted(date: .numeric, time: .shortened)) – \(due.formatted(date: .numeric, time: .shortened))"
+            } else if schedule?.isAllDay == true {
+                timeText = "\(due.formatted(date: .numeric, time: .omitted)) \(L10n.tr("全天"))"
+            } else {
+                timeText = due.formatted(date: .numeric, time: .shortened)
+            }
+            pieces.append(MetadataPiece(text: timeText, isDanger: due < .now && !isEffectivelyDone))
         } else {
             pieces.append(MetadataPiece(text: item.createdAt.formatted(.relative(presentation: .named))))
         }

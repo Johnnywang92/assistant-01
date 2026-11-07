@@ -49,6 +49,16 @@ struct EditTodoSheet: View {
 
     @State private var showingDeleteConfirmation: Bool = false
 
+    // 结构化日程：与新建页同构，旧待办通过 TodoItem.schedule 的 legacy 解释无损回填。
+    @State private var isTimeRange: Bool = false
+    @State private var startDate: Date = .now
+    @State private var isAllDay: Bool = false
+    @State private var recurrenceMode: TodoRecurrenceMode = .afterCompletion
+    @State private var selectedWeekdays: Set<Int> = []
+    @State private var selectedMonthDays: Set<Int> = []
+    @State private var hasRecurrenceEnd: Bool = false
+    @State private var recurrenceEndDate: Date = .now
+
     init(item: TodoItem, onEnterReorder: (() -> Void)? = nil) {
         self.item = item
         self.onEnterReorder = onEnterReorder
@@ -58,8 +68,18 @@ struct EditTodoSheet: View {
         self._pickupCode = State(initialValue: item.pickupCode ?? "")
         self._station = State(initialValue: item.displayLocationText ?? "")
         self._courier = State(initialValue: item.courier ?? "")
-        self._hasDueDate = State(initialValue: item.dueAt != nil)
-        self._dueDate = State(initialValue: item.dueAt ?? (Calendar.current.date(byAdding: .hour, value: 2, to: .now) ?? .now))
+        let initialSchedule = item.schedule
+        self._hasDueDate = State(initialValue: initialSchedule.mode != .none)
+        self._dueDate = State(initialValue: initialSchedule.endAt)
+        self._isTimeRange = State(initialValue: initialSchedule.mode == .range)
+        self._startDate = State(initialValue: initialSchedule.startAt)
+        self._isAllDay = State(initialValue: initialSchedule.isAllDay)
+        self._recurrenceMode = State(initialValue: initialSchedule.recurrence.mode)
+        self._selectedWeekdays = State(initialValue: Set(initialSchedule.recurrence.normalizedWeekdays))
+        self._selectedMonthDays = State(initialValue: Set(initialSchedule.recurrence.normalizedMonthDays))
+        self._hasRecurrenceEnd = State(initialValue: initialSchedule.recurrence.endAt != nil)
+        self._recurrenceEndDate = State(initialValue: initialSchedule.recurrence.endAt
+                                        ?? (Calendar.current.date(byAdding: .month, value: 3, to: .now) ?? .now))
         self._remindBeforeMinutes = State(initialValue: [0, 5, 60, 1440].contains(item.remindBeforeMinutes) ? item.remindBeforeMinutes : -1)
         self._customRemindBeforeMinutes = State(initialValue: max(1, item.remindBeforeMinutes))
         let rule = item.recurrenceRule
@@ -77,6 +97,99 @@ struct EditTodoSheet: View {
     }
 
     @State private var currentTags: [String] = []
+
+    // MARK: - 结构化日程表单辅助（与 AddTodoSheet 同构）
+
+    private var timeForm: Binding<TodoTimeMode> {
+        Binding(
+            get: { hasDueDate ? (isTimeRange ? .range : .point) : .none },
+            set: { form in
+                switch form {
+                case .none:
+                    hasDueDate = false
+                    isTimeRange = false
+                case .point:
+                    hasDueDate = true
+                    isTimeRange = false
+                case .range:
+                    hasDueDate = true
+                    isTimeRange = true
+                    if startDate >= dueDate {
+                        startDate = Calendar.current.date(byAdding: .hour, value: -1, to: dueDate) ?? dueDate
+                    }
+                }
+            }
+        )
+    }
+
+    private var currentSchedule: TodoSchedule {
+        TodoSchedule(
+            mode: hasDueDate ? (isTimeRange ? .range : .point) : .none,
+            startAt: isTimeRange ? startDate : dueDate,
+            endAt: dueDate,
+            isAllDay: isAllDay,
+            recurrence: TodoRecurrenceConfig(
+                rule: recurrenceRule,
+                customDays: customIntervalDays,
+                mode: recurrenceMode,
+                weekdays: Array(selectedWeekdays),
+                monthDays: Array(selectedMonthDays),
+                endAt: hasRecurrenceEnd && recurrenceRule != .none ? recurrenceEndDate : nil
+            )
+        )
+    }
+
+    private var orderedWeekdays: [Int] { [2, 3, 4, 5, 6, 7, 1] }
+
+    private func weekdayLabel(_ weekday: Int) -> String {
+        let symbols = Calendar.current.veryShortWeekdaySymbols
+        let index = weekday - 1
+        return symbols.indices.contains(index) ? symbols[index] : "\(weekday)"
+    }
+
+    private func weekdayFullLabel(_ weekday: Int) -> String {
+        let symbols = Calendar.current.weekdaySymbols
+        let index = weekday - 1
+        return symbols.indices.contains(index) ? symbols[index] : "\(weekday)"
+    }
+
+    private var quickMonthDays: [Int] { [1, 5, 10, 15, 20, 25, -1] }
+
+    private func monthDayLabel(_ day: Int) -> String {
+        day == -1 ? L10n.tr("月末") : "\(day)"
+    }
+
+    private var showsWeekdayAnchor: Bool {
+        recurrenceMode == .calendarAnchor && (recurrenceRule == .weekly || recurrenceRule == .biweekly)
+    }
+
+    private var showsMonthDayAnchor: Bool {
+        recurrenceMode == .calendarAnchor && recurrenceRule == .monthly
+    }
+
+    private func toggleWeekday(_ weekday: Int) {
+        if selectedWeekdays.contains(weekday) { selectedWeekdays.remove(weekday) }
+        else { selectedWeekdays.insert(weekday) }
+    }
+
+    private func toggleMonthDay(_ day: Int) {
+        if selectedMonthDays.contains(day) { selectedMonthDays.remove(day) }
+        else { selectedMonthDays.insert(day) }
+    }
+
+    private var recurrenceHint: String {
+        guard recurrenceRule != .none else { return "" }
+        if recurrenceMode == .calendarAnchor {
+            if showsWeekdayAnchor && selectedWeekdays.isEmpty {
+                return L10n.tr("还没选星期几，将按完成后顺延处理")
+            }
+            if showsMonthDayAnchor && selectedMonthDays.isEmpty {
+                return L10n.tr("还没选日期，将按完成后顺延处理")
+            }
+            return L10n.tr("按日历固定日期重复，不随完成时间漂移")
+        }
+        return L10n.tr("完成此待办后，按间隔自动生成下一期")
+    }
 
     var body: some View {
         NavigationStack {
@@ -376,14 +489,32 @@ struct EditTodoSheet: View {
                         .lineLimit(2...5)
                 }
 
-                // 4. 提醒时间与重复周期
-                Section("提醒与时间") {
-                    Toggle("设置截止/提醒时间", isOn: $hasDueDate)
-                        .onChange(of: hasDueDate) { _, enabled in
-                            if enabled { Task { await NotificationService.requestAuthorization() } }
-                        }
+                // 4. 什么时候：与新建页同一套时间形态，旧待办自动回填为「某个时间点」
+                Section(L10n.tr("什么时候")) {
+                    Picker(L10n.tr("时间形态"), selection: timeForm) {
+                        Text(L10n.tr("不设时间")).tag(TodoTimeMode.none)
+                        Text(L10n.tr("某个时间点")).tag(TodoTimeMode.point)
+                        Text(L10n.tr("时间段")).tag(TodoTimeMode.range)
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: hasDueDate) { _, enabled in
+                        if enabled { Task { await NotificationService.requestAuthorization() } }
+                    }
+
                     if hasDueDate {
-                        DatePicker("截止时间", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                        Toggle(L10n.tr("全天"), isOn: $isAllDay)
+                        let components: DatePickerComponents = isAllDay ? [.date] : [.date, .hourAndMinute]
+                        if isTimeRange {
+                            DatePicker(L10n.tr("开始"), selection: $startDate, displayedComponents: components)
+                            DatePicker(L10n.tr("结束"), selection: $dueDate, displayedComponents: components)
+                            if startDate >= dueDate {
+                                Text(L10n.tr("开始需早于结束，保存时会自动调整"))
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                            }
+                        } else {
+                            DatePicker(L10n.tr("截止"), selection: $dueDate, displayedComponents: components)
+                        }
                         Picker("提前提醒", selection: $remindBeforeMinutes) {
                             Text("到期时").tag(0)
                             Text("提前 5 分钟").tag(5)
@@ -404,7 +535,10 @@ struct EditTodoSheet: View {
                                 }
                             }
                     }
+                }
 
+                // 5. 重复吗：完成后顺延 / 按日历固定二选一，锚点真正驱动下一期
+                Section(L10n.tr("重复吗")) {
                     Picker("重复周期", selection: $recurrenceRule) {
                         ForEach(TodoRecurrenceRule.allCases) { rule in
                             Label(L10n.tr(rule.rawValue), systemImage: rule.icon).tag(rule)
@@ -416,7 +550,80 @@ struct EditTodoSheet: View {
                     }
 
                     if recurrenceRule != .none {
-                        Text("当标记为此事项完成时，系统将自动按「\(recurrenceRule.displayLabel(customDays: customIntervalDays))」生成下一期事项。")
+                        Picker(L10n.tr("重复方式"), selection: $recurrenceMode) {
+                            Text(L10n.tr("完成后顺延")).tag(TodoRecurrenceMode.afterCompletion)
+                            Text(L10n.tr("按日历固定")).tag(TodoRecurrenceMode.calendarAnchor)
+                        }
+                        .pickerStyle(.segmented)
+
+                        if showsWeekdayAnchor {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(L10n.tr("选择星期几"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                HStack(spacing: 5) {
+                                    ForEach(orderedWeekdays, id: \.self) { weekday in
+                                        Button { toggleWeekday(weekday) } label: {
+                                            Text(weekdayLabel(weekday))
+                                                .font(.caption.bold())
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 7)
+                                                .background(selectedWeekdays.contains(weekday)
+                                                            ? Color.accentColor : Color(.tertiarySystemFill))
+                                                .foregroundStyle(selectedWeekdays.contains(weekday) ? Color.white : Color.primary)
+                                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel(weekdayFullLabel(weekday))
+                                        .accessibilityAddTraits(selectedWeekdays.contains(weekday) ? .isSelected : [])
+                                    }
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+
+                        if showsMonthDayAnchor {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(L10n.tr("选择每月几号"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 5), count: 7), spacing: 5) {
+                                    ForEach(quickMonthDays, id: \.self) { day in
+                                        Button { toggleMonthDay(day) } label: {
+                                            Text(monthDayLabel(day))
+                                                .font(.caption.bold())
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 7)
+                                                .background(selectedMonthDays.contains(day)
+                                                            ? Color.accentColor : Color(.tertiarySystemFill))
+                                                .foregroundStyle(selectedMonthDays.contains(day) ? Color.white : Color.primary)
+                                                .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip))
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                Menu(L10n.tr("更多日期")) {
+                                    ForEach(1...31, id: \.self) { day in
+                                        Button { toggleMonthDay(day) } label: {
+                                            if selectedMonthDays.contains(day) {
+                                                Label("\(day) 日", systemImage: "checkmark")
+                                            } else {
+                                                Text("\(day) 日")
+                                            }
+                                        }
+                                    }
+                                }
+                                .font(.caption)
+                            }
+                            .padding(.vertical, 2)
+                        }
+
+                        Toggle(L10n.tr("设置结束日期"), isOn: $hasRecurrenceEnd)
+                        if hasRecurrenceEnd {
+                            DatePicker(L10n.tr("重复截止"), selection: $recurrenceEndDate, displayedComponents: [.date])
+                        }
+
+                        Text(recurrenceHint)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -603,11 +810,11 @@ struct EditTodoSheet: View {
         item.station = trimmedStation.isEmpty ? nil : trimmedStation
         item.location = trimmedStation.isEmpty ? nil : trimmedStation
         item.courier = courier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : courier.trimmingCharacters(in: .whitespacesAndNewlines)
-        item.dueAt = hasDueDate ? dueDate : nil
+        // 唯一写入口：结构化日程与 dueAt / 重复规则散字段一次性同步，
+        // 避免编辑页改了时间段却没更新通知读的截止时间。
+        item.applySchedule(currentSchedule)
         item.remindBeforeMinutes = hasDueDate ? (remindBeforeMinutes == -1 ? customRemindBeforeMinutes : remindBeforeMinutes) : 0
         item.reminderOverrideAt = nil
-        item.recurrenceRule = recurrenceRule
-        item.recurrenceIntervalDays = recurrenceRule == .custom ? customIntervalDays : recurrenceRule.dayInterval(customDays: customIntervalDays)
         item.qrCodePayload = qrCodePayload
         item.qrCodeImageData = qrCodeImageData
         item.attachmentImageData = attachmentImageData
@@ -629,7 +836,8 @@ struct EditTodoSheet: View {
 
         if syncToCalendar && hasDueDate {
             let calTitle = title
-            let calStart = dueDate
+            // 时间段事项写入系统日历时以「开始」为事件起点，而不是段末截止时间
+            let calStart = isTimeRange ? startDate : dueDate
             let calDetail = detail.isEmpty ? nil : detail
             let calLoc = station.isEmpty ? nil : station
             let existingCalID = item.calendarItemIdentifier

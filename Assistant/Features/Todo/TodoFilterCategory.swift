@@ -14,6 +14,17 @@ enum TodoFilterCategory: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
 
+    /// 新建页「归到哪」的分组。10 个中文标签塞进 segmented 会被压成不可读的小字，
+    /// 改为「常用 + 更多」两层菜单；筛选用的 `.all` 与维度化的 `.recurring` 归到「更多」，
+    /// 保证已有分类一个不丢、用户也不会被一排选项糊脸。
+    static var commonCreationCases: [TodoFilterCategory] {
+        [.general, .work, .life, .parcel]
+    }
+
+    static var moreCreationCases: [TodoFilterCategory] {
+        [.alert, .parenting, .pet, .other, .recurring, .all]
+    }
+
     init?(rawValue: String) {
         switch rawValue {
         case "全部": self = .all
