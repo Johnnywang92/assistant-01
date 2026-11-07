@@ -534,10 +534,16 @@ struct OmniboxView: View {
 
             // 意图把握度：模型分不清时明说，而不是照样给用户一个看着很确定的错误动作。
             // 这是判别层相对生成式路径最实际的用户可感知收益。
-            if planNeedsClarification, let text = planIntentReason {
-                Text(L10n.tr("不太确定你要做什么（\(text)），请核对下方参数后再执行。"))
-                    .font(.caption2)
+            if planNeedsClarification {
+                Text(L10n.tr("没看懂这条，帮我选一下"))
+                    .font(.subheadline.bold())
                     .foregroundStyle(.orange)
+                // 概率只作为判别依据留一行小字，不再当主文案吓人 / 误导用户
+                if let text = planIntentReason {
+                    Text(text)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             // 按可能性排序的意图候选：点选切换即按该意图重新拆解并预填写。
@@ -573,11 +579,22 @@ struct OmniboxView: View {
                 }
             }
 
+            if planNeedsClarification {
+                clarificationAssistSection
+            }
+
             ForEach(actions) { action in
                 actionCard(actionBinding(for: action))
             }
 
-            judgmentFeedbackBar
+            // 已经明说「没看懂」时再问「理解准确吗」没有意义，改成一句如实说明
+            if planNeedsClarification {
+                Text(L10n.tr("已记录这次没读懂，用来改进识别"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                judgmentFeedbackBar
+            }
 
             if let errorMessage {
                 Text(errorMessage)
@@ -589,16 +606,16 @@ struct OmniboxView: View {
                 executeSelected()
             } label: {
                 Label(
-                    L10n.tr("执行所选 %d 项".replacingOccurrences(of: "%d", with: "\(selectedCount)")),
-                    systemImage: "checkmark.seal.fill"
+                    primaryButtonTitle,
+                    systemImage: saveRawOnly ? "tray.and.arrow.down" : "checkmark.seal.fill"
                 )
                 .font(.subheadline.bold())
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
             }
             .buttonStyle(.borderedProminent)
-            .tint(.green)
-            .disabled(selectedCount == 0)
+            .tint(saveRawOnly ? .purple : .green)
+            .disabled(selectedCount == 0 && !planNeedsClarification)
         }
         .padding(14)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
@@ -612,6 +629,114 @@ struct OmniboxView: View {
     }
 
     private var selectedCount: Int { actions.filter(\.isSelected).count }
+
+    /// 低置信且没有任何猜测动作被勾选：主按钮退化成安全的「只存原文」。
+    /// 旧版这里是一个永远点不动的「执行所选 0 项」，用户既不能确认也不能退出。
+    private var saveRawOnly: Bool { planNeedsClarification && selectedCount == 0 }
+
+    private var primaryButtonTitle: String {
+        saveRawOnly
+            ? L10n.tr("仅保存原文")
+            : L10n.tr("执行所选 %d 项".replacingOccurrences(of: "%d", with: "\(selectedCount)"))
+    }
+
+    /// 本次投喂的原始文本（图片除外），用于「只存原文」时不丢任何内容。
+    private var rawInputText: String {
+        let captured = lastCapture?.payloads.compactMap { payload -> String? in
+            switch payload {
+            case .text(let t), .audioTranscript(let t): return t
+            case .image: return nil
+            }
+        }.joined(separator: "\n") ?? ""
+        return captured.isEmpty ? inputText : captured
+    }
+
+    // MARK: - 低置信时的人工辅助
+
+    /// 判别层说「没看懂」时的三个出口。
+    /// 关键是主按钮永不置灰，且默认动作是「只存原文」——不执行任何猜测结果。
+    private var clarificationAssistSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L10n.tr("原文不会丢，稍后可以在收集箱里再处理"))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Menu {
+                    ForEach(OmniboxCapability.allCases, id: \.self) { cap in
+                        Button {
+                            chooseClarificationCapability(cap)
+                        } label: {
+                            Label(cap.displayName, systemImage: cap.systemImage)
+                        }
+                    }
+                } label: {
+                    Label(L10n.tr("换个类别"), systemImage: "arrow.triangle.branch")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(Color.purple.opacity(0.12)))
+                }
+
+                Button {
+                    keepRawOnly()
+                } label: {
+                    Label(L10n.tr("只存原文"), systemImage: "tray.and.arrow.down")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(Color(.tertiarySystemFill)))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    editCurrentAction()
+                } label: {
+                    Label(L10n.tr("自己改"), systemImage: "pencil")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(Color(.tertiarySystemFill)))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text(L10n.tr("选完类别会重新拆解，清掉上一类残留的参数"))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(
+            Color(.tertiarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
+        )
+    }
+
+    /// 换类别必须走完整 `runPlan`：只改 capability 不重抽参数会留下
+    /// 「丰巢快递取件 + category=纪念日」这种残留字段。
+    private func chooseClarificationCapability(_ cap: OmniboxCapability) {
+        cancelClipboardDismiss()
+        if let label = OmniboxIntentLabel.allCases.first(where: { $0.capability == cap }) {
+            recordIntentCorrection(to: label)
+        }
+        forcedCapability = cap
+        Task { await runPlan(force: true, forcedCapability: cap) }
+    }
+
+    /// 清掉所有猜测动作的勾选后执行：`executeSelected` 会把原文存进收集箱。
+    private func keepRawOnly() {
+        cancelClipboardDismiss()
+        for index in actions.indices { actions[index].isSelected = false }
+        executeSelected()
+    }
+
+    /// 用户愿意自己改参数：重新勾选第一条动作，字段编辑本来就在下方卡片里。
+    private func editCurrentAction() {
+        cancelClipboardDismiss()
+        guard !actions.isEmpty else { return }
+        actions[0].isSelected = true
+        Haptic.selection()
+    }
 
     // MARK: - 判断反馈（点赞/点踩）
 
@@ -1603,8 +1728,22 @@ struct OmniboxView: View {
     private func executeSelected() {
         cancelCountdown()
         cancelClipboardDismiss()
-        let selected = actions.filter(\.isSelected)
-        guard !selected.isEmpty else { return }
+        var selected = actions.filter(\.isSelected)
+        if selected.isEmpty {
+            // 低置信且用户没勾选任何猜测动作：只把原文存进收集箱，
+            // 绝不执行判别层硬猜出来的结果（这正是「执行所选 0 项」死路的出口）。
+            guard planNeedsClarification else { return }
+            let raw = rawInputText
+            let memo = PlannedAction(
+                capability: .memoInbox,
+                params: ["memo": raw],
+                confidence: 0.95,
+                isSelected: true,
+                summary: String(raw.prefix(20))
+            )
+            actions = [memo]
+            selected = [memo]
+        }
         clipboardDidExecute = true
         Haptic.success()
         dismissKeyboard()

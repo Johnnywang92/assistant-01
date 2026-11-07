@@ -126,6 +126,24 @@ struct OmniboxPlanner {
             return PlanResult(actions: [], engine: "rules", normalizedText: "")
         }
 
+        // 1.4 结构化短信直通：取件码这类明文信号由本机规则识别，不再交给 16 类
+        //     概率判别——标签集里没有「快递取件」，模型只能把短信硬套成纪念日。
+        //     用户显式点选意图、或输入带图片时不劫持，尊重用户指定与图片结构化结果。
+        if forcedCapability == nil,
+           imageDatas.isEmpty,
+           structuredActions.isEmpty,
+           case .parcel(let drafts) = StructuredCaptureRouter.route(userRawText) {
+            let parcelActions = drafts.map { Self.parcelAction(from: $0) }
+            return PlanResult(
+                actions: IntentConfidenceCalibrator.applySelectionPolicy(parcelActions),
+                engine: "rules",
+                normalizedText: normalizedText,
+                intentDistribution: nil,
+                needsClarification: false,
+                forcedCapability: nil
+            )
+        }
+
         // 1.5 大模型决策输出分流（缺口 6）：长文带「行动待办」结构的粘贴内容不再走
         //     16 类意图判别（会被误判成收集箱备忘），直接复用人生大事的导入解析器拆行动项。
         //     用户显式点选意图时不劫持——尊重用户指定。分流在判别层之前，分布为 nil。
@@ -212,6 +230,38 @@ struct OmniboxPlanner {
             normalizedText: normalizedText,
             needsClarification: disputedInput,
             forcedCapability: forcedCapability
+        )
+    }
+
+    // MARK: - 快递短信直通 → 动作
+
+    /// Core 只产出纯事实草稿；`TodoType` 这类 App 模型枚举的映射留在这里，
+    /// 保持「Core 持规则、App 持模型映射」的边界。
+    ///
+    /// 参数键与 `TodoCapabilityProvider.executeCreate` 严格一致：
+    /// `pickupCode / station / location / typeRaw / sourceText` 都是 `.nonModel` 字段，
+    /// 本来就是给票务 / OCR / 分享管线注入用的确定性通道。
+    private static func parcelAction(from draft: StructuredCaptureRouter.ParcelDraft) -> PlannedAction {
+        var params: [String: String] = [
+            "title": draft.title,
+            "pickupCode": draft.pickupCode,
+            "typeRaw": TodoType.parcel.rawValue,
+            "sourceText": draft.sourceText
+        ]
+        if let location = draft.location, !location.isEmpty {
+            params["detail"] = location
+            params["location"] = location
+        }
+        if let station = draft.station, !station.isEmpty {
+            params["station"] = station
+        }
+        return PlannedAction(
+            capability: .todoCreate,
+            params: params,
+            confidence: 0.95,
+            confidenceReason: L10n.tr("快递取件短信 · 本机规则识别"),
+            isSelected: true,
+            summary: Self.summary(for: .todoCreate, params: params)
         )
     }
 
@@ -322,7 +372,7 @@ struct OmniboxPlanner {
         var baseUserContent = "今天是\(dateText) \(weekdayText)。\n输入：\n\(text)"
         if let forcedCapability {
             baseUserContent += "\n（用户明确选择意图：「\(forcedCapability.displayName)」，请只抽取该类动作）"
-        } else if let hint = intentHint, hint.top != nil {
+        } else if let hint = intentHint, hint.top != nil, !hint.needsClarification {
             baseUserContent += "\n（意图判别结果：\(hint.reasonText)，请据此抽取参数）"
         }
 
@@ -381,7 +431,12 @@ struct OmniboxPlanner {
             return Self.basePrompt(schema: schema, narrowed: [forcedCapability], hint: intentHint, forced: true)
         }
 
-        guard let hint = intentHint, let top = hint.top, hint.topProbability >= 0.4 else {
+        // 判别层自己说「需要澄清」时绝不收窄：过去只看 0.4 这一道门槛，
+        // 出现「界面对用户显示不太确定，提示词却锁死在最可能的错类上」的矛盾，
+        // 模型只能把输入硬套成那一类（丰巢短信被填成纪念日即是此因）。
+        guard let hint = intentHint, let top = hint.top,
+              hint.topProbability >= 0.4,
+              !hint.needsClarification else {
             return Self.basePrompt(schema: schema)
         }
 
