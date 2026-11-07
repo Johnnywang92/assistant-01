@@ -308,7 +308,11 @@ public final class LocationReminderService: NSObject, ObservableObject, CLLocati
                 content: content,
                 trigger: nil
             )
-            try? await UNUserNotificationCenter.current().add(req)
+            do {
+                try await UNUserNotificationCenter.current().add(req)
+            } catch {
+                print("⚠️ [LocationReminder] 驿站到达提醒投递失败：\(error.localizedDescription)")
+            }
         }
     }
 }

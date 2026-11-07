@@ -1678,29 +1678,190 @@ final class PeriodicReportManager: ObservableObject {
     /// 所以 identifier 带日期后缀，重排时必须能按前缀整体清掉。
     private static let notificationPrefix = "periodic-report-"
 
-    /// 统一注册所有已开启报告的本地通知日程。
+    /// 报告通知的交互分类（由 `NotificationCategoryRegistry` 统一注册）。
+    static let notificationCategoryIdentifier = "PERIODIC_REPORT"
+    static let viewReportActionIdentifier = "PERIODIC_REPORT_VIEW"
+
+    /// 一次性触发器的滚动窗口长度。
     ///
-    /// 幂等：每次调用都先清空本模块的全部待处理通知，再按当前开关重新注册。
-    /// 依赖 App 每次进入前台的巡检（`AssistantApp` → `performForegroundAudit`）
-    /// 来保持一次性触发器的滚动窗口始终覆盖未来。
+    /// iOS 单 App 只保留 64 条待处理通知，而报告是全模块里日期最远的一批。
+    /// 原来 12 + 8 + 3 = 23 条远期通知会长期占名额，叠加待办（最多 60 条）、
+    /// 服药、睡眠、到站后很容易顶满上限，超出的 `add` 静默失败且无重试。
+    /// 这里只保留「够用」的余量，靠 `AssistantApp` 的前台巡检滚动向后补充：
+    /// 用户只要打开过 App，窗口就会重新铺满。
+    private static let monthEndHorizon = 6
+    private static let quarterEndHorizon = 4
+    private static let yearEndHorizon = 2
+
+    /// 报告通知的交互式分类：锁屏 / 通知中心给一个明确的「查看报告」动作。
+    ///
+    /// 点击正文与点击该动作都会带 `type = periodic-report`，统一走
+    /// `NavigationRouter` 的同一分支，无需额外的 action 分支。
+    @MainActor
+    static func makeNotificationCategory() -> UNNotificationCategory {
+        let viewAction = UNNotificationAction(
+            identifier: viewReportActionIdentifier,
+            title: L10n.choose("查看报告", "View Report"),
+            options: [.foreground],
+            icon: UNNotificationActionIcon(systemImageName: "chart.bar.doc.horizontal")
+        )
+        return UNNotificationCategory(
+            identifier: notificationCategoryIdentifier,
+            actions: [viewAction],
+            intentIdentifiers: [],
+            options: []
+        )
+    }
+
+    // MARK: - 合并式重排（串行，杜绝全删全加的竞态）
+
+    /// 正在执行的重排任务；对它的读写都在主线程，天然串行。
+    @MainActor private var rescheduleTask: Task<Void, Never>?
+    /// 重排期间又来了设置变更 → 结束后再补一轮，保证最终用的是最新配置。
+    @MainActor private var needsAnotherPass = false
+
+    /// 同步入口：`@AppStorage` 的 `didSet`、设置页「完成」、前台巡检都调它。
+    ///
+    /// 不能在这里直接做系统读写：旧实现用 `getPendingNotificationRequests` 的
+    /// **异步回调**清空、紧接着同步 `add`，两者没有顺序保证；日报 / 周报是固定
+    /// identifier，旧请求必然落在待删清单里，remove 一旦晚于 add，刚排好的新通知
+    /// 就会被一起删掉 —— 表现为「改过推送时间后就再也不响」。
+    ///
+    /// DatePicker 拖动会连续触发 didSet，所以这里只做合并排队，**不取消**正在
+    /// 写入的任务（取消会留下半套排期）；任务结束后若发现期间有新变更，再跑一轮。
     func scheduleNotifications() {
+        Task { @MainActor in
+            self.enqueueReschedule()
+        }
+    }
+
+    @MainActor
+    private func enqueueReschedule() {
+        if rescheduleTask != nil {
+            needsAnotherPass = true
+            return
+        }
+        rescheduleTask = Task { @MainActor [weak self] in
+            defer { self?.rescheduleTask = nil }
+            while !Task.isCancelled {
+                guard let self else { break }
+                self.needsAnotherPass = false
+                await self.rebuildReportNotifications()
+                guard self.needsAnotherPass else { break }
+            }
+        }
+    }
+
+    /// 前台巡检专用：等本轮重排真正结束再返回。
+    ///
+    /// 同步壳是 fire-and-forget，若巡检直接调它，`runIfDue` 会在系统读写还没
+    /// 做完时就记下本次执行时间；切后台还可能把排期挂起。这里复用同一条串行
+    /// 队列并等待完成，节流记账才反映真实结束时刻。
+    @MainActor
+    func scheduleNotificationsAndWait() async {
+        enqueueReschedule()
+        await rescheduleTask?.value
+    }
+
+    /// 一次完整重排：授权 → 读存量 → 算期望 → 过预算 → 先删 → 逐条注册。
+    /// 全链路 `await` 顺序执行，且整条链路上同时只有一个重排任务在跑。
+    @MainActor
+    private func rebuildReportNotifications() async {
         let center = UNUserNotificationCenter.current()
 
-        // 移除现存旧定时通知。
-        // 不能只按固定 identifier 删——枚举出来的一次性触发器带日期后缀，
-        // 漏删会让「改开关后旧通知仍然会响」。
-        // prefix 先取到局部：回调闭包是 nonisolated，不能直接引用主演员隔离的静态属性。
-        let prefix = Self.notificationPrefix
-        center.getPendingNotificationRequests { requests in
-            let stale = requests
+        // 1. 自己确认授权，不再依赖待办对账顺带请求。
+        //    首启前台巡检的顺序是「报告排期 → 待办对账」，旧实现在授权前就 add 了。
+        let settings = await center.notificationSettings()
+        switch settings.authorizationStatus {
+        case .notDetermined:
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                guard granted else {
+                    print("⚠️ [ReportNotifications] 用户未授予通知权限，本轮不排期")
+                    return
+                }
+            } catch {
+                print("⚠️ [ReportNotifications] 请求通知授权失败：\(error)")
+                return
+            }
+        case .denied:
+            // 权限被关掉时清掉本模块残留，避免日后重新授权时旧时间点突然弹出。
+            let stale = await center.pendingNotificationRequests()
                 .map(\.identifier)
-                .filter { $0.hasPrefix(prefix) }
+                .filter { $0.hasPrefix(Self.notificationPrefix) }
             if !stale.isEmpty {
                 center.removePendingNotificationRequests(withIdentifiers: stale)
             }
+            print("⚠️ [ReportNotifications] 通知权限被拒绝，已清空报告排期")
+            return
+        default:
+            break
         }
 
+        // 2. 先读全量存量，再删、再加 —— 顺序化的关键。
+        let pending = await center.pendingNotificationRequests()
+        let now = Date.now
+
+        // 3. 本轮期望的请求（纯构造，不碰系统）。
+        let desired = makeDesiredRequests(now: now)
+        var expected: [String: UNNotificationRequest] = [:]
+        for request in desired { expected[request.identifier] = request }
+
+        // 4. 差量对账：只撤「已停用 / 内容变化」的，只加「缺失 / 内容变化」的。
+        //    日报 / 周报是固定 identifier 的重复触发器，内容没变时原样保留。
+        //    全删全加会让它们每 30 分钟被撤一次；一旦某轮 add 失败或被预算拒绝，
+        //    就变成「旧的删了、新的没排上」，比修复前更容易丢通知。
+        //    与 TodoNotificationManager / HabitAndMedicationScheduler 同一口径。
+        let existing = pending.filter { $0.identifier.hasPrefix(Self.notificationPrefix) }
+        var staleIDs = Set<String>()
+        var toAdd: [UNNotificationRequest] = []
+        for request in existing {
+            guard let want = expected[request.identifier] else {
+                staleIDs.insert(request.identifier)  // 开关已关 / 该月已过
+                continue
+            }
+            if NotificationBudget.fingerprint(of: request) != NotificationBudget.fingerprint(of: want) {
+                staleIDs.insert(request.identifier)
+                toAdd.append(want)
+            }
+        }
+        let existingIDs = Set(existing.map(\.identifier))
+        for (identifier, want) in expected where !existingIDs.contains(identifier) {
+            toAdd.append(want)
+        }
+
+        // 5. 统一过预算。已列为待删的存量不再占名额，否则会误裁其它模块的通知。
+        let admission = NotificationBudget.admit(
+            pending: pending.filter { !staleIDs.contains($0.identifier) },
+            requested: toAdd.map { NotificationBudget.Item(request: $0, priority: .report) },
+            source: "reportNotifications"
+        )
+
+        // 6. 先撤旧的，再逐条注册；用 async 抛错 API，失败可观测。
+        //    被预算拒绝的「替换型」请求保留旧通知：时间点可能过时，但总比没有强，
+        //    下轮前台巡检会自然重试替换。
+        let rejectedIDs = Set(admission.rejected.map { $0.request.identifier })
+        let removals = staleIDs.subtracting(rejectedIDs).union(admission.evictedIdentifiers)
+        if !removals.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: Array(removals))
+        }
+        for item in admission.accepted {
+            do {
+                try await center.add(item.request)
+            } catch {
+                print("⚠️ [ReportNotifications] 注册失败 \(item.request.identifier)：\(error)")
+            }
+        }
+        if !admission.rejected.isEmpty {
+            print("⚠️ [ReportNotifications] 预算不足，\(admission.rejected.count) 条未排期，下轮前台巡检重试")
+        }
+    }
+
+    /// 按当前开关构造本轮应有的全部通知请求（纯计算，无系统调用）。
+    private func makeDesiredRequests(now: Date) -> [UNNotificationRequest] {
         let cal = Calendar.current
+        var result: [UNNotificationRequest] = []
+        result.reserveCapacity(Self.monthEndHorizon + Self.quarterEndHorizon + Self.yearEndHorizon + 2)
 
         // 1. 日报定时通知（默认开启）
         if isDailyReportEnabled {
@@ -1715,12 +1876,11 @@ final class PeriodicReportManager: ObservableObject {
             content.title = L10n.tr("📊 今日生活日报已生成")
             content.body = L10n.tr("今日待办完成情况与消费账单已复盘完毕，点击查看今日专属总结。")
             content.sound = .default
-            content.categoryIdentifier = "PERIODIC_REPORT"
+            content.categoryIdentifier = Self.notificationCategoryIdentifier
             content.userInfo = ["type": "periodic-report", "period": "daily"]
 
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComps, repeats: true)
-            let req = UNNotificationRequest(identifier: "periodic-report-daily", content: content, trigger: trigger)
-            center.add(req)
+            result.append(UNNotificationRequest(identifier: "periodic-report-daily", content: content, trigger: trigger))
         }
 
         // 2. 周报定时通知（每周固定星期几）
@@ -1737,12 +1897,11 @@ final class PeriodicReportManager: ObservableObject {
             content.title = L10n.tr("📈 本周复盘周报已出炉")
             content.body = L10n.tr("回溯本周目标达成、支出趋势与下周计划，保持节奏迎接新一周！")
             content.sound = .default
-            content.categoryIdentifier = "PERIODIC_REPORT"
+            content.categoryIdentifier = Self.notificationCategoryIdentifier
             content.userInfo = ["type": "periodic-report", "period": "weekly"]
 
             let trigger = UNCalendarNotificationTrigger(dateMatching: dateComps, repeats: true)
-            let req = UNNotificationRequest(identifier: "periodic-report-weekly", content: content, trigger: trigger)
-            center.add(req)
+            result.append(UNNotificationRequest(identifier: "periodic-report-weekly", content: content, trigger: trigger))
         }
 
         // 3. 月报定时通知（每月最后一天）
@@ -1750,7 +1909,7 @@ final class PeriodicReportManager: ObservableObject {
         // 为什么不能直接用 `dateComps.day = 31` 的重复触发器：
         // UNCalendarNotificationTrigger 在「当月没有这一天」时**静默不触发**——
         // 2 月、4 月、6 月、9 月、11 月的月报会直接消失，且没有任何报错。
-        // 所以这里枚举未来 12 个「真实月末日」，各自注册一个一次性触发器。
+        // 所以这里枚举未来若干个「真实月末日」，各自注册一个一次性触发器。
         if isMonthlyReportEnabled {
             let h = cal.component(.hour, from: monthlyTime)
             let m = cal.component(.minute, from: monthlyTime)
@@ -1759,27 +1918,25 @@ final class PeriodicReportManager: ObservableObject {
             content.title = L10n.tr("📅 月度生活成果月报已生成")
             content.body = L10n.tr("全月生活资产与支出账单结构大盘点，点击开启本月新展望。")
             content.sound = .default
-            content.categoryIdentifier = "PERIODIC_REPORT"
+            content.categoryIdentifier = Self.notificationCategoryIdentifier
             content.userInfo = ["type": "periodic-report", "period": "monthly"]
 
-            // 枚举未来 12 个月末（含本月月末）。只注册尚未过去的那些。
-            let monthEnds = ReportPeriodWindow.upcomingMonthEnds(from: .now, count: 12, calendar: cal)
+            let monthEnds = ReportPeriodWindow.upcomingMonthEnds(from: now, count: Self.monthEndHorizon, calendar: cal)
             for day in monthEnds {
                 guard let fireDate = cal.date(bySettingHour: h, minute: m, second: 0, of: day),
-                      fireDate > .now else { continue }
+                      fireDate > now else { continue }
                 var comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
                 comps.second = nil
                 let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
                 let identifier = "periodic-report-monthly-\(cal.component(.year, from: fireDate))-\(cal.component(.month, from: fireDate))"
-                let req = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
-                center.add(req)
+                result.append(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
             }
         }
 
         // 4. 季报定时通知（每季度最后一天）
         //
         // 同样不能依赖固定 day——季末可能是 3/31、6/30、9/30 或 12/31，
-        // 所以枚举未来 8 个季末（两年）逐个注册。
+        // 所以枚举未来若干个季末逐个注册。
         if isQuarterlyReportEnabled {
             let h = cal.component(.hour, from: quarterlyTime)
             let m = cal.component(.minute, from: quarterlyTime)
@@ -1788,19 +1945,18 @@ final class PeriodicReportManager: ObservableObject {
             content.title = L10n.tr("🗓️ 季度深度复盘季报已生成")
             content.body = L10n.tr("回看本季度的目标达成、财务结构与习惯坚持情况，为下季度校准方向。")
             content.sound = .default
-            content.categoryIdentifier = "PERIODIC_REPORT"
+            content.categoryIdentifier = Self.notificationCategoryIdentifier
             content.userInfo = ["type": "periodic-report", "period": "quarterly"]
 
-            let quarterEnds = ReportPeriodWindow.upcomingQuarterEnds(from: .now, count: 8, calendar: cal)
+            let quarterEnds = ReportPeriodWindow.upcomingQuarterEnds(from: now, count: Self.quarterEndHorizon, calendar: cal)
             for day in quarterEnds {
                 guard let fireDate = cal.date(bySettingHour: h, minute: m, second: 0, of: day),
-                      fireDate > .now else { continue }
+                      fireDate > now else { continue }
                 var comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
                 comps.second = nil
                 let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
                 let identifier = "periodic-report-quarterly-\(cal.component(.year, from: fireDate))-\(cal.component(.month, from: fireDate))"
-                let req = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
-                center.add(req)
+                result.append(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
             }
         }
 
@@ -1813,20 +1969,21 @@ final class PeriodicReportManager: ObservableObject {
             content.title = L10n.tr("🎊 年度生活全景年报已生成")
             content.body = L10n.tr("这一年的目标、财务与健康总览回顾，值得好好读一遍。")
             content.sound = .default
-            content.categoryIdentifier = "PERIODIC_REPORT"
+            content.categoryIdentifier = Self.notificationCategoryIdentifier
             content.userInfo = ["type": "periodic-report", "period": "yearly"]
 
-            let yearEnds = ReportPeriodWindow.upcomingYearEnds(from: .now, count: 3, calendar: cal)
+            let yearEnds = ReportPeriodWindow.upcomingYearEnds(from: now, count: Self.yearEndHorizon, calendar: cal)
             for day in yearEnds {
                 guard let fireDate = cal.date(bySettingHour: h, minute: m, second: 0, of: day),
-                      fireDate > .now else { continue }
+                      fireDate > now else { continue }
                 var comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
                 comps.second = nil
                 let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
                 let identifier = "periodic-report-yearly-\(cal.component(.year, from: fireDate))"
-                let req = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
-                center.add(req)
+                result.append(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
             }
         }
+
+        return result
     }
 }

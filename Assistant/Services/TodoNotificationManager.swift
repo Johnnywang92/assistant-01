@@ -431,6 +431,17 @@ public final class TodoNotificationManager {
         }
     }
 
+    /// 前台巡检用：等通知差量对账真正结束再返回。
+    ///
+    /// 同步壳是 fire-and-forget `Task`，若统一预算裁决紧接着执行，
+    /// 它读到的 pending 会缺本轮待办刚排上的部分 —— 裁决基于不完整快照，
+    /// 而且下一轮待办又会「发现缺失」再加回来。设置页等交互入口仍用同步壳。
+    @MainActor
+    public func syncAllTodoNotificationsAndWait(context: ModelContext) async {
+        registerCategories()
+        await TodoNotificationManager.reconcileTodoNotifications(context: context)
+    }
+
     /// 待办通知差量对账（主 actor、async）。取数仍留在主 actor，不把 ModelContext 带出。
     @MainActor
     private static func reconcileTodoNotifications(context: ModelContext) async {

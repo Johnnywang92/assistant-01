@@ -87,10 +87,14 @@ struct HabitAndMedicationScheduler {
 
     /// 取消指定服药计划的所有定时推送通知
     public static func cancelMedicationReminders(for planId: UUID) {
-        let center = UNUserNotificationCenter.current()
-        center.getPendingNotificationRequests { requests in
-            let prefix = "med-\(planId.uuidString)-"
-            let stale = requests.filter { $0.identifier.hasPrefix(prefix) }.map { $0.identifier }
+        let prefix = "med-\(planId.uuidString)-"
+        // 顺序读再删：不用 `getPendingNotificationRequests` 的异步回调，
+        // 让全仓通知调度统一走一套可推理的时序（回调式清空是 SVC-06 竞态的源头）。
+        Task { @MainActor in
+            let center = UNUserNotificationCenter.current()
+            let stale = await center.pendingNotificationRequests()
+                .filter { $0.identifier.hasPrefix(prefix) }
+                .map(\.identifier)
             if !stale.isEmpty {
                 center.removePendingNotificationRequests(withIdentifiers: stale)
             }
@@ -106,14 +110,25 @@ struct HabitAndMedicationScheduler {
     /// - 只加「缺失或变化」的通知，`add` 用 async 抛错版本把失败记录到日志；
     /// - 服药是通知预算里的最高优先级：名额不足时由 `NotificationBudget` 裁掉低优先级模块。
     public func scheduleMedicationReminders() {
+        let entries = makeMedicationEntries()
+        Task { await Self.reconcileMedicationReminders(entries) }
+    }
+
+    /// 前台巡检用：await 到服药对账完成，保证统一预算裁决读到完整 pending。
+    /// 同步壳是 fire-and-forget `Task`，裁决若抢先执行会基于不完整的快照。
+    public func scheduleMedicationRemindersAndWait() async {
+        await Self.reconcileMedicationReminders(makeMedicationEntries())
+    }
+
+    /// 在主 actor 上把 SwiftData 模型快照为纯值条目：异步对账只接触 Sendable 值，
+    /// 不把 SwiftData 模型 / ModelContext 带出主 actor（上下文非 Sendable）。
+    private func makeMedicationEntries() -> [MedicationReminderEntry] {
         let descriptor = FetchDescriptor<MedicationPlan>(
             predicate: #Predicate { $0.isEnabled }
         )
-        guard let plans = try? context.fetch(descriptor) else { return }
+        guard let plans = try? context.fetch(descriptor) else { return [] }
 
-        // 在仍处于主演员隔离时把模型快照为纯值条目：异步对账只接触 Sendable 值，
-        // 不把 SwiftData 模型 / ModelContext 带出主 actor（上下文非 Sendable）。
-        let entries: [MedicationReminderEntry] = plans.flatMap { plan in
+        return plans.flatMap { plan in
             plan.dailyTimePoints.compactMap { timePoint -> MedicationReminderEntry? in
                 let parts = timePoint.split(separator: ":").compactMap { Int($0) }
                 guard parts.count == 2 else { return nil }
@@ -137,7 +152,6 @@ struct HabitAndMedicationScheduler {
                 )
             }
         }
-        Task { await Self.reconcileMedicationReminders(entries) }
     }
 
     /// 服药提醒差量对账（主 actor、async）。只做集合差，不改文案 / 触发时间 / 业务语义。

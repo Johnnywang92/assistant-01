@@ -209,7 +209,7 @@ private final class ForegroundAuditCoordinator {
             let scheduler = HabitAndMedicationScheduler(context: context)
             await scheduler.evaluatePeriodicHabits()
             StartupMetrics.mark("audit.periodicHabits")
-            scheduler.scheduleMedicationReminders()
+            await scheduler.scheduleMedicationRemindersAndWait()
             StartupMetrics.mark("audit.medicationReminders")
             scheduler.ensureTodayMedicationTodos()
             StartupMetrics.mark("audit.medicationTodos")
@@ -240,17 +240,27 @@ private final class ForegroundAuditCoordinator {
             LiveActivityControlNotifications.reconcile()
             StartupMetrics.mark("audit.liveActivityReconcile")
 
-            // 6. 同步定期复盘报告通知排期（30 分钟节流）与待办通知排期（每次，内部差量对账）
+            // 6. 通知排期：报告（30 分钟节流）→ 待办 → 心理，统一走 AndWait，
+            //    保证下面第 6.6 步的全局预算裁决读到的是**完整** pending。
+            //    若这里用 fire-and-forget 同步壳，裁决会基于残缺快照，
+            //    下一轮差量对账又会把刚裁掉的通知加回来。
             await ForegroundAuditCadence.runIfDue(.reportNotifications) {
-                PeriodicReportManager.shared.scheduleNotifications()
+                await PeriodicReportManager.shared.scheduleNotificationsAndWait()
             }
             StartupMetrics.mark("audit.reportNotifications")
-            TodoNotificationManager.shared.syncAllTodoNotifications(context: context)
+            await TodoNotificationManager.shared.syncAllTodoNotificationsAndWait(context: context)
             StartupMetrics.mark("audit.todoNotifications")
 
             // 6.5 心理状态提醒排期（低分档不打扰，判定规则在 Core 的 PsychReminderPolicy）
-            PsychReminderScheduler.shared.rescheduleNotifications(context: context)
+            await PsychReminderScheduler.shared.rescheduleNotificationsAndWait(context: context)
             StartupMetrics.mark("audit.psychReminders")
+
+            // 6.6 所有通知排期结束后**只裁决一次**：各模块 admit 看到的是不同时刻的
+            //     pending 快照，彼此会互相推翻；这里读真实存量兜底，被裁的 identifier
+            //     进入抑制名单，下轮巡检不会立刻加回。第 7 步的天气 / 围栏是即时投递
+            //     或少量排期，若产生带 trigger 的通知，下一轮巡检会被本步覆盖。
+            await NotificationBudget.reconcile()
+            StartupMetrics.mark("audit.notificationBudget")
 
             self.lastCompletedAt = CFAbsoluteTimeGetCurrent()
             StartupMetrics.mark("audit.end")

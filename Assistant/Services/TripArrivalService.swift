@@ -257,7 +257,9 @@ final class TripArrivalService {
         if trigger == .motionStopped {
             content.body = L10n.tr("已检测到停车/下车，趁刚下车清点一遍随身物品。")
         }
-        center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil)) { error in
+            if let error { print("⚠️ [TripArrival] 即时清点提醒投递失败: \(error)") }
+        }
     }
 
     private func pendingItems(context: ModelContext) -> [TodoItem] {
@@ -386,11 +388,14 @@ final class TripArrivalService {
             content.sound = .default
             content.categoryIdentifier = categoryIdentifier
             content.userInfo = ["type": userInfoType, "todoId": todoId.uuidString]
-            center.add(UNNotificationRequest(
+            let snoozeRequest = UNNotificationRequest(
                 identifier: snoozeNotificationId(for: todoId),
                 content: content,
                 trigger: UNTimeIntervalNotificationTrigger(timeInterval: 10 * 60, repeats: false)
-            ))
+            )
+            center.add(snoozeRequest) { error in
+                if let error { print("⚠️ [TripArrival] 稍后提醒排期失败: \(error)") }
+            }
 
         default:
             item.arrivalCheckFiredAt = now

@@ -227,11 +227,19 @@ public final class AnniversaryReminderManager: ObservableObject {
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request)
-
-        // 记录今天已提醒的时间戳
-        var updated = notifDates
-        updated[upcoming.id] = Date.now.timeIntervalSince1970
-        UserDefaults.standard.set(updated, forKey: lastNotificationDateKey)
+        // 闭包是 @Sendable：只捕获 Sendable 值，不隐式捕获 self 或非 Sendable 的 upcoming。
+        let storageKey = lastNotificationDateKey
+        let reminderID = upcoming.id
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error {
+                print("⚠️ [Anniversary] 筹备提醒投递失败：\(error.localizedDescription)")
+                return
+            }
+            // 只有系统确认接收才落「今日已提醒」：投递失败不能留下已提醒的假状态，
+            // 否则当天不会再重试，用户只表现为「提醒没响」。
+            var updated = notifDates
+            updated[reminderID] = Date.now.timeIntervalSince1970
+            UserDefaults.standard.set(updated, forKey: storageKey)
+        }
     }
 }

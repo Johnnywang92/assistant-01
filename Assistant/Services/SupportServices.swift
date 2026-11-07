@@ -119,7 +119,9 @@ enum NotificationService {
         content.title = L10n.tr(title)
         content.body = L10n.tr(body)
         content.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil)) { error in
+            if let error { print("⚠️ [NotificationService] 即时通知投递失败：\(error.localizedDescription)") }
+        }
     }
 }
 
@@ -190,6 +192,8 @@ enum ExpiryReminder {
         content.sound = .default
         let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fireDate)
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "expiry-reminder", content: content, trigger: trigger))
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "expiry-reminder", content: content, trigger: trigger)) { error in
+            if let error { print("⚠️ [ExpiryReminder] 签名到期提醒排期失败：\(error.localizedDescription)") }
+        }
     }
 }
