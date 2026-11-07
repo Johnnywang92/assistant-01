@@ -46,14 +46,17 @@ struct NearbyInteractionSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
 
-                // 切换通道显示
-                if selectedChannel == .nearby {
-                    nearbyRadarView
-                } else {
-                    qrCodeView
+                // 切换通道显示：撑满剩余空间并让内容垂直居中。
+                // 本页为全屏呈现，若沿用半屏时的弹性 Spacer，雷达/二维码会贴顶、
+                // 中间空出一大片，改为自适应后全屏与紧凑尺寸下都保持居中。
+                Group {
+                    if selectedChannel == .nearby {
+                        nearbyRadarView
+                    } else {
+                        qrCodeView
+                    }
                 }
-
-                Spacer()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 // 底部补充交互：复制微信口令 & AirDrop .assistant 文件
                 HStack(spacing: 12) {

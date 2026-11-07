@@ -94,7 +94,7 @@ struct MainTabView: View {
             VoiceDialogueView(autoStartListening: autoStartListening)
                 .environment(\.locale, LanguageManager.shared.locale)
         }
-        .sheet(isPresented: $showScanner) {
+        .fullScreenCover(isPresented: $showScanner) {
             QRCodeScannerView(initialMode: scannerInitialMode)
                 .environment(\.locale, LanguageManager.shared.locale)
         }

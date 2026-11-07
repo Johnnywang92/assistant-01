@@ -48,6 +48,7 @@ struct PetManagementView: View {
                         Image(systemName: "plus")
                             .font(.body.bold())
                     }
+                    .iconButton("添加宠物档案")
                 }
             }
             .sheet(isPresented: $showAddPet) {

@@ -346,6 +346,7 @@ struct DepartureChecklistView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .iconButton("新增清点项")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 // 把当前清点项推上灵动岛与 Apple Watch 智能叠放，抬腕逐项确认
@@ -421,6 +422,7 @@ struct DepartureChecklistView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
                     }
+                    .iconButton("关闭提示横幅")
                     .buttonStyle(.plain)
                 }
 
@@ -552,6 +554,7 @@ struct DepartureChecklistView: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
+                .iconButton("移除这项清点内容")
                 .buttonStyle(.plain)
             }
 

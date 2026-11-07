@@ -223,6 +223,26 @@ public struct ExpenseCardShareSheet: View {
                     cardView
                         .padding(.top, 10)
 
+                    // 「附上原始单据」开关：此前 includeReceipt 没有任何绑定 UI，
+                    // 导致 shareViaSystem() 里附加原始图片那段逻辑恒不生效。
+                    if record.receiptImageData != nil {
+                        Toggle(isOn: $includeReceipt) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("附带原始单据 / 小票")
+                                    .font(.subheadline.weight(.medium))
+                                Text("系统分享时一并发送卡片与原始图片")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, AppSpacing.md)
+                        .padding(.vertical, AppSpacing.sm)
+                        .background(AppColor.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
+                        .padding(.horizontal, 24)
+                        .accessibilityHint("保存到相册只保存手账卡片，不含原始单据")
+                    }
+
                     VStack(spacing: 12) {
                         Button {
                             saveToPhotos()

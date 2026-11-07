@@ -352,7 +352,7 @@ struct TodoShareSheet: View {
             .sheet(isPresented: $showAirDropSheet, onDismiss: { airdropItems = [] }) {
                 ShareActivityView(activityItems: airdropItems)
             }
-            .sheet(item: $nearbyEnvelope) { env in
+            .fullScreenCover(item: $nearbyEnvelope) { env in
                 NearbyInteractionSheet(envelope: env)
             }
             .overlay(alignment: .bottom) {

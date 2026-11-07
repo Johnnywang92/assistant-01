@@ -81,6 +81,7 @@ struct AppLockScreen: View {
                                     .foregroundStyle(.tint)
                                     .frame(width: 76, height: 76)
                             }
+                            .iconButton("使用面容 ID 解锁")
                         } else {
                             Color.clear.frame(width: 76, height: 76)
                         }
@@ -100,6 +101,7 @@ struct AppLockScreen: View {
                                 .foregroundStyle(.primary)
                                 .frame(width: 76, height: 76)
                         }
+                        .iconButton("删除最后一位")
                     }
                 }
                 .padding(.bottom, 36)
@@ -316,6 +318,7 @@ struct SetPasscodeSheet: View {
                                 .foregroundStyle(.primary)
                                 .frame(width: 72, height: 72)
                         }
+                        .iconButton("删除最后一位")
                     }
                 }
                 .padding(.bottom, 24)

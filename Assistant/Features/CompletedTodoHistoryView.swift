@@ -277,6 +277,7 @@ struct CompletedHistoryRow: View {
                     .font(.title3)
                     .foregroundStyle(.green)
             }
+            .iconButton("恢复为未完成")
             .buttonStyle(.plain)
             .padding(.top, 2)
 
@@ -348,6 +349,7 @@ struct CompletedHistoryRow: View {
                         .foregroundStyle(.blue)
                         .clipShape(Circle())
                 }
+                .iconButton("查看票券或二维码")
                 .buttonStyle(.plain)
             }
 
@@ -389,7 +391,7 @@ struct CompletedHistoryRow: View {
                 }
             }
         }
-        .sheet(isPresented: $isShowingQRCodeSheet) {
+        .fullScreenCover(isPresented: $isShowingQRCodeSheet) {
             TodoQRCodeQuickSheet(item: item)
         }
         .sheet(isPresented: $isShowingEditSheet) {

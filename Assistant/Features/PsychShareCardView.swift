@@ -607,7 +607,7 @@ public struct PsychShareSheet: View {
                 ShareActivityView(activityItems: [renderedImage])
             }
         }
-        .sheet(isPresented: $showNearbySheet) {
+        .fullScreenCover(isPresented: $showNearbySheet) {
             NearbyInteractionSheet(envelope: emotionEnvelope)
         }
         .sheet(isPresented: $showAirDropSheet, onDismiss: { airdropItems = [] }) {

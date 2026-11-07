@@ -389,6 +389,7 @@ struct ExpenseTrackerView: View {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundStyle(.tertiary)
                                 }
+                                .iconButton("清空速记输入")
                                 .buttonStyle(.plain)
                             }
 
@@ -2647,64 +2648,6 @@ struct AddOrEditExpenseSheet: View {
 
 typealias ManualAddExpenseSheet = AddOrEditExpenseSheet
 
-/// 账单分享：默认分享文字，可选择把已保存的原始小票一起发送。
-private struct ExpenseShareView: View {
-    @Environment(\.dismiss) private var dismiss
-    let record: ExpenseRecord
-    @State private var includeReceipt = false
-    @State private var showSystemShareSheet = false
-    @State private var shareItems: [Any] = []
-
-    private var splitCount: Int { max(record.splitCount, 1) }
-    private var shareText: String {
-        let kind = record.isIncome ? "收入" : "支出"
-        var lines = ["智能记账 · \(kind)", "项目：\(record.title)", "金额：¥\(String(format: "%.2f", record.amount))", "分类：\(record.category.rawValue)", "日期：\(record.date.formatted(date: .abbreviated, time: .shortened))"]
-        if let foreignBadge = record.formattedForeignBadge {
-            let rateText = record.exchangeRateToCNY.map { String(format: "（汇率 1 %@ = %.4f CNY）", record.currency.rawValue, $0) } ?? ""
-            lines.insert("外币原额：\(foreignBadge)\(rateText)", at: 3)
-        }
-        if !record.isIncome && splitCount > 1 {
-            lines.append("AA：\(splitCount) 人，每人 ¥\(String(format: "%.2f", record.amount / Double(splitCount)))")
-            let participants = record.splitParticipants.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !participants.isEmpty {
-                lines.append("参与人：\(participants)")
-            }
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("分享内容") {
-                    Text(shareText).font(.subheadline).textSelection(.enabled)
-                    if record.receiptImageData != nil {
-                        Toggle("附上原始单据/小票", isOn: $includeReceipt)
-                    } else {
-                        Text("这笔账单没有保存原始单据").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Section {
-                    ShareLink(item: shareText, preview: SharePreview("\(record.title) · ¥\(String(format: "%.2f", record.amount))")) {
-                        Label("分享账单文字", systemImage: "doc.text")
-                    }
-                    if includeReceipt, let data = record.receiptImageData, let image = UIImage(data: data) {
-                        Button {
-                            // 由系统分享面板同时发送文字和原始图片。
-                            shareItems = [shareText, image]
-                            showSystemShareSheet = true
-                        } label: {
-                            Label("分享文字和原始单据", systemImage: "photo.on.rectangle.angled")
-                        }
-                    }
-                }
-            }
-            .navigationTitle("分享账单")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } } }
-        }
-        .sheet(isPresented: $showSystemShareSheet, onDismiss: { shareItems = [] }) {
-            ShareActivityView(activityItems: shareItems)
-        }
-    }
-}
+// 旧的 `ExpenseShareView`（纯文字分享表单）为零引用死代码，且与
+// `ExpenseCardShareSheet` 构成两份记账分享入口，已于 2026-11-06 删除。
+// 「附上原始单据」的能力统一由 ExpenseCardShareSheet 的开关承接。

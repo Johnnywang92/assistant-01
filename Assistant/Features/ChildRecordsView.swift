@@ -54,6 +54,7 @@ struct ChildRecordsView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
                 ToolbarItem(placement: .primaryAction) {
                     Button { addingType = recordType } label: { Image(systemName: "plus") }
+                    .iconButton("添加成长记录")
                 }
             }
             .sheet(item: $addingType) { type in

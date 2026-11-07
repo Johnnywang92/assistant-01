@@ -53,6 +53,7 @@ struct PetRecordsView: View {
                         Image(systemName: "plus")
                             .font(.body.bold())
                     }
+                    .iconButton("添加宠物记录")
                 }
             }
             .sheet(item: $addingType) { type in

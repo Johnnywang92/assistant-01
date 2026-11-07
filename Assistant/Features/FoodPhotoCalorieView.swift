@@ -129,9 +129,10 @@ struct FoodPhotoCalorieView: View {
         .themedAppBackground()
         .navigationTitle("食物热量估算")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showingCamera) {
+        .fullScreenCover(isPresented: $showingCamera) {
             FoodCameraPicker { image in
                 photo = image
+                showingCamera = false
                 Task { await runEstimation() }
             }
         }
@@ -837,6 +838,7 @@ struct FoodPhotoCalorieView: View {
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
+                            .iconButton("删除这项食物")
                             .buttonStyle(.plain)
                         }
                     }

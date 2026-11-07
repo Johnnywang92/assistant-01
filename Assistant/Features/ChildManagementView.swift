@@ -43,6 +43,7 @@ struct ChildManagementView: View {
                         Image(systemName: "plus")
                             .font(.body.bold())
                     }
+                    .iconButton("添加宝宝档案")
                 }
             }
             .sheet(isPresented: $showAddChild) {

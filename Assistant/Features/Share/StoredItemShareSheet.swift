@@ -274,7 +274,7 @@ public struct StoredItemShareSheet: View {
                 ShareActivityView(activityItems: [renderedImage])
             }
         }
-        .sheet(isPresented: $showNearbySheet) {
+        .fullScreenCover(isPresented: $showNearbySheet) {
             NearbyInteractionSheet(envelope: storageEnvelope)
         }
         .sheet(isPresented: $showAirDropSheet, onDismiss: { airdropItems = [] }) {

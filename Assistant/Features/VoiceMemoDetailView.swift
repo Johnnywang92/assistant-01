@@ -170,6 +170,7 @@ struct VoiceMemoDetailView: View {
 
             HStack(spacing: 36) {
                 Button { audio.skip(by: -15) } label: { Image(systemName: "gobackward.15").font(.title2) }
+                .iconButton("后退 15 秒")
                 Button {
                     Task { await audio.togglePlayback(fileName: memo.audioFileName) }
                     Haptic.light()
@@ -180,6 +181,7 @@ struct VoiceMemoDetailView: View {
                         .contentTransition(.symbolEffect(.replace))
                 }
                 Button { audio.skip(by: 15) } label: { Image(systemName: "goforward.15").font(.title2) }
+                .iconButton("前进 15 秒")
             }
             .buttonStyle(.plain)
             .disabled(fileMissing)

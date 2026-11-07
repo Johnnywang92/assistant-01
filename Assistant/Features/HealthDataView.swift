@@ -564,7 +564,11 @@ struct HealthDataView: View {
     // MARK: - 指标卡
 
     private var metricCards: some View {
-        let progresses = HealthMetrics.progress(for: effectiveSnapshot ?? health.snapshot!, goals: goals)
+        // 健康数据读不到时用空快照兜底：所有指标落到 .noData。
+        // 既不会强解包崩溃，也不会把「没读到」渲染成 0 步这类精确假值。
+        let snapshot = effectiveSnapshot ?? health.snapshot
+            ?? HealthDaySnapshot(day: .now, values: [:])
+        let progresses = HealthMetrics.progress(for: snapshot, goals: goals)
         return LazyVGrid(columns: [GridItem(.flexible(), spacing: AppSpacing.md),
                                   GridItem(.flexible(), spacing: AppSpacing.md)],
                           spacing: AppSpacing.md) {

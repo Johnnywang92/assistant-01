@@ -121,6 +121,7 @@ struct UnifiedSearchView: View {
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
+                    .iconButton("刷新搜索索引")
                     .disabled(searchIndex.isIndexing)
                 }
             }
@@ -229,6 +230,7 @@ struct UnifiedSearchView: View {
                                     .font(.caption2)
                                     .foregroundStyle(.tertiary)
                             }
+                            .iconButton("删除这条最近搜索")
                             .buttonStyle(.plain)
                         }
                     }

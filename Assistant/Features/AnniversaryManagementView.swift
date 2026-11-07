@@ -37,6 +37,7 @@ struct AnniversaryManagementView: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .iconButton("新增纪念日")
             }
         }
         .sheet(isPresented: $showingAddSheet) {

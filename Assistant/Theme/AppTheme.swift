@@ -236,3 +236,30 @@ extension View {
         modifier(WallpaperReadableTextModifier())
     }
 }
+
+// MARK: - 图标按钮无障碍
+//
+// 只有 `Image(systemName:)`、没有文字的按钮在 VoiceOver 下只会念「按钮」。
+// 统一走这个修饰器：一次补齐朗读文案、44pt 最小点击区与按钮语义。
+// 存量清点见 scripts/check_icon_button_a11y.py（按文件登记基线，只允许减少）。
+
+private struct IconButtonAccessibilityModifier: ViewModifier {
+    let label: String
+    let hint: String?
+
+    func body(content: Content) -> some View {
+        content
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+            .accessibilityLabel(Text(label))
+            .accessibilityHint(Text(hint ?? ""))
+            .accessibilityAddTraits(.isButton)
+    }
+}
+
+extension View {
+    /// 纯图标按钮的统一出口。label 写**动作**而不是图标名（「删除」而非「叉号」）。
+    func iconButton(_ label: String, hint: String? = nil) -> some View {
+        modifier(IconButtonAccessibilityModifier(label: label, hint: hint))
+    }
+}

@@ -49,6 +49,7 @@ struct IDDocumentVaultView: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .iconButton("添加证件")
                 }
             }
         }

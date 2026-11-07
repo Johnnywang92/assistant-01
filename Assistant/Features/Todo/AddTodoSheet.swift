@@ -1054,7 +1054,7 @@ struct AddTodoSheet: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingQRPreviewInAdd) {
+            .fullScreenCover(isPresented: $showingQRPreviewInAdd) {
                 TodoQRCodeQuickSheet(
                     title: title.isEmpty ? "预约凭证预览" : title,
                     locationText: station.isEmpty ? nil : station,

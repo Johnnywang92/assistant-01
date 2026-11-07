@@ -203,6 +203,7 @@ struct TabBarCustomizationView: View {
                         .padding(6)
                         .background(Circle().fill(Color(.tertiarySystemFill)))
                 }
+                .iconButton("上移这个标签页")
                 .buttonStyle(.plain)
                 .disabled(index == 0)
                 .opacity(index == 0 ? 0.3 : 1.0)
@@ -215,6 +216,7 @@ struct TabBarCustomizationView: View {
                         .padding(6)
                         .background(Circle().fill(Color(.tertiarySystemFill)))
                 }
+                .iconButton("下移这个标签页")
                 .buttonStyle(.plain)
                 .disabled(index == tabManager.activeTabs.count - 1)
                 .opacity(index == tabManager.activeTabs.count - 1 ? 0.3 : 1.0)

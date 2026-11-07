@@ -198,7 +198,7 @@ struct ExpenseAASplitSheet: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .sheet(item: $generatedEnvelope) { env in
+            .fullScreenCover(item: $generatedEnvelope) { env in
                 NearbyInteractionSheet(envelope: env)
             }
             .sheet(isPresented: $showAirDropSheet, onDismiss: { airdropItems = [] }) {
