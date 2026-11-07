@@ -23,6 +23,12 @@ struct TodoRow: View {
         item.status == .done || isAnimatingCompletion
     }
 
+    private var isSenior: Bool { seniorManager.isSeniorModeEnabled }
+
+    private var metaColor: Color {
+        seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : Color.secondary
+    }
+
     private var typeColor: Color {
         switch item.type {
         case .parcel: return .orange
@@ -45,335 +51,126 @@ struct TodoRow: View {
         }
     }
 
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Button {
-                if item.status == .active {
-                    // 1. 播放成功震动与波纹动效
-                    Haptic.success()
-                    isAnimatingCompletion = true
-                    ringScale = 0.6
-                    ringOpacity = 1.0
-                    AppMotion.animate(.easeOut(duration: 0.65)) {
-                        ringScale = 2.0
-                        ringOpacity = 0.0
-                    }
-                    // 2. 延迟 0.70 秒（保留清晰的完成反馈体验，随后平滑移入已完成列表）
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.70) {
-                        AppMotion.animate(.spring(response: 0.38, dampingFraction: 0.78)) {
-                            item.markAsCompleted(in: context)
-                            isAnimatingCompletion = false
-                            ringScale = 0.5
-                            ringOpacity = 0.0
-                        }
-                        // 完成待办是唯一事实源：落库失败时 rollback 会把状态退回未完成，
-                        // 必须让用户知道（否则重启后「已完成」又变回待办）。
-                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "完成待办") }) else {
-                            Haptic.error()
-                            return
-                        }
-                        // 同步桌面/锁屏组件快照（含技能练习的「今日已打卡」状态）
-                        WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
-                    }
-                } else {
-                    // 反选/恢复为未完成
-                    Haptic.medium()
-                    AppMotion.animate(.spring(response: 0.3, dampingFraction: 0.75)) {
-                        item.status = .active
-                        TodoNotificationManager.shared.scheduleNotification(for: item)
-                        isAnimatingCompletion = false
-                    }
-                    LifeEventTodoLink.syncTask(for: item, in: context)
-                    context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "恢复待办") }
-                }
-            } label: {
-                ZStack {
-                    // 绿色波纹动效光环
-                    Circle()
-                        .stroke(AppColor.success, lineWidth: 2)
-                        .scaleEffect(ringScale)
-                        .opacity(ringOpacity)
-                        .frame(width: seniorManager.isSeniorModeEnabled ? 34 : 24, height: seniorManager.isSeniorModeEnabled ? 34 : 24)
+    // MARK: - 两行契约
 
-                    Image(systemName: isEffectivelyDone ? "checkmark.circle.fill" : "circle")
-                        .font(seniorManager.isSeniorModeEnabled ? .title : .title2)
-                        .foregroundStyle(isEffectivelyDone ? AppColor.success : (seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.65) : Color.secondary))
-                        .scaleEffect(isAnimatingCompletion ? 1.25 : 1.0)
-                        .responsiveAnimation(.spring(response: 0.28, dampingFraction: 0.5), value: isAnimatingCompletion)
-                }
-                .frame(width: seniorManager.isSeniorModeEnabled ? 44 : 28, height: seniorManager.isSeniorModeEnabled ? 44 : 28)
-                .contentShape(Rectangle())
+    /// 每一行固定两层：主行（标题/取件码 + 至多一个主操作）、元数据行。
+    /// 地点、详情、时间、重复、来源全部中点内联，超长由 lineLimit(1) 截断，
+    /// 不再各自独占一个子行 —— 这是首页卡片「松散」的根因。
+    private struct MetadataPiece {
+        let text: String
+        var isDanger: Bool = false
+    }
+
+    private var navigationTarget: String? {
+        guard item.type != .parcel, item.type != .returnParcel,
+              let loc = item.displayLocationText, !loc.isEmpty else { return nil }
+        return loc
+    }
+
+    private var metadataPieces: [MetadataPiece] {
+        var pieces: [MetadataPiece] = []
+
+        let placeText: String? = {
+            if let loc = item.location, let st = item.station, !loc.contains(st) {
+                return "\(st) · \(loc)"
             }
-            .buttonStyle(.plain)
-            // VoiceOver：完成/取消完成待办的核心交互必须有可播报的状态与操作
-            .accessibilityLabel(item.title)
-            .accessibilityValue(isEffectivelyDone ? "已完成" : "未完成")
-            .accessibilityHint(isEffectivelyDone ? "双击标记回未完成" : "双击完成该待办")
-            .padding(.top, 2)
+            return item.location ?? item.station
+        }()
 
-            VStack(alignment: .leading, spacing: 6) {
-                if item.type == .parcel, let code = item.pickupCode {
-                    HStack(spacing: 8) {
-                        Text(code)
-                            .font((seniorManager.isSeniorModeEnabled ? Font.title2 : Font.title3).monospaced().bold())
-                            .foregroundStyle(isEffectivelyDone ? .secondary : .primary)
-                            .strikethrough(isEffectivelyDone)
-                            .padding(.horizontal, seniorManager.isSeniorModeEnabled ? 10 : 8)
-                            .padding(.vertical, seniorManager.isSeniorModeEnabled ? 5 : 3)
-                            .background(
-                                RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                                    .fill(isEffectivelyDone ? Color.secondary.opacity(0.12) : AppColor.softFill(AppColor.warning, opacity: 0.15))
-                            )
+        let leading: String
+        switch item.type {
+        case .parcel:
+            // 驿站 / 快递 / 柜位 / 事项名压成同一段，不再单独占一层
+            leading = [item.courier, placeText, item.displayConciseTitle]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+        case .returnParcel:
+            leading = [
+                item.pickupCode.map { "寄件码 \($0)" },
+                item.station,
+                item.courier,
+                placeText
+            ]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+        default:
+            leading = [item.displayLocationText, item.displayConciseDetail]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+        }
+        if !leading.isEmpty {
+            pieces.append(MetadataPiece(text: leading))
+        }
 
-                        Button {
-                            UIPasteboard.general.string = code
-                            Haptic.light()
-                            AppMotion.animate(.spring(duration: 0.2)) {
-                                isCopied = true
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-                                AppMotion.animate { isCopied = false }
-                            }
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                                Text(isCopied ? "已复制" : "复制")
-                            }
-                            .font(.caption2.bold())
-                            .foregroundStyle(isCopied ? AppColor.success : AppColor.warning)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule().fill(isCopied ? AppColor.softFill(AppColor.success, opacity: 0.15) : AppColor.softFill(AppColor.warning, opacity: 0.12))
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("复制取件码")
-                        .accessibilityHint("将取件码复制到剪贴板，便于在驿站时报出")
-                    }
+        // 退货倒数预警从主行胶囊降级为元数据里的一段红色文本
+        if item.type == .returnParcel, let due = item.dueAt, !isEffectivelyDone {
+            let days = Calendar.current.dateComponents(
+                [.day],
+                from: Calendar.current.startOfDay(for: .now),
+                to: Calendar.current.startOfDay(for: due)
+            ).day ?? 0
+            let text = days < 0 ? "已逾期"
+                : (days == 0 ? "今天截止!" : (days == 1 ? "仅剩1天" : "退货剩\(days)天"))
+            pieces.append(MetadataPiece(text: text, isDanger: days <= 1))
+        }
 
-                    let placeText: String? = {
-                        if let loc = item.location, let st = item.station, !loc.contains(st) {
-                            return "\(st) · \(loc)"
-                        }
-                        return item.location ?? item.station
-                    }()
-                    if let text = [item.courier, placeText].compactMap({ $0 }).joined(separator: " · ") as String?, !text.isEmpty {
-                        Text(L10n.tr(text))
-                            .font(.subheadline)
-                            .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
-                    }
-                } else if item.type == .returnParcel {
-                    HStack(spacing: 8) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                                .fill(Color.indigo.opacity(isEffectivelyDone ? 0.08 : 0.16))
-                                .frame(width: seniorManager.isSeniorModeEnabled ? 28 : 24, height: seniorManager.isSeniorModeEnabled ? 28 : 24)
-                            Image(systemName: "arrow.uturn.backward.circle.fill")
-                                .font(.caption.bold())
-                                .foregroundStyle(isEffectivelyDone ? Color.secondary : Color.indigo)
-                        }
+        if let due = item.dueAt {
+            pieces.append(MetadataPiece(
+                text: due.formatted(date: .numeric, time: .shortened),
+                isDanger: due < .now && !isEffectivelyDone
+            ))
+        } else {
+            pieces.append(MetadataPiece(text: item.createdAt.formatted(.relative(presentation: .named))))
+        }
 
-                        Text(L10n.tr(item.title))
-                            .font(.body.weight(isEffectivelyDone ? .regular : (seniorManager.isHighContrastEnabled ? .bold : .medium)))
-                            .strikethrough(isEffectivelyDone)
-                            .foregroundStyle(isEffectivelyDone ? .secondary : .primary)
+        if item.isRecurring {
+            pieces.append(MetadataPiece(text: "↻ \(item.recurrenceSummaryText)"))
+        }
+        for tag in item.tags.prefix(2) {
+            pieces.append(MetadataPiece(text: "#\(tag)"))
+        }
+        return pieces
+    }
 
-                        // 智能退货截止倒数预警胶囊
-                        if let due = item.dueAt, !isEffectivelyDone {
-                            let daysRemaining = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: .now), to: Calendar.current.startOfDay(for: due)).day ?? 0
-                            HStack(spacing: 3) {
-                                Image(systemName: daysRemaining <= 1 ? "exclamationmark.triangle.fill" : "clock.fill")
-                                    .imageScale(.small)
-                                Text(daysRemaining < 0 ? "已逾期" : (daysRemaining == 0 ? "今天截止!" : (daysRemaining == 1 ? "仅剩1天" : "退货剩\(daysRemaining)天")))
-                            }
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule().fill(
-                                    daysRemaining <= 0 ? AppColor.softFill(AppColor.danger, opacity: 0.18) :
-                                    (daysRemaining <= 1 ? AppColor.softFill(AppColor.warning, opacity: 0.2) : Color.indigo.opacity(0.15))
-                                )
-                            )
-                            .foregroundStyle(
-                                daysRemaining <= 0 ? AppColor.danger :
-                                (daysRemaining <= 1 ? AppColor.warning : Color.indigo)
-                            )
-                        }
-                    }
+    /// 用 AttributedString 保留局部配色（逾期红 / 常规次要色），
+    /// 整段仍是一个 Text，可被 lineLimit(1) 统一截断。
+    private var metadataText: AttributedString {
+        var result = AttributedString()
+        for (index, piece) in metadataPieces.enumerated() {
+            if index > 0 {
+                var separator = AttributedString(" · ")
+                separator.foregroundColor = metaColor.opacity(0.6)
+                result += separator
+            }
+            var part = AttributedString(piece.text)
+            part.foregroundColor = piece.isDanger ? Color.red : metaColor
+            result += part
+        }
+        return result
+    }
 
-                    if let code = item.pickupCode, !code.isEmpty {
-                        HStack(spacing: 6) {
-                            Text("寄件码: \(code)")
-                                .font((seniorManager.isSeniorModeEnabled ? Font.subheadline : Font.caption).monospaced().bold())
-                                .foregroundStyle(isEffectivelyDone ? .secondary : .primary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(RoundedRectangle(cornerRadius: AppRadius.badge).fill(Color(.secondarySystemFill)))
+    private var codeFont: Font {
+        isSenior ? Font.title3.monospaced().bold() : Font.system(size: 17, weight: .bold, design: .monospaced)
+    }
 
-                            Button {
-                                UIPasteboard.general.string = code
-                                Haptic.light()
-                                AppMotion.animate(.spring(duration: 0.2)) { isCopied = true }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
-                                    AppMotion.animate { isCopied = false }
-                                }
-                            } label: {
-                                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                                    .font(.caption2)
-                                    .foregroundStyle(isCopied ? AppColor.success : .secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("复制寄件码")
-                            .accessibilityHint("将寄件码复制到剪贴板")
-                        }
-                    }
+    private var titleFont: Font {
+        if isSenior { return .title3 }
+        return .body.weight(isEffectivelyDone ? .regular : (seniorManager.isHighContrastEnabled ? .bold : .semibold))
+    }
 
-                    let stationOrCourier = [item.station, item.courier].compactMap({ $0 }).joined(separator: " · ")
-                    if !stationOrCourier.isEmpty {
-                        Text(stationOrCourier)
-                            .font(.caption)
-                            .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
-                    }
+    // MARK: - 主体
 
-                    if let detail = item.displayConciseDetail, !detail.isEmpty {
-                        Text(L10n.tr(detail))
-                            .font(.footnote)
-                            .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
-                            .lineLimit(2)
-                            .lineSpacing(2)
-                    }
-                } else {
-                    HStack(alignment: .top, spacing: 8) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
-                                .fill(typeColor.opacity(isEffectivelyDone ? 0.08 : 0.16))
-                                .frame(width: seniorManager.isSeniorModeEnabled ? 28 : 24, height: seniorManager.isSeniorModeEnabled ? 28 : 24)
-                            Image(systemName: item.type.icon)
-                                .font(.caption.bold())
-                                .foregroundStyle(isEffectivelyDone ? .secondary : typeColor)
-                        }
-                        .padding(.top, 1)
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            completionButton
 
-                        Text(item.displayConciseTitle)
-                            .font(.body.weight(isEffectivelyDone ? .regular : (seniorManager.isHighContrastEnabled ? .bold : .semibold)))
-                            .strikethrough(isEffectivelyDone)
-                            .foregroundStyle(isEffectivelyDone ? .secondary : .primary)
-                            .lineSpacing(2)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Spacer(minLength: 6)
-
-                        rowTrailingButtons
-                    }
-
-                    if let locText = item.displayLocationText, !locText.isEmpty {
-                        HStack(alignment: .firstTextBaseline, spacing: 5) {
-                            Image(systemName: "mappin.and.ellipse")
-                                .font(.caption2)
-                                .foregroundStyle(.red.opacity(0.85))
-                            Text(locText)
-                                .font(.caption)
-                                .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            Button {
-                                MapNavigationService.openDirections(to: locText)
-                            } label: {
-                                Label("导航", systemImage: "arrow.triangle.turn.up.right.diamond")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.tint)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    if let detail = item.displayConciseDetail, !detail.isEmpty {
-                        Text(L10n.tr(detail))
-                            .font(.footnote)
-                            .foregroundStyle(seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.85) : .secondary)
-                            .lineLimit(2)
-                            .lineSpacing(3)
-                    }
-
-                    if !isEffectivelyDone && WeChatCommunicationHelper.isWeChatCommunication(title: item.title, detail: item.detail) {
-                        let kind = WeChatCommunicationHelper.communicationKind(title: item.title, detail: item.detail)
-                        Button {
-                            if let url = URL(string: WeChatCommunicationHelper.weChatURLScheme) {
-                                UIApplication.shared.open(url)
-                                Haptic.light()
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: kind.iconName)
-                                Text(kind.buttonTitle)
-                            }
-                            .font(.caption2.bold())
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3.5)
-                            .background(
-                                Capsule().fill(Color.green.opacity(0.12))
-                            )
-                            .overlay(
-                                Capsule().strokeBorder(Color.green.opacity(0.3), lineWidth: 0.8)
-                            )
-                            .foregroundStyle(Color.green)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(kind.buttonTitle)
-                        .accessibilityHint("直接拉起微信应用")
-                    }
-                }
-
-                HStack(spacing: 8) {
-                    if let due = item.dueAt {
-                        HStack(spacing: 4) {
-                            Image(systemName: "calendar.badge.clock")
-                            Text(due.formatted(date: .numeric, time: .shortened))
-                        }
-                        .font(.caption2)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .foregroundStyle(due < .now && !isEffectivelyDone ? Color.red : (seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.7) : Color.secondary))
-                    } else {
-                        Text(item.createdAt, format: .relative(presentation: .named))
-                            .font(.caption2)
-                            .foregroundStyle(Color.primary.opacity(seniorManager.isHighContrastEnabled ? 0.65 : 0.4))
-                    }
-
-                    if item.isRecurring {
-                        HStack(spacing: 3) {
-                            Image(systemName: "repeat")
-                            Text(item.recurrenceSummaryText)
-                        }
-                        .font(.caption2.bold())
-                        .fixedSize(horizontal: true, vertical: false)
-                        .foregroundStyle(isEffectivelyDone ? Color.secondary : Color.blue)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule().fill(isEffectivelyDone ? Color.secondary.opacity(0.12) : Color.blue.opacity(0.12))
-                        )
-                    }
-
-                    if !item.tags.isEmpty {
-                        ForEach(item.tags.prefix(2), id: \.self) { tag in
-                            Text("#\(tag)")
-                                .font(.caption2.bold())
-                                .fixedSize(horizontal: true, vertical: false)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.indigo.opacity(0.12)))
-                                .foregroundStyle(Color.indigo)
-                        }
-                    }
-
-                    Spacer(minLength: 0)
-
-                    if item.type == .parcel || item.type == .returnParcel {
-                        rowTrailingButtons
-                    }
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                primaryLine
+                Text(metadataText)
+                    .font(isSenior ? .footnote : .caption)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -397,7 +194,8 @@ struct TodoRow: View {
         .opacity(isEffectivelyDone ? 0.6 : 1.0)
         .responsiveAnimation(.easeInOut(duration: 0.25), value: isEffectivelyDone)
         .responsiveAnimation(.easeInOut(duration: 0.2), value: item.status)
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
+        .frame(minHeight: 56)
         .contextMenu {
             // 手势层只保留「分享」：编辑走点按行，置顶走左侧滑，其余能力
             // 统一收进编辑页的「快捷动作」区，避免同一能力散落在三处入口。
@@ -429,6 +227,230 @@ struct TodoRow: View {
             } label: { Label("删除", systemImage: "trash") }
         }
         .themedRow()
+    }
+
+    private var completionButton: some View {
+        Button {
+            if item.status == .active {
+                // 1. 播放成功震动与波纹动效
+                Haptic.success()
+                isAnimatingCompletion = true
+                ringScale = 0.6
+                ringOpacity = 1.0
+                AppMotion.animate(.easeOut(duration: 0.65)) {
+                    ringScale = 2.0
+                    ringOpacity = 0.0
+                }
+                // 2. 延迟 0.70 秒（保留清晰的完成反馈体验，随后平滑移入已完成列表）
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.70) {
+                    AppMotion.animate(.spring(response: 0.38, dampingFraction: 0.78)) {
+                        item.markAsCompleted(in: context)
+                        isAnimatingCompletion = false
+                        ringScale = 0.5
+                        ringOpacity = 0.0
+                    }
+                    // 完成待办是唯一事实源：落库失败时 rollback 会把状态退回未完成，
+                    // 必须让用户知道（否则重启后「已完成」又变回待办）。
+                    guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "完成待办") }) else {
+                        Haptic.error()
+                        return
+                    }
+                    // 同步桌面/锁屏组件快照（含技能练习的「今日已打卡」状态）
+                    WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
+                }
+            } else {
+                // 反选/恢复为未完成
+                Haptic.medium()
+                AppMotion.animate(.spring(response: 0.3, dampingFraction: 0.75)) {
+                    item.status = .active
+                    TodoNotificationManager.shared.scheduleNotification(for: item)
+                    isAnimatingCompletion = false
+                }
+                LifeEventTodoLink.syncTask(for: item, in: context)
+                context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "恢复待办") }
+            }
+        } label: {
+            ZStack {
+                // 绿色波纹动效光环
+                Circle()
+                    .stroke(AppColor.success, lineWidth: 2)
+                    .scaleEffect(ringScale)
+                    .opacity(ringOpacity)
+                    .frame(width: isSenior ? 34 : 24, height: isSenior ? 34 : 24)
+
+                Image(systemName: isEffectivelyDone ? "checkmark.circle.fill" : "circle")
+                    .font(isSenior ? .title : .title2)
+                    .foregroundStyle(isEffectivelyDone ? AppColor.success : (seniorManager.isHighContrastEnabled ? Color.primary.opacity(0.65) : Color.secondary))
+                    .scaleEffect(isAnimatingCompletion ? 1.25 : 1.0)
+                    .responsiveAnimation(.spring(response: 0.28, dampingFraction: 0.5), value: isAnimatingCompletion)
+            }
+            .frame(width: isSenior ? 44 : 28, height: isSenior ? 44 : 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // VoiceOver：完成/取消完成待办的核心交互必须有可播报的状态与操作
+        .accessibilityLabel(item.title)
+        .accessibilityValue(isEffectivelyDone ? "已完成" : "未完成")
+        .accessibilityHint(isEffectivelyDone ? "双击标记回未完成" : "双击完成该待办")
+        .padding(.top, 2)
+    }
+
+    /// 主行：类型徽标 + 标题（或取件码）+ 至多一个主操作，右侧锚点位置恒定。
+    private var primaryLine: some View {
+        HStack(alignment: .center, spacing: 6) {
+            if item.type == .parcel, let code = item.pickupCode, !code.isEmpty {
+                Text(code)
+                    .font(codeFont)
+                    .foregroundStyle(isEffectivelyDone ? Color.secondary : Color.primary)
+                    .strikethrough(isEffectivelyDone)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                copyCodeButton(code: code, accessibilityTitle: "复制取件码")
+            } else {
+                typeBadge
+                Text(item.displayConciseTitle)
+                    .font(titleFont)
+                    .strikethrough(isEffectivelyDone)
+                    .foregroundStyle(isEffectivelyDone ? Color.secondary : Color.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Spacer(minLength: 4)
+            trailingAction
+        }
+        .frame(height: isSenior ? 30 : 24)
+    }
+
+    private var typeBadge: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous)
+                .fill(typeColor.opacity(isEffectivelyDone ? 0.08 : 0.16))
+                .frame(width: isSenior ? 28 : 22, height: isSenior ? 28 : 22)
+            Image(systemName: item.type == .returnParcel ? "arrow.uturn.backward.circle.fill" : item.type.icon)
+                .font(.caption2.bold())
+                .foregroundStyle(isEffectivelyDone ? Color.secondary : (item.type == .returnParcel ? Color.indigo : typeColor))
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// 右侧只留一个主操作（导航 / 复制寄件码 / 出示凭证，按类型与可用性择一）。
+    /// 长辈模式的语音播报是无障碍刚需，作为唯一例外追加，其余能力都在编辑页快捷动作区。
+    @ViewBuilder
+    private var trailingAction: some View {
+        HStack(spacing: 4) {
+            if item.type == .returnParcel, let code = item.pickupCode, !code.isEmpty {
+                copyIconButton(code: code)
+            } else if let loc = navigationTarget {
+                Button {
+                    MapNavigationService.openDirections(to: loc)
+                } label: {
+                    Label("导航", systemImage: "arrow.triangle.turn.up.right.diamond")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tint)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("导航到\(loc)")
+            } else if item.hasQRCodeOrTicket {
+                Button {
+                    onShowQRCode?()
+                    Haptic.medium()
+                } label: {
+                    Image(systemName: item.hasQRCode ? "qrcode" : "photo")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.blue)
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("快速调出预约二维码")
+            }
+
+            if seniorManager.isVoiceBroadcastEnabled {
+                voiceButton
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func copyCodeButton(code: String, accessibilityTitle: String) -> some View {
+        Button {
+            copy(code)
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
+                Text(isCopied ? "已复制" : "复制")
+            }
+            .font(.caption2.bold())
+            .foregroundStyle(isCopied ? AppColor.success : AppColor.warning)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                Capsule().fill(isCopied
+                    ? AppColor.softFill(AppColor.success, opacity: 0.15)
+                    : AppColor.softFill(AppColor.warning, opacity: 0.12))
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityTitle)
+        .accessibilityHint("将取件码复制到剪贴板，便于在驿站时报出")
+    }
+
+    private func copyIconButton(code: String) -> some View {
+        Button {
+            copy(code)
+        } label: {
+            Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
+                .font(.caption2)
+                .foregroundStyle(isCopied ? AppColor.success : Color.secondary)
+                .frame(width: 26, height: 26)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("复制寄件码")
+        .accessibilityHint("将寄件码复制到剪贴板")
+    }
+
+    private func copy(_ code: String) {
+        UIPasteboard.general.string = code
+        Haptic.light()
+        AppMotion.animate(.spring(duration: 0.2)) { isCopied = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+            AppMotion.animate { isCopied = false }
+        }
+    }
+
+    private var voiceButton: some View {
+        Button {
+            let speechText: String = {
+                if item.type == .parcel, let code = item.pickupCode {
+                    let station = item.location ?? item.station ?? ""
+                    return "快递取件码：\(code)，\(item.displayConciseTitle)。\(station)"
+                } else if item.type == .returnParcel {
+                    let codeStr = item.pickupCode.map { "，寄件码：\($0)" } ?? ""
+                    return "退货待办：\(item.displayConciseTitle)\(codeStr)。\(item.displayConciseDetail ?? "")"
+                } else {
+                    return "\(item.displayConciseTitle)。\(item.displayConciseDetail ?? "")"
+                }
+            }()
+
+            if seniorManager.isSpeaking && seniorManager.currentSpeakingId == item.id.uuidString {
+                seniorManager.stopSpeaking()
+            } else {
+                Task { await seniorManager.speakSenior(text: speechText, id: item.id.uuidString) }
+                Haptic.light()
+            }
+        } label: {
+            let isCurrentSpeaking = seniorManager.isSpeaking && seniorManager.currentSpeakingId == item.id.uuidString
+            Image(systemName: isCurrentSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2")
+                .font(isSenior ? .title3.bold() : .caption)
+                .foregroundStyle(isCurrentSpeaking ? Color.orange : (isSenior ? Color.orange : Color.secondary.opacity(0.7)))
+                .frame(width: isSenior ? 38 : 26, height: isSenior ? 38 : 26)
+                .background(
+                    Circle().fill(isCurrentSpeaking ? Color.orange.opacity(0.2) : (isSenior ? Color.orange.opacity(0.12) : Color.clear))
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .accessibilityLabel("朗读这条待办")
     }
 
     /// 长按预览只展示卡片内容，不放可点操作：菜单里唯一的动作就是分享。
@@ -464,65 +486,6 @@ struct TodoRow: View {
         .frame(width: 240, alignment: .leading)
         .padding(16)
         .background(Color(.secondarySystemGroupedBackground))
-    }
-
-    @ViewBuilder
-    private var rowTrailingButtons: some View {
-        HStack(spacing: 6) {
-            if item.hasQRCodeOrTicket {
-                Button {
-                    onShowQRCode?()
-                    Haptic.medium()
-                } label: {
-                    Image(systemName: item.hasQRCode ? "qrcode" : "photo")
-                        .font(seniorManager.isSeniorModeEnabled ? .title3.bold() : .subheadline.bold())
-                        .foregroundStyle(.blue)
-                        .frame(width: seniorManager.isSeniorModeEnabled ? 38 : 30, height: seniorManager.isSeniorModeEnabled ? 38 : 30)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
-                                .fill(Color.blue.opacity(0.12))
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("快速调出预约二维码")
-            }
-
-            if seniorManager.isVoiceBroadcastEnabled {
-                Button {
-                    let speechText: String = {
-                        if item.type == .parcel, let code = item.pickupCode {
-                            let station = item.location ?? item.station ?? ""
-                            return "快递取件码：\(code)，\(item.displayConciseTitle)。\(station)"
-                        } else if item.type == .returnParcel {
-                            let codeStr = item.pickupCode.map { "，寄件码：\($0)" } ?? ""
-                            return "退货待办：\(item.displayConciseTitle)\(codeStr)。\(item.displayConciseDetail ?? "")"
-                        } else {
-                            let detail = item.displayConciseDetail ?? ""
-                            return "\(item.displayConciseTitle)。\(detail)"
-                        }
-                    }()
-
-                    if seniorManager.isSpeaking && seniorManager.currentSpeakingId == item.id.uuidString {
-                        seniorManager.stopSpeaking()
-                    } else {
-                        Task { await seniorManager.speakSenior(text: speechText, id: item.id.uuidString) }
-                        Haptic.light()
-                    }
-                } label: {
-                    let isCurrentSpeaking = seniorManager.isSpeaking && seniorManager.currentSpeakingId == item.id.uuidString
-                    Image(systemName: isCurrentSpeaking ? "speaker.wave.3.fill" : "speaker.wave.2")
-                        .font(seniorManager.isSeniorModeEnabled ? .title3.bold() : .caption)
-                        .foregroundStyle(isCurrentSpeaking ? Color.orange : (seniorManager.isSeniorModeEnabled ? Color.orange : Color.secondary.opacity(0.7)))
-                        .frame(width: seniorManager.isSeniorModeEnabled ? 38 : 26, height: seniorManager.isSeniorModeEnabled ? 38 : 26)
-                        .background(
-                            Circle()
-                                .fill(isCurrentSpeaking ? Color.orange.opacity(0.2) : (seniorManager.isSeniorModeEnabled ? Color.orange.opacity(0.12) : Color.clear))
-                        )
-                }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-            }
-        }
     }
 }
 

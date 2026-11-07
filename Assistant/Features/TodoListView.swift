@@ -1570,6 +1570,9 @@ struct TodoListView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // 紧凑卡片：分组间距由系统默认（约 35~40pt）收到 20pt，
+        // 与行内两行契约配套，避免密度被 Section 上下留白重新吃掉。
+        .listSectionSpacing(20)
         .scrollContentBackground(isCustomBackgroundActive ? .hidden : .automatic)
         .background(Color.clear)
         .environment(\.editMode, isReordering ? .constant(.active) : .constant(.inactive))
