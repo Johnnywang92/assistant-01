@@ -21,6 +21,10 @@ struct VoiceMemoShareCardView: View {
     /// 纯文字备忘复用同一套卡面与主题，但眉标必须区分类型：
     /// 写着 VOICE MEMO 会让人以为这张图背后还有录音可听。
     var isTextOnly: Bool = false
+    /// 是否用于导出长图。
+    /// 导出时移除外层圆角裁剪与投影，使背景色完整填满矩形画布边缘，
+    /// 彻底消除相册存储或社交分享时透明角被压缩算法填充出的四个黑边/黑角。
+    var forExport: Bool = false
 
     static let sloganZh = "记所想，助所行"
     static let sloganEn = "Capture thoughts, empower actions."
@@ -109,12 +113,7 @@ struct VoiceMemoShareCardView: View {
         .padding(22)
         .frame(width: 350, alignment: .leading)
         .background(theme.backgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous)
-                .strokeBorder(theme.dividerColor.opacity(0.6), lineWidth: 0.8)
-        )
-        .shadow(color: Color.black.opacity(0.06), radius: 14, y: 5)
+        .modifier(CardChromeModifier(forExport: forExport, theme: theme))
     }
 
     @ViewBuilder
@@ -209,6 +208,29 @@ struct VoiceMemoShareCardView: View {
     }
 }
 
+/// 控制卡片在「交互预览」与「离屏长图导出」两种模式下的边框修饰：
+/// - 预览模式 (`forExport == false`)：具有圆角卡片质感、极细描边与轻微投影，贴合卡片悬浮视觉；
+/// - 导出模式 (`forExport == true`)：去掉外层圆角裁剪与投影，背景色完全铺满 350pt 矩形画布，
+///   从根本上避免系统相册或第三方社交 App 将透明像素转码为四角黑边。
+private struct CardChromeModifier: ViewModifier {
+    let forExport: Bool
+    let theme: ShareCardTheme
+
+    func body(content: Content) -> some View {
+        if forExport {
+            content
+        } else {
+            content
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous)
+                        .strokeBorder(theme.dividerColor.opacity(0.6), lineWidth: 0.8)
+                )
+                .shadow(color: Color.black.opacity(0.06), radius: 14, y: 5)
+        }
+    }
+}
+
 /// 语音备忘分享面板：卡片预览 + 样式切换 + 导出与分享。
 struct VoiceMemoShareSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -268,7 +290,7 @@ struct VoiceMemoShareSheet: View {
         context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存分享卡标题") }
     }
 
-    /// 始终只渲染一张卡片，全部内容都在里面。
+    /// 预览用的卡片视图，带有外层圆角与阴影。
     private var cardView: VoiceMemoShareCardView {
         VoiceMemoShareCardView(
             title: resolvedCardTitle,
@@ -277,7 +299,22 @@ struct VoiceMemoShareSheet: View {
             hiddenAudio: hiddenCounts.audio,
             theme: theme,
             showWatermark: showWatermark,
-            isTextOnly: memo.isTextOnly
+            isTextOnly: memo.isTextOnly,
+            forExport: false
+        )
+    }
+
+    /// 导出用的长图视图：背景完全铺满实色矩形，无外层透明圆角，杜绝导出黑角。
+    private var exportCardView: VoiceMemoShareCardView {
+        VoiceMemoShareCardView(
+            title: resolvedCardTitle,
+            items: items,
+            hiddenImages: hiddenCounts.images,
+            hiddenAudio: hiddenCounts.audio,
+            theme: theme,
+            showWatermark: showWatermark,
+            isTextOnly: memo.isTextOnly,
+            forExport: true
         )
     }
 
@@ -608,7 +645,7 @@ struct VoiceMemoShareSheet: View {
     /// 先按估算高度挑安全倍率再渲染，不做分页、不切片、也不做二次压平画布
     /// （长图二次画布会再吃一倍内存，本身就是裁切风险）。
     private func renderCard() -> UIImage? {
-        ShareCardActions.render(cardView, estimatedHeight: estimatedCardHeight)
+        ShareCardActions.render(exportCardView, estimatedHeight: estimatedCardHeight)
     }
 
     /// 连 1x 都放不下时说清楚原因，不要只丢一句「生成失败」。

@@ -73,7 +73,9 @@ enum ShareCardActions {
         let format = UIGraphicsImageRendererFormat()
         format.scale = image.scale
         format.opaque = true
-        return UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+        return UIGraphicsImageRenderer(size: image.size, format: format).image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: image.size))
             image.draw(in: CGRect(origin: .zero, size: image.size))
         }
     }
