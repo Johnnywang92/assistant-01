@@ -38,7 +38,6 @@ struct VoiceMemoShareCardView: View {
                     Text(title)
                         .font(.system(size: 21, weight: .bold, design: .rounded))
                         .foregroundStyle(theme.textColor)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
             }
@@ -108,7 +107,7 @@ struct VoiceMemoShareCardView: View {
 
         }
         .padding(22)
-        .frame(maxWidth: 350, alignment: .leading)
+        .frame(width: 350, alignment: .leading)
         .background(theme.backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: AppRadius.hero, style: .continuous))
         .overlay(
@@ -135,7 +134,6 @@ struct VoiceMemoShareCardView: View {
                 .font(.system(size: 12.5))
                 .foregroundStyle(theme.textColor)
                 .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
         case .bullet:
             HStack(alignment: .top, spacing: 8) {
                 Circle().fill(theme.accentColor).frame(width: 4, height: 4).padding(.top, 7)
@@ -143,7 +141,6 @@ struct VoiceMemoShareCardView: View {
                     .font(.system(size: 12.5))
                     .foregroundStyle(theme.textColor)
                     .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         case .todo:
             HStack(alignment: .top, spacing: 8) {
@@ -154,7 +151,6 @@ struct VoiceMemoShareCardView: View {
                     .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(item.isDone ? theme.secondaryTextColor : theme.textColor)
                     .strikethrough(item.isDone)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         case .quote:
             HStack(alignment: .top, spacing: 8) {
@@ -165,7 +161,6 @@ struct VoiceMemoShareCardView: View {
                     .font(.system(size: 12.5))
                     .foregroundStyle(theme.secondaryTextColor)
                     .italic()
-                    .fixedSize(horizontal: false, vertical: true)
             }
         case .image:
             imageRow(for: item)
@@ -195,10 +190,8 @@ struct VoiceMemoShareCardView: View {
                let image = UIImage(data: data) {
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 120)
-                    .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
             } else {
                 // 图片文件丢了：明确写出来，不留一个空白框让人以为卡片坏了
@@ -241,7 +234,8 @@ struct VoiceMemoShareSheet: View {
         MemoShareCardContent.items(
             from: document.blocks,
             includeImages: includeImages,
-            includeAudio: includeAudio
+            includeAudio: includeAudio,
+            maxImages: 50
         )
     }
 
@@ -249,7 +243,8 @@ struct VoiceMemoShareSheet: View {
         MemoShareCardContent.hiddenCounts(
             from: document.blocks,
             includeImages: includeImages,
-            includeAudio: includeAudio
+            includeAudio: includeAudio,
+            maxImages: 50
         )
     }
 

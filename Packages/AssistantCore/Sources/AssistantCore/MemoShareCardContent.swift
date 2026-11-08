@@ -94,10 +94,12 @@ public enum MemoShareCardContent {
     ///   - blocks: 笔记块。
     ///   - includeImages: 是否包含图片。
     ///   - includeAudio: 是否包含语音片段。
+    ///   - maxImages: 卡片最多展示的图片数量，长图导出可传入更大限制以避免图片被折叠。
     public static func items(
         from blocks: [MemoBlock],
         includeImages: Bool = true,
-        includeAudio: Bool = true
+        includeAudio: Bool = true,
+        maxImages: Int = MemoShareCardContent.maxImages
     ) -> [MemoShareCardItem] {
         var result: [MemoShareCardItem] = []
         var imageCount = 0
@@ -136,7 +138,8 @@ public enum MemoShareCardContent {
     public static func hiddenCounts(
         from blocks: [MemoBlock],
         includeImages: Bool = true,
-        includeAudio: Bool = true
+        includeAudio: Bool = true,
+        maxImages: Int = MemoShareCardContent.maxImages
     ) -> (images: Int, audio: Int) {
         let allImages = blocks.filter { $0.kind == .image && !$0.isEmpty }.count
         let allAudio = blocks.filter { $0.kind == .audio && !$0.isEmpty }.count
@@ -177,7 +180,7 @@ public enum MemoShareCardContent {
         case .heading:
             return 26
         case .image:
-            return 140 // 120pt 图片 + 说明文字
+            return 240 // 自适应展示图片完整比例 + 说明文字
         case .audio:
             return 34
         case .paragraph, .bullet, .todo, .quote:
