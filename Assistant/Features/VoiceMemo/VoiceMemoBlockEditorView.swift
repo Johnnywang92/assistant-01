@@ -116,30 +116,42 @@ struct VoiceMemoBlockEditorView: View {
     }
 
     private var audioPlaybackBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Button {
                 Task { await audio.togglePlayback(fileName: memo.audioFileName) }
                 Haptic.light()
             } label: {
                 Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.title2)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.accentColor)
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
             .iconButton(isPlaying ? "暂停播放" : "播放录音")
             .disabled(fileMissing)
 
-            Text(playbackText)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("原声对齐播放")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Text(playbackText)
+                    .font(.subheadline.monospacedDigit().weight(.medium))
+                    .foregroundStyle(.primary)
+            }
 
             Spacer()
 
             if !fileMissing {
-                Text("点段落可跳转")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 4) {
+                    Image(systemName: "waveform")
+                        .font(.caption2)
+                    Text("点段落时间戳可跳转")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(.tertiarySystemFill), in: Capsule())
             }
         }
         .padding(12)
@@ -157,9 +169,9 @@ struct VoiceMemoBlockEditorView: View {
 
     private var hintBar: some View {
         HStack(spacing: 6) {
-            Image(systemName: "info.circle")
+            Image(systemName: "hand.tap")
                 .font(.caption)
-            Text("点按段落跳回录音，长按段落就地编辑")
+            Text("点按选择段落，再次点按或长按就地编辑；通过下方工具栏切换排版样式")
                 .font(.caption)
             Spacer()
         }
@@ -170,12 +182,29 @@ struct VoiceMemoBlockEditorView: View {
     // MARK: - 块画布
 
     private var blocksCanvas: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(document.blocks) { block in
-                blockView(block)
+        VStack(alignment: .leading, spacing: 8) {
+            if document.blocks.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "text.alignleft")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 24)
+                    Text("暂无段落内容")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                    Text("点击下方「添加新段落」开始排版编辑")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .padding(.bottom, 24)
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                ForEach(document.blocks) { block in
+                    blockView(block)
+                }
             }
         }
-        .padding(16)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
     }
@@ -198,18 +227,22 @@ struct VoiceMemoBlockEditorView: View {
 
     /// 文字类块（正文 / 标题 / 列表 / 待办 / 引用）。
     private func textBlockView(_ block: MemoBlock) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        let isSelected = selectedBlockID == block.id
+        return HStack(alignment: .top, spacing: 8) {
             if let range = block.timeRange, range.isValid {
-                // 只有真实区间才显示时间戳——没有区间就不显示，绝不编一个
                 Button {
                     seek(to: range)
                 } label: {
-                    Text(MemoShareCardContent.format(range.start))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(block.isSeekable ? Color.red : Color.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.badge, style: .continuous))
+                    HStack(spacing: 3) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 9))
+                        Text(MemoShareCardContent.format(range.start))
+                            .font(.caption2.monospacedDigit())
+                    }
+                    .foregroundStyle(block.isSeekable ? Color.accentColor : Color.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.badge, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -219,21 +252,34 @@ struct VoiceMemoBlockEditorView: View {
                 case .heading:
                     HStack(alignment: .center, spacing: 8) {
                         RoundedRectangle(cornerRadius: AppRadius.hairline)
-                            .fill(Color.red)
-                            .frame(width: 3, height: 17)
+                            .fill(Color.accentColor)
+                            .frame(width: 3.5, height: 18)
                         Text(block.text)
-                            .font(.headline)
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(Color.primary)
                     }
                 case .bullet:
                     HStack(alignment: .top, spacing: 8) {
-                        Circle().fill(Color.red).frame(width: 5, height: 5).padding(.top, 7)
-                        Text(block.text).font(.body)
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 6, height: 6)
+                            .padding(.top, 7)
+                        Text(block.text)
+                            .font(.body)
                     }
                 case .todo:
                     HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: block.isDone ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(block.isDone ? Color.green : Color.secondary)
-                            .padding(.top, 1)
+                        Button {
+                            toggleTodo(block)
+                        } label: {
+                            Image(systemName: block.isDone ? "checkmark.circle.fill" : "circle")
+                                .font(.body)
+                                .foregroundStyle(block.isDone ? Color.green : Color.secondary)
+                                .padding(.top, 1)
+                        }
+                        .buttonStyle(.plain)
+                        .iconButton(block.isDone ? "标记为未完成" : "标记为已完成")
+
                         Text(block.text)
                             .font(.body)
                             .strikethrough(block.isDone)
@@ -242,26 +288,30 @@ struct VoiceMemoBlockEditorView: View {
                 case .quote:
                     HStack(alignment: .top, spacing: 8) {
                         RoundedRectangle(cornerRadius: AppRadius.hairline)
-                            .fill(Color.secondary.opacity(0.5))
-                            .frame(width: 2)
+                            .fill(Color.secondary.opacity(0.4))
+                            .frame(width: 3)
                         Text(block.text)
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .italic()
                     }
+                    .padding(6)
+                    .background(Color(.tertiarySystemFill).opacity(0.4), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
                 default:
                     Text(block.text)
                         .font(.body)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.primary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture {
-                // 点按：跳回录音。带区间的才跳，否则只是选中。
-                if let range = block.timeRange, range.isValid, block.isSeekable {
-                    seek(to: range)
+                if selectedBlockID == block.id {
+                    beginEditing(block)
                 } else {
+                    if let range = block.timeRange, range.isValid, block.isSeekable {
+                        seek(to: range)
+                    }
                     select(block)
                 }
             }
@@ -269,39 +319,75 @@ struct VoiceMemoBlockEditorView: View {
                 beginEditing(block)
             }
         }
-        .padding(.vertical, 2)
-        .background(selectedBlockID == block.id ? Color.accentColor.opacity(0.08) : Color.clear)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            isSelected
+                ? Color.accentColor.opacity(0.08)
+                : Color.clear,
+            in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                .stroke(isSelected ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1)
+        )
     }
 
     /// 就地编辑中的块。
     private func editingBlockView(_ block: MemoBlock) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextEditor(text: $editingText)
-                .frame(minHeight: 60)
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
+                HStack(spacing: 4) {
+                    Image(systemName: "pencil")
+                        .font(.caption2)
+                    Text("编辑\(kindLabel(block.kind))")
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(Color.accentColor)
+
+                Spacer()
+
                 Button("取消") {
                     editingBlockID = nil
                     editingText = ""
                 }
                 .font(.subheadline)
-                Spacer()
-                Button("保存") {
+                .foregroundStyle(.secondary)
+
+                Button {
                     commitEditing(block)
+                } label: {
+                    Text("保存")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: AppRadius.small, style: .continuous))
                 }
-                .font(.subheadline.bold())
             }
-            .buttonStyle(.borderless)
+
+            TextEditor(text: $editingText)
+                .frame(minHeight: 70)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
+                        .stroke(Color.accentColor.opacity(0.3), lineWidth: 1)
+                )
         }
-        .padding(10)
-        .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
+        .padding(12)
+        .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+        )
     }
 
     /// 图片块。
     private func imageBlockView(_ block: MemoBlock) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let isSelected = selectedBlockID == block.id
+        return VStack(alignment: .leading, spacing: 6) {
             if let name = block.imageFileName,
                let data = VoiceMemoImageStorage.loadData(name),
                let image = UIImage(data: data) {
@@ -310,8 +396,11 @@ struct VoiceMemoBlockEditorView: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                            .stroke(Color(.separator).opacity(0.3), lineWidth: 0.5)
+                    )
             } else {
-                // 图片文件丢了：明确告知，不留空白框
                 Label("图片已丢失", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -324,6 +413,15 @@ struct VoiceMemoBlockEditorView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .padding(8)
+        .background(
+            isSelected ? Color.accentColor.opacity(0.08) : Color.clear,
+            in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                .stroke(isSelected ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1)
+        )
         .contentShape(Rectangle())
         .onTapGesture { select(block) }
         .onLongPressGesture { beginEditing(block) }
@@ -331,7 +429,8 @@ struct VoiceMemoBlockEditorView: View {
 
     /// 语音片段块。
     private func audioBlockView(_ block: MemoBlock) -> some View {
-        HStack(spacing: 10) {
+        let isSelected = selectedBlockID == block.id
+        return HStack(spacing: 12) {
             Button {
                 if let range = block.timeRange, range.isValid {
                     seek(to: range)
@@ -339,23 +438,27 @@ struct VoiceMemoBlockEditorView: View {
             } label: {
                 Image(systemName: "play.circle.fill")
                     .font(.title2)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.accentColor)
             }
             .buttonStyle(.plain)
             .iconButton("播放片段")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(MemoShareCardContent.audioCaption(for: block.timeRange))
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                Text("引用本条录音 · 点击可跳转播放")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                Text("引用原声录音片段 · 点按跳转播放")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             Spacer()
         }
-        .padding(10)
-        .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
+        .padding(12)
+        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 1)
+        )
         .contentShape(Rectangle())
         .onTapGesture { select(block) }
     }
@@ -366,14 +469,22 @@ struct VoiceMemoBlockEditorView: View {
             document.blocks.append(block)
             beginEditing(block)
         } label: {
-            Label("添加段落", systemImage: "plus")
-                .font(.subheadline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+            HStack(spacing: 6) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                Text("添加新段落")
+                    .font(.subheadline.weight(.medium))
+            }
+            .foregroundStyle(Color.accentColor)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4]))
+            )
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.primary)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
     }
 
     // MARK: - 底部样式栏
@@ -386,30 +497,55 @@ struct VoiceMemoBlockEditorView: View {
                 }
                 Spacer(minLength: 0)
             }
-            HStack(spacing: 12) {
-                toolbarButton("bold", label: "加粗") { toggleStyle(.bold) }
-                toolbarButton("italic", label: "斜体") { toggleStyle(.highlight) }
+            HStack(spacing: 10) {
+                toolbarButton("bold", label: "加粗", active: isSelectedBold) { toggleStyle(.bold) }
+                toolbarButton("italic", label: "斜体", active: isSelectedItalic) { toggleStyle(.highlight) }
                 if memo.hasAudio {
-                    toolbarButton("clock", label: "时间戳") { insertTimestampChip() }
+                    toolbarButton("clock", label: "插入当前时间戳") { insertTimestampChip() }
                 }
-                toolbarButton("photo", label: "插入") { showInsertSheet = true }
-                Spacer(minLength: 0)
                 Button {
                     showInsertSheet = true
+                    Haptic.light()
                 } label: {
-                    Label("生成分享图", systemImage: "photo.badge.plus")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.red, in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
-                        .foregroundStyle(.white)
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("插入")
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 32)
+                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
+                    .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
+
+                Spacer(minLength: 0)
+
+                if selectedBlockID != nil {
+                    HStack(spacing: 6) {
+                        toolbarButton("arrow.up", label: "上移段落") { moveSelectionUp() }
+                        toolbarButton("arrow.down", label: "下移段落") { moveSelectionDown() }
+                        toolbarButton("trash", label: "删除段落", tint: .red) { deleteSelection() }
+                    }
+                }
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.bar)
+    }
+
+    private var isSelectedBold: Bool {
+        guard let id = selectedBlockID,
+              let block = document.blocks.first(where: { $0.id == id }) else { return false }
+        return block.style == .bold
+    }
+
+    private var isSelectedItalic: Bool {
+        guard let id = selectedBlockID,
+              let block = document.blocks.first(where: { $0.id == id }) else { return false }
+        return block.style == .highlight
     }
 
     private func kindChip(_ kind: MemoBlockKind) -> some View {
@@ -419,32 +555,57 @@ struct VoiceMemoBlockEditorView: View {
             applyKindToSelection(kind)
             Haptic.selection()
         } label: {
-            Text(kindLabel(kind))
-                .font(.caption.weight(isSelected ? .semibold : .regular))
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(
-                    isSelected ? Color.red : Color(.tertiarySystemFill),
-                    in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
-                )
-                .foregroundStyle(isSelected ? .white : .primary)
+            HStack(spacing: 4) {
+                Image(systemName: kindIcon(kind))
+                    .font(.caption2)
+                Text(kindLabel(kind))
+                    .font(.caption.weight(isSelected ? .semibold : .regular))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                isSelected ? Color.accentColor : Color(.tertiarySystemFill),
+                in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
+            )
+            .foregroundStyle(isSelected ? .white : .primary)
         }
         .buttonStyle(.plain)
     }
 
-    private func toolbarButton(_ systemName: String, label: String, action: @escaping () -> Void) -> some View {
+    private func kindIcon(_ kind: MemoBlockKind) -> String {
+        switch kind {
+        case .paragraph: return "text.alignleft"
+        case .heading: return "textformat.size"
+        case .bullet: return "list.bullet"
+        case .todo: return "checklist"
+        case .quote: return "quote.opening"
+        case .image: return "photo"
+        case .audio: return "waveform"
+        }
+    }
+
+    private func toolbarButton(
+        _ systemName: String,
+        label: String,
+        active: Bool = false,
+        tint: Color? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
         Button {
             action()
             Haptic.light()
         } label: {
             Image(systemName: systemName)
-                .font(.system(size: 15, weight: .medium))
-                .frame(width: 30, height: 30)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous))
-                .foregroundStyle(.primary)
+                .font(.system(size: 14, weight: active ? .bold : .medium))
+                .frame(width: 32, height: 32)
+                .background(
+                    active ? Color.accentColor.opacity(0.18) : Color(.tertiarySystemFill),
+                    in: RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
+                )
+                .foregroundStyle(active ? Color.accentColor : (tint ?? Color.primary))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(label)
+        .iconButton(label)
     }
 
     private func kindLabel(_ kind: MemoBlockKind) -> String {
@@ -460,6 +621,43 @@ struct VoiceMemoBlockEditorView: View {
     }
 
     // MARK: - 行为
+
+    private func moveSelectionUp() {
+        guard let id = selectedBlockID,
+              let index = document.blocks.firstIndex(where: { $0.id == id }),
+              index > 0 else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            document.blocks.swapAt(index, index - 1)
+        }
+        Haptic.light()
+    }
+
+    private func moveSelectionDown() {
+        guard let id = selectedBlockID,
+              let index = document.blocks.firstIndex(where: { $0.id == id }),
+              index < document.blocks.count - 1 else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            document.blocks.swapAt(index, index + 1)
+        }
+        Haptic.light()
+    }
+
+    private func deleteSelection() {
+        guard let id = selectedBlockID,
+              let index = document.blocks.firstIndex(where: { $0.id == id }) else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            document.blocks.remove(at: index)
+        }
+        selectedBlockID = nil
+        editingBlockID = nil
+        Haptic.medium()
+    }
+
+    private func toggleTodo(_ block: MemoBlock) {
+        guard let index = document.blocks.firstIndex(where: { $0.id == block.id }) else { return }
+        document.blocks[index].isDone.toggle()
+        Haptic.selection()
+    }
 
     private func select(_ block: MemoBlock) {
         selectedBlockID = block.id
@@ -561,7 +759,7 @@ struct VoiceMemoBlockEditorView: View {
                         title: "从相册选图",
                         subtitle: "会议白板、文档截图、实物照片",
                         systemImage: "photo",
-                        tint: .red
+                        tint: .blue
                     ) {
                         showPhotoPicker = true
                         showInsertSheet = false
@@ -580,7 +778,7 @@ struct VoiceMemoBlockEditorView: View {
                             title: "引用原声片段",
                             subtitle: "截取本条录音的一段，保留原声与时间点",
                             systemImage: "waveform",
-                            tint: .red
+                            tint: .purple
                         ) {
                             showClipPicker = true
                             showInsertSheet = false
@@ -753,12 +951,12 @@ struct VoiceMemoClipPickerSheet: View {
                     Slider(value: $start, in: 0...max(duration, 1)) { editing in
                         if !editing { end = max(end, start + 1) }
                     }
-                    .tint(.red)
+                    .tint(.accentColor)
 
                     Slider(value: $end, in: 0...max(duration, 1)) { editing in
                         if !editing { end = max(end, start + 1) }
                     }
-                    .tint(.red)
+                    .tint(.accentColor)
 
                     HStack {
                         Text("起点 \(MemoShareCardContent.format(start))")
@@ -776,7 +974,7 @@ struct VoiceMemoClipPickerSheet: View {
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Color.red, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+                            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
