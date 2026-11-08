@@ -19,7 +19,7 @@ public enum TodoRecurrenceMode: String, Codable, CaseIterable, Sendable {
 }
 
 /// 重复配置。`rule == .none` 时其余字段无意义。
-public struct TodoRecurrenceConfig: Codable, Hashable, Sendable {
+public struct TodoRecurrenceConfig: Codable, Hashable, @unchecked Sendable {
     public var rule: TodoRecurrenceRule
     public var customDays: Int
     public var mode: TodoRecurrenceMode

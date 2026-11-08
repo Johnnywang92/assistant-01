@@ -646,7 +646,7 @@ struct VoiceMemoBlockEditorView: View {
         guard let id = selectedBlockID,
               let index = document.blocks.firstIndex(where: { $0.id == id }) else { return }
         withAnimation(.easeInOut(duration: 0.2)) {
-            document.blocks.remove(at: index)
+            _ = document.blocks.remove(at: index)
         }
         selectedBlockID = nil
         editingBlockID = nil
