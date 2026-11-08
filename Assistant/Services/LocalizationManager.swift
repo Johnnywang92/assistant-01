@@ -195,6 +195,11 @@ public enum L10n {
             let rest = String(text.dropFirst(5))
             return "Voice Memo \(rest)"
         }
+        // 纯文字备忘的默认标题，旧数据里可能是中文，切英文时同样要跟着变。
+        if text.hasPrefix("文字备忘 ") {
+            let rest = String(text.dropFirst(5))
+            return "Text Note \(rest)"
+        }
         if text.hasPrefix("失败：") {
             return "Failed: \(text.dropFirst(3))"
         }

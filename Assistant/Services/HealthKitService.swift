@@ -447,16 +447,15 @@ final class HealthKitService: ObservableObject {
 
             for w in workouts {
                 totalSeconds += w.duration
+                // 部署目标 iOS 18.0：`HKWorkout.totalEnergyBurned` 自 iOS 18 起已废弃，
+                // 统一只走 `statistics(for:)`。此前恒真的 #available 及其 else 分支
+                // 既不会执行，又留着废弃 API 引用；取不到统计值时明确按「无数据」处理。
                 let energyCalories: Double? = {
                     if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
                        let sum = w.statistics(for: energyType)?.sumQuantity() {
                         return sum.doubleValue(for: .kilocalorie())
                     }
-                    if #available(iOS 18.0, *) {
-                        return nil
-                    } else {
-                        return w.totalEnergyBurned?.doubleValue(for: .kilocalorie())
-                    }
+                    return nil
                 }()
                 if let energyCalories {
                     totalCalories += energyCalories

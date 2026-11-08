@@ -61,16 +61,10 @@ final class VoiceDialogueService: NSObject, ObservableObject {
             }
         }
 
-        let micAuth: Bool
-        if #available(iOS 17.0, *) {
-            micAuth = await AVAudioApplication.requestRecordPermission()
-        } else {
-            micAuth = await withCheckedContinuation { continuation in
-                AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                    continuation.resume(returning: granted)
-                }
-            }
-        }
+        // 部署目标 iOS 18.0，`AVAudioApplication.requestRecordPermission()` 可直接调用。
+        // 删掉恒真的 #available 与 iOS 17 已废弃的 AVAudioSession 回退分支，
+        // 与 VoiceMemoAudioService / PermissionManager 的写法保持一致。
+        let micAuth: Bool = await AVAudioApplication.requestRecordPermission()
 
         return speechAuth && micAuth
     }

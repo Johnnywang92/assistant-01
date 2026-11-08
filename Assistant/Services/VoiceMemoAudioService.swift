@@ -2,16 +2,34 @@ import AVFoundation
 import Foundation
 import Speech
 
+/// 「有一条备忘的录音被中断了」的恢复标记。
+///
+/// 只记录**已经落库**的备忘 ID：中断时正在写的那一段没有保存，不承诺能找回；
+/// 恢复卡说的是「前几段都还在，可以接着录下一段」，这才是真实状态。
+/// 用 UserDefaults 持久化，App 重启后目标备忘仍在，标记就不会变成谎话。
+struct VoiceMemoResumeMarker: Codable, Equatable, Sendable {
+    let memoID: UUID
+    let interruptedAt: Date
+}
+
 /// 语音备忘录音频服务：录音（带实时电平）、回放（倍速/拖动/快进退）、离线整段转写。
 /// 与 VoiceDialogueService 互斥：开始录音前会停止对话拾音与朗读；录音期间对话服务拒绝开麦。
 @MainActor
 final class VoiceMemoAudioService: NSObject, ObservableObject {
     static let shared = VoiceMemoAudioService()
 
+    private static let resumeMarkerKey = "voice_memo_pending_resume_marker"
+
     // MARK: 录音状态
     @Published private(set) var isRecording = false
     @Published private(set) var isPaused = false
     @Published private(set) var recordingDuration: TimeInterval = 0
+    /// 本次录音被系统（来电等）中断过，录音页据此提示「这一段可以收进原备忘」。
+    @Published private(set) var wasInterruptedBySystem = false
+    /// 续录时的目标备忘；nil = 新建一条备忘。
+    var recordingTargetMemoID: UUID?
+    /// 有待续录的备忘。列表页与详情页据此显示恢复卡；收尾或明确放弃后清空。
+    @Published private(set) var pendingResume: VoiceMemoResumeMarker?
     /// 最近一段电平采样（0~1），用于绘制实时波形
     @Published private(set) var levels: [CGFloat] = Array(repeating: 0.05, count: 48)
 
@@ -20,12 +38,15 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
     @Published private(set) var isPlaying = false
     @Published private(set) var playbackTime: TimeInterval = 0
     @Published private(set) var playbackDuration: TimeInterval = 0
+    /// 合并播放时待播的后续片段文件名。空 = 单段播放。
+    @Published private(set) var playbackQueue: [String] = []
     @Published var playbackRate: Float = 1.0 {
         didSet { player?.rate = playbackRate }
     }
 
     // MARK: 转写状态
-    @Published private(set) var transcribingIDs: Set<UUID> = []
+    /// 以音频文件名为去重键：续录后可以只转写新增的那一段。
+    @Published private(set) var transcribingFileNames: Set<String> = []
 
     @Published var errorMessage: String?
 
@@ -40,12 +61,34 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
 
     private override init() {
         super.init()
+        if let data = UserDefaults.standard.data(forKey: Self.resumeMarkerKey),
+           let marker = try? JSONDecoder().decode(VoiceMemoResumeMarker.self, from: data) {
+            pendingResume = marker
+        }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleInterruption(_:)),
             name: AVAudioSession.interruptionNotification,
             object: nil
         )
+    }
+
+    // MARK: - 中断恢复标记
+
+    /// 续录被系统中断时记录目标备忘。**新建录音不写标记**：
+    /// 那时还没有任何片段落库，显示「内容已保留」会是虚假承诺。
+    func markPendingResume(memoID: UUID) {
+        let marker = VoiceMemoResumeMarker(memoID: memoID, interruptedAt: .now)
+        pendingResume = marker
+        if let data = try? JSONEncoder().encode(marker) {
+            UserDefaults.standard.set(data, forKey: Self.resumeMarkerKey)
+        }
+    }
+
+    /// 收尾成功、用户明确放弃或点「以后再说」后清掉标记。
+    func clearPendingResume() {
+        pendingResume = nil
+        UserDefaults.standard.removeObject(forKey: Self.resumeMarkerKey)
     }
 
     // MARK: - 权限
@@ -97,6 +140,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
         isRecording = true
         isPaused = false
         recordingDuration = 0
+        wasInterruptedBySystem = false
         levels = Array(repeating: 0.05, count: levels.count)
         startMeterTimer()
     }
@@ -145,6 +189,10 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
         currentRecordingFile = nil
         isRecording = false
         isPaused = false
+        // 无论「完成收尾」还是「明确放弃」，这次中断都算处理完了。
+        // 同时清掉目标 ID：否则下一次「新建录音」被中断会误把恢复卡挂到上一条备忘上。
+        clearPendingResume()
+        recordingTargetMemoID = nil
         AudioSessionConfigurator.deactivateInBackground()
     }
 
@@ -194,8 +242,24 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
     }
 
     func play(fileName: String) async {
-        guard !isRecording else { return }
-        stopPlayback()
+        playbackQueue = []
+        await startPlaying(fileName: fileName)
+    }
+
+    /// 按录制顺序连续播放多个片段。每个片段是独立文件，
+    /// 一段自然播完后由 `AVAudioPlayerDelegate` 接着播下一段。
+    func playSequence(fileNames: [String]) async {
+        guard let first = fileNames.first else { return }
+        playbackQueue = Array(fileNames.dropFirst())
+        await startPlaying(fileName: first)
+    }
+
+    private func startPlaying(fileName: String) async {
+        guard !isRecording else {
+            playbackQueue = []
+            return
+        }
+        stopPlayback(preservingQueue: true)
         let generation = playbackGeneration
         VoiceDialogueService.shared.stopSpeaking()
         do {
@@ -259,6 +323,11 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
     }
 
     func stopPlayback() {
+        stopPlayback(preservingQueue: false)
+    }
+
+    /// `preservingQueue: true` 只用于串播换段：不能把待播的后继片段一起清掉。
+    private func stopPlayback(preservingQueue: Bool) {
         playbackGeneration &+= 1
         playbackTimer?.invalidate()
         playbackTimer = nil
@@ -268,6 +337,7 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
         isPlaying = false
         playbackTime = 0
         playbackDuration = 0
+        if !preservingQueue { playbackQueue = [] }
     }
 
     private func activatePlaybackSession() async {
@@ -277,12 +347,17 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
     // MARK: - 离线整段转写
 
     func isTranscribing(_ memo: VoiceMemo) -> Bool {
-        transcribingIDs.contains(memo.id)
+        transcribingFileNames.contains(memo.audioFileName)
     }
 
-    /// 离线转写音频文件（优先端侧识别，不上传网络）
+    /// 整条备忘的离线转写入口（读第一段，兼容旧调用）。
     func transcribe(memo: VoiceMemo) async throws -> String {
-        guard !transcribingIDs.contains(memo.id) else { throw VoiceMemoError.busy }
+        try await transcribe(fileName: memo.audioFileName)
+    }
+
+    /// 离线转写指定音频文件（续录时只转新段，不重复转已有内容，不上传网络）。
+    func transcribe(fileName: String) async throws -> String {
+        guard !transcribingFileNames.contains(fileName) else { throw VoiceMemoError.busy }
         guard await requestSpeechPermission() else { throw VoiceMemoError.speechDenied }
         let primaryRecognizer = SFSpeechRecognizer(locale: Locale(identifier: L10n.speechLocaleIdentifier))
         let fallbackRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))
@@ -294,10 +369,10 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
             throw VoiceMemoError.onDeviceUnsupported
         }
 
-        transcribingIDs.insert(memo.id)
-        defer { transcribingIDs.remove(memo.id) }
+        transcribingFileNames.insert(fileName)
+        defer { transcribingFileNames.remove(fileName) }
 
-        let request = SFSpeechURLRecognitionRequest(url: memo.audioURL)
+        let request = SFSpeechURLRecognitionRequest(url: VoiceMemoStorage.url(for: fileName))
         request.requiresOnDeviceRecognition = true
         request.shouldReportPartialResults = false
         request.addsPunctuation = true
@@ -330,7 +405,17 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
               let type = AVAudioSession.InterruptionType(rawValue: raw),
               type == .began else { return }
         Task { @MainActor in
-            if self.isRecording { self.pauseRecording() }
+            if self.isRecording {
+                // 不在这里 finish 落库：来电/切后台时页面状态与后台写库都不可靠，
+                // 只暂停并标记，用户回来点「完成」即可把这一段收进同一条备忘，
+                // 也不会留下没人引用的孤儿音频。
+                self.wasInterruptedBySystem = true
+                self.pauseRecording()
+                // 只有续录（已有落库片段）才登记恢复卡；新建录音没有任何可恢复内容。
+                if let targetID = self.recordingTargetMemoID {
+                    self.markPendingResume(memoID: targetID)
+                }
+            }
             if self.isPlaying {
                 self.player?.pause()
                 self.isPlaying = false
@@ -354,6 +439,16 @@ extension VoiceMemoAudioService: AVAudioRecorderDelegate, AVAudioPlayerDelegate 
             self.player = nil
             self.isPlaying = false
             self.playbackTime = 0
+
+            // 合并播放：还有后继片段就接着播，解码失败则停下避免连着报错。
+            if !flag { self.playbackQueue = [] }
+            if let next = self.playbackQueue.first {
+                self.playbackQueue = Array(self.playbackQueue.dropFirst())
+                await self.startPlaying(fileName: next)
+            } else {
+                self.playingFileName = nil
+                self.playbackDuration = 0
+            }
         }
     }
 
