@@ -18,6 +18,9 @@ struct VoiceMemoShareCardView: View {
     let hiddenAudio: Int
     let theme: ShareCardTheme
     let showWatermark: Bool
+    /// 纯文字备忘复用同一套卡面与主题，但眉标必须区分类型：
+    /// 写着 VOICE MEMO 会让人以为这张图背后还有录音可听。
+    var isTextOnly: Bool = false
 
     static let sloganZh = "记所想，助所行"
     static let sloganEn = "Capture thoughts, empower actions."
@@ -27,7 +30,7 @@ struct VoiceMemoShareCardView: View {
             // 1. 卡片头部：日期与标题
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("VOICE MEMO")
+                    Text(isTextOnly ? "TEXT NOTE" : "VOICE MEMO")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .foregroundStyle(theme.accentColor)
                         .tracking(1.0)
@@ -102,6 +105,7 @@ struct VoiceMemoShareCardView: View {
                         .foregroundStyle(theme.secondaryTextColor)
                 }
             }
+
         }
         .padding(22)
         .frame(maxWidth: 350, alignment: .leading)
@@ -222,9 +226,14 @@ struct VoiceMemoShareSheet: View {
     @State private var showWatermark = true
     @State private var includeImages = true
     @State private var includeAudio = true
+    /// 当前待分享的那一张完整长图。
     @State private var renderedImage: UIImage?
     @State private var showSystemShareSheet = false
     @State private var toastMessage: String?
+    @State private var toastToken = UUID()
+    /// 分享卡标题设置：与备忘标题解耦，只影响导出的这张图片。
+    @State private var titleSource: ShareCardTitleSource = .followMemo
+    @State private var cardTitleDraft = ""
 
     private var document: MemoDocument { memo.document }
 
@@ -244,33 +253,68 @@ struct VoiceMemoShareSheet: View {
         )
     }
 
+    /// 卡片标题只跟着设置走，不再读 `document.title`——
+    /// 那是结构化笔记写入时冻结的快照，详情页改了备忘标题它也不会变。
+    private var resolvedCardTitle: String {
+        switch titleSource {
+        case .followMemo:
+            return memo.title
+        case .transcriptFirstSentence:
+            return VoiceMemoTextAnalyzer.suggestedTitle(from: memo.transcription ?? "") ?? memo.title
+        case .custom:
+            let trimmed = cardTitleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? memo.title : trimmed
+        }
+    }
+
+    private func persistTitleSettings() {
+        memo.shareTitleSource = titleSource
+        memo.shareTitle = titleSource == .custom ? cardTitleDraft : nil
+        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存分享卡标题") }
+    }
+
+    /// 始终只渲染一张卡片，全部内容都在里面。
     private var cardView: VoiceMemoShareCardView {
         VoiceMemoShareCardView(
-            title: document.title.isEmpty ? memo.title : document.title,
+            title: resolvedCardTitle,
             items: items,
             hiddenImages: hiddenCounts.images,
             hiddenAudio: hiddenCounts.audio,
             theme: theme,
-            showWatermark: showWatermark
+            showWatermark: showWatermark,
+            isTextOnly: memo.isTextOnly
         )
+    }
+
+    /// 渲染前估算整张长图的高度，用来挑一个不会把图撑爆的倍率。
+    /// 规则在 AssistantCore，可单测。
+    private var estimatedCardHeight: CGFloat {
+        CGFloat(MemoShareCardContent.estimatedCardHeight(for: items))
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
-                    // 1. 卡片预览
-                    cardView
-                        .padding(.top, 8)
+                    // 1. 卡片预览：始终是一张完整长图，不分页
+                    VStack(spacing: 8) {
+                        cardView
+                        if estimatedCardHeight > 1500 {
+                            Text("内容较长，导出时会自动调整清晰度，仍只生成一张完整长图")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.top, 8)
 
-                    // 2. 样式切换
+                    // 2. 卡片标题（只影响这张图）
+                    titleSection
+
+                    // 3. 样式切换
                     themeSection
 
-                    // 3. 导出选项
+                    // 4. 导出选项
                     optionsSection
-
-                    // 4. 分享目标
-                    shareTargetsSection
 
                     // 5. 主操作
                     actionButtons
@@ -278,7 +322,11 @@ struct VoiceMemoShareSheet: View {
                 .padding(16)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("分享语音笔记")
+            .onAppear {
+                titleSource = memo.shareTitleSource
+                cardTitleDraft = memo.shareTitle ?? ""
+            }
+            .navigationTitle(memo.isTextOnly ? "分享文字笔记" : "分享语音笔记")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -302,6 +350,76 @@ struct VoiceMemoShareSheet: View {
                 ShareActivityView(activityItems: [renderedImage])
             }
         }
+    }
+
+    // MARK: - 卡片标题
+
+    /// 标题只作用于导出的图片；改动即时落库，不写回备忘标题。
+    private var titleSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("卡片标题").font(.headline)
+                Spacer()
+                Text("只影响这张图片")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            TextField("输入卡片标题", text: $cardTitleDraft)
+                .textFieldStyle(.roundedBorder)
+                .submitLabel(.done)
+                .onChange(of: cardTitleDraft) { _, newValue in
+                    if newValue.count > 24 {
+                        cardTitleDraft = String(newValue.prefix(24))
+                        return
+                    }
+                    // 直接往输入框里打字就自动切到「自定义」，否则预览不会跟着变、也不落库。
+                    // 只在非空时切：「恢复默认」清空草稿时不会把来源误切回去。
+                    if !newValue.isEmpty, titleSource != .custom {
+                        titleSource = .custom
+                    }
+                    if titleSource == .custom { persistTitleSettings() }
+                }
+
+            HStack {
+                Text(titleSource == .custom ? "\(cardTitleDraft.count) / 24 字" : "跟随来源，不受字数限制")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("恢复默认") {
+                    titleSource = .followMemo
+                    cardTitleDraft = ""
+                    persistTitleSettings()
+                }
+                .font(.caption)
+                .buttonStyle(.borderless)
+            }
+
+            Picker("标题来源", selection: $titleSource) {
+                ForEach(ShareCardTitleSource.allCases) { source in
+                    // 纯文字备忘没有「转写」，同一来源要说成正文首句。
+                    Text(memo.isTextOnly && source == .transcriptFirstSentence
+                         ? "用正文首句"
+                         : source.displayName).tag(source)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: titleSource) { _, newValue in
+                if newValue == .custom, cardTitleDraft.isEmpty {
+                    cardTitleDraft = memo.title
+                }
+                persistTitleSettings()
+            }
+
+            Text("切换来源会实时更新上方预览；自定义标题不会写回备忘标题。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(
+            Color(.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous)
+        )
     }
 
     // MARK: - 样式切换
@@ -372,11 +490,14 @@ struct VoiceMemoShareSheet: View {
                 title: "包含图片",
                 isOn: $includeImages
             )
-            Divider().padding(.leading, 14)
-            toggleRow(
-                title: "包含原声片段",
-                isOn: $includeAudio
-            )
+            // 纯文字备忘没有音频块，放一个「包含原声片段」开关只会让人以为漏了内容。
+            if !memo.isTextOnly {
+                Divider().padding(.leading, 14)
+                toggleRow(
+                    title: "包含原声片段",
+                    isOn: $includeAudio
+                )
+            }
         }
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
     }
@@ -393,42 +514,13 @@ struct VoiceMemoShareSheet: View {
         .padding(.vertical, 10)
     }
 
-    // MARK: - 分享目标
-
-    private var shareTargetsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "square.and.arrow.up.circle.fill")
-                    .foregroundStyle(.red)
-                Text("分享到社交平台")
-                    .font(.headline)
-            }
-            HStack(spacing: 12) {
-                shareTarget("朋友圈", systemImage: "person.2.fill", tint: .green)
-                shareTarget("小红书", systemImage: "book.fill", tint: .red)
-                shareTarget("微博", systemImage: "at", tint: .orange)
-                shareTarget("更多", systemImage: "ellipsis", tint: .secondary)
-            }
-        }
-        .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.banner, style: .continuous))
-    }
-
-    private func shareTarget(_ title: String, systemImage: String, tint: Color) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.system(size: 17))
-                .foregroundStyle(tint)
-                .frame(width: 42, height: 42)
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
-            Text(title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
     // MARK: - 操作
+
+    // 「朋友圈 / 小红书 / 微博 / 更多」这四个图标此前只是 VStack，不是按钮，
+    // 点了没有任何反应。iOS 也不允许 App 在未接入各平台 SDK 时直接分享到指定平台，
+    // 真实入口只有系统分享面板，所以移除这组假按钮，统一由下方「分享图片」承担。
+
+
 
     private var actionButtons: some View {
         VStack(spacing: 10) {
@@ -443,6 +535,7 @@ struct VoiceMemoShareSheet: View {
                         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .disabled(items.isEmpty)
 
                 Button {
                     shareImage()
@@ -455,10 +548,33 @@ struct VoiceMemoShareSheet: View {
                         .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)
+                .disabled(items.isEmpty)
             }
 
-            // 隐私口径与现有分享卡片保持一致：图片在本机渲染，音频与转写不上传
-            Text("图片在本机渲染生成，音频与转写不会上传")
+            if items.isEmpty {
+                Text("这条备忘还没有可分享的内容，先补点文字或完成离线转写。")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+
+            Text("只生成一张完整长图；内容较长时会自动调整清晰度，不会切成多张。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+
+            Text("点「分享图片」后，可在系统面板里选择微信、小红书、微博等 App。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+
+            // 隐私口径与现有分享卡片保持一致：图片在本机渲染，内容不上传
+            Text(memo.isTextOnly
+                 ? "图片在本机渲染生成，笔记内容不会上传"
+                 : "图片在本机渲染生成，音频与转写不会上传")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -468,14 +584,27 @@ struct VoiceMemoShareSheet: View {
 
     // MARK: - 渲染与导出
 
-    /// 3x 离屏光栅化，并压平透明通道（与待办分享卡片同款管线）。
+    /// 渲染成**一张**完整长图。
+    /// 先按估算高度挑安全倍率再渲染，不做分页、不切片、也不做二次压平画布
+    /// （长图二次画布会再吃一倍内存，本身就是裁切风险）。
     private func renderCard() -> UIImage? {
-        ShareCardActions.render(cardView, flattenAlpha: true)
+        ShareCardActions.render(cardView, estimatedHeight: estimatedCardHeight)
+    }
+
+    /// 连 1x 都放不下时说清楚原因，不要只丢一句「生成失败」。
+    private var renderFailureHint: String {
+        estimatedCardHeight > CGFloat(ShareCardRenderScale.maxPixelSide)
+            ? "内容太长，无法生成一张完整的图片"
+            : ShareCardActions.renderFailureMessage
     }
 
     private func saveToPhotos() {
+        guard !items.isEmpty else {
+            showToast("还没有可分享的内容")
+            return
+        }
         guard let image = renderCard() else {
-            showToast(ShareCardActions.renderFailureMessage)
+            showToast(renderFailureHint)
             return
         }
         Task { @MainActor in
@@ -484,8 +613,12 @@ struct VoiceMemoShareSheet: View {
     }
 
     private func shareImage() {
+        guard !items.isEmpty else {
+            showToast("还没有可分享的内容")
+            return
+        }
         guard let image = renderCard() else {
-            showToast("生成图片失败")
+            showToast(renderFailureHint)
             return
         }
         renderedImage = image
@@ -493,9 +626,13 @@ struct VoiceMemoShareSheet: View {
     }
 
     private func showToast(_ message: String) {
+        // 连续两次提示时，旧的定时清理不能把新提示提前抹掉。
+        let token = UUID()
+        toastToken = token
         withAnimation(.snappy) { toastMessage = message }
-        Task {
+        Task { @MainActor in
             try? await Task.sleep(for: .seconds(2))
+            guard toastToken == token else { return }
             withAnimation(.snappy) { toastMessage = nil }
         }
     }
