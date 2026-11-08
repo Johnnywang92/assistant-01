@@ -28,19 +28,21 @@ struct MemoSegmentTimelineView: View {
             GeometryReader { geo in
                 let width = max(geo.size.width, 1)
                 ZStack(alignment: .leading) {
-                    HStack(spacing: 2) {
+                    HStack(spacing: 3) {
                         ForEach(Array(segments.enumerated()), id: \.element.id) { index, segment in
-                            let barWidth = max(4, width * (segment.duration / total) - 2)
+                            let barWidth = max(6, width * (segment.duration / total) - 3)
+                            let isSegmentActive = segment.fileName == activeFileName
                             RoundedRectangle(cornerRadius: AppRadius.small)
-                                .fill(segment.fileName == activeFileName ? Color.red : Color.red.opacity(0.28))
-                                .frame(width: barWidth, height: 18)
-                                .overlay(alignment: .leading) {
-                                    if index > 0 {
-                                        Rectangle()
-                                            .fill(Color(.systemBackground))
-                                            .frame(width: 2, height: 18)
-                                    }
-                                }
+                                .fill(
+                                    isSegmentActive
+                                        ? AnyShapeStyle(LinearGradient(colors: [Color.red, Color(red: 0.90, green: 0.20, blue: 0.24)], startPoint: .leading, endPoint: .trailing))
+                                        : AnyShapeStyle(Color.red.opacity(0.18))
+                                )
+                                .frame(width: barWidth, height: 20)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: AppRadius.small)
+                                        .strokeBorder(isSegmentActive ? Color.red.opacity(0.3) : Color.clear, lineWidth: 1)
+                                )
                                 .contentShape(Rectangle())
                                 .onTapGesture { onSelect(segment) }
                                 .accessibilityLabel("播放片段 \(index + 1)，时长 \(formatMemoDuration(segment.duration))")
@@ -48,10 +50,11 @@ struct MemoSegmentTimelineView: View {
                         }
                     }
                     if activeFileName != nil {
-                        Rectangle()
-                            .fill(Color.red)
-                            .frame(width: 2, height: 26)
-                            .offset(x: min(width - 2, width * (globalProgress / total)))
+                        Capsule()
+                            .fill(Color.white)
+                            .frame(width: 3, height: 26)
+                            .shadow(color: Color.black.opacity(0.35), radius: 2)
+                            .offset(x: min(width - 3, width * (globalProgress / total)))
                     }
                 }
             }

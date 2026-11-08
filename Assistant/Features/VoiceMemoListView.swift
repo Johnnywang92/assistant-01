@@ -82,15 +82,15 @@ struct VoiceMemoListView: View {
         .overlay {
             if memos.isEmpty {
                 ContentUnavailableView(
-                    "还没有语音备忘",
-                    systemImage: "mic.badge.plus",
-                    description: Text("点「写一条」记文字，或点红色按钮录音。\n内容仅保存在本机，可离线转写为文字并一键提取待办。")
+                    "还没有备忘",
+                    systemImage: "note.text.badge.plus",
+                    description: Text("点「写文字」记灵感，或点「录语音」开始录音。\n内容仅保存在本机，支持生成长图与一键提取待办。")
                 )
             } else if filtered.isEmpty {
                 ContentUnavailableView.search(text: searchText)
             }
         }
-        .navigationTitle("语音备忘")
+        .navigationTitle("备忘录")
         .task { normalizeLegacyTitles() }
         .safeAreaInset(edge: .bottom) { recordDock }
         .sheet(isPresented: $showRecorder) {
@@ -102,15 +102,21 @@ struct VoiceMemoListView: View {
         .sheet(isPresented: $showResumeRecorder, onDismiss: { resumeMemo = nil }) {
             VoiceMemoRecorderSheet(memo: resumeMemo)
         }
-        .confirmationDialog("删除这条语音备忘？", isPresented: Binding(
-            get: { memoToDelete != nil }, set: { if !$0 { memoToDelete = nil } }
-        ), titleVisibility: .visible) {
-            Button("删除录音与转写", role: .destructive) {
+        .confirmationDialog(
+            memoToDelete?.isTextOnly == true ? "删除这条文字备忘？" : "删除这条语音备忘？",
+            isPresented: Binding(
+                get: { memoToDelete != nil }, set: { if !$0 { memoToDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(memoToDelete?.isTextOnly == true ? "删除备忘" : "删除录音与转写", role: .destructive) {
                 if let m = memoToDelete { VoiceMemoActions.delete(m, context: context) }
                 memoToDelete = nil
             }
         } message: {
-            Text("音频文件将从本机永久删除，无法恢复。")
+            Text(memoToDelete?.isTextOnly == true
+                 ? "文字内容将从本机永久删除，无法恢复。"
+                 : "音频文件将从本机永久删除，无法恢复。")
         }
     }
 
@@ -185,12 +191,20 @@ struct VoiceMemoListView: View {
             Haptic.selection()
             withAnimation(.snappy) { action() }
         } label: {
-            Label(L10n.tr(title), systemImage: icon)
-                .font(.caption.weight(.medium))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(selected ? Color.red.opacity(0.18) : Color(.secondarySystemFill)))
-                .foregroundStyle(selected ? Color.red : Color.primary)
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(L10n.tr(title))
+                    .font(.caption.weight(selected ? .semibold : .medium))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(
+                Capsule()
+                    .fill(selected ? Color.red : Color(.secondarySystemFill))
+            )
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .shadow(color: selected ? Color.red.opacity(0.25) : .clear, radius: 4, y: 2)
         }
         .buttonStyle(.plain)
     }
@@ -217,18 +231,23 @@ struct VoiceMemoListView: View {
         .themedRow()
     }
 
-    /// 底部并列双入口：写文字与录音都是一等入口，不藏进长按或二级菜单。
+    /// 底部并列双入口：悬浮胶囊控制岛，写文字与录音平衡呼应。
     private var recordDock: some View {
         HStack(spacing: 12) {
             Button {
                 Haptic.light()
                 showTextEditor = true
             } label: {
-                Label("写一条", systemImage: "square.and.pencil")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("写文字")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(Color.primary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(Color(.secondarySystemFill).opacity(0.8), in: Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("新建纯文字备忘")
@@ -237,16 +256,36 @@ struct VoiceMemoListView: View {
                 Haptic.medium()
                 showRecorder = true
             } label: {
-                ZStack {
-                    Circle().fill(Color.white).frame(width: 56, height: 56)
-                        .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
-                    Circle().fill(Color.red).frame(width: 46, height: 46)
-                    Image(systemName: "mic.fill").font(.body).foregroundStyle(.white)
+                HStack(spacing: 6) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text("录语音")
+                        .font(.subheadline.weight(.semibold))
                 }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(
+                    LinearGradient(
+                        colors: [Color.red, Color(red: 0.90, green: 0.18, blue: 0.22)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    in: Capsule()
+                )
+                .shadow(color: Color.red.opacity(0.28), radius: 6, y: 2)
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("开始录制语音备忘")
         }
-        .padding(.horizontal, 20)
+        .padding(6)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+        .padding(.horizontal, 24)
         .padding(.bottom, 8)
     }
 }
@@ -261,26 +300,39 @@ struct VoiceMemoRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // 纯文字备忘没有音频：不显示播放按钮，用「文字」标记占位，
-            // 避免点开一个不存在的文件时静默失败。
+            // 纯文字备忘没有音频：不显示播放按钮，用优雅的便签标识占位。
             if memo.hasAudio {
                 Button {
                     Task { await audio.togglePlayback(fileName: memo.audioFileName) }
                     Haptic.light()
                 } label: {
-                    Image(systemName: isCurrent && audio.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 34))
-                        .foregroundStyle(.red)
-                        .contentTransition(.symbolEffect(.replace))
+                    ZStack {
+                        Circle()
+                            .fill(
+                                isCurrent && audio.isPlaying
+                                    ? AnyShapeStyle(LinearGradient(colors: [Color.red, Color(red: 0.90, green: 0.18, blue: 0.22)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    : AnyShapeStyle(Color.red.opacity(0.12))
+                            )
+                            .frame(width: 38, height: 38)
+                        Image(systemName: isCurrent && audio.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(isCurrent && audio.isPlaying ? Color.white : Color.red)
+                            .offset(x: isCurrent && audio.isPlaying ? 0 : 1.5)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
                 }
                 .buttonStyle(.plain)
                 .iconButton(isCurrent && audio.isPlaying ? "暂停播放" : "播放录音")
             } else {
-                Image(systemName: "doc.text.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(.green)
-                    .frame(width: 34, height: 34)
-                    .accessibilityLabel("纯文字备忘")
+                ZStack {
+                    RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
+                        .fill(Color.orange.opacity(0.12))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.orange)
+                }
+                .accessibilityLabel("纯文字备忘")
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -300,7 +352,14 @@ struct VoiceMemoRow: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack(spacing: 8) {
-                    Label(L10n.tr(memo.tag.rawValue), systemImage: memo.tag.icon)
+                    HStack(spacing: 4) {
+                        Image(systemName: memo.tag.icon).font(.system(size: 9))
+                        Text(L10n.tr(memo.tag.rawValue)).font(.caption2.weight(.medium))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color(.tertiarySystemFill), in: Capsule())
+
                     Text(memo.createdAt, format: .dateTime.month().day().hour().minute())
                     Spacer()
                     // 不在这里解码 document：列表每行都可能被重绘，避免每帧读 JSON。
@@ -438,36 +497,34 @@ struct VoiceMemoRecorderSheet: View {
     }
 
     private var controls: some View {
-        HStack(alignment: .top, spacing: 28) {
-            // 暂停 / 继续：图标和文字都放进按钮本体。
-            // 旧版是一个孤零零的灰色圆 + ❚❚ 图标，很容易被当成状态指示灯而不是按钮；
-            // 暂停后也只换图标，用户看不出「再点一下能接着录」。
-            Button {
-                Haptic.light()
-                if audio.isPaused {
-                    Task { await audio.resumeRecording() }
-                } else {
-                    audio.pauseRecording()
+        HStack(alignment: .center, spacing: 26) {
+            // 暂停 / 继续
+            VStack(spacing: 8) {
+                Button {
+                    Haptic.light()
+                    if audio.isPaused {
+                        Task { await audio.resumeRecording() }
+                    } else {
+                        audio.pauseRecording()
+                    }
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(audio.isPaused ? Color.red.opacity(0.12) : Color(.secondarySystemFill))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: audio.isPaused ? "play.fill" : "pause.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(audio.isPaused ? Color.red : Color.primary)
+                    }
                 }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: audio.isPaused ? "play.fill" : "pause.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text(audio.isPaused ? "继续" : "暂停")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .frame(width: 96, height: 56)
-                .background(
-                    Capsule().fill(audio.isPaused ? Color.red.opacity(0.12) : Color(.secondarySystemFill))
-                )
-                .foregroundStyle(audio.isPaused ? Color.red : Color.primary)
-                .contentShape(Capsule())
+                .buttonStyle(.plain)
+                .disabled(!audio.isRecording || isPreparingShare)
+                .iconButton(audio.isPaused ? "继续录音" : "暂停录音")
+
+                Text(audio.isPaused ? "继续录" : "暂停")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            // 与中间的红色圆钮中心对齐（84/2 - 56/2）。
-            .padding(.top, 14)
-            .disabled(!audio.isRecording || isPreparingShare)
-            .accessibilityLabel(audio.isPaused ? "继续录音" : "暂停录音")
 
             // 完成并保存（主动作）
             VStack(spacing: 8) {
@@ -475,15 +532,30 @@ struct VoiceMemoRecorderSheet: View {
                     finishAndSave()
                 } label: {
                     ZStack {
-                        Circle().strokeBorder(Color.red.opacity(0.35), lineWidth: 4).frame(width: 84, height: 84)
-                        RoundedRectangle(cornerRadius: AppRadius.chip).fill(Color.red).frame(width: 34, height: 34)
+                        Circle()
+                            .strokeBorder(Color.red.opacity(0.32), lineWidth: 4)
+                            .frame(width: 82, height: 82)
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.red, Color(red: 0.90, green: 0.18, blue: 0.22)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 70, height: 70)
+                            .shadow(color: Color.red.opacity(0.35), radius: 8, y: 3)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 26, weight: .bold))
+                            .foregroundStyle(.white)
                     }
                 }
+                .buttonStyle(.plain)
                 .disabled(!audio.isRecording || isPreparingShare)
                 .iconButton("完成并保存")
 
-                Text("完成并保存")
-                    .font(.caption2)
+                Text("完成保存")
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
             }
 
@@ -492,12 +564,16 @@ struct VoiceMemoRecorderSheet: View {
                 Button {
                     finishAndSave(andShare: true)
                 } label: {
-                    Image(systemName: "photo.badge.plus")
-                        .font(.title2)
-                        .frame(width: 56, height: 56)
-                        .background(Circle().fill(Color.red.opacity(0.10)))
-                        .foregroundStyle(.red)
+                    ZStack {
+                        Circle()
+                            .fill(Color.orange.opacity(0.12))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: "photo.badge.plus")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(.orange)
+                    }
                 }
+                .buttonStyle(.plain)
                 .disabled(!audio.isRecording || isPreparingShare)
                 .iconButton("完成并生成分享图")
 
@@ -609,7 +685,11 @@ struct LiveWaveformView: View {
             HStack(alignment: .center, spacing: spacing) {
                 ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
                     Capsule()
-                        .fill(isActive ? Color.red : Color.secondary.opacity(0.5))
+                        .fill(
+                            isActive
+                                ? AnyShapeStyle(LinearGradient(colors: [Color.red, Color(red: 1.0, green: 0.42, blue: 0.32)], startPoint: .bottom, endPoint: .top))
+                                : AnyShapeStyle(Color.secondary.opacity(0.25))
+                        )
                         .frame(width: barWidth, height: max(4, level * geo.size.height))
                 }
             }

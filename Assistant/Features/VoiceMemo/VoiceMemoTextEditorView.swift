@@ -1,4 +1,5 @@
 import AssistantCore
+import PhotosUI
 import SwiftData
 import SwiftUI
 
@@ -6,7 +7,7 @@ import SwiftUI
 ///
 /// 与语音备忘共用同一个 `VoiceMemo` 模型、详情页、分享卡与备份链路，
 /// 只是没有音频：`audioFileName` 为空串、`isTextOnly = true`、`segments` 为空。
-/// 之后想补录音时走「补录一段」，仍落在这一条备忘里，不会多出一条记录。
+/// 支持富文本正文、插入图片与拍照，生成精美图文笔记与分享长图。
 struct VoiceMemoTextEditorView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -17,15 +18,29 @@ struct VoiceMemoTextEditorView: View {
     @State private var title = ""
     @State private var bodyText = ""
     @State private var tag: VoiceMemoTag = .inspiration
+    /// 附加的图片附件
+    @State private var attachedImages: [AttachedImage] = []
+    @State private var selectedPhotos: [PhotosPickerItem] = []
+    @State private var showCamera = false
     /// 进页面时的标题原文，用来判断用户是否真的动过标题。
-    /// 不记录的话，「打开一条已存在的备忘、不碰标题、直接保存」会被误判成手写标题。
     @State private var originalTitle = ""
     @State private var saveError: String?
     @State private var alertTitle = "保存失败"
     /// 「保存并生成分享图」：先落库，再把分享面板挂在本页上方。
-    /// 关闭分享面板后才收起编辑页，避免同一个页面同时 present 两个 sheet。
     @State private var shareTarget: VoiceMemo?
     @State private var showShareSheet = false
+
+    struct AttachedImage: Identifiable, Equatable {
+        let id: UUID
+        var fileName: String
+        var caption: String?
+
+        init(id: UUID = UUID(), fileName: String, caption: String? = nil) {
+            self.id = id
+            self.fileName = fileName
+            self.caption = caption
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -45,9 +60,65 @@ struct VoiceMemoTextEditorView: View {
                 }
 
                 Section("正文") {
-                    TextEditor(text: $bodyText)
-                        .frame(minHeight: 220)
-                        .font(.callout)
+                    ZStack(alignment: .topLeading) {
+                        if bodyText.isEmpty {
+                            Text("写下此时此刻的灵感、想法或备忘…")
+                                .font(.callout)
+                                .foregroundStyle(Color(.placeholderText))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 8)
+                        }
+                        TextEditor(text: $bodyText)
+                            .frame(minHeight: 180)
+                            .font(.callout)
+                    }
+                }
+
+                Section("图片附件") {
+                    if !attachedImages.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(attachedImages) { item in
+                                    imageThumbnail(item)
+                                }
+                            }
+                            .padding(.vertical, 6)
+                        }
+                    }
+
+                    HStack(spacing: 12) {
+                        PhotosPicker(
+                            selection: $selectedPhotos,
+                            matching: .images,
+                            photoLibrary: .shared()
+                        ) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "photo.on.rectangle")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("从相册选择")
+                                    .font(.subheadline.weight(.medium))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 38)
+                            .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            showCamera = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "camera")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("拍摄照片")
+                                    .font(.subheadline.weight(.medium))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 38)
+                            .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.chip))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
 
                 Section {
@@ -55,20 +126,29 @@ struct VoiceMemoTextEditorView: View {
                     Button {
                         commit(andShare: true)
                     } label: {
-                        Label("保存并生成分享图", systemImage: "photo.badge.plus")
-                            .font(.subheadline.weight(.semibold))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 42)
-                            .background(
-                                Color.red.opacity(0.10),
-                                in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
-                            )
-                            .foregroundStyle(.red)
+                        HStack(spacing: 8) {
+                            Image(systemName: "photo.badge.plus")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("保存并生成分享长图")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.red, Color(red: 0.90, green: 0.18, blue: 0.22)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                        )
+                        .foregroundStyle(.white)
+                        .shadow(color: Color.red.opacity(0.25), radius: 6, y: 3)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("保存并生成分享图")
+                    .accessibilityLabel("保存并生成分享长图")
 
-                    Text("内容只存在本机。也可以先保存，之后从详情页点「生成分享图」；卡片样式、四套主题与水印和语音笔记共用。")
+                    Text("内容只存在本机。也可以先保存，之后从详情页点「生成长图」；支持图文混排、四套主题与水印。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -86,6 +166,19 @@ struct VoiceMemoTextEditorView: View {
                 }
             }
             .onAppear(perform: load)
+            .onChange(of: selectedPhotos) { _, items in
+                handlePickedPhotos(items)
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                ImagePickerView { image in
+                    if let data = image.jpegData(compressionQuality: 0.85),
+                       let fileName = VoiceMemoImageStorage.save(data: data) {
+                        attachedImages.append(AttachedImage(fileName: fileName))
+                        Haptic.success()
+                    }
+                }
+                .ignoresSafeArea()
+            }
             .sheet(isPresented: $showShareSheet, onDismiss: { dismiss() }) {
                 if let shareTarget {
                     VoiceMemoShareSheet(memo: shareTarget)
@@ -102,29 +195,84 @@ struct VoiceMemoTextEditorView: View {
         }
     }
 
+    @ViewBuilder
+    private func imageThumbnail(_ item: AttachedImage) -> some View {
+        ZStack(alignment: .topTrailing) {
+            if let data = VoiceMemoImageStorage.loadData(item.fileName),
+               let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 80, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: AppRadius.medium)
+                    .fill(Color(.tertiarySystemFill))
+                    .frame(width: 80, height: 80)
+                    .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+            }
+
+            Button {
+                withAnimation(.snappy) {
+                    attachedImages.removeAll { $0.id == item.id }
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color.white, Color.red)
+            }
+            .offset(x: 6, y: -6)
+            .iconButton("移除图片")
+        }
+        .padding(.top, 6)
+        .padding(.trailing, 6)
+    }
+
+    private func handlePickedPhotos(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        Task {
+            for item in items {
+                if let data = try? await item.loadTransferable(type: Data.self),
+                   let fileName = VoiceMemoImageStorage.save(data: data) {
+                    await MainActor.run {
+                        attachedImages.append(AttachedImage(fileName: fileName))
+                    }
+                }
+            }
+            await MainActor.run {
+                selectedPhotos = []
+                Haptic.success()
+            }
+        }
+    }
+
     private func load() {
         guard let memo else { return }
-        // 读 displayTitle：旧数据里纯文字备忘却存着「语音备忘 <时间>」，
-        // 加载时就用纠正后的标题，避免一进页面又看到错文案。
         title = memo.displayTitle
         originalTitle = memo.displayTitle
         tag = memo.tag
         bodyText = memo.transcription ?? memo.document.plainText
+        attachedImages = memo.document.blocks.compactMap { block in
+            guard block.kind == .image, let name = block.imageFileName else { return nil }
+            return AttachedImage(fileName: name, caption: block.imageCaption)
+        }
     }
 
     private func commit(andShare: Bool = false) {
+        let hasText = !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasImages = !attachedImages.isEmpty
+
         // 空内容不该产出一张「暂无可分享的内容」的卡片。
-        if andShare && bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if andShare && !hasText && !hasImages {
             alertTitle = "还没有内容"
-            saveError = "先写点正文，再生成分享图。"
+            saveError = "先写点正文或添加图片，再生成分享图。"
             Haptic.warning()
             return
         }
 
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        // 标题留空时先用正文首句兜底（与语音备忘转写完后自动起标题同一套规则），
-        // 正文也起不出标题才退回「文字备忘 11月8日 20:15」。
-        // 旧实现一律用 `VoiceMemo.defaultTitle()`，于是纯文字备忘被叫成「语音备忘」。
+        // 标题留空时先用正文首句兜底，没有正文则退回默认标题
         let finalTitle = trimmedTitle.isEmpty
             ? (VoiceMemoTextAnalyzer.suggestedTitle(from: bodyText)
                ?? VoiceMemo.defaultTitle(isTextOnly: true))
@@ -141,8 +289,7 @@ struct VoiceMemoTextEditorView: View {
             context.insert(newMemo)
             target = newMemo
         }
-        // 只有用户真的改过标题才锁定它；没动过就保留自动标题的能力，
-        // 清空标题等于把命名权交还给自动标题。
+
         let titleChanged = trimmedTitle != originalTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedTitle.isEmpty {
             target.titleIsUserEdited = false
@@ -150,9 +297,13 @@ struct VoiceMemoTextEditorView: View {
             target.titleIsUserEdited = true
         }
 
-        // 正文同时写进结构化块与 transcription 全文：
-        // 全局搜索、分享文字、备份导出都还在读后者。
-        let document = MemoBlockBuilder.build(from: bodyText, title: finalTitle)
+        // 构建完整笔记文档：正文文字块 + 图片块
+        var document = MemoBlockBuilder.build(from: bodyText, title: finalTitle)
+        for img in attachedImages {
+            document.blocks.append(
+                MemoBlock(kind: .image, imageFileName: img.fileName, imageCaption: img.caption)
+            )
+        }
         target.apply(document: document)
 
         guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存文字备忘") }) else {
@@ -163,7 +314,6 @@ struct VoiceMemoTextEditorView: View {
         }
         Haptic.success()
         if andShare {
-            // 先把备忘落库再挂分享面板：面板会写卡片标题设置，需要真实的 ModelContext 对象。
             shareTarget = target
             showShareSheet = true
         } else {

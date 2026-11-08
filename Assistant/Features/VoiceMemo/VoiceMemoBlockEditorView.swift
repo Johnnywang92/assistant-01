@@ -57,7 +57,7 @@ struct VoiceMemoBlockEditorView: View {
                 .padding(16)
             }
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("编辑转写")
+            .navigationTitle(memo.isTextOnly ? "排版编辑" : "编辑转写")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -112,20 +112,6 @@ struct VoiceMemoBlockEditorView: View {
     private var playbackBar: some View {
         if memo.hasAudio {
             audioPlaybackBar
-        } else {
-            // 纯文字备忘没有录音，别摆一排点不动的播放控件。
-            HStack(spacing: 8) {
-                Image(systemName: "doc.text")
-                Text("纯文字备忘 · 没有录音")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(
-                Color(.secondarySystemGroupedBackground),
-                in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
-            )
         }
     }
 
@@ -403,7 +389,9 @@ struct VoiceMemoBlockEditorView: View {
             HStack(spacing: 12) {
                 toolbarButton("bold", label: "加粗") { toggleStyle(.bold) }
                 toolbarButton("italic", label: "斜体") { toggleStyle(.highlight) }
-                toolbarButton("clock", label: "时间戳") { insertTimestampChip() }
+                if memo.hasAudio {
+                    toolbarButton("clock", label: "时间戳") { insertTimestampChip() }
+                }
                 toolbarButton("photo", label: "插入") { showInsertSheet = true }
                 Spacer(minLength: 0)
                 Button {
@@ -580,40 +568,24 @@ struct VoiceMemoBlockEditorView: View {
                     }
                     insertOption(
                         title: "拍摄图片",
-                        subtitle: "边讲边拍，直接嵌入当前段落",
+                        subtitle: "现场拍照，直接嵌入当前段落",
                         systemImage: "camera",
                         tint: .green
                     ) {
                         showCamera = true
                         showInsertSheet = false
                     }
-                    insertOption(
-                        title: "引用原声片段",
-                        subtitle: "截取本条录音的一段，保留原声与时间点",
-                        systemImage: "waveform",
-                        tint: .red
-                    ) {
-                        showClipPicker = true
-                        showInsertSheet = false
-                    }
-                    // 外部音频导入：项目当前没有该能力，明确置灰并说明原因，
-                    // 不做一个点了没反应的入口。
-                    HStack(spacing: 14) {
-                        Image(systemName: "doc")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 30)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("导入音频文件（暂不支持）")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                            Text("当前仅能引用本条录音，暂不支持外部音频导入")
-                                .font(.caption)
-                                .foregroundStyle(.tertiary)
+                    if memo.hasAudio {
+                        insertOption(
+                            title: "引用原声片段",
+                            subtitle: "截取本条录音的一段，保留原声与时间点",
+                            systemImage: "waveform",
+                            tint: .red
+                        ) {
+                            showClipPicker = true
+                            showInsertSheet = false
                         }
-                        Spacer()
                     }
-                    .opacity(0.5)
                 }
             }
             .navigationTitle("插入到笔记")

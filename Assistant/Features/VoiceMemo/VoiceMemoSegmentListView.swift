@@ -44,9 +44,18 @@ struct VoiceMemoSegmentListView: View {
                 Button {
                     showRecorder = true
                 } label: {
-                    Label("再续录一段", systemImage: "mic.badge.plus")
+                    HStack(spacing: 8) {
+                        Image(systemName: "mic.badge.plus")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("再续录一段")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.card))
                 }
-                .foregroundStyle(.red)
+                .buttonStyle(.plain)
             } footer: {
                 Text("新内容仍保存在这条备忘里，不会多出一条。要点与待办可在详情页重新提炼。")
             }
@@ -104,15 +113,24 @@ struct VoiceMemoSegmentListView: View {
                     Task { await audio.playSequence(fileNames: playableFileNames) }
                 }
             } label: {
-                Label(
-                    audio.isPlaying && activeFileName != nil ? "停止播放" : "合并播放全部片段",
-                    systemImage: audio.isPlaying && activeFileName != nil ? "stop.fill" : "play.fill"
+                HStack(spacing: 8) {
+                    Image(systemName: audio.isPlaying && activeFileName != nil ? "stop.fill" : "play.fill")
+                        .font(.subheadline.weight(.bold))
+                    Text(audio.isPlaying && activeFileName != nil ? "停止播放" : "合并播放全部片段")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(
+                    LinearGradient(
+                        colors: [Color.red, Color(red: 0.90, green: 0.18, blue: 0.22)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 )
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 42)
-                    .background(Color.red, in: RoundedRectangle(cornerRadius: AppRadius.card))
-                    .foregroundStyle(.white)
+                .foregroundStyle(.white)
+                .shadow(color: Color.red.opacity(0.28), radius: 6, y: 3)
             }
             .buttonStyle(.plain)
             .disabled(playableFileNames.isEmpty)
@@ -132,15 +150,25 @@ struct VoiceMemoSegmentListView: View {
         // 只显示「有没有归属」而不数块数：块编辑器里删掉的块 ID 仍留在归属里，
         // 精确计数会与正文不符，而且每行解码 document 是列表帧里的重活。
         let hasOwnedTranscript = !(segment.transcriptBlockIDs?.isEmpty ?? true)
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Button {
                 Task { await audio.togglePlayback(fileName: segment.fileName) }
                 Haptic.light()
             } label: {
-                Image(systemName: playingThis && audio.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(exists ? Color.red : Color.secondary)
-                    .contentTransition(.symbolEffect(.replace))
+                ZStack {
+                    Circle()
+                        .fill(
+                            playingThis && audio.isPlaying
+                                ? AnyShapeStyle(Color.red)
+                                : (exists ? AnyShapeStyle(Color.red.opacity(0.12)) : AnyShapeStyle(Color(.tertiarySystemFill)))
+                        )
+                        .frame(width: 36, height: 36)
+                    Image(systemName: playingThis && audio.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(playingThis && audio.isPlaying ? Color.white : (exists ? Color.red : Color.secondary))
+                        .offset(x: playingThis && audio.isPlaying ? 0 : 1)
+                        .contentTransition(.symbolEffect(.replace))
+                }
             }
             .buttonStyle(.plain)
             .disabled(!exists)

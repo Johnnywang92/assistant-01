@@ -70,23 +70,20 @@ struct VoiceMemoDetailView: View {
                 LabeledContent(memo.isTextOnly ? "创建时间" : "录制时间", value: memo.createdAt.formatted(date: .abbreviated, time: .shortened))
             }
 
-            Section("播放") { playerCard }
+            if memo.hasAudio {
+                Section("播放") { audioPlayerCard }
 
-            Section {
-                // 中断恢复期间只留恢复卡这一个主动作，避免两个「继续录制」并排。
-                if !hasPendingResume {
-                    Button {
-                        showRecorder = true
-                    } label: {
-                        Label(
-                            memo.isTextOnly ? "补录一段录音" : "继续录制（仍在这条备忘里）",
-                            systemImage: "mic.badge.plus"
-                        )
+                Section {
+                    // 中断恢复期间只留恢复卡这一个主动作，避免两个「继续录制」并排。
+                    if !hasPendingResume {
+                        Button {
+                            showRecorder = true
+                        } label: {
+                            Label("继续录制（仍在这条备忘里）", systemImage: "mic.badge.plus")
+                        }
+                        .foregroundStyle(.red)
                     }
-                    .foregroundStyle(.red)
-                }
 
-                if memo.hasAudio {
                     // 片段的时间轴、逐段播放、删除与再续录都收进独立页，
                     // 详情页保持「一屏一个主动作」，不把六件事堆在同一层 List 里。
                     NavigationLink {
@@ -100,13 +97,11 @@ struct VoiceMemoDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                } header: {
+                    Text("录音")
+                } footer: {
+                    Text("每段都是独立文件。在「录音片段」里可逐段播放、合并播放、删除或再续录一段。")
                 }
-            } header: {
-                Text("录音")
-            } footer: {
-                Text(memo.hasAudio
-                     ? "每段都是独立文件。在「录音片段」里可逐段播放、合并播放、删除或再续录一段。"
-                     : "这条是纯文字备忘，补录后也不会多出一条。")
             }
 
             transcriptSection
@@ -133,8 +128,13 @@ struct VoiceMemoDetailView: View {
                                     Text("AI 端侧提炼核心要点")
                                 }
                             }
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.purple)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 38)
+                            .background(Color.purple.opacity(0.10), in: RoundedRectangle(cornerRadius: AppRadius.card))
                         }
+                        .buttonStyle(.plain)
                         .disabled(isGeneratingAISummary)
                     }
                 } header: {
@@ -147,10 +147,29 @@ struct VoiceMemoDetailView: View {
                     Button {
                         showTodoExtractor = true
                     } label: {
-                        Label("从录音内容提取待办 (支持 AI 提炼)", systemImage: "checklist.checked")
+                        HStack {
+                            Label(memo.isTextOnly ? "从正文提取待办" : "从录音内容提取待办", systemImage: "checklist.checked")
+                                .font(.body)
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Image(systemName: "sparkles").font(.caption2)
+                                Text("AI 提炼").font(.caption.weight(.medium))
+                            }
+                            .foregroundStyle(.purple)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.purple.opacity(0.10), in: Capsule())
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
                     }
+                    .buttonStyle(.plain)
                 } footer: {
-                    Text("支持规则分句或调用端侧 AI 自动提炼录音中的行动事项，勾选后加入待办清单。")
+                    Text(memo.isTextOnly
+                         ? "支持规则分句或调用端侧 AI 自动提炼正文中的行动事项，勾选后加入待办清单。"
+                         : "支持规则分句或调用端侧 AI 自动提炼录音中的行动事项，勾选后加入待办清单。")
                 }
             }
 
@@ -174,23 +193,32 @@ struct VoiceMemoDetailView: View {
                     }
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
-                    Label("删除语音备忘", systemImage: "trash")
+                    Label(memo.isTextOnly ? "删除文字备忘" : "删除语音备忘", systemImage: "trash")
                 }
             }
         }
-        .navigationTitle("备忘详情")
+        .navigationTitle(memo.isTextOnly ? "文字备忘" : "语音备忘")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    memo.isBookmarked.toggle()
-                    context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
-                    Haptic.light()
-                } label: {
-                    Image(systemName: memo.isBookmarked ? "star.fill" : "star")
-                        .foregroundStyle(memo.isBookmarked ? .yellow : .accentColor)
+                HStack(spacing: 8) {
+                    Button {
+                        showShareSheet = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .iconButton("生成分享卡片")
+
+                    Button {
+                        memo.isBookmarked.toggle()
+                        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
+                        Haptic.light()
+                    } label: {
+                        Image(systemName: memo.isBookmarked ? "star.fill" : "star")
+                            .foregroundStyle(memo.isBookmarked ? .yellow : .accentColor)
+                    }
+                    .iconButton(memo.isBookmarked ? "取消收藏" : "收藏")
                 }
-                .iconButton(memo.isBookmarked ? "取消收藏" : "收藏")
             }
         }
         .sheet(isPresented: $showTodoExtractor) {
@@ -205,7 +233,7 @@ struct VoiceMemoDetailView: View {
         .sheet(isPresented: $showShareSheet) {
             VoiceMemoShareSheet(memo: memo)
         }
-        .confirmationDialog("删除这条语音备忘？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+        .confirmationDialog(memo.isTextOnly ? "删除这条文字备忘？" : "删除这条语音备忘？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("删除", role: .destructive) {
                 VoiceMemoActions.delete(memo, context: context)
                 dismiss()
@@ -261,33 +289,6 @@ struct VoiceMemoDetailView: View {
 
     // MARK: - 播放器
 
-    @ViewBuilder
-    private var playerCard: some View {
-        if memo.isTextOnly {
-            textOnlyPlayerCard
-        } else {
-            audioPlayerCard
-        }
-    }
-
-    /// 纯文字备忘没有播放器，给一个补录入口，避免显示「音频文件已丢失」误导用户。
-    private var textOnlyPlayerCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("这是一条纯文字备忘", systemImage: "doc.text")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Button {
-                showRecorder = true
-            } label: {
-                Label("补录一段录音", systemImage: "mic.badge.plus")
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.red)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 6)
-    }
-
     private var audioPlayerCard: some View {
         VStack(spacing: 14) {
             if fileMissing {
@@ -340,22 +341,49 @@ struct VoiceMemoDetailView: View {
                     .foregroundStyle(.tertiary)
             }
 
-            HStack(spacing: 36) {
-                Button { audio.skip(by: -15) } label: { Image(systemName: "gobackward.15").font(.title2) }
+            HStack(spacing: 32) {
+                Button { audio.skip(by: -15) } label: {
+                    Image(systemName: "gobackward.15")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                        .frame(width: 44, height: 44)
+                        .background(Color(.secondarySystemFill), in: Circle())
+                }
                 .iconButton("后退 15 秒")
+
                 Button {
                     // 合并播放到某一段时，主按钮暂停/继续的应该是当前段，不是永远第一段。
                     let fileName = isCurrent ? (audio.playingFileName ?? memo.audioFileName) : memo.audioFileName
                     Task { await audio.togglePlayback(fileName: fileName) }
                     Haptic.light()
                 } label: {
-                    Image(systemName: isCurrent && audio.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 52))
-                        .foregroundStyle(.red)
-                        .contentTransition(.symbolEffect(.replace))
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.red, Color(red: 0.90, green: 0.18, blue: 0.22)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 58, height: 58)
+                            .shadow(color: Color.red.opacity(0.35), radius: 8, y: 3)
+                        Image(systemName: isCurrent && audio.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(.white)
+                            .offset(x: isCurrent && audio.isPlaying ? 0 : 2)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
                 }
                 .iconButton(isCurrent && audio.isPlaying ? "暂停播放" : "播放录音")
-                Button { audio.skip(by: 15) } label: { Image(systemName: "goforward.15").font(.title2) }
+
+                Button { audio.skip(by: 15) } label: {
+                    Image(systemName: "goforward.15")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.primary)
+                        .frame(width: 44, height: 44)
+                        .background(Color(.secondarySystemFill), in: Circle())
+                }
                 .iconButton("前进 15 秒")
             }
             .buttonStyle(.plain)
@@ -376,7 +404,7 @@ struct VoiceMemoDetailView: View {
     @ViewBuilder
     private var transcriptSection: some View {
         Section {
-            if audio.isTranscribing(memo) {
+            if memo.hasAudio && audio.isTranscribing(memo) {
                 HStack(spacing: 10) {
                     ProgressView()
                     Text("正在设备端离线转写，不会上传任何音频…").font(.callout).foregroundStyle(.secondary)
@@ -389,7 +417,7 @@ struct VoiceMemoDetailView: View {
                     Spacer()
                     Button("保存") {
                         VoiceMemoActions.apply(transcription: transcriptDraft, to: memo)
-                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存转写文本") }) else {
+                        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "保存文本") }) else {
                             Haptic.error()
                             return
                         }
@@ -404,7 +432,7 @@ struct VoiceMemoDetailView: View {
                 transcriptBlocksPreview
             } else {
                 Text(memo.isTextOnly
-                     ? "还没有正文，点「手动输入」开始写。"
+                     ? "还没有正文，点「编辑正文」开始写。"
                      : "尚未转写。转写全程在本机完成，可随时编辑校对。")
                     .font(.callout).foregroundStyle(.secondary)
             }
@@ -414,21 +442,25 @@ struct VoiceMemoDetailView: View {
             }
 
             if !audio.isTranscribing(memo) && !isEditingTranscript {
-                HStack {
-                    Button {
-                        errorText = nil
-                        VoiceMemoActions.retranscribeFirstSegment(memo, context: context) { errorText = $0 }
-                    } label: {
-                        Label(
-                            memo.hasTranscription
-                                ? (memo.segments.count > 1 ? "重新转写第 1 段" : "重新转写")
-                                : "离线转写为文字",
-                            systemImage: "waveform.and.magnifyingglass"
-                        )
+                HStack(spacing: 8) {
+                    if memo.hasAudio {
+                        Button {
+                            errorText = nil
+                            VoiceMemoActions.retranscribeFirstSegment(memo, context: context) { errorText = $0 }
+                        } label: {
+                            Label(
+                                memo.hasTranscription
+                                    ? (memo.segments.count > 1 ? "重转第1段" : "重新转写")
+                                    : "离线转写",
+                                systemImage: "waveform.and.magnifyingglass"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.small)
+                        .disabled(fileMissing)
                     }
-                    // 纯文字备忘没有音频可转写，别让它去请求一个目录路径。
-                    .disabled(!memo.hasAudio || fileMissing)
-                    Spacer()
+
                     // 多段备忘不给「编辑全文」：TextEditor 会把整篇重新分块，
                     // 块 ID 全换、按段归属随之失效。改用下面的「编辑转写」逐块改。
                     if memo.segments.count <= 1 {
@@ -443,36 +475,38 @@ struct VoiceMemoDetailView: View {
                                 systemImage: "pencil"
                             )
                         }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.small)
                     }
-                }
-                .buttonStyle(.borderless)
-                .font(.subheadline)
 
-                if memo.hasTranscription {
-                    HStack(spacing: 12) {
+                    if memo.hasTranscription {
                         Button {
                             showBlockEditor = true
                         } label: {
-                            Label("编辑转写", systemImage: "square.and.pencil")
+                            Label(memo.isTextOnly ? "分块排版" : "分块编辑", systemImage: "square.and.pencil")
                         }
-                        .buttonStyle(.borderless)
-                        .font(.subheadline)
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.small)
 
                         Spacer()
 
                         Button {
                             showShareSheet = true
                         } label: {
-                            Label("生成分享图", systemImage: "photo.badge.plus")
+                            Label("生成长图", systemImage: "photo.badge.plus")
                         }
-                        .buttonStyle(.borderless)
-                        .font(.subheadline)
-                        .foregroundStyle(.red)
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.small)
+                        .tint(.red)
                     }
                 }
+                .font(.caption)
 
-                if memo.segments.count > 1 {
-                    Text("重新转写只替换第 1 段的文字，其他段的内容与归属不变；改文字请用「编辑转写」逐块修改。")
+                if memo.hasAudio && memo.segments.count > 1 {
+                    Text("重新转写只替换第 1 段的文字，其他段的内容与归属不变；改文字请用「分块编辑」逐块修改。")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -482,7 +516,9 @@ struct VoiceMemoDetailView: View {
                 Text(memo.isTextOnly ? "正文" : "转写文字")
                 Spacer()
                 if memo.hasTranscription {
-                    Text("段落化 · \(memo.document.blocks.filter { !$0.isEmpty }.count) 段")
+                    Text(memo.isTextOnly
+                         ? "\(memo.document.blocks.filter { !$0.isEmpty }.count) 段"
+                         : "段落化 · \(memo.document.blocks.filter { !$0.isEmpty }.count) 段")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -523,8 +559,28 @@ struct VoiceMemoDetailView: View {
                             Text(block.text).font(.callout).foregroundStyle(.secondary).italic()
                         }
                     case .image:
-                        Label("图片 · \(block.imageCaption ?? "会议现场")", systemImage: "photo")
-                            .font(.caption).foregroundStyle(.secondary)
+                        if let name = block.imageFileName,
+                           let data = VoiceMemoImageStorage.loadData(name),
+                           let image = UIImage(data: data) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Image(uiImage: image)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(maxHeight: 220)
+                                    .clipped()
+                                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+                                if let caption = block.imageCaption, !caption.isEmpty {
+                                    Text(caption)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        } else {
+                            Label("图片附件", systemImage: "photo")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     case .audio:
                         Label(MemoShareCardContent.audioCaption(for: block.timeRange), systemImage: "waveform")
                             .font(.caption).foregroundStyle(.red)
@@ -544,7 +600,9 @@ struct VoiceMemoDetailView: View {
         isGeneratingAISummary = true
         Haptic.light()
         Task {
-            let sys = "你是高效的会议与语音笔记提炼助手。请将用户的语音转写内容提炼为 2 到 4 条简明扼要的核心要点，直接输出要点内容，不要说废话。"
+            let sys = memo.isTextOnly
+                ? "你是高效的笔记提炼助手。请将用户的备忘正文提炼为 2 到 4 条简明扼要的核心要点，直接输出要点内容，不要说废话。"
+                : "你是高效的会议与语音笔记提炼助手。请将用户的语音转写内容提炼为 2 到 4 条简明扼要的核心要点，直接输出要点内容，不要说废话。"
             let output = await LLMInferenceService.shared.generateCustomTask(
                 systemInstruction: sys,
                 userContent: text,
@@ -678,7 +736,9 @@ struct VoiceMemoTodoExtractorSheet: View {
         isExtractingWithAI = true
         Haptic.light()
         Task {
-            let sys = "你是待办事项提取助手。请从用户的语音转写文本中提取出需要执行的待办事项，每行输出一条简明待办标题（15字以内），不要输出编号或多余解释。"
+            let sys = memo.isTextOnly
+                ? "你是待办事项提取助手。请从用户的文字备忘中提取出需要执行的待办事项，每行输出一条简明待办标题（15字以内），不要输出编号或多余解释。"
+                : "你是待办事项提取助手。请从用户的语音转写文本中提取出需要执行的待办事项，每行输出一条简明待办标题（15字以内），不要输出编号或多余解释。"
             let output = await LLMInferenceService.shared.generateCustomTask(
                 systemInstruction: sys,
                 userContent: text,
@@ -713,7 +773,7 @@ struct VoiceMemoTodoExtractorSheet: View {
             let todo = TodoItem(
                 type: .general,
                 title: title,
-                detail: "来自语音备忘「\(memo.title)」",
+                detail: memo.isTextOnly ? "来自文字备忘「\(memo.title)」" : "来自语音备忘「\(memo.title)」",
                 sourceText: item.text
             )
             context.insert(todo)

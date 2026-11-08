@@ -454,27 +454,44 @@ struct VoiceMemoShareSheet: View {
             Haptic.selection()
         } label: {
             VStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
-                    .fill(option.backgroundColor)
-                    .frame(width: 54, height: 54)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
-                            .strokeBorder(
-                                isSelected ? Color.red : Color(.separator),
-                                lineWidth: isSelected ? 2 : 0.8
+                ZStack(alignment: .topTrailing) {
+                    RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
+                        .fill(option.backgroundColor)
+                        .frame(width: 54, height: 54)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: AppRadius.chip, style: .continuous)
+                                .strokeBorder(
+                                    isSelected ? Color.red : Color(.separator),
+                                    lineWidth: isSelected ? 2.5 : 0.8
+                                )
+                        )
+                        .overlay(
+                            Text("Aa")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                .foregroundStyle(option.textColor)
+                        )
+                        .shadow(color: isSelected ? Color.red.opacity(0.25) : .clear, radius: 4, y: 2)
+
+                    if isSelected {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 16, height: 16)
+                            .overlay(
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(.white)
                             )
-                    )
-                    .overlay(
-                        Text("Aa")
-                            .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundStyle(option.textColor)
-                    )
+                            .offset(x: 4, y: -4)
+                    }
+                }
+
                 Text(option.rawValue)
-                    .font(.caption2)
+                    .font(.caption2.weight(isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? Color.red : Color.secondary)
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(option.rawValue)主题")
     }
 
     // MARK: - 导出选项
@@ -524,14 +541,14 @@ struct VoiceMemoShareSheet: View {
 
     private var actionButtons: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Button {
                     saveToPhotos()
                 } label: {
                     Label("保存到相册", systemImage: "square.and.arrow.down")
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
+                        .padding(.vertical, 14)
                         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
                 }
                 .buttonStyle(.plain)
@@ -541,11 +558,19 @@ struct VoiceMemoShareSheet: View {
                     shareImage()
                 } label: {
                     Label("分享图片", systemImage: "square.and.arrow.up")
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(Color.red, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+                        .padding(.vertical, 14)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.red, Color(red: 0.90, green: 0.18, blue: 0.22)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                        )
                         .foregroundStyle(.white)
+                        .shadow(color: Color.red.opacity(items.isEmpty ? 0 : 0.28), radius: 6, y: 3)
                 }
                 .buttonStyle(.plain)
                 .disabled(items.isEmpty)
