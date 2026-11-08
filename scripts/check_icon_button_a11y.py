@@ -41,13 +41,9 @@ BASELINE = {
     "Assistant/Features/TabBarCustomizationView.swift": 2,
     "Assistant/Features/Todo/AddTodoSheet.swift": 2,
     "Assistant/Features/Todo/TodoBannerCards.swift": 1,
-    "Assistant/Features/Todo/TodoRowViews.swift": 1,
     "Assistant/Features/TravelTicketConfirmationSheet.swift": 1,
     "Assistant/Features/VehicleManagementView.swift": 2,
     "Assistant/Features/VoiceDialogueView.swift": 5,
-    "Assistant/Features/VoiceMemo/VoiceMemoBlockEditorView.swift": 2,
-    "Assistant/Features/VoiceMemoDetailView.swift": 3,
-    "Assistant/Features/VoiceMemoListView.swift": 2,
     "Assistant/Features/WaterTrackerView.swift": 1,
     "Assistant/Features/WebDAVSyncView.swift": 1,
 }

@@ -341,7 +341,7 @@ enum L10n {
 
 
 def replace_attribute_calls(source: str, attr: str, build) -> str:
-    """把 `@Attr(...) private var name: Type` 改写成普通属性。
+    r"""把 `@Attr(...) private var name: Type` 改写成普通属性。
 
     按**括号配平**扫描参数区间——排序键等参数里含嵌套括号
     （`@Query(sort: \Model.field, order: .reverse)`），
