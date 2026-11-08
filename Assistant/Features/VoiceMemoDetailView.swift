@@ -19,6 +19,7 @@ struct VoiceMemoDetailView: View {
     @State private var showBlockEditor = false
     @State private var showShareSheet = false
     @State private var showRecorder = false
+    @State private var showTextEditor = false
 
     /// 播放的是这条备忘里的任意一段（串播时会切换文件）。
     private var isCurrent: Bool { memo.segmentFileNames.contains(audio.playingFileName ?? "") }
@@ -229,6 +230,9 @@ struct VoiceMemoDetailView: View {
         }
         .sheet(isPresented: $showRecorder) {
             VoiceMemoRecorderSheet(memo: memo)
+        }
+        .sheet(isPresented: $showTextEditor) {
+            VoiceMemoTextEditorView(memo: memo)
         }
         .sheet(isPresented: $showShareSheet) {
             VoiceMemoShareSheet(memo: memo)
@@ -442,80 +446,135 @@ struct VoiceMemoDetailView: View {
             }
 
             if !audio.isTranscribing(memo) && !isEditingTranscript {
-                HStack(spacing: 8) {
+                if !memo.hasTranscription {
                     if memo.hasAudio {
                         Button {
                             errorText = nil
                             VoiceMemoActions.retranscribeFirstSegment(memo, context: context) { errorText = $0 }
                         } label: {
-                            Label(
-                                memo.hasTranscription
-                                    ? (memo.segments.count > 1 ? "重转第1段" : "重新转写")
-                                    : "离线转写",
-                                systemImage: "waveform.and.magnifyingglass"
-                            )
+                            HStack(spacing: 6) {
+                                Image(systemName: "waveform.and.magnifyingglass")
+                                Text("开始离线语音转写")
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 38)
+                            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                         }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.small)
+                        .buttonStyle(MemoActionButtonStyle())
                         .disabled(fileMissing)
-                    }
-
-                    // 多段备忘不给「编辑全文」：TextEditor 会把整篇重新分块，
-                    // 块 ID 全换、按段归属随之失效。改用下面的「编辑转写」逐块改。
-                    if memo.segments.count <= 1 {
+                    } else {
                         Button {
-                            transcriptDraft = memo.transcription ?? ""
-                            isEditingTranscript = true
+                            Haptic.selection()
+                            showTextEditor = true
                         } label: {
-                            Label(
-                                memo.hasTranscription
-                                    ? (memo.isTextOnly ? "编辑正文" : "编辑全文")
-                                    : "手动输入",
-                                systemImage: "pencil"
-                            )
+                            HStack(spacing: 6) {
+                                Image(systemName: "square.and.pencil")
+                                Text("编辑正文并添加图片")
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.accentColor)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 38)
+                            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                         }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.small)
+                        .buttonStyle(MemoActionButtonStyle())
                     }
+                } else {
+                    HStack(spacing: 8) {
+                        if memo.segments.count <= 1 || memo.isTextOnly {
+                            Button {
+                                Haptic.selection()
+                                if memo.isTextOnly {
+                                    showTextEditor = true
+                                } else {
+                                    transcriptDraft = memo.transcription ?? ""
+                                    isEditingTranscript = true
+                                }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "pencil")
+                                        .font(.caption.weight(.semibold))
+                                    Text(memo.isTextOnly ? "编辑正文" : "编辑全文")
+                                        .font(.subheadline.weight(.medium))
+                                }
+                                .foregroundStyle(Color.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 38)
+                                .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
+                            }
+                            .buttonStyle(MemoActionButtonStyle())
+                        }
 
-                    if memo.hasTranscription {
                         Button {
+                            Haptic.selection()
                             showBlockEditor = true
                         } label: {
-                            Label(memo.isTextOnly ? "分块排版" : "分块编辑", systemImage: "square.and.pencil")
+                            HStack(spacing: 5) {
+                                Image(systemName: "rectangle.3.group")
+                                    .font(.caption.weight(.semibold))
+                                Text(memo.isTextOnly ? "分块排版" : "分块编辑")
+                                    .font(.subheadline.weight(.medium))
+                            }
+                            .foregroundStyle(Color.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 38)
+                            .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                         }
-                        .buttonStyle(.bordered)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.small)
-
-                        Spacer()
+                        .buttonStyle(MemoActionButtonStyle())
 
                         Button {
+                            Haptic.selection()
                             showShareSheet = true
                         } label: {
-                            Label("生成长图", systemImage: "photo.badge.plus")
+                            HStack(spacing: 5) {
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.caption.weight(.semibold))
+                                Text("生成长图")
+                                    .font(.subheadline.weight(.medium))
+                            }
+                            .foregroundStyle(Color.accentColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 38)
+                            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous))
                         }
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.capsule)
-                        .controlSize(.small)
-                        .tint(.red)
+                        .buttonStyle(MemoActionButtonStyle())
                     }
-                }
-                .font(.caption)
+                    .padding(.top, 4)
 
-                if memo.hasAudio && memo.segments.count > 1 {
-                    Text("重新转写只替换第 1 段的文字，其他段的内容与归属不变；改文字请用「分块编辑」逐块修改。")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    if memo.hasAudio && memo.segments.count > 1 {
+                        Text("多段录音请用「分块编辑」独立修改各段文字并对齐原声片段。")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
         } header: {
             HStack {
                 Text(memo.isTextOnly ? "正文" : "转写文字")
                 Spacer()
-                if memo.hasTranscription {
+                if memo.hasAudio && memo.hasTranscription {
+                    Button {
+                        errorText = nil
+                        VoiceMemoActions.retranscribeFirstSegment(memo, context: context) { errorText = $0 }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text(memo.segments.count > 1 ? "重转第1段" : "重新转写")
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(fileMissing)
+                } else if memo.hasTranscription {
                     Text(memo.isTextOnly
                          ? "\(memo.document.blocks.filter { !$0.isEmpty }.count) 段"
                          : "段落化 · \(memo.document.blocks.filter { !$0.isEmpty }.count) 段")
@@ -784,5 +843,15 @@ struct VoiceMemoTodoExtractorSheet: View {
         }
         Haptic.success()
         dismiss()
+    }
+}
+
+/// 备忘详情页底部操作栏按钮样式：轻微按压缩放动效，提供顺滑的原生触觉体验
+private struct MemoActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .opacity(configuration.isPressed ? 0.82 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
