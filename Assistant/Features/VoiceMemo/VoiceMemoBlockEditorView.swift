@@ -43,7 +43,7 @@ struct VoiceMemoBlockEditorView: View {
     /// 保存失败的提示：失败时不关闭页面，保留用户正在编辑的内容
     @State private var saveError: String?
 
-    private var fileMissing: Bool { !VoiceMemoStorage.exists(memo.audioFileName) }
+    private var fileMissing: Bool { !memo.hasAudio || !VoiceMemoStorage.exists(memo.audioFileName) }
 
     var body: some View {
         NavigationStack {
@@ -89,7 +89,9 @@ struct VoiceMemoBlockEditorView: View {
         }
         .onAppear {
             document = memo.document
-            if document.title.isEmpty { document.title = memo.title }
+            // 标题以备忘标题为准：document.title 是写入时冻结的快照，
+            // 用户在详情页改过标题后不该继续显示旧值。
+            document.title = memo.title
         }
         .alert(
             "保存失败",
@@ -106,7 +108,28 @@ struct VoiceMemoBlockEditorView: View {
 
     // MARK: - 播放条
 
+    @ViewBuilder
     private var playbackBar: some View {
+        if memo.hasAudio {
+            audioPlaybackBar
+        } else {
+            // 纯文字备忘没有录音，别摆一排点不动的播放控件。
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text")
+                Text("纯文字备忘 · 没有录音")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+            )
+        }
+    }
+
+    private var audioPlaybackBar: some View {
         HStack(spacing: 10) {
             Button {
                 Task { await audio.togglePlayback(fileName: memo.audioFileName) }
@@ -118,6 +141,7 @@ struct VoiceMemoBlockEditorView: View {
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
+            .iconButton(isPlaying ? "暂停播放" : "播放录音")
             .disabled(fileMissing)
 
             Text(playbackText)
@@ -332,6 +356,7 @@ struct VoiceMemoBlockEditorView: View {
                     .foregroundStyle(.red)
             }
             .buttonStyle(.plain)
+            .iconButton("播放片段")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(MemoShareCardContent.audioCaption(for: block.timeRange))
@@ -733,7 +758,7 @@ struct VoiceMemoClipPickerSheet: View {
     @State private var end: TimeInterval = 0
     @State private var duration: TimeInterval = 0
 
-    private var fileMissing: Bool { !VoiceMemoStorage.exists(memo.audioFileName) }
+    private var fileMissing: Bool { !memo.hasAudio || !VoiceMemoStorage.exists(memo.audioFileName) }
 
     var body: some View {
         NavigationStack {

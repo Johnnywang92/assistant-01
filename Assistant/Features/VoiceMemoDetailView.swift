@@ -18,25 +18,96 @@ struct VoiceMemoDetailView: View {
     @State private var isGeneratingAISummary = false
     @State private var showBlockEditor = false
     @State private var showShareSheet = false
+    @State private var showRecorder = false
 
-    private var isCurrent: Bool { audio.playingFileName == memo.audioFileName }
-    private var fileMissing: Bool { !VoiceMemoStorage.exists(memo.audioFileName) }
+    /// 播放的是这条备忘里的任意一段（串播时会切换文件）。
+    private var isCurrent: Bool { memo.segmentFileNames.contains(audio.playingFileName ?? "") }
+    /// 第一段缺失时主播放器不可用；其余段缺失在片段管理页里逐段标出。
+    private var fileMissing: Bool { memo.hasAudio && !VoiceMemoStorage.exists(memo.audioFileName) }
+    private var hasPendingResume: Bool { audio.pendingResume?.memoID == memo.id }
 
     var body: some View {
         List {
+            // 恢复卡放进滚动内容流，不固定在容器外——与首页横幅同一条约定。
+            if hasPendingResume {
+                Section {
+                    resumeCard
+                }
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                .listRowBackground(Color.clear)
+            }
+
             Section {
-                TextField("标题", text: $memo.title)
+                // 用 displayTitle 显示：旧数据里纯文字备忘却存着「语音备忘 <时间>」，
+                // 直接绑 memo.title 会让详情页和列表显示两套标题。
+                TextField("标题", text: Binding(
+                    get: { memo.displayTitle },
+                    set: { memo.title = $0 }
+                ))
                     .font(.headline)
-                    .onSubmit { context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存语音备忘标题") } }
+                    .onSubmit {
+                        // 用户手改过标题后，转写完成不再用自动标题覆盖。
+                        memo.titleIsUserEdited = true
+                        context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存语音备忘标题") }
+                    }
+                // 纯文字备忘没有转写，标题是在保存时从正文首句得来的，
+                // 这个开关对它不产生任何效果——不放一个点了没反应的开关。
+                if !memo.isTextOnly {
+                    Toggle("自动生成标题", isOn: Binding(
+                        get: { !memo.titleIsUserEdited },
+                        set: { enabled in
+                            memo.titleIsUserEdited = !enabled
+                            context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存标题生成设置") }
+                        }
+                    ))
+                    .font(.subheadline)
+                }
                 HStack {
                     Picker("分类", selection: Binding(get: { memo.tag }, set: { memo.tag = $0; context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存语音备忘分类") } })) {
                         ForEach(VoiceMemoTag.allCases) { Label(L10n.tr($0.rawValue), systemImage: $0.icon).tag($0) }
                     }
                 }
-                LabeledContent("录制时间", value: memo.createdAt.formatted(date: .abbreviated, time: .shortened))
+                LabeledContent(memo.isTextOnly ? "创建时间" : "录制时间", value: memo.createdAt.formatted(date: .abbreviated, time: .shortened))
             }
 
             Section("播放") { playerCard }
+
+            Section {
+                // 中断恢复期间只留恢复卡这一个主动作，避免两个「继续录制」并排。
+                if !hasPendingResume {
+                    Button {
+                        showRecorder = true
+                    } label: {
+                        Label(
+                            memo.isTextOnly ? "补录一段录音" : "继续录制（仍在这条备忘里）",
+                            systemImage: "mic.badge.plus"
+                        )
+                    }
+                    .foregroundStyle(.red)
+                }
+
+                if memo.hasAudio {
+                    // 片段的时间轴、逐段播放、删除与再续录都收进独立页，
+                    // 详情页保持「一屏一个主动作」，不把六件事堆在同一层 List 里。
+                    NavigationLink {
+                        VoiceMemoSegmentListView(memo: memo)
+                    } label: {
+                        HStack {
+                            Label("录音片段", systemImage: "waveform")
+                            Spacer()
+                            Text("\(memo.segments.count) 段 · \(formatMemoDuration(memo.totalDuration))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text("录音")
+            } footer: {
+                Text(memo.hasAudio
+                     ? "每段都是独立文件。在「录音片段」里可逐段播放、合并播放、删除或再续录一段。"
+                     : "这条是纯文字备忘，补录后也不会多出一条。")
+            }
 
             transcriptSection
 
@@ -84,12 +155,23 @@ struct VoiceMemoDetailView: View {
             }
 
             Section {
-                ShareLink(item: memo.audioURL, preview: SharePreview(memo.title)) {
-                    Label("分享音频文件", systemImage: "square.and.arrow.up")
+                // 一条备忘可能有多段音频，逐段都带出去，别只分享第一段。
+                if memo.hasAudio {
+                    let urls = memo.segments
+                        .filter { VoiceMemoStorage.exists($0.fileName) }
+                        .map { VoiceMemoStorage.url(for: $0.fileName) }
+                    ShareLink(items: urls) {
+                        Label(
+                            urls.count > 1 ? "分享全部 \(urls.count) 段音频" : "分享音频文件",
+                            systemImage: "square.and.arrow.up"
+                        )
+                    }
+                    .disabled(urls.isEmpty)
                 }
-                .disabled(fileMissing)
                 if let t = memo.transcription, !t.isEmpty {
-                    ShareLink(item: t) { Label("分享转写文字", systemImage: "doc.text") }
+                    ShareLink(item: t) {
+                        Label(memo.isTextOnly ? "分享文字内容" : "分享转写文字", systemImage: "doc.text")
+                    }
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     Label("删除语音备忘", systemImage: "trash")
@@ -108,6 +190,7 @@ struct VoiceMemoDetailView: View {
                     Image(systemName: memo.isBookmarked ? "star.fill" : "star")
                         .foregroundStyle(memo.isBookmarked ? .yellow : .accentColor)
                 }
+                .iconButton(memo.isBookmarked ? "取消收藏" : "收藏")
             }
         }
         .sheet(isPresented: $showTodoExtractor) {
@@ -115,6 +198,9 @@ struct VoiceMemoDetailView: View {
         }
         .fullScreenCover(isPresented: $showBlockEditor) {
             VoiceMemoBlockEditorView(memo: memo)
+        }
+        .sheet(isPresented: $showRecorder) {
+            VoiceMemoRecorderSheet(memo: memo)
         }
         .sheet(isPresented: $showShareSheet) {
             VoiceMemoShareSheet(memo: memo)
@@ -126,7 +212,7 @@ struct VoiceMemoDetailView: View {
             }
         }
         .onAppear {
-            if !fileMissing { audio.prepare(fileName: memo.audioFileName) }
+            if memo.hasAudio && !fileMissing { audio.prepare(fileName: memo.audioFileName) }
         }
         .onDisappear {
             context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "保存") }
@@ -134,13 +220,93 @@ struct VoiceMemoDetailView: View {
         }
     }
 
+    // MARK: - 中断恢复与片段管理
+
+    private var resumeCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("录音被中断", systemImage: "exclamationmark.circle.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.red)
+            Text("已保存的 \(memo.segments.count) 段都在（共 \(formatMemoDuration(memo.totalDuration))），可以接着录下一段，仍在这条备忘里。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Button {
+                    resumeRecording()
+                } label: {
+                    Label("继续录这条", systemImage: "mic.fill")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                Button("以后再说") { audio.clearPendingResume() }
+                    .buttonStyle(.bordered)
+                    .font(.subheadline)
+            }
+            Text("中断时正在录的那一段没有保存，不会被找回")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.banner))
+    }
+
+    private func resumeRecording() {
+        // 上一次被中断的录音可能还挂在单例上；先收掉，否则新录音页会因 isRecording 直接不启动。
+        if audio.isRecording { audio.cancelRecording() }
+        audio.clearPendingResume()
+        showRecorder = true
+    }
+
     // MARK: - 播放器
 
+    @ViewBuilder
     private var playerCard: some View {
+        if memo.isTextOnly {
+            textOnlyPlayerCard
+        } else {
+            audioPlayerCard
+        }
+    }
+
+    /// 纯文字备忘没有播放器，给一个补录入口，避免显示「音频文件已丢失」误导用户。
+    private var textOnlyPlayerCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("这是一条纯文字备忘", systemImage: "doc.text")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Button {
+                showRecorder = true
+            } label: {
+                Label("补录一段录音", systemImage: "mic.badge.plus")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.red)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+    }
+
+    private var audioPlayerCard: some View {
         VStack(spacing: 14) {
             if fileMissing {
                 Label("音频文件已丢失（仅保留转写文字）", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(.orange)
+            }
+
+            // 多段时给一条合并时间轴：断点可见、点段落可单独播放。
+            // 滑块仍然只控制「当前这一段」，两者语义要在文案里说清，别让用户以为滑块是全局进度。
+            if memo.segments.count > 1 {
+                MemoSegmentTimelineView(
+                    segments: memo.segments,
+                    activeFileName: isCurrent ? audio.playingFileName : nil,
+                    segmentProgress: audio.playbackTime
+                ) { segment in
+                    // 点单段要退出合并播放，否则播完会接着跳到队列里的下一段。
+                    if !audio.playbackQueue.isEmpty { audio.stopPlayback() }
+                    Task { await audio.togglePlayback(fileName: segment.fileName) }
+                }
             }
 
             let duration = isCurrent && audio.playbackDuration > 0 ? audio.playbackDuration : memo.duration
@@ -168,11 +334,19 @@ struct VoiceMemoDetailView: View {
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
 
+            if memo.segments.count > 1 {
+                Text("滑块控制当前片段 · 上方时间轴是整条备忘（共 \(formatMemoDuration(memo.totalDuration))）")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+
             HStack(spacing: 36) {
                 Button { audio.skip(by: -15) } label: { Image(systemName: "gobackward.15").font(.title2) }
                 .iconButton("后退 15 秒")
                 Button {
-                    Task { await audio.togglePlayback(fileName: memo.audioFileName) }
+                    // 合并播放到某一段时，主按钮暂停/继续的应该是当前段，不是永远第一段。
+                    let fileName = isCurrent ? (audio.playingFileName ?? memo.audioFileName) : memo.audioFileName
+                    Task { await audio.togglePlayback(fileName: fileName) }
                     Haptic.light()
                 } label: {
                     Image(systemName: isCurrent && audio.isPlaying ? "pause.circle.fill" : "play.circle.fill")
@@ -180,6 +354,7 @@ struct VoiceMemoDetailView: View {
                         .foregroundStyle(.red)
                         .contentTransition(.symbolEffect(.replace))
                 }
+                .iconButton(isCurrent && audio.isPlaying ? "暂停播放" : "播放录音")
                 Button { audio.skip(by: 15) } label: { Image(systemName: "goforward.15").font(.title2) }
                 .iconButton("前进 15 秒")
             }
@@ -228,7 +403,9 @@ struct VoiceMemoDetailView: View {
                 // 结构化预览：转写不再是「一大坨文字」，而是分好块的笔记
                 transcriptBlocksPreview
             } else {
-                Text("尚未转写。转写全程在本机完成，可随时编辑校对。")
+                Text(memo.isTextOnly
+                     ? "还没有正文，点「手动输入」开始写。"
+                     : "尚未转写。转写全程在本机完成，可随时编辑校对。")
                     .font(.callout).foregroundStyle(.secondary)
             }
 
@@ -240,17 +417,32 @@ struct VoiceMemoDetailView: View {
                 HStack {
                     Button {
                         errorText = nil
-                        VoiceMemoActions.transcribeInBackground(memo, context: context) { errorText = $0 }
+                        VoiceMemoActions.retranscribeFirstSegment(memo, context: context) { errorText = $0 }
                     } label: {
-                        Label(memo.hasTranscription ? "重新转写" : "离线转写为文字", systemImage: "waveform.and.magnifyingglass")
+                        Label(
+                            memo.hasTranscription
+                                ? (memo.segments.count > 1 ? "重新转写第 1 段" : "重新转写")
+                                : "离线转写为文字",
+                            systemImage: "waveform.and.magnifyingglass"
+                        )
                     }
-                    .disabled(fileMissing)
+                    // 纯文字备忘没有音频可转写，别让它去请求一个目录路径。
+                    .disabled(!memo.hasAudio || fileMissing)
                     Spacer()
-                    Button {
-                        transcriptDraft = memo.transcription ?? ""
-                        isEditingTranscript = true
-                    } label: {
-                        Label(memo.hasTranscription ? "编辑全文" : "手动输入", systemImage: "pencil")
+                    // 多段备忘不给「编辑全文」：TextEditor 会把整篇重新分块，
+                    // 块 ID 全换、按段归属随之失效。改用下面的「编辑转写」逐块改。
+                    if memo.segments.count <= 1 {
+                        Button {
+                            transcriptDraft = memo.transcription ?? ""
+                            isEditingTranscript = true
+                        } label: {
+                            Label(
+                                memo.hasTranscription
+                                    ? (memo.isTextOnly ? "编辑正文" : "编辑全文")
+                                    : "手动输入",
+                                systemImage: "pencil"
+                            )
+                        }
                     }
                 }
                 .buttonStyle(.borderless)
@@ -278,10 +470,16 @@ struct VoiceMemoDetailView: View {
                         .foregroundStyle(.red)
                     }
                 }
+
+                if memo.segments.count > 1 {
+                    Text("重新转写只替换第 1 段的文字，其他段的内容与归属不变；改文字请用「编辑转写」逐块修改。")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
             }
         } header: {
             HStack {
-                Text("转写文字")
+                Text(memo.isTextOnly ? "正文" : "转写文字")
                 Spacer()
                 if memo.hasTranscription {
                     Text("段落化 · \(memo.document.blocks.filter { !$0.isEmpty }.count) 段")
@@ -434,6 +632,7 @@ struct VoiceMemoTodoExtractorSheet: View {
                             customText = ""
                         } label: { Image(systemName: "plus.circle.fill") }
                         .buttonStyle(.borderless)
+                        .iconButton("添加待办")
                     }
                 }
             }
