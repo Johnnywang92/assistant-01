@@ -263,6 +263,45 @@ public struct VoiceMemoDTO: Codable {
     public var tagRaw: String
     public var isBookmarked: Bool
     public var createdAt: Date
+
+    // MARK: V12：全部可选，旧备份包解码为 nil，行为与旧版完全一致
+    /// 有序录音片段（含各段音频）。nil = 旧版单段备份，还原时回落。
+    public var segments: [VoiceMemoSegmentDTO]? = nil
+    public var shareTitle: String? = nil
+    public var shareTitleSourceRaw: String? = nil
+    public var titleIsUserEditedRaw: Bool? = nil
+    public var isTextOnlyRaw: Bool? = nil
+}
+
+/// 语音备忘里的一个录音片段。每段音频独立打包，避免只备份第一段。
+public struct VoiceMemoSegmentDTO: Codable {
+    public var id: UUID
+    public var fileName: String
+    public var duration: Double
+    public var createdAt: Date
+    public var interruptionReasonRaw: String?
+    public var audioData: Data?
+    /// 该段转写生成的块 ID。旧备份包为 nil，还原后按「无归属」处理：
+    /// 删段只删音频、不动文字，绝不因为归属缺失而误删内容。
+    public var transcriptBlockIDs: [UUID]?
+
+    public init(
+        id: UUID,
+        fileName: String,
+        duration: Double,
+        createdAt: Date,
+        interruptionReasonRaw: String? = nil,
+        audioData: Data? = nil,
+        transcriptBlockIDs: [UUID]? = nil
+    ) {
+        self.id = id
+        self.fileName = fileName
+        self.duration = duration
+        self.createdAt = createdAt
+        self.interruptionReasonRaw = interruptionReasonRaw
+        self.audioData = audioData
+        self.transcriptBlockIDs = transcriptBlockIDs
+    }
 }
 
 /// 语音备忘笔记里的一张内嵌图片。

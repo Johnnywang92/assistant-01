@@ -57,13 +57,27 @@ extension DataMigrationService {
         // 附件预检：必须在清库之前完成。
         // 旧版导出可能静默丢过语音音频，带着这种缺口进还原流程，
         // 结果是「记录在、音频没了」的残缺数据——用户却以为还原成功了。
-        let packageAttachmentExpectations = (package.voiceMemos ?? []).map { memo in
-            BackupRestoreGuard.AttachmentExpectation(
-                ownerTitle: memo.title,
-                kind: .voiceMemoAudio,
-                fileName: memo.audioFileName.isEmpty ? nil : memo.audioFileName,
-                hasData: memo.audioData?.isEmpty == false
-            )
+        let packageAttachmentExpectations = (package.voiceMemos ?? []).flatMap { memo -> [BackupRestoreGuard.AttachmentExpectation] in
+            var expectations: [BackupRestoreGuard.AttachmentExpectation] = []
+            // 纯文字备忘没有音频，不参与附件预检。
+            if !memo.audioFileName.isEmpty {
+                expectations.append(.init(
+                    ownerTitle: memo.title,
+                    kind: .voiceMemoAudio,
+                    fileName: memo.audioFileName,
+                    hasData: memo.audioData?.isEmpty == false
+                ))
+            }
+            // 多段录音每段都要预检，不能只看第一段。
+            for segment in memo.segments ?? [] {
+                expectations.append(.init(
+                    ownerTitle: memo.title,
+                    kind: .voiceMemoAudio,
+                    fileName: segment.fileName.isEmpty ? nil : segment.fileName,
+                    hasData: segment.audioData?.isEmpty == false
+                ))
+            }
+            return expectations
         }
         // 笔记内嵌图片也要预检：包里说了有图，实际没带上，同样是残缺备份。
         let packageImageExpectations = (package.voiceMemos ?? []).flatMap { memo in
@@ -490,6 +504,31 @@ extension DataMigrationService {
                 }
             }
 
+            // 还原多段录音：每段独立写盘，文件名冲突时 save 会另起名字，
+            // 同步更新片段里的 fileName，避免留下指向旧文件名的断链。
+            var restoredSegments: [MemoSegment] = []
+            for (index, segment) in (vm.segments ?? []).enumerated() {
+                var actualName = segment.fileName
+                if index == 0, vm.audioData?.isEmpty == false {
+                    // 第一段已由兼容字段 audioData 写盘，复用它；
+                    // 若再写一次会另起文件名，旧文件就变成没人引用的孤儿。
+                    actualName = actualAudioFileName
+                } else if let data = segment.audioData, !data.isEmpty {
+                    guard let saved = VoiceMemoStorage.save(data: data, preferredName: segment.fileName) else {
+                        throw MigrationCryptoError.missingAttachment(vm.title)
+                    }
+                    actualName = saved
+                }
+                restoredSegments.append(MemoSegment(
+                    id: segment.id,
+                    fileName: actualName,
+                    duration: segment.duration,
+                    createdAt: segment.createdAt,
+                    interruptionReasonRaw: segment.interruptionReasonRaw,
+                    transcriptBlockIDs: segment.transcriptBlockIDs
+                ))
+            }
+
             // 还原笔记内嵌图片。图片写盘失败要**取消还原**，
             // 不能留下「块里引用着图片、但文件不在」的断链状态——
             // 那样卡片渲染时会显示「图片已丢失」，而用户以为还原成功了。
@@ -522,6 +561,22 @@ extension DataMigrationService {
             }
             item.summary = vm.summary
             item.isBookmarked = vm.isBookmarked
+            // V12：直接写字段，不再过 setter，保持 duration = 第一段时长的兼容语义。
+            if !restoredSegments.isEmpty {
+                item.segmentsData = MemoSegmentCodec.encode(restoredSegments)
+                if let first = restoredSegments.first {
+                    item.audioFileName = first.fileName
+                    item.duration = first.duration
+                }
+            }
+            item.shareTitle = vm.shareTitle
+            item.shareTitleSourceRaw = vm.shareTitleSourceRaw
+            item.titleIsUserEditedRaw = vm.titleIsUserEditedRaw
+            item.isTextOnlyRaw = vm.isTextOnlyRaw
+            // 旧备份包没有这个字段：确实没有音频时也要标成纯文字，别让它假装能播放。
+            if vm.isTextOnlyRaw == nil, vm.audioFileName.isEmpty, restoredSegments.isEmpty {
+                item.isTextOnly = true
+            }
             context.insert(item)
             restoredVoiceMemos += 1
         }
@@ -1222,7 +1277,9 @@ extension DataMigrationService {
             }
 
             let fetchedMemos = try? context.fetch(FetchDescriptor<VoiceMemo>())
-            let validAudioNames = Set((fetchedMemos ?? []).map(\.audioFileName))
+            // 一条备忘可能有多个片段：全部算进保留名单，
+            // 否则清理孤儿文件时会把第 2 段之后的录音全删掉。
+            let validAudioNames = Set((fetchedMemos ?? []).flatMap { Array($0.segmentFileNames) })
             switch BackupRestoreGuard.pruneDecision(
                 referenceLookupSucceeded: fetchedMemos != nil,
                 referencedFileNames: validAudioNames

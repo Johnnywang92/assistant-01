@@ -359,11 +359,166 @@ if #available(macOS 15.0, *) {
     print("演练 5：跳过（`#Index` 需 macOS 15+ / iOS 18+）")
 }
 
+// MARK: - 演练 6：V11→V12「语音备忘片段化」轻量迁移
+
+print("演练 6：V11→V12 语音备忘片段化")
+
+/// 从演练脚本所在路径上溯找仓库根，读取**应用真实源码**。
+/// 镜像模型只能证明迁移机制，真正要钉住的是应用里的迁移计划与字段形状有没有写错。
+func appSource(_ relativePath: String) -> String? {
+    var cursor = URL(fileURLWithPath: #filePath)
+    for _ in 0..<8 {
+        cursor.deleteLastPathComponent()
+        if fm.fileExists(atPath: cursor.appendingPathComponent("project.yml").path) {
+            return try? String(contentsOf: cursor.appendingPathComponent(relativePath), encoding: .utf8)
+        }
+    }
+    return nil
+}
+
+// 6a. 真实源码静态校验：漏阶段、误加关系、把新字段写成非可选，都会在这里红。
+if let persistence = appSource("Assistant/Services/Persistence.swift"),
+   let model = appSource("Assistant/Models/VoiceMemoModel.swift"),
+   let dto = appSource("Assistant/Services/Migration/BackupPackageModels.swift"),
+   let actions = appSource("Assistant/Features/VoiceMemoListView.swift"),
+   let detail = appSource("Assistant/Features/VoiceMemoDetailView.swift") {
+    check(persistence.contains("enum AssistantSchemaV12: VersionedSchema"), "6a V12 Schema 已定义")
+    check(persistence.contains("Schema.Version(12, 0, 0)"), "6a V12 版本号为 12.0.0")
+    check(persistence.contains(".lightweight(fromVersion: AssistantSchemaV11.self, toVersion: AssistantSchemaV12.self)"),
+          "6a V11→V12 lightweight 阶段存在")
+    check(persistence.contains("AssistantSchemaV11.self, AssistantSchemaV12.self"),
+          "6a 迁移计划 schemas 收齐 V12")
+    if let head = persistence.range(of: "enum AssistantSchemaV12") {
+        let body = String(persistence[head.lowerBound...]).prefix(600)
+        check(body.contains("AssistantSchemaV11.models"), "6a V12 模型清单沿用 V11（没有新增 @Model）")
+    } else {
+        check(false, "6a V12 Schema 定义读取失败")
+    }
+
+    let optionalFields: [(String, String)] = [
+        ("segmentsData", "Data?"),
+        ("shareTitle", "String?"),
+        ("shareTitleSourceRaw", "String?"),
+        ("titleIsUserEditedRaw", "Bool?"),
+        ("isTextOnlyRaw", "Bool?")
+    ]
+    for (name, type) in optionalFields {
+        check(model.contains("var \(name): \(type)"), "6a \(name) 是可选项 \(type)（旧库 NULL 才安全）")
+    }
+    let relationshipDecls = model.split(separator: "\n").filter {
+        $0.trimmingCharacters(in: .whitespaces).hasPrefix("@Relationship")
+    }
+    check(relationshipDecls.isEmpty, "6a VoiceMemo 没有新增 @Relationship（历史 Schema 迁移红线）")
+    check(model.contains("guard hasAudio else { return [] }"),
+          "6a segments 对存量数据回落到单段，而不是空数组")
+    // 转写归属是 JSON 内部字段，不该为此再升一次 Schema。
+    check(persistence.contains("enum AssistantSchemaV12") && !persistence.contains("enum AssistantSchemaV13"),
+          "6a 转写归属没有触发 V13：片段字段继续走 segmentsData JSON")
+    check(model.contains("var transcriptBlockIDs: [UUID]?"),
+          "6a MemoSegment 的转写归属是可选字段（旧 JSON 解码自动回落 nil）")
+    check(dto.contains("public var transcriptBlockIDs: [UUID]?"),
+          "6a 备份 DTO 带上转写归属，恢复后删段不会退化成「只删音频」")
+    check(actions.contains("static func retranscribeFirstSegment")
+          && actions.contains("document.blocks.removeAll { owned.contains($0.id) }"),
+          "6a 重新转写按归属块精确替换，不整篇重建")
+    check(detail.contains("VoiceMemoActions.retranscribeFirstSegment(memo")
+          && !detail.contains("VoiceMemoActions.transcribeInBackground(memo"),
+          "6a 详情页重新转写不再走整篇重建入口")
+    check(detail.contains("if memo.segments.count <= 1"),
+          "6a 多段备忘隐藏「编辑全文」，避免块 ID 全换导致归属失效")
+} else {
+    check(false, "6a 读取应用真实源码失败")
+}
+
+// 6b. 镜像模型跑一次真实的 SwiftData 迁移：同一实体、版本 +1、五个可选新字段。
+//     与演练 1 同一套路，验证「迁移计划配得对、跨版本打开数据不丢、新字段为 nil」。
+@Model
+final class DrillVoiceMemo {
+    var title: String
+    var duration: Double
+    var audioFileName: String
+    var transcription: String?
+    var segmentsData: Data?
+    var shareTitle: String?
+    var shareTitleSourceRaw: String?
+    var titleIsUserEditedRaw: Bool?
+    var isTextOnlyRaw: Bool?
+
+    init(title: String, duration: Double, audioFileName: String, transcription: String? = nil) {
+        self.title = title
+        self.duration = duration
+        self.audioFileName = audioFileName
+        self.transcription = transcription
+        self.segmentsData = nil
+        self.shareTitle = nil
+        self.shareTitleSourceRaw = nil
+        self.titleIsUserEditedRaw = nil
+        self.isTextOnlyRaw = nil
+    }
+}
+
+enum DrillMemoSchemaV11: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(11, 0, 0) }
+    static var models: [any PersistentModel.Type] { [DrillVoiceMemo.self] }
+}
+
+enum DrillMemoSchemaV12: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(12, 0, 0) }
+    static var models: [any PersistentModel.Type] { [DrillVoiceMemo.self] }
+}
+
+enum DrillMemoPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [DrillMemoSchemaV11.self, DrillMemoSchemaV12.self] }
+    static var stages: [MigrationStage] {
+        [.lightweight(fromVersion: DrillMemoSchemaV11.self, toVersion: DrillMemoSchemaV12.self)]
+    }
+}
+
+do {
+    let store = workDir.appendingPathComponent("memo_v12.store")
+    let oldSchema = Schema(DrillMemoSchemaV11.models)
+    let oldContainer = try ModelContainer(
+        for: oldSchema,
+        configurations: ModelConfiguration("memodrill", schema: oldSchema, url: store)
+    )
+    let writeCtx = ModelContext(oldContainer)
+    writeCtx.insert(DrillVoiceMemo(title: "周三产品例会", duration: 192, audioFileName: "old.m4a",
+                                   transcription: "先确认下周版本范围"))
+    try writeCtx.save()
+
+    let newSchema = Schema(DrillMemoSchemaV12.models)
+    let newContainer = try ModelContainer(
+        for: newSchema,
+        migrationPlan: DrillMemoPlan.self,
+        configurations: ModelConfiguration("memodrill", schema: newSchema, url: store)
+    )
+    let readCtx = ModelContext(newContainer)
+    let rows = try readCtx.fetch(FetchDescriptor<DrillVoiceMemo>())
+    check(rows.count == 1, "6b V11→V12 迁移后记录数不变（1 条）")
+    if let row = rows.first {
+        check(row.title == "周三产品例会" && row.audioFileName == "old.m4a"
+              && row.transcription == "先确认下周版本范围", "6b 旧字段值完整")
+        check(row.segmentsData == nil && row.shareTitle == nil
+              && row.titleIsUserEditedRaw == nil && row.isTextOnlyRaw == nil,
+              "6b 五个 V12 新字段在旧记录上为 nil（回落旧语义）")
+    } else {
+        check(false, "6b 迁移后读不到记录")
+    }
+} catch {
+    check(false, "6b V11→V12 迁移过程抛错：\(error.localizedDescription)")
+}
+
+// 演练边界（重要）：6b 用的是镜像模型，且「旧库」由同一个类创建，
+// 因此五个新列在建库时已存在；它验证的是迁移计划配置与旧记录回落语义，
+// **不能替代真机/模拟器上用真正 V11 字段形状的旧库升级一次**。
+// 真机复核步骤：装旧版 → 录一条语音备忘 → 覆盖安装新版 → 打开列表与详情，
+// 确认记录数、转写文字、音频都还在，且新字段按单段回落。
+
 // MARK: - 汇总
 
 print("")
 if failures.isEmpty {
-    print("P0-1 演练全部通过：旧库可升级、损坏库不删文件、未知结构库可恢复、`#Index` 生效边界已确认。")
+    print("P0-1 演练全部通过：旧库可升级、损坏库不删文件、未知结构库可恢复、`#Index` 生效边界已确认、V12 迁移计划与回落语义已校验。")
     exit(0)
 } else {
     print("P0-1 演练失败 \(failures.count) 项：")

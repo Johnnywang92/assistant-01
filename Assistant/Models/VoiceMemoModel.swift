@@ -59,6 +59,22 @@ final class VoiceMemo {
     var tagRaw: String
     var isBookmarked: Bool
 
+    // MARK: V12 纯加法字段（全部可选，旧库为 NULL 时回落旧语义）
+
+    /// 有序录音片段（JSON）。nil = V11 及更早的存量单段数据，
+    /// 读取时用 `audioFileName` + `duration` 回落构造一个片段，行为与旧版完全一致。
+    /// **刻意不建新的 @Model / @Relationship**：V1~V11 共用同一个运行时类型，
+    /// 追加关系会让历史库迁移失败甚至白屏。
+    var segmentsData: Data?
+    /// 分享卡自定义标题；nil 表示跟随来源，不写回 `title`。
+    var shareTitle: String?
+    /// `ShareCardTitleSource.rawValue`；nil = 跟随备忘标题。
+    var shareTitleSourceRaw: String?
+    /// 用户手改过备忘标题。为 true 后自动标题不再覆盖。
+    var titleIsUserEditedRaw: Bool?
+    /// 纯文字备忘（没有音频文件）。
+    var isTextOnlyRaw: Bool?
+
     init(
         title: String,
         duration: TimeInterval,
@@ -76,6 +92,11 @@ final class VoiceMemo {
         self.summary = nil
         self.tagRaw = tag.rawValue
         self.isBookmarked = false
+        self.segmentsData = nil
+        self.shareTitle = nil
+        self.shareTitleSourceRaw = nil
+        self.titleIsUserEditedRaw = nil
+        self.isTextOnlyRaw = nil
     }
 
     var tag: VoiceMemoTag {
@@ -89,6 +110,71 @@ final class VoiceMemo {
 
     var hasTranscription: Bool {
         !(transcription?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    /// 是否带音频。纯文字备忘用 `isTextOnly` 标记，`audioFileName` 保持空串，
+    /// 避免把非可选列改成可选带来的迁移风险。
+    var hasAudio: Bool { !isTextOnly && !audioFileName.isEmpty }
+
+    var isTextOnly: Bool {
+        get { isTextOnlyRaw ?? false }
+        set { isTextOnlyRaw = newValue }
+    }
+
+    var titleIsUserEdited: Bool {
+        get { titleIsUserEditedRaw ?? false }
+        set { titleIsUserEditedRaw = newValue }
+    }
+
+    var shareTitleSource: ShareCardTitleSource {
+        get { ShareCardTitleSource(rawValue: shareTitleSourceRaw ?? "") ?? .followMemo }
+        set { shareTitleSourceRaw = newValue.rawValue }
+    }
+
+    /// 分享卡标题：只影响导出的那张图片，永远不写回备忘标题。
+    var shareCardTitle: String {
+        switch shareTitleSource {
+        case .custom:
+            let trimmed = shareTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? title : trimmed
+        case .transcriptFirstSentence:
+            return VoiceMemoTextAnalyzer.suggestedTitle(from: transcription ?? "") ?? title
+        case .followMemo:
+            return title
+        }
+    }
+
+    /// 有序片段。存量为 nil 时回落成单段，纯文字备忘为空数组。
+    var segments: [MemoSegment] {
+        if let data = segmentsData,
+           let decoded = MemoSegmentCodec.decode(data),
+           !decoded.isEmpty {
+            return decoded
+        }
+        guard hasAudio else { return [] }
+        return [MemoSegment(fileName: audioFileName, duration: duration, createdAt: createdAt)]
+    }
+
+    /// 总时长 = 各段之和。存量单段回落到 `duration`。
+    var totalDuration: TimeInterval {
+        let sum = segments.reduce(0) { $0 + $1.duration }
+        return sum > 0 ? sum : duration
+    }
+
+    /// 全部音频文件名，供删除与孤儿文件清理使用。
+    var segmentFileNames: Set<String> { Set(segments.map(\.fileName)) }
+
+    /// 唯一写入口：同步 JSON、`audioFileName`（指向第一段）与兼容字段 `duration`。
+    ///
+    /// `duration` 刻意保留为**第一段时长**：详情页播放器只加载第一段，
+    /// 若写成总和，进度条终点会超出实际可播放范围。总时长一律读 `totalDuration`。
+    func setSegments(_ newSegments: [MemoSegment]) {
+        segmentsData = MemoSegmentCodec.encode(newSegments)
+        audioFileName = newSegments.first?.fileName ?? ""
+        isTextOnly = newSegments.isEmpty
+        // 删到一段不剩时必须归零：`totalDuration` 在 segments 为空时会回落到 duration，
+        // 留着旧值会让一条纯文字备忘凭空显示一段录音时长。
+        duration = newSegments.first?.duration ?? 0
     }
 
     /// 结构化笔记文档。
@@ -109,11 +195,38 @@ final class VoiceMemo {
         transcription = plain.isEmpty ? (document.blocks.isEmpty ? nil : plain) : plain
     }
 
-    static func defaultTitle(for date: Date = .now) -> String {
+    /// 系统生成的默认标题。
+    ///
+    /// 纯文字备忘**不能**叫「语音备忘」：那是标签错误，不是措辞偏好。
+    /// 用户从「写一条」进来、没填标题，列表里却显示「语音备忘 11月8日 20:15」，
+    /// 会让人以为自己误录了音频，也搜不到任何音频可听。
+    static func defaultTitle(for date: Date = .now, isTextOnly: Bool = false) -> String {
         let f = DateFormatter()
         f.locale = L10n.locale
         f.dateFormat = L10n.isEnglish ? "MMM d HH:mm" : "M月d日 HH:mm"
-        return L10n.isEnglish ? "Voice Memo \(f.string(from: date))" : "语音备忘 \(f.string(from: date))"
+        let stamp = f.string(from: date)
+        if L10n.isEnglish {
+            return isTextOnly ? "Text Note \(stamp)" : "Voice Memo \(stamp)"
+        }
+        return isTextOnly ? "文字备忘 \(stamp)" : "语音备忘 \(stamp)"
+    }
+
+    /// 标题是否仍是系统生成的默认值（自动标题可以覆盖它）。
+    ///
+    /// 中英文都要认：旧版本存下来的标题是中文，切换语言后也不该被当成用户手写的。
+    var hasDefaultTitle: Bool {
+        ["语音备忘 ", "文字备忘 ", "Voice Memo ", "Text Note "].contains { title.hasPrefix($0) }
+    }
+
+    /// 展示用标题。
+    ///
+    /// 旧版本给纯文字备忘也写「语音备忘 <时间>」当默认标题（`defaultTitle()` 当时只有一种文案）。
+    /// 读的时候按类型把默认标题纠正回来；用户手写的标题一律原样返回。
+    /// 真正的写库修正在 `VoiceMemoActions.normalizeLegacyTextMemoTitles` 里跑一次，
+    /// 这里只是兜底，保证列表/详情不会在修正落库前又闪出旧文案。
+    var displayTitle: String {
+        guard isTextOnly, title.hasPrefix("语音备忘 ") else { return title }
+        return VoiceMemo.defaultTitle(for: createdAt, isTextOnly: true)
     }
 }
 
@@ -284,6 +397,75 @@ enum VoiceMemoImageStorage {
         guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
         return files.reduce(0) { sum, url in
             sum + Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+    }
+}
+
+// MARK: - 录音片段（V12）
+
+/// 一条语音备忘里的一个有序录音片段。
+///
+/// 每个片段是**独立的音频文件**：中断（来电 / 切后台 / 误关录音页）只收尾当前段，
+/// 已有片段不受影响；续录时新音频追加为下一段，不会新建一条备忘。
+struct MemoSegment: Codable, Identifiable, Sendable, Equatable {
+    var id: UUID
+    var fileName: String
+    var duration: TimeInterval
+    var createdAt: Date
+    /// 中断原因（"interruption" / "background" / "manual"），仅用于展示，不参与逻辑。
+    var interruptionReasonRaw: String?
+    /// 这一段转写生成的笔记块 ID。删段时据此同步移除对应文字。
+    ///
+    /// 放在 `segmentsData` 的 JSON 里而不是新开一列：片段结构以后还会长，
+    /// V12 之后扩展字段不该再升 Schema（与 `TodoItem.scheduleRaw` 同一个道理）。
+    /// nil 有两层含义——存量数据、或整篇重建后块 ID 已失效；这两种情况下
+    /// 删段只删音频、不碰文字，宁可少删也不要误删别段的内容。
+    var transcriptBlockIDs: [UUID]?
+
+    init(
+        id: UUID = UUID(),
+        fileName: String,
+        duration: TimeInterval,
+        createdAt: Date = .now,
+        interruptionReasonRaw: String? = nil,
+        transcriptBlockIDs: [UUID]? = nil
+    ) {
+        self.id = id
+        self.fileName = fileName
+        self.duration = duration
+        self.createdAt = createdAt
+        self.interruptionReasonRaw = interruptionReasonRaw
+        self.transcriptBlockIDs = transcriptBlockIDs
+    }
+}
+
+enum MemoSegmentCodec {
+    static func encode(_ segments: [MemoSegment]) -> Data? {
+        try? JSONEncoder().encode(segments)
+    }
+
+    /// 解码失败返回 nil（调用方回落到旧的单段语义），绝不返回空数组——
+    /// 空数组与「用户真的删光了片段」无法区分，会造成内容静默消失。
+    static func decode(_ data: Data) -> [MemoSegment]? {
+        guard let decoded = try? JSONDecoder().decode([MemoSegment].self, from: data),
+              !decoded.isEmpty else { return nil }
+        return decoded
+    }
+}
+
+/// 分享卡标题的来源。与备忘标题解耦，只影响导出的图片。
+enum ShareCardTitleSource: String, CaseIterable, Identifiable {
+    case followMemo = "followMemo"
+    case transcriptFirstSentence = "transcriptFirstSentence"
+    case custom = "custom"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .followMemo: return L10n.choose("跟随备忘标题", "Follow memo title")
+        case .transcriptFirstSentence: return L10n.choose("用转写首句", "Use first sentence")
+        case .custom: return L10n.choose("自定义", "Custom")
         }
     }
 }

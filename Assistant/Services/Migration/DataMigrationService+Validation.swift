@@ -254,6 +254,12 @@ extension DataMigrationService {
             if let audioData = memo.audioData, audioData.isEmpty {
                 throw MigrationCryptoError.missingAttachment(memo.title)
             }
+            // 多段录音的每一段都不能是「有记录没音频」。
+            for segment in memo.segments ?? [] {
+                if let data = segment.audioData, data.isEmpty {
+                    throw MigrationCryptoError.missingAttachment(memo.title)
+                }
+            }
         }
         for food in package.foodIntakeRecords ?? [] {
             if let imgData = food.imageData, UIImage(data: imgData) == nil {

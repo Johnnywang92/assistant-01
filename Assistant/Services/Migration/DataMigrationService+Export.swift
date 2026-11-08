@@ -228,7 +228,20 @@ extension DataMigrationService {
         voiceMemoDTOs.reserveCapacity(voiceMemos.count)
         for (index, memo) in voiceMemos.enumerated() {
             if index > 0, index % 8 == 0 { await Task.yield() }
-            let audioData = VoiceMemoStorage.loadData(memo.audioFileName)
+            // 纯文字备忘没有音频文件：空文件名会指向目录，不能读盘。
+            let audioData = memo.hasAudio ? VoiceMemoStorage.loadData(memo.audioFileName) : nil
+            // 每一段都独立打包，避免多段录音只备份了第一段。
+            let segmentDTOs = memo.segments.map { segment in
+                VoiceMemoSegmentDTO(
+                    id: segment.id,
+                    fileName: segment.fileName,
+                    duration: segment.duration,
+                    createdAt: segment.createdAt,
+                    interruptionReasonRaw: segment.interruptionReasonRaw,
+                    audioData: VoiceMemoStorage.loadData(segment.fileName),
+                    transcriptBlockIDs: segment.transcriptBlockIDs
+                )
+            }
             // 笔记内嵌图片：把块里引用的图片一并带进备份包
             let imageFileNames = memo.document.blocks.compactMap { block -> String? in
                 guard block.kind == .image, let name = block.imageFileName else { return nil }
@@ -249,7 +262,12 @@ extension DataMigrationService {
                 summary: memo.summary,
                 tagRaw: memo.tagRaw,
                 isBookmarked: memo.isBookmarked,
-                createdAt: memo.createdAt
+                createdAt: memo.createdAt,
+                segments: segmentDTOs.isEmpty ? nil : segmentDTOs,
+                shareTitle: memo.shareTitle,
+                shareTitleSourceRaw: memo.shareTitleSourceRaw,
+                titleIsUserEditedRaw: memo.titleIsUserEditedRaw,
+                isTextOnlyRaw: memo.isTextOnlyRaw
             ))
         }
         await Task.yield()
@@ -271,11 +289,22 @@ extension DataMigrationService {
             ))
         }
         for (memo, dto) in zip(voiceMemos, voiceMemoDTOs) {
-            attachmentExpectations.append(.init(
-                ownerTitle: memo.title, kind: .voiceMemoAudio,
-                fileName: memo.audioFileName.isEmpty ? nil : memo.audioFileName,
-                hasData: dto.audioData?.isEmpty == false
-            ))
+            // 纯文字备忘本来就没有音频，不参与「附件是否带全」的判定。
+            if memo.hasAudio {
+                attachmentExpectations.append(.init(
+                    ownerTitle: memo.title, kind: .voiceMemoAudio,
+                    fileName: memo.audioFileName.isEmpty ? nil : memo.audioFileName,
+                    hasData: dto.audioData?.isEmpty == false
+                ))
+            }
+            // 多段录音的每一段都必须真的带上，不能只检查第一段。
+            for segment in dto.segments ?? [] {
+                attachmentExpectations.append(.init(
+                    ownerTitle: memo.title, kind: .voiceMemoAudio,
+                    fileName: segment.fileName.isEmpty ? nil : segment.fileName,
+                    hasData: segment.audioData?.isEmpty == false
+                ))
+            }
             // 笔记内嵌图片同样必须真的带上——
             // 「有文字没图」的备份和「记录在、音频没了」一样是残缺数据。
             for image in dto.images ?? [] {

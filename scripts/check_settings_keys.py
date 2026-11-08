@@ -67,6 +67,7 @@ EXEMPT = {
     "overdue_triage_last_date": "逾期分诊的当日节流日期",
     "expense_exchange_rate_updated_at": "汇率同步时间戳",
     "sleepReminder.lastRemindedNightKey": "「本夜已提醒」节流标记",
+    "voice_memo_pending_resume_marker": "语音备忘中断恢复标记：只指向本机已落库的备忘，指向的数据随主库走，标记本身不该搬到新设备",
     "psych_reminder_last_notified_at": "心理提醒最近通知时间戳，本地冷却窗口节流标记；"
                                        "换机后应重新按新数据判定，不该把「已提醒过」搬过去",
     "psych_reminder_last_kind": "心理提醒最近通知类型，同属本地节流标记",
