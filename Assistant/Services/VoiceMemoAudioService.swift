@@ -12,6 +12,14 @@ struct VoiceMemoResumeMarker: Codable, Equatable, Sendable {
     let interruptedAt: Date
 }
 
+/// 隔离非 Sendable 的 AVFoundation 对象的线程传递封装，用于避开 iOS 26/27 之前系统缺少 Sendable 声明的编译限制
+private final class AudioUncheckedBox<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) {
+        self.value = value
+    }
+}
+
 /// 语音备忘录音频服务：录音（带实时电平）、回放（倍速/拖动/快进退）、离线整段转写。
 /// 与 VoiceDialogueService 互斥：开始录音前会停止对话拾音与朗读；录音期间对话服务拒绝开麦。
 @MainActor
@@ -128,12 +136,23 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
             AVNumberOfChannelsKey: 1,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
         ]
-        let rec = try AVAudioRecorder(url: VoiceMemoStorage.url(for: fileName), settings: settings)
-        rec.isMeteringEnabled = true
-        rec.delegate = self
-        guard rec.record() else {
-            throw VoiceMemoError.recordFailed
+        let url = VoiceMemoStorage.url(for: fileName)
+        // 录音器初始化与 record() 涉及同步 XPC 握手，移至后台任务避免阻塞主线程（AVAudioSession Hang Risk）
+        let box = try await Task.detached(priority: .userInitiated) { () -> AudioUncheckedBox<AVAudioRecorder> in
+            let r = try AVAudioRecorder(url: url, settings: settings)
+            r.isMeteringEnabled = true
+            guard r.record() else {
+                throw VoiceMemoError.recordFailed
+            }
+            return AudioUncheckedBox(r)
+        }.value
+        let rec = box.value
+        guard !Task.isCancelled else {
+            rec.stop()
+            VoiceMemoStorage.delete(fileName)
+            return
         }
+        rec.delegate = self
 
         recorder = rec
         currentRecordingFile = fileName
@@ -265,11 +284,19 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
         do {
             await activatePlaybackSession()
             guard generation == playbackGeneration, !isRecording else { return }
-            let p = try AVAudioPlayer(contentsOf: VoiceMemoStorage.url(for: fileName))
-            p.enableRate = true
-            p.rate = playbackRate
+            let url = VoiceMemoStorage.url(for: fileName)
+            let rate = playbackRate
+            // 播放器构造与 prepareToPlay() 涉及音频解码器分配与硬件握手，移至后台任务避免卡顿主线程
+            let box = try await Task.detached(priority: .userInitiated) { () -> AudioUncheckedBox<AVAudioPlayer> in
+                let player = try AVAudioPlayer(contentsOf: url)
+                player.enableRate = true
+                player.rate = rate
+                player.prepareToPlay()
+                return AudioUncheckedBox(player)
+            }.value
+            guard generation == playbackGeneration, !isRecording else { return }
+            let p = box.value
             p.delegate = self
-            p.prepareToPlay()
             p.play()
             player = p
             playingFileName = fileName
@@ -296,18 +323,31 @@ final class VoiceMemoAudioService: NSObject, ObservableObject {
     /// 为指定文件预加载时长（详情页打开时未播放也能显示进度条）
     func prepare(fileName: String) {
         guard playingFileName != fileName else { return }
-        if let p = try? AVAudioPlayer(contentsOf: VoiceMemoStorage.url(for: fileName)) {
-            stopPlayback()
+        let url = VoiceMemoStorage.url(for: fileName)
+        let rate = playbackRate
+        let generation = playbackGeneration
+        // 移至后台任务异步加载解码，防止进入详情页时在主线程触发 AVAudioSession Hang
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let p = try? AVAudioPlayer(contentsOf: url) else { return }
             p.enableRate = true
-            p.rate = playbackRate
-            p.delegate = self
+            p.rate = rate
             p.prepareToPlay()
-            player = p
-            playingFileName = fileName
-            playbackDuration = p.duration
-            playbackTime = 0
-            isPlaying = false
+            let duration = p.duration
+            let box = AudioUncheckedBox(p)
+            await self?.finishPreparing(box: box, fileName: fileName, duration: duration, generation: generation)
         }
+    }
+
+    private func finishPreparing(box: AudioUncheckedBox<AVAudioPlayer>, fileName: String, duration: TimeInterval, generation: Int) {
+        guard generation == playbackGeneration, !isPlaying else { return }
+        stopPlayback(preservingQueue: false)
+        let p = box.value
+        p.delegate = self
+        player = p
+        playingFileName = fileName
+        playbackDuration = duration
+        playbackTime = 0
+        isPlaying = false
     }
 
     func seek(to time: TimeInterval) {

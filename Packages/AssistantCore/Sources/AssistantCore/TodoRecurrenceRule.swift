@@ -3,7 +3,7 @@ import Foundation
 /// 待办重复周期规则。
 /// 下沉自 Assistant/Models/Models.swift：枚举本体只含纯数据（rawValue、图标名、天数换算），
 /// 依赖 L10n 的展示名 `displayLabel` 留在 app 侧扩展里。
-public enum TodoRecurrenceRule: String, Codable, CaseIterable, Identifiable {
+public enum TodoRecurrenceRule: String, Codable, CaseIterable, Identifiable, Sendable {
     case none = "不重复"
     case daily = "每天"
     case everyOtherDay = "每2天（隔天）"
