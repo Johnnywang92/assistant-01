@@ -46,44 +46,58 @@ struct WatchIntegrationGuideView: View {
                 .padding(.vertical, 4)
             }
 
-            // 0. 腕上小助 App 五大高频页
+            // 0. 腕上小助 App 七大高频页（按使用频率排序）
             Section {
                 guideRow(
                     icon: "checklist.checked",
                     iconColor: .blue,
-                    title: "今天（待办 + 今日支出）",
-                    subtitle: "抬腕即看今日高优待办 Top 6 与今日累计支出；点按直接打勾完成，左滑可延后 10 分钟或推迟至明早。"
-                )
-
-                guideRow(
-                    icon: "shippingbox.fill",
-                    iconColor: .orange,
-                    title: "取件码大字铭牌",
-                    subtitle: "大字号展示当前包裹取件码与驿站名称，点击「已取件」自动跳到下一件；从智能叠放实时活动点卡可直接跳入本页。"
+                    title: "1. 今天（待办 + 服药习惯 + 今日支出）",
+                    subtitle: "首屏默认展示：今日高优待办 Top 6、服药与周期习惯打卡、今日累计支出，以及快递/行程/身心分的一键跳转入口。"
                 )
 
                 guideRow(
                     icon: "mic.fill",
                     iconColor: .teal,
-                    title: "快速记（语音听写记账/待办）",
-                    subtitle: "唤起系统听写说一句「咖啡 18 元」或「下午取快递」，手表端即时预览金额并交由 iPhone 入账回显。"
-                )
-
-                guideRow(
-                    icon: "heart.circle.fill",
-                    iconColor: .pink,
-                    title: "10 秒数码表冠心情打卡",
-                    subtitle: "旋转数码表冠快速调节心情、精力、压力三项分值（1~5 分），10 秒完成每日情绪微记录。"
+                    title: "2. 快速记（语音优先 + 一键预设）",
+                    subtitle: "下滑一格即达：点击顶部大按钮直接唤起手腕语音听写，或点按下方 4 格高频预设（早餐 15、咖啡 18、取快递等）零打字秒记。"
                 )
 
                 guideRow(
                     icon: "drop.fill",
                     iconColor: .cyan,
-                    title: "喝水 +1",
-                    subtitle: "圆环展示今日有效补水进度，一键 +150ml / +250ml / +350ml / +500ml 并自动同步至 Apple 健康。"
+                    title: "3. 喝水 +1",
+                    subtitle: "全天高频补水：紧凑展示今日有效补水进度，2x2 网格一键 +150ml / +250ml / +350ml / +500ml 并自动同步至 Apple 健康。"
+                )
+
+                guideRow(
+                    icon: "shippingbox.fill",
+                    iconColor: .orange,
+                    title: "4. 取件码大字铭牌",
+                    subtitle: "大字号展示当前包裹取件码与驿站名称，点击「已取件」自动跳到下一件；有快递时也可从「今天」首屏直接点入。"
+                )
+
+                guideRow(
+                    icon: "ticket.fill",
+                    iconColor: .mint,
+                    title: "5. 出行清点与行程护航",
+                    subtitle: "展示高铁/航班发车倒计时、检票口与车厢座位号；支持「身·手·钥·耳」与出门必带清单逐项勾选或一键「全部带齐 ✓」。"
+                )
+
+                guideRow(
+                    icon: "heart.circle.fill",
+                    iconColor: .pink,
+                    title: "6. 10 秒点按心情打卡",
+                    subtitle: "轻触卡片即可循环调节心情、精力、压力三项分值（1~5 分），不抢占数码表冠翻页，10 秒完成每日情绪微记录。"
+                )
+
+                guideRow(
+                    icon: "bolt.heart.fill",
+                    iconColor: .green,
+                    title: "7. 身体活力 & 身心愉悦双指数",
+                    subtitle: "并排呈现 0~100 身体活力分与身心愉悦指数，融合睡眠、HRV、静息心率与步数给出精炼调养关怀（首屏右上角亦可一键直达）。"
                 )
             } header: {
-                Text("Apple Watch 伴生 App 功能")
+                Text("Apple Watch 伴生 App 页面（按高频排序）")
             }
 
             // 1. 智能叠放（Smart Stack 实时活动）

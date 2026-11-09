@@ -29,8 +29,14 @@ struct AssistantWatchApp: App {
         let path = url.host ?? url.path
         if path.contains("parcel") || path.contains("pickup") {
             store.selectedTab = .parcels
+        } else if path.contains("checklist") || path.contains("departure") || path.contains("travel") {
+            store.selectedTab = .departure
+        } else if path.contains("todos") && store.displaySnapshot.travelSnapshot != nil {
+            store.selectedTab = .departure
         } else if path.contains("expense") || path.contains("capture") {
             store.selectedTab = .quickCapture
+        } else if path.contains("health") || path.contains("vitality") || path.contains("pleasure") {
+            store.selectedTab = .health
         } else if path.contains("mood") {
             store.selectedTab = .mood
         } else if path.contains("water") {
@@ -45,21 +51,30 @@ struct WatchRootView: View {
     @EnvironmentObject private var store: WatchStore
 
     var body: some View {
+        // 按日常腕上高频使用频次从高到低排序：
+        // 1. 今天（总览/待办/吃药习惯） → 2. 快速记（日均多次记账/记事） → 3. 喝水（日均 5~8 次）
+        // → 4. 取件码 → 5. 出行清点 → 6. 心情打卡 → 7. 身心状态
         TabView(selection: $store.selectedTab) {
             WatchTodayView()
                 .tag(WatchTab.today)
 
+            WatchQuickCaptureView()
+                .tag(WatchTab.quickCapture)
+
+            WatchWaterView()
+                .tag(WatchTab.water)
+
             WatchParcelsView()
                 .tag(WatchTab.parcels)
 
-            WatchQuickCaptureView()
-                .tag(WatchTab.quickCapture)
+            WatchDepartureView()
+                .tag(WatchTab.departure)
 
             WatchMoodCheckInView()
                 .tag(WatchTab.mood)
 
-            WatchWaterView()
-                .tag(WatchTab.water)
+            WatchHealthView()
+                .tag(WatchTab.health)
         }
         .tabViewStyle(.verticalPage)
         .overlay(alignment: .top) {

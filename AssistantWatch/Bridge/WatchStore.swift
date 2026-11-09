@@ -199,8 +199,10 @@ extension WatchStore: WCSessionDelegate {
 
 enum WatchTab: Hashable {
     case today
-    case parcels
     case quickCapture
-    case mood
     case water
+    case parcels
+    case departure
+    case mood
+    case health
 }

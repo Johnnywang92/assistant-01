@@ -7,10 +7,18 @@ struct WatchTodayView: View {
         store.displaySnapshot
     }
 
+    private var pendingMedications: [WatchMedicationEntry] {
+        snap.medications.filter { !$0.isTakenToday }
+    }
+
+    private var dueHabits: [WatchHabitEntry] {
+        snap.habits.filter(\.isDueToday)
+    }
+
     var body: some View {
         NavigationStack {
             List {
-                // 顶部状态：今日支出 + 练习 + 同步状态
+                // 顶部状态：今日支出 + 身心指数/连续练习
                 Section {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -22,7 +30,27 @@ struct WatchTodayView: View {
                                 .foregroundStyle(.orange)
                         }
                         Spacer()
-                        if let practice = snap.todayPractice {
+                        if let health = snap.healthSnapshot,
+                           let vitality = health.vitalityScore {
+                            Button {
+                                store.selectedTab = .health
+                            } label: {
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "bolt.heart.fill")
+                                            .foregroundStyle(.green)
+                                        Text("活力 \(vitality)")
+                                    }
+                                    .font(.caption2.bold())
+                                    if let pleasure = health.pleasureScore {
+                                        Text("愉悦 \(pleasure)分")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.cyan)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        } else if let practice = snap.todayPractice {
                             VStack(alignment: .trailing, spacing: 2) {
                                 HStack(spacing: 2) {
                                     Image(systemName: "flame.fill")
@@ -34,6 +62,33 @@ struct WatchTodayView: View {
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+
+                // 行程护航 / 出门清点快捷入口（若有近期行程或必带未勾项）
+                if let travel = snap.travelSnapshot {
+                    Section {
+                        Button {
+                            store.selectedTab = .departure
+                        } label: {
+                            HStack {
+                                Image(systemName: "ticket.fill")
+                                    .foregroundStyle(.cyan)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(travel.title)
+                                        .font(.footnote.bold())
+                                        .lineLimit(1)
+                                    Text([travel.gate.map { "检票 \($0)" }, travel.ticketSummary].compactMap { $0 }.joined(separator: " · "))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -66,6 +121,20 @@ struct WatchTodayView: View {
                     }
                 }
 
+                // 今日服药与周期习惯一键打卡
+                if !snap.medications.isEmpty || !dueHabits.isEmpty {
+                    Section {
+                        ForEach(snap.medications) { med in
+                            medicationRow(med)
+                        }
+                        ForEach(dueHabits) { habit in
+                            habitRow(habit)
+                        }
+                    } header: {
+                        Text("服药与习惯")
+                    }
+                }
+
                 // 今日高优待办 Top 6
                 Section {
                     if snap.topTodos.isEmpty {
@@ -94,6 +163,61 @@ struct WatchTodayView: View {
                 }
             }
             .navigationTitle("今天")
+        }
+    }
+
+    private func medicationRow(_ med: WatchMedicationEntry) -> some View {
+        Button {
+            guard !med.isTakenToday else { return }
+            store.sendCommand(
+                .markMedicationTaken(planID: med.id, todoID: med.activeTodoID),
+                feedbackToast: "已服药：\(med.medName) 💊"
+            )
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: med.isTakenToday ? "checkmark.circle.fill" : "pills.fill")
+                    .font(.footnote)
+                    .foregroundStyle(med.isTakenToday ? .green : .pink)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(med.medName)
+                        .font(.footnote.weight(.medium))
+                        .strikethrough(med.isTakenToday)
+                        .lineLimit(1)
+                    Text("\(med.dosage) · \(med.mealRelationText)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                if med.isTakenToday {
+                    Text("已服")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.green)
+                }
+            }
+        }
+    }
+
+    private func habitRow(_ habit: WatchHabitEntry) -> some View {
+        Button {
+            store.sendCommand(
+                .completeHabit(habitID: habit.id),
+                feedbackToast: "已完成：\(habit.title) ✓"
+            )
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "figure.run.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.mint)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(habit.title)
+                        .font(.footnote.weight(.medium))
+                        .lineLimit(1)
+                    Text("\(habit.recurrenceText) · 今日到期")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 

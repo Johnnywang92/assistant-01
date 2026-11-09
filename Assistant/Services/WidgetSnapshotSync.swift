@@ -59,6 +59,11 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         let todayWaterML = Self.todayWaterEffectiveTotal(context: context)
         let waterGoalML = AppSettings.dailyWaterGoalML
         let todayMood = Self.todayMoodSummary(context: context)
+        let departureSnapshot = Self.buildDepartureSnapshot(context: context)
+        let travelSnapshot = Self.buildTravelSnapshot(activeItems: sorted)
+        let medications = Self.buildMedicationEntries(activeItems: sorted, context: context)
+        let habits = Self.buildHabitEntries(context: context)
+        let healthSnapshot = Self.buildHealthSnapshot(todayWaterML: todayWaterML, context: context)
 
         return WidgetSnapshot(
             topTodos: Array(topEntries),
@@ -68,8 +73,185 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             todayWaterML: todayWaterML,
             waterGoalML: waterGoalML,
             todayMood: todayMood,
+            departureSnapshot: departureSnapshot,
+            travelSnapshot: travelSnapshot,
+            medications: medications,
+            habits: habits,
+            healthSnapshot: healthSnapshot,
             ackedCommandIDs: recentAckedCommandIDs,
             generatedAt: .now
+        )
+    }
+
+    private static func buildDepartureSnapshot(context: ModelContext) -> WatchDepartureSnapshot? {
+        let allItems = (try? context.fetch(FetchDescriptor<DepartureCheckItem>(
+            sortBy: [SortDescriptor(\.createdAt)]
+        ))) ?? []
+        guard !allItems.isEmpty else { return nil }
+
+        let activeScene = SituationalContextEngine.shared.effectiveDepartureScene()
+        let filtered: [DepartureCheckItem]
+        let sceneName: String
+        if let scene = activeScene {
+            let sceneItems = allItems.filter { $0.scene == scene }
+            if !sceneItems.isEmpty {
+                filtered = sceneItems
+                sceneName = scene.displayName
+            } else {
+                filtered = allItems
+                sceneName = "全部物品"
+            }
+        } else {
+            filtered = allItems
+            sceneName = "日常出行"
+        }
+
+        let sorted = filtered.sorted { a, b in
+            if a.isChecked != b.isChecked { return !a.isChecked && b.isChecked }
+            if a.isEssential != b.isEssential { return a.isEssential && !b.isEssential }
+            return a.createdAt < b.createdAt
+        }
+
+        let watchItems = sorted.prefix(12).map {
+            WatchDepartureItem(
+                id: $0.id,
+                title: $0.title,
+                isChecked: $0.isChecked,
+                isEssential: $0.isEssential,
+                locationNote: $0.storageLocationNote
+            )
+        }
+        return WatchDepartureSnapshot(sceneName: sceneName, items: Array(watchItems))
+    }
+
+    private static func buildTravelSnapshot(activeItems: [TodoItem]) -> WatchTravelSnapshot? {
+        let now = Date.now
+        let horizon = now.addingTimeInterval(36 * 3600)
+        for item in activeItems {
+            let ticket = TicketDetailsExtractor.extract(from: [item.detail, item.sourceText, item.title])
+            let hasTicketSignal = ticket.vehicleAndSeatLine != nil || ticket.gate != nil
+            let isTravelKeyword = item.title.contains("高铁") || item.title.contains("航班")
+                || item.title.contains("飞机") || item.title.contains("火车")
+                || item.title.contains("动车") || item.title.contains("发车")
+                || item.title.contains("登机") || item.title.contains("车站")
+                || item.title.contains("机场")
+            guard hasTicketSignal || isTravelKeyword else { continue }
+            if let due = item.dueAt, due >= now.addingTimeInterval(-2 * 3600), due <= horizon {
+                return WatchTravelSnapshot(
+                    id: item.id,
+                    title: item.displayConciseTitle,
+                    departureDate: due,
+                    ticketSummary: ticket.vehicleAndSeatLine,
+                    gate: ticket.gate,
+                    place: item.displayLocationText
+                )
+            } else if hasTicketSignal {
+                return WatchTravelSnapshot(
+                    id: item.id,
+                    title: item.displayConciseTitle,
+                    departureDate: item.dueAt ?? now.addingTimeInterval(3600),
+                    ticketSummary: ticket.vehicleAndSeatLine,
+                    gate: ticket.gate,
+                    place: item.displayLocationText
+                )
+            }
+        }
+        return nil
+    }
+
+    private static func buildMedicationEntries(activeItems: [TodoItem], context: ModelContext) -> [WatchMedicationEntry] {
+        let descriptor = FetchDescriptor<MedicationPlan>(
+            predicate: #Predicate { $0.isEnabled }
+        )
+        guard let plans = try? context.fetch(descriptor), !plans.isEmpty else { return [] }
+        let cal = Calendar.current
+        let medTodos = activeItems.filter { $0.type == .medication }
+
+        return plans.prefix(6).map { plan in
+            let matchedTodo = medTodos.first { $0.title.contains(plan.medName) }
+            let takenTodayByPlan = plan.lastTakenAt.map { cal.isDateInToday($0) } ?? false
+            let isTaken = takenTodayByPlan && matchedTodo == nil
+            return WatchMedicationEntry(
+                id: plan.id,
+                medName: plan.medName,
+                dosage: plan.dosage,
+                mealRelationText: plan.mealRelation.displayName,
+                timePointsText: plan.dailyTimePoints.joined(separator: " / "),
+                isTakenToday: isTaken,
+                activeTodoID: matchedTodo?.id
+            )
+        }
+    }
+
+    private static func buildHabitEntries(context: ModelContext) -> [WatchHabitEntry] {
+        let descriptor = FetchDescriptor<PeriodicHabit>(
+            predicate: #Predicate { $0.isEnabled },
+            sortBy: [SortDescriptor(\.nextDueAt)]
+        )
+        guard let habits = try? context.fetch(descriptor), !habits.isEmpty else { return [] }
+        let cal = Calendar.current
+        let endOfToday = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: .now)) ?? .now
+
+        return habits.prefix(6).map { habit in
+            let completedToday = habit.lastCompletedAt.map { cal.isDateInToday($0) } ?? false
+            let isDue = !completedToday && habit.nextDueAt < endOfToday
+            return WatchHabitEntry(
+                id: habit.id,
+                title: habit.title,
+                recurrenceText: habit.recurrence.displayName,
+                isDueToday: isDue
+            )
+        }
+    }
+
+    private static func buildHealthSnapshot(todayWaterML: Double, context: ModelContext) -> WatchHealthSnapshot? {
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: .now)
+        let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+
+        let foodDescriptor = FetchDescriptor<FoodIntakeRecord>(
+            predicate: #Predicate { $0.date >= dayStart && $0.date < dayEnd }
+        )
+        let foodRecords = (try? context.fetch(foodDescriptor)) ?? []
+        let todayFoodCalories: Double? = foodRecords.isEmpty ? nil : foodRecords.reduce(0.0) { $0 + $1.consumedCalories }
+
+        var rawSnap = HealthKitService.shared.snapshot
+        if rawSnap == nil {
+            var snapDesc = FetchDescriptor<HealthDaySnapshotRecord>(
+                predicate: #Predicate { $0.day == dayStart }
+            )
+            snapDesc.fetchLimit = 1
+            if let rec = (try? context.fetch(snapDesc))?.first {
+                let restored = rec.toSnapshot()
+                if restored.readState == .hasData {
+                    rawSnap = restored
+                }
+            }
+        }
+
+        let effectiveSnap = rawSnap?.overridingDietaryWater(todayWaterML > 0 ? todayWaterML : nil)
+        let hasHealthData = effectiveSnap?.readState == .hasData
+
+        guard hasHealthData || todayFoodCalories != nil else { return nil }
+
+        let vitality = VitalityEvaluator.evaluate(snapshot: effectiveSnap, foodIntakeCalories: todayFoodCalories)
+        let pleasure = HealthKitService.shared.pleasureEvaluation
+            ?? PleasureIndexEvaluator.evaluate(snapshot: effectiveSnap, baseline: HealthKitService.shared.userBaseline)
+
+        let stepsVal = (effectiveSnap?.value(for: .stepCount)?.value).map { Int($0.rounded()) }
+        let rhrVal = effectiveSnap?.value(for: .restingHeartRate)?.value
+
+        return WatchHealthSnapshot(
+            vitalityScore: vitality.score,
+            vitalityBadge: vitality.level.badge,
+            pleasureScore: hasHealthData ? pleasure.pleasureScore : nil,
+            pleasureBadge: hasHealthData ? pleasure.state.badge : nil,
+            stressBadge: hasHealthData ? pleasure.stressLevel.badge : nil,
+            headlineAdvice: hasHealthData ? pleasure.advice : vitality.suggestion,
+            sleepHours: effectiveSnap?.sleepHours,
+            hrvMS: effectiveSnap?.heartRateVariability,
+            restingHR: rhrVal,
+            steps: stepsVal
         )
     }
 
@@ -267,6 +449,9 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         case .toggleDeparture(let id, let isChecked):
             return toggleDepartureInDB(id: id, isChecked: isChecked, context: context)
 
+        case .completeAllDeparture(let ids):
+            return completeAllDepartureInDB(ids: ids, context: context)
+
         case .quickAddExpense(let text):
             return quickAddExpenseInDB(text: text, context: context)
 
@@ -280,6 +465,12 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
 
         case .addWater(let beverageRaw, let volumeML):
             return addWaterInDB(beverageRaw: beverageRaw, volumeML: volumeML, context: context)
+
+        case .markMedicationTaken(let planID, let todoID):
+            return markMedicationTakenInDB(planID: planID, todoID: todoID, context: context)
+
+        case .completeHabit(let habitID):
+            return completeHabitInDB(habitID: habitID, context: context)
         }
     }
 
@@ -394,12 +585,94 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
                         return "已记录心情（情绪\(m) 精力\(e) 压力\(s)）"
                     case .addWater(_, let vol):
                         return "已补水 +\(Int(vol))ml 💧"
+                    case .toggleDeparture(_, let checked):
+                        return checked ? "已确认携带 ✓" : "已恢复未清点"
+                    case .completeAllDeparture:
+                        return "随身物品已全部带齐 ✓"
+                    case .markMedicationTaken:
+                        return "今日服药已打卡 💊"
+                    case .completeHabit:
+                        return "周期习惯已完成 ✓"
                     default:
                         return "已同步 ✓"
                     }
                 }
                 return "保存失败，稍后重试"
             }
+        }
+    }
+
+    @discardableResult
+    private func completeAllDepartureInDB(ids: [UUID], context: ModelContext) -> CommandOutcome {
+        let allItems: [DepartureCheckItem]
+        do {
+            allItems = try context.fetch(FetchDescriptor<DepartureCheckItem>())
+        } catch {
+            print("⚠️ [WidgetSync] 批量出门清点查询失败，保留重试: \(error.localizedDescription)")
+            return .retry
+        }
+        let targetSet = Set(ids)
+        var changed = false
+        for item in allItems where targetSet.isEmpty || targetSet.contains(item.id) {
+            if !item.isChecked {
+                item.isChecked = true
+                changed = true
+            }
+        }
+        Task { await LiveActivityService.endDepartureActivities() }
+        return changed ? .applied : .consumed
+    }
+
+    @discardableResult
+    private func markMedicationTakenInDB(planID: UUID, todoID: UUID?, context: ModelContext) -> CommandOutcome {
+        let planDesc = FetchDescriptor<MedicationPlan>(predicate: #Predicate { $0.id == planID })
+        do {
+            guard let plan = try context.fetch(planDesc).first else { return .consumed }
+            plan.markTaken(at: .now)
+            let medName = plan.medName
+            let medTypeRaw = TodoType.medication.rawValue
+            let activeRaw = TodoStatus.active.rawValue
+            if let todoID {
+                let todoDesc = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.id == todoID })
+                if let todo = (try? context.fetch(todoDesc))?.first, todo.status == .active {
+                    todo.markAsCompleted(in: context)
+                }
+            } else {
+                let todoDesc = FetchDescriptor<TodoItem>(
+                    predicate: #Predicate { $0.typeRaw == medTypeRaw && $0.statusRaw == activeRaw }
+                )
+                let matchingTodos = ((try? context.fetch(todoDesc)) ?? []).filter { $0.title.contains(medName) }
+                for todo in matchingTodos {
+                    todo.markAsCompleted(in: context)
+                }
+            }
+            return .applied
+        } catch {
+            print("⚠️ [WidgetSync] 服药打卡查询失败，保留重试: \(error.localizedDescription)")
+            return .retry
+        }
+    }
+
+    @discardableResult
+    private func completeHabitInDB(habitID: UUID, context: ModelContext) -> CommandOutcome {
+        let habitDesc = FetchDescriptor<PeriodicHabit>(predicate: #Predicate { $0.id == habitID })
+        do {
+            guard let habit = try context.fetch(habitDesc).first else { return .consumed }
+            habit.completeOnce()
+            let habitTitle = habit.title
+            let exTypeRaw = TodoType.exercise.rawValue
+            let activeRaw = TodoStatus.active.rawValue
+            let todoDesc = FetchDescriptor<TodoItem>(
+                predicate: #Predicate { $0.typeRaw == exTypeRaw && $0.statusRaw == activeRaw }
+            )
+            let matchingTodos = ((try? context.fetch(todoDesc)) ?? []).filter { $0.title.contains(habitTitle) }
+            for todo in matchingTodos {
+                todo.markAsCompleted(in: context)
+            }
+            return .applied
+        } catch {
+            print("⚠️ [WidgetSync] 周期习惯打卡查询失败，保留重试: \(error.localizedDescription)")
+            return .retry
         }
     }
 

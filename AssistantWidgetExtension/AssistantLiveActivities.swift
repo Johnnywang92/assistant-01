@@ -230,6 +230,7 @@ struct TravelLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TravelActivityAttributes.self) { context in
             TravelLockScreenView(context: context)
+                .widgetURL(URL(string: "assistant://todos"))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -443,6 +444,7 @@ struct DepartureChecklistLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: DepartureChecklistActivityAttributes.self) { context in
             DepartureLockScreenView(context: context)
+                .widgetURL(URL(string: "assistant://checklist"))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {

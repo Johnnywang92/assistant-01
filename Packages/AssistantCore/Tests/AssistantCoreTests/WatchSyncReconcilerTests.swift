@@ -127,4 +127,56 @@ final class WatchSyncReconcilerTests: XCTestCase {
         let count = WatchSyncReconciler.stalePendingCount(in: [fresh, stale], now: now)
         XCTAssertEqual(count, 1)
     }
+
+    func testOptimisticDepartureAndMedicationAndHabitCheckIn() {
+        let dep1 = UUID()
+        let dep2 = UUID()
+        let medPlanID = UUID()
+        let medTodoID = UUID()
+        let habitID = UUID()
+
+        var snapshot = WidgetSnapshot(
+            topTodos: [
+                WidgetTodoEntry(id: medTodoID, title: "服用 维生素D (08:00)", typeRaw: "medication")
+            ],
+            parcels: [],
+            todayExpense: 0,
+            departureSnapshot: WatchDepartureSnapshot(
+                sceneName: "日常通勤",
+                items: [
+                    WatchDepartureItem(id: dep1, title: "钥匙", isChecked: false, isEssential: true),
+                    WatchDepartureItem(id: dep2, title: "工牌", isChecked: false, isEssential: true)
+                ]
+            ),
+            medications: [
+                WatchMedicationEntry(
+                    id: medPlanID,
+                    medName: "维生素D",
+                    dosage: "1粒",
+                    mealRelationText: "随餐",
+                    timePointsText: "08:00",
+                    isTakenToday: false,
+                    activeTodoID: medTodoID
+                )
+            ],
+            habits: [
+                WatchHabitEntry(id: habitID, title: "夜跑 3 公里", recurrenceText: "每隔一天", isDueToday: true)
+            ],
+            generatedAt: Date(timeIntervalSince1970: 2000)
+        )
+
+        WatchSyncReconciler.applyOptimistically(.toggleDeparture(dep1, true), to: &snapshot)
+        XCTAssertEqual(snapshot.departureSnapshot?.items.first?.isChecked, true)
+        XCTAssertEqual(snapshot.departureSnapshot?.items.last?.isChecked, false)
+
+        WatchSyncReconciler.applyOptimistically(.completeAllDeparture([dep1, dep2]), to: &snapshot)
+        XCTAssertEqual(snapshot.departureSnapshot?.items.allSatisfy(\.isChecked), true)
+
+        WatchSyncReconciler.applyOptimistically(.markMedicationTaken(planID: medPlanID, todoID: medTodoID), to: &snapshot)
+        XCTAssertEqual(snapshot.medications.first?.isTakenToday, true)
+        XCTAssertTrue(snapshot.topTodos.isEmpty)
+
+        WatchSyncReconciler.applyOptimistically(.completeHabit(habitID: habitID), to: &snapshot)
+        XCTAssertEqual(snapshot.habits.first?.isDueToday, false)
+    }
 }
