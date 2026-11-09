@@ -121,4 +121,42 @@ final class FoodLLMOutputParserTests: XCTestCase {
         XCTAssertEqual(FoodLLMOutputParser.parsePortion("大"), .large)
         XCTAssertNil(FoodLLMOutputParser.parsePortion("随便"))
     }
+
+    // MARK: - 整餐（视觉语言模型）
+
+    func testMealParsesDishesWrapper() {
+        let raw = #"{"dishes":[{"food":"米饭","calories":230,"portion":"标准份"},{"food":"汉堡","calories":400,"portion":"大份"}]}"#
+        let meal = FoodLLMOutputParser.parseMeal(raw)
+        XCTAssertEqual(meal?.dishes.map(\.foodName), ["米饭", "汉堡"])
+        XCTAssertEqual(meal?.dishes.last?.portion, .large)
+        XCTAssertEqual(meal?.unmatchedNames, [])
+    }
+
+    func testMealParsesTopLevelArrayWithProseAndTrailingComma() {
+        let raw = "识别结果如下：[{\"food\":\"拉面\",\"calories\":350},{\"food\":\"披萨\",\"calories\":520},] 以上。"
+        XCTAssertEqual(FoodLLMOutputParser.parseMeal(raw)?.dishes.map(\.foodName), ["拉面", "披萨"])
+    }
+
+    func testMealKeepsUnknownDishesAsUnmatchedWithoutCalories() {
+        let raw = #"{"dishes":[{"food":"米饭","calories":230},{"food":"外星烧烤","calories":400}]}"#
+        let meal = FoodLLMOutputParser.parseMeal(raw)
+        XCTAssertEqual(meal?.dishes.map(\.foodName), ["米饭"])
+        XCTAssertEqual(meal?.unmatchedNames, ["外星烧烤"])
+    }
+
+    func testMealRejectsWhenNoDishMatchesCatalog() {
+        XCTAssertNil(FoodLLMOutputParser.parseMeal(#"[{"food":"外星烧烤","calories":400}]"#))
+        XCTAssertNil(FoodLLMOutputParser.parseMeal(#"{"dishes":[]}"#))
+        XCTAssertNil(FoodLLMOutputParser.parseMeal(""))
+    }
+
+    func testMealDeduplicatesAndCapsDishCount() {
+        let repeated = Array(repeating: #"{"food":"米饭","calories":230}"#, count: 3).joined(separator: ",")
+        XCTAssertEqual(FoodLLMOutputParser.parseMeal("[\(repeated)]")?.dishes.count, 1)
+    }
+
+    func testMealAcceptsSingleObjectAndStripsThinking() {
+        let raw = "<think>可能是披萨或汉堡</think>{\"food\":\"披萨\",\"calories\":520}"
+        XCTAssertEqual(FoodLLMOutputParser.parseMeal(raw)?.dishes.map(\.foodName), ["披萨"])
+    }
 }

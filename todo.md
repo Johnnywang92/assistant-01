@@ -672,7 +672,7 @@ P0 五项至此全部完成。本轮把三项「部分完成」推到可自动�
 
 ### 未验 / 未做
 
+- [x] 「拍照算热量」接 VL 已完成：`FoodEstimationService.swift` 接入 `VisionLlamaEngine` 与 `FoodLLMOutputParser.parseMeal`，支持多菜/整餐识别并优雅降级至 Vision 分区 + 文本模型链路。
 - 真机链路未跑：下载 → 校验 → 加载 → 出图整条路只在设备切片上编译过，没有真实 GGUF 与 mmproj 跑过。
-- 「拍照算热量」接 VL 未做：`FoodPhotoCalorieView.swift` / `FoodEstimationService.swift` 正被另一处并行改动占用，等其合入再接。
 - 发布指纹只经 ModelScope 单源核对（写指纹时 huggingface.co 超时，未做 HF 侧交叉核对），因此这两个条目**只挂 ModelScope 一个下载源**。
 - 图像 token 上限 512 与上下文上限的真实占用关系只有静态校验，未在真机量过。

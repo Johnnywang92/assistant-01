@@ -48,6 +48,97 @@ public enum FoodLLMOutputParser {
         return parseProse(text)
     }
 
+    // MARK: - 多菜（视觉语言模型）
+
+    /// 视觉语言模型一次给出整餐多道菜时的解析结果。
+    public struct MealParse: Equatable, Sendable {
+        /// 通过食物库严格匹配、热量合法的菜品（按输出顺序，已去重）
+        public let dishes: [Parsed]
+        /// 模型给出、但食物库里找不到的菜名。**不估热量**，只交给 UI 提示用户手动补选。
+        public let unmatchedNames: [String]
+
+        public init(dishes: [Parsed], unmatchedNames: [String]) {
+            self.dishes = dishes
+            self.unmatchedNames = unmatchedNames
+        }
+    }
+
+    /// 单餐最多采信的菜品数。超过这个数多半是模型在列举食材或复读，而不是真有这么多道菜。
+    public static let maxMealDishes = 8
+
+    /// 解析视觉语言模型的整餐输出。
+    ///
+    /// 接受三种形态：`{"dishes":[{...},{...}]}`、顶层数组 `[{...},{...}]`、单个对象 `{...}`。
+    /// 每道菜沿用单菜的严格规则（菜名必须严格匹配食物库、热量 0~5000）；
+    /// 匹配不上的菜名进 `unmatchedNames`，**不**猜一个近似菜去凑热量。
+    /// - Returns: 一道合法菜都没有时返回 nil，调用方应退回其他识别路径。
+    public static func parseMeal(_ raw: String) -> MealParse? {
+        let text = stripThinkingBlocks(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= 4000 else { return nil }
+
+        guard let objects = mealObjects(in: text) else {
+            // 没有可用 JSON：退回单菜解析（含散文），能认出一道也比全丢强
+            return parse(text).map { MealParse(dishes: [$0], unmatchedNames: []) }
+        }
+
+        var dishes: [Parsed] = []
+        var unmatched: [String] = []
+        var seen = Set<String>()
+        for obj in objects {
+            if let parsed = parseDictionary(obj) {
+                let key = FoodCatalog.item(matchingNameStrict: parsed.foodName)?.id ?? parsed.foodName
+                guard seen.insert(key).inserted else { continue }
+                dishes.append(parsed)
+                if dishes.count >= maxMealDishes { break }
+            } else if let name = rawName(in: obj), !unmatched.contains(name) {
+                unmatched.append(name)
+            }
+        }
+        guard !dishes.isEmpty else { return nil }
+        return MealParse(dishes: dishes, unmatchedNames: Array(unmatched.prefix(maxMealDishes)))
+    }
+
+    /// 从文本里取出「菜品对象列表」。先按标准 JSON 试，失败再做与单菜相同的轻度清洗。
+    private static func mealObjects(in text: String) -> [[String: Any]]? {
+        let candidates: [String] = {
+            var result: [String] = []
+            if let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start < end {
+                result.append(String(text[start...end]))
+            }
+            if let start = text.firstIndex(of: "["), let end = text.lastIndex(of: "]"), start < end {
+                result.append(String(text[start...end]))
+            }
+            return result
+        }()
+
+        for jsonText in candidates {
+            for variant in [jsonText, cleanLooseJSON(jsonText).replacingOccurrences(
+                of: ",\\s*]", with: "]", options: .regularExpression
+            )] {
+                guard let data = variant.data(using: .utf8),
+                      let any = try? JSONSerialization.jsonObject(with: data) else { continue }
+                if let array = any as? [[String: Any]] { return array }
+                if let obj = any as? [String: Any] {
+                    for key in ["dishes", "foods", "items", "菜品"] {
+                        if let array = obj[key] as? [[String: Any]] { return array }
+                    }
+                    return [obj]
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func rawName(in obj: [String: Any]) -> String? {
+        for key in ["food", "name", "dish", "food_name", "foodName", "菜名", "食物"] {
+            if let value = obj[key] as? String {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty, trimmed.count <= 40 { return trimmed }
+            }
+        }
+        return nil
+    }
+
     /// 剥离 Qwen3 等推理模型可能输出的 `<think>...</think>` 思考过程块，
     /// 避免思考过程里的数字或候选菜名干扰最终 JSON / 散文抽取。
     private static func stripThinkingBlocks(_ text: String) -> String {

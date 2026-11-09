@@ -1,15 +1,18 @@
 import AssistantCore
 import Foundation
+import OSLog
 import UIKit
 
 /// 食物照片热量估算的编排服务。
 ///
 /// ## 降级链（每一步都可能失败，必须能优雅退化）
 /// 1. **Vision 通用分类** → 具体食物候选（披萨/汉堡准，沙拉这类可能只给泛类）。
-/// 2. **端侧 LLM 细化** → 结合候选推断更准的菜名、份量与热量。
+/// 2. **端侧视觉语言模型（Qwen3-VL）** → 视觉包已下载时直接看图列出整餐菜品。
+///    输出同样经 `FoodLLMOutputParser.parseMeal` 严格校验，不可用或不可采信时落到下一步。
+/// 3. **端侧 LLM 细化** → 结合候选推断更准的菜名、份量与热量。
 ///    - 端侧模型是 1.5B 小模型，且**看不到照片**，只能基于候选做推断，
 ///      所以它的输出**必须**经过 `FoodLLMOutputParser` 的严格校验才采信。
-/// 3. **手动选择** → 候选为空或置信度过低时，引导用户从食物库直接选。
+/// 4. **手动选择** → 候选为空或置信度过低时，引导用户从食物库直接选。
 ///
 /// ## 诚实性约束
 /// - 识别不出就**说识别不出**，不编造菜名与热量。
@@ -106,7 +109,20 @@ final class FoodEstimationService: ObservableObject {
             }
         }
 
-        // 第二步：若多区域识别已发现多道菜（如「米饭 + 辣椒炒肉/家常小炒 + 凉拌海带丝/凉菜」），
+        // 第二步（视觉语言模型）：视觉包已下载并校验通过时，让 Qwen3-VL 直接看照片列出整餐菜品。
+        // 它真的看得到图，比「Vision 泛类 + 看不见图的文本模型」更可信，所以排在多区域结果之前；
+        // 不可用或输出不可采信时静默落到下面的老链路，不打断用户。
+        if let vlMeal = await estimateWithVisionLanguageModel(image: image) {
+            estimate = vlMeal.estimate
+            var message = "已由 \(vlMeal.modelName) 看图识别出 \(vlMeal.estimate.dishes.count) 道菜品（\(vlMeal.estimate.displayName)），可按菜品或整餐调整份量与吃剩比例。"
+            if !vlMeal.unmatchedNames.isEmpty {
+                message += "另识别到「\(vlMeal.unmatchedNames.joined(separator: "、"))」但食物库中没有对应条目，未计入热量，可手动添加。"
+            }
+            statusMessage = message
+            return vlMeal.estimate
+        }
+
+        // 第三步：若多区域识别已发现多道菜（如「米饭 + 辣椒炒肉/家常小炒 + 凉拌海带丝/凉菜」），
         // 直接保留完整多菜组合并汇总全部菜品热量，不让单菜 LLM 输出冲掉其余配菜！
         if let base = multiDishBase, base.dishes.count > 1 {
             estimate = base
@@ -114,7 +130,7 @@ final class FoodEstimationService: ObservableObject {
             return base
         }
 
-        // 第三步：单菜或补充说明场景下，交给端侧 LLM（如 Qwen3）细化
+        // 第四步：单菜或补充说明场景下，交给端侧 LLM（如 Qwen3）细化
         if !visionCandidates.isEmpty || !trimmedHint.isEmpty {
             if let refined = await refineWithLLM(candidates: visionCandidates, userHint: trimmedHint) {
                 estimate = refined
@@ -124,7 +140,7 @@ final class FoodEstimationService: ObservableObject {
             }
         }
 
-        // 第四步：退到 Vision 整餐/最佳候选
+        // 第五步：退到 Vision 整餐/最佳候选
         if let best = multiDishBase ?? FoodCalorieEstimator.estimate(from: visionCandidates) {
             estimate = best
             if best.confidenceLevel == .low {
@@ -136,7 +152,7 @@ final class FoodEstimationService: ObservableObject {
             return best
         }
 
-        // 第五步：彻底认不出
+        // 第六步：彻底认不出
         estimate = nil
         needsManualSelection = true
         statusMessage = "没能从照片认出具体食物。请手动选择，或补充一句描述（例如「米饭、辣椒炒肉、海带丝」）再试。"
@@ -253,6 +269,122 @@ final class FoodEstimationService: ObservableObject {
             consumedRatio: 1.0
         ).withOverriddenCalories(calories)
     }
+
+    // MARK: - 视觉语言模型（Qwen3-VL）
+
+    /// 视觉语言模型给出的整餐结果。
+    private struct VisionLanguageMeal {
+        let estimate: FoodCalorieEstimate
+        /// 模型看到了、但食物库没有的菜名：不估热量，只在文案里提示用户手动补
+        let unmatchedNames: [String]
+        let modelName: String
+    }
+
+    /// 视觉模型自评置信度的上限。2B 模型对菜名的自信远高于它的真实准确率，
+    /// 不封顶的话 UI 会把它标成「高置信」，用户就不再去核对份量。
+    private static let visionLanguageConfidenceCap = 0.8
+
+    /// 让视觉包直接看照片识别整餐。
+    ///
+    /// 只在「二进制已链接 + 两个部件都校验通过」时运行；任何失败都返回 nil，由调用方走老链路。
+    /// 每道菜沿用与文本模型相同的采信规则：菜名严格匹配食物库、热量与库基准差异过大时以库为准。
+    private func estimateWithVisionLanguageModel(image: UIImage) async -> VisionLanguageMeal? {
+        guard VisionLlamaEngine.isInferenceAvailable else { return nil }
+        let manager = VisionModelManager.shared
+        guard let paths = manager.readyBundlePaths() else { return nil }
+        guard let cgImage = Self.normalizedCGImage(from: image, maxSide: VisionLlamaEngine.maxImageSide) else {
+            return nil
+        }
+
+        let bundle = manager.bundle
+        let prompt = """
+        <|im_start|>system
+        你是食物识别与热量估算助手。请仔细观察照片，列出照片中每一道可食用的菜品或食物（同一道菜只列一次，不要列调料和餐具）。
+        只输出 JSON，格式为：{"dishes":[{"food":"常见中文菜名","calories":整份热量千卡数字,"portion":"小份或标准份或大份"}]}
+        要求：food 用最常见的中文菜名（如「米饭」「番茄炒蛋」「宫保鸡丁」）；calories 是照片中这一份的整份热量；看不出是食物就输出 {"dishes":[]}；不要输出任何解释文字。<|im_end|>
+        <|im_start|>user
+        \(VisionLlamaEngine.mediaMarker)
+        请识别这张照片里的食物并估算热量。<|im_end|>
+        <|im_start|>assistant
+
+        """
+
+        let engine = VisionLlamaEngine.shared
+        let output: String
+        do {
+            output = try await engine.generate(
+                prompt: prompt,
+                image: cgImage,
+                languageModelURL: paths.languageModel,
+                visionProjectorURL: paths.visionProjector,
+                imageMaxTokens: bundle.imageMaxTokens,
+                maxNewTokens: 256,
+                onPartialOutput: { _ in }
+            )
+        } catch {
+            Self.log.error("视觉模型识别失败，退回 Vision 链路：\(error.localizedDescription, privacy: .public)")
+            // 视觉包与聊天模型各占一份权重，失败后也立即释放，不让它在后台压着内存
+            await engine.unload()
+            return nil
+        }
+        // 拍照算热量是低频操作：用完即放，避免 2B 视觉包（约 1.5GB）与聊天模型同时常驻被系统杀掉
+        await engine.unload()
+
+        guard let meal = FoodLLMOutputParser.parseMeal(output) else {
+            Self.log.notice("视觉模型输出不可采信，退回 Vision 链路（长度 \(output.count)）")
+            return nil
+        }
+
+        let dishes: [FoodDishEstimate] = meal.dishes.enumerated().compactMap { index, parsed in
+            guard let food = FoodCatalog.item(matchingNameStrict: parsed.foodName) else { return nil }
+            let portion = parsed.portion ?? .regular
+            let baseline = food.standardServingCalories * portion.multiplier
+            let calories = Self.reconcile(llmCalories: parsed.calories, baseline: baseline)
+            let confidence = min(parsed.confidence ?? 0.7, Self.visionLanguageConfidenceCap)
+            return FoodDishEstimate(
+                id: "\(food.id)_vl_\(index)",
+                food: food,
+                portion: portion,
+                confidence: confidence,
+                consumedRatio: 1.0
+            ).withOverriddenCalories(calories)
+        }
+        guard !dishes.isEmpty else { return nil }
+
+        return VisionLanguageMeal(
+            estimate: FoodCalorieEstimate(dishes: dishes, unmatchedHints: meal.unmatchedNames),
+            unmatchedNames: meal.unmatchedNames,
+            modelName: bundle.shortName
+        )
+    }
+
+    /// 按 EXIF 方向摆正并等比缩到长边 ≤ maxSide。
+    ///
+    /// 引擎不纠正方向：横拍的照片原样送进去，视觉塔看到的是躺倒的菜，照样会编出一个菜名。
+    /// 顺带在这里先缩图，免得把 4000+ 像素的原图整张解码进内存再交给引擎缩。
+    private static func normalizedCGImage(from image: UIImage, maxSide: Int) -> CGImage? {
+        let size = image.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        let pixelWidth = size.width * image.scale
+        let pixelHeight = size.height * image.scale
+        let ratio = min(1.0, CGFloat(maxSide) / max(pixelWidth, pixelHeight))
+        if ratio >= 1.0, image.imageOrientation == .up, let cg = image.cgImage {
+            return cg
+        }
+        let target = CGSize(width: (pixelWidth * ratio).rounded(), height: (pixelHeight * ratio).rounded())
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let rendered = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }
+        return rendered.cgImage
+    }
+
+    private static let log = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "Assistant",
+        category: "FoodEstimation"
+    )
 
     /// 把 LLM 给的热量与食物库基准调和。
     ///
