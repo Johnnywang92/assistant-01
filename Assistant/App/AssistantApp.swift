@@ -49,6 +49,8 @@ struct AssistantApp: App {
         // 注册小组件/实时活动桥接钩子：AppIntent 在主应用进程（Siri、操作按钮、快捷指令）
         // 执行时直连 SwiftData；扩展进程执行时走 App Group 指令队列。
         WidgetBridge.appHook = StartupMetrics.measure("widgetHookInstall") { WidgetSnapshotSyncController.shared }
+        // 激活 Apple Watch WCSession 通信桥接
+        StartupMetrics.measure("watchBridgeActivate") { PhoneWatchBridge.shared.activateIfSupported() }
         // 注册后台定时巡检任务 (BGAppRefreshTask)
         StartupMetrics.measure("bgTaskRegister") { BackgroundRefreshCoordinator.shared.registerBackgroundTask() }
         StartupMetrics.mark("app.init end")

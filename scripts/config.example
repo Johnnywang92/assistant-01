@@ -9,3 +9,5 @@ BUNDLE_ID="com.yifanwang.assistant01"
 
 # 设备 ID：运行 xcrun devicectl list devices 查看 Identifier 列
 DEVICE_ID="00000000-0000000000000000"
+# 可选：配对的 Apple Watch 设备 ID（留空时 reinstall.sh 仍会自动安装内嵌在 iPhone App 里的 Watch App，填写后可额外直推手表）
+WATCH_DEVICE_ID=""

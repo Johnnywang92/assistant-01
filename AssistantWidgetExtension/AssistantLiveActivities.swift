@@ -17,6 +17,7 @@ struct PickupLiveActivity: Widget {
             PickupLockScreenView(context: context)
                 .activitySystemActionForegroundColor(.primary)
                 .activityBackgroundTint(.clear)
+                .widgetURL(URL(string: "assistant://parcels"))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
@@ -50,7 +51,7 @@ struct PickupLiveActivity: Widget {
                 Image(systemName: "shippingbox.fill")
                     .foregroundStyle(.orange)
             }
-            .widgetURL(URL(string: "assistant://todos"))
+            .widgetURL(URL(string: "assistant://parcels"))
         }
         .supplementalActivityFamilies([.small])
     }
@@ -163,10 +164,10 @@ struct PickupLockScreenView: View {
                 )
 
                 HStack(spacing: 3) {
-                    Image(systemName: "checkmark.circle.fill")
+                    Image(systemName: "applewatch.watchface")
                         .font(.system(size: 10))
                         .foregroundStyle(isLuminanceReduced ? Color.secondary : Color.green)
-                    Text("在通知中轻点「已取件」销号")
+                    Text("轻点卡片进手表小助，一键「已取件」")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

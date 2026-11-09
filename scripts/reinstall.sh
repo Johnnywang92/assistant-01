@@ -46,6 +46,22 @@ if [[ "$INSTALL_ONLY" -eq 0 ]]; then
         done
       fi
     done
+    rm -rf "$BUILD_DIR/Build/Intermediates.noindex" "$BUILD_DIR/Build/Products"
+
+    if [[ -n "${WATCH_DEVICE_ID:-}" ]]; then
+      echo "▶ 为 Apple Watch (${WATCH_DEVICE_ID}) 注册并更新签名描述文件…"
+      xcodebuild \
+        -project Assistant.xcodeproj \
+        -scheme AssistantWatch \
+        -configuration Release \
+        -destination "id=$WATCH_DEVICE_ID" \
+        -derivedDataPath "$BUILD_DIR" \
+        -allowProvisioningUpdates \
+        -quiet \
+        DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+        BUNDLE_ID="$BUNDLE_ID" \
+        build || true
+    fi
   fi
 
   echo "▶ 编译与签名中（首次约 1~2 分钟）…"
@@ -88,6 +104,15 @@ fi
 
 echo "▶ 安装到设备 ${DEVICE_ID}…"
 xcrun devicectl device install app --device "$DEVICE_ID" "$APP"
+
+WATCH_APP="$BUILD_DIR/Build/Products/Release-watchos/AssistantWatch.app"
+if [[ ! -d "$WATCH_APP" && -d "$APP/Watch/AssistantWatch.app" ]]; then
+  WATCH_APP="$APP/Watch/AssistantWatch.app"
+fi
+if [[ -n "${WATCH_DEVICE_ID:-}" && -d "$WATCH_APP" ]]; then
+  echo "▶ 同步安装 Apple Watch 应用到 ${WATCH_DEVICE_ID}…"
+  xcrun devicectl device install app --device "$WATCH_DEVICE_ID" "$WATCH_APP" || echo "⚠️ Apple Watch 直装未完成（iPhone Watch App 会在后台自动同步安装）"
+fi
 
 # 解析实际签名过期时间
 EXPIRY_TS=$(python3 -c "

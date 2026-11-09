@@ -9,7 +9,23 @@ import WidgetKit
 final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
     static let shared = WidgetSnapshotSyncController()
 
+    /// 最近已落库确认的手表指令 ID 环形缓冲（最多保留 100 条，随快照发给手表以消掉手表待确认列表）
+    private var recentAckedCommandIDs: [UUID] = []
+    private static let maxAckedIDs = 100
+
     private init() {}
+
+    func recordAckedCommandID(_ id: UUID) {
+        guard !recentAckedCommandIDs.contains(id) else { return }
+        recentAckedCommandIDs.append(id)
+        if recentAckedCommandIDs.count > Self.maxAckedIDs {
+            recentAckedCommandIDs.removeFirst(recentAckedCommandIDs.count - Self.maxAckedIDs)
+        }
+    }
+
+    func isCommandAcked(_ id: UUID) -> Bool {
+        recentAckedCommandIDs.contains(id)
+    }
 
     // MARK: - 快照构建
 
@@ -19,6 +35,7 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         let snapshot = buildSnapshot(context: context)
         WidgetSnapshotStore.save(snapshot)
         WidgetCenter.shared.reloadAllTimelines()
+        PhoneWatchBridge.shared.pushSnapshot(snapshot)
     }
 
     private func buildSnapshot(context: ModelContext) -> WidgetSnapshot {
@@ -39,14 +56,42 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
 
         let todayExpense = Self.todayExpenseTotal(context: context) ?? 0
         let todayPractice = Self.todayPracticeEntry(context: context)
+        let todayWaterML = Self.todayWaterEffectiveTotal(context: context)
+        let waterGoalML = AppSettings.dailyWaterGoalML
+        let todayMood = Self.todayMoodSummary(context: context)
 
         return WidgetSnapshot(
             topTodos: Array(topEntries),
             parcels: parcelEntries,
             todayExpense: todayExpense,
             todayPractice: todayPractice,
+            todayWaterML: todayWaterML,
+            waterGoalML: waterGoalML,
+            todayMood: todayMood,
+            ackedCommandIDs: recentAckedCommandIDs,
             generatedAt: .now
         )
+    }
+
+    private static func todayWaterEffectiveTotal(context: ModelContext) -> Double {
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: .now)
+        let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
+        let descriptor = FetchDescriptor<WaterIntakeRecord>(
+            predicate: #Predicate { $0.date >= dayStart && $0.date < dayEnd }
+        )
+        guard let records = try? context.fetch(descriptor) else { return 0 }
+        return records.reduce(0) { $0 + $1.effectiveHydrationML }
+    }
+
+    private static func todayMoodSummary(context: ModelContext) -> MoodCheckInSummary? {
+        let startOfDay = Calendar.current.startOfDay(for: .now)
+        var descriptor = FetchDescriptor<MoodCheckInRecord>(
+            predicate: #Predicate { $0.day == startOfDay }
+        )
+        descriptor.fetchLimit = 1
+        guard let record = (try? context.fetch(descriptor))?.first else { return nil }
+        return MoodCheckInSummary(mood: record.moodScore, energy: record.energyScore, stress: record.stressScore)
     }
 
     /// 今日练习快照：只取最近活跃（最近打卡优先，否则最近开始）的进行中路径。
@@ -229,6 +274,132 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             guard let item = quickAddTodoInDB(text: text, context: context) else { return .consumed }
             deferredNotifications.append(item)
             return .applied
+
+        case .logMood(let mood, let energy, let stress):
+            return logMoodInDB(mood: mood, energy: energy, stress: stress, context: context)
+
+        case .addWater(let beverageRaw, let volumeML):
+            return addWaterInDB(beverageRaw: beverageRaw, volumeML: volumeML, context: context)
+        }
+    }
+
+    @discardableResult
+    private func logMoodInDB(mood: Int, energy: Int, stress: Int, context: ModelContext) -> CommandOutcome {
+        let clampedMood = min(max(mood, 1), 5)
+        let clampedEnergy = min(max(energy, 1), 5)
+        let clampedStress = min(max(stress, 1), 5)
+        let startOfDay = Calendar.current.startOfDay(for: .now)
+        var descriptor = FetchDescriptor<MoodCheckInRecord>(
+            predicate: #Predicate { $0.day == startOfDay }
+        )
+        descriptor.fetchLimit = 1
+        do {
+            if let existing = try context.fetch(descriptor).first {
+                existing.update(mood: clampedMood, energy: clampedEnergy, stress: clampedStress, note: existing.note)
+            } else {
+                let record = MoodCheckInRecord(
+                    day: startOfDay,
+                    moodScore: clampedMood,
+                    energyScore: clampedEnergy,
+                    stressScore: clampedStress,
+                    note: nil
+                )
+                context.insert(record)
+            }
+            return .applied
+        } catch {
+            print("⚠️ [WidgetSync] 情绪微打卡查询失败，保留重试: \(error.localizedDescription)")
+            return .retry
+        }
+    }
+
+    @discardableResult
+    private func addWaterInDB(beverageRaw: String, volumeML: Double, context: ModelContext) -> CommandOutcome {
+        guard volumeML > 0, volumeML <= 5000 else { return .consumed }
+        let bev = HydrationBeverageType(rawValue: beverageRaw) ?? .plainWater
+        let record = WaterIntakeRecord(
+            date: .now,
+            beverageType: bev,
+            volumeML: volumeML,
+            note: "Apple Watch 快捷补水"
+        )
+        context.insert(record)
+        let effectiveML = record.effectiveHydrationML
+        let date = record.date
+        Task {
+            _ = await HealthKitService.shared.recordWaterIntake(amountML: effectiveML, date: date)
+        }
+        return .applied
+    }
+
+    /// 处理来自 Apple Watch 的带 ID 指令信封（幂等对账 + 落库 + 刷新快照并返回用户可见回执文案）
+    func handleWatchCommandEnvelope(_ envelope: WatchCommandEnvelope, context: ModelContext) async -> String {
+        if isCommandAcked(envelope.id) {
+            return "已同步 ✓"
+        }
+
+        switch envelope.command {
+        case .quickAddExpense(let text):
+            if let reply = await handleQuickAddExpense(text: text) {
+                recordAckedCommandID(envelope.id)
+                refreshSnapshot(context: context)
+                return reply
+            }
+            // 若未识别出金额，尝试识别是否是快速记待办或饮水
+            if let drink = HydrationNaturalLanguageParser.parse(text) {
+                var notifications: [TodoItem] = []
+                let outcome = apply(.addWater(beverageRaw: drink.beverageType.rawValue, volumeML: drink.volumeML), context: context, deferredNotifications: &notifications)
+                if outcome == .applied, saveHook(context, action: "手表语音补水") {
+                    recordAckedCommandID(envelope.id)
+                    refreshSnapshot(context: context)
+                    return "已记录 \(drink.customName) \(Int(drink.volumeML))ml"
+                }
+            }
+            if let todoReply = await handleQuickAddTodo(text: text) {
+                recordAckedCommandID(envelope.id)
+                refreshSnapshot(context: context)
+                return todoReply
+            }
+            recordAckedCommandID(envelope.id)
+            return "未能识别内容，请重试"
+
+        case .quickAddTodo(let text):
+            if let reply = await handleQuickAddTodo(text: text) {
+                recordAckedCommandID(envelope.id)
+                refreshSnapshot(context: context)
+                return reply
+            }
+            recordAckedCommandID(envelope.id)
+            return "待办内容为空"
+
+        default:
+            var notifications: [TodoItem] = []
+            let outcome = apply(envelope.command, context: context, deferredNotifications: &notifications)
+            switch outcome {
+            case .retry:
+                return "同步稍后重试"
+            case .applied, .consumed:
+                if saveHook(context, action: "手表指令同步") {
+                    scheduleDeferredNotifications(notifications)
+                    recordAckedCommandID(envelope.id)
+                    refreshSnapshot(context: context)
+                    switch envelope.command {
+                    case .completeTodo:
+                        return "已完成 ✓"
+                    case .snoozeTodo(_, let mins):
+                        return "已延后 \(mins) 分钟"
+                    case .snoozeTomorrow:
+                        return "已延后至明早 9:00"
+                    case .logMood(let m, let e, let s):
+                        return "已记录心情（情绪\(m) 精力\(e) 压力\(s)）"
+                    case .addWater(_, let vol):
+                        return "已补水 +\(Int(vol))ml 💧"
+                    default:
+                        return "已同步 ✓"
+                    }
+                }
+                return "保存失败，稍后重试"
+            }
         }
     }
 

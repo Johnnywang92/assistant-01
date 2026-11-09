@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 WHITELIST_FILE = ROOT / "Packages/AssistantCore/Sources/AssistantCore/SettingsSnapshot.swift"
-SCAN_DIRS = ["Assistant", "WidgetShared", "Packages/AssistantCore/Sources"]
+SCAN_DIRS = ["Assistant", "AssistantWatch", "WidgetShared", "Packages/AssistantCore/Sources"]
 WHITELIST_ARRAYS = ("stringKeys", "boolKeys", "intKeys", "doubleKeys", "dataKeys")
 
 # 不进备份的键，逐条写明理由。要新增豁免必须先能读出它为什么不属于用户偏好。
@@ -87,6 +87,8 @@ EXEMPT = {
     # --- 跨进程桥接缓存（App Group，不是用户偏好）---
     "widget_shared_snapshot_v1": "小组件共享快照",
     "widget_pending_commands_v1": "小组件待处理指令队列",
+    "watch_local_base_snapshot_v1": "Apple Watch 本地基准快照缓存，由 iPhone 实时同步覆盖",
+    "watch_pending_envelopes_v1": "Apple Watch 本地待确认指令队列，属跨设备桥接状态",
     # --- 行为学习历史：SettingsValue 没有字典类型，丢了只退回默认排序 ---
     "life_vault_card_usage_counts_v2": "卡片使用频次统计（字典存储）",
     "life_vault_card_last_used_timestamps_v2": "卡片最近使用时间（字典存储）",

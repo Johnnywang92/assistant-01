@@ -2,9 +2,11 @@ import SwiftUI
 
 /// Apple Watch 腕上协同指南：展示智能叠放、表盘小组件、Siri 快捷指令与硬件按键联动
 struct WatchIntegrationGuideView: View {
+    @ObservedObject private var watchBridge = PhoneWatchBridge.shared
+
     var body: some View {
         List {
-            // 顶部核心概览
+            // 顶部核心概览与连接状态
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
@@ -14,13 +16,74 @@ struct WatchIntegrationGuideView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Apple Watch 腕上协同")
                                 .font(.headline)
-                            Text("无需单独安装 Watch App，即可享受完整的抬腕即看与语音查记体验。")
+                            Text("支持独立腕上伴生 App 与智能叠放实时联动：抬腕查待办、看大字取件码、一句话记账、10 秒心情打卡与一键补水。")
                                 .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Divider()
+
+                    HStack {
+                        Label(
+                            watchBridge.isWatchPaired
+                                ? (watchBridge.isWatchAppInstalled ? "手表小助已安装" : "已配对手表（可在 Watch App 安装小助）")
+                                : "未检测到配对的 Apple Watch",
+                            systemImage: watchBridge.isWatchAppInstalled ? "checkmark.circle.fill" : "applewatch.radiowaves.left.and.right"
+                        )
+                        .font(.caption.bold())
+                        .foregroundStyle(watchBridge.isWatchAppInstalled ? Color.green : Color.secondary)
+
+                        Spacer()
+
+                        if let pushed = watchBridge.lastPushedAt {
+                            Text("同步于 \(pushed, format: .dateTime.hour().minute())")
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
                 }
                 .padding(.vertical, 4)
+            }
+
+            // 0. 腕上小助 App 五大高频页
+            Section {
+                guideRow(
+                    icon: "checklist.checked",
+                    iconColor: .blue,
+                    title: "今天（待办 + 今日支出）",
+                    subtitle: "抬腕即看今日高优待办 Top 6 与今日累计支出；点按直接打勾完成，左滑可延后 10 分钟或推迟至明早。"
+                )
+
+                guideRow(
+                    icon: "shippingbox.fill",
+                    iconColor: .orange,
+                    title: "取件码大字铭牌",
+                    subtitle: "大字号展示当前包裹取件码与驿站名称，点击「已取件」自动跳到下一件；从智能叠放实时活动点卡可直接跳入本页。"
+                )
+
+                guideRow(
+                    icon: "mic.fill",
+                    iconColor: .teal,
+                    title: "快速记（语音听写记账/待办）",
+                    subtitle: "唤起系统听写说一句「咖啡 18 元」或「下午取快递」，手表端即时预览金额并交由 iPhone 入账回显。"
+                )
+
+                guideRow(
+                    icon: "heart.circle.fill",
+                    iconColor: .pink,
+                    title: "10 秒数码表冠心情打卡",
+                    subtitle: "旋转数码表冠快速调节心情、精力、压力三项分值（1~5 分），10 秒完成每日情绪微记录。"
+                )
+
+                guideRow(
+                    icon: "drop.fill",
+                    iconColor: .cyan,
+                    title: "喝水 +1",
+                    subtitle: "圆环展示今日有效补水进度，一键 +150ml / +250ml / +350ml / +500ml 并自动同步至 Apple 健康。"
+                )
+            } header: {
+                Text("Apple Watch 伴生 App 功能")
             }
 
             // 1. 智能叠放（Smart Stack 实时活动）
