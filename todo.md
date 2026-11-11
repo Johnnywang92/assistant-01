@@ -702,3 +702,41 @@ P0 五项至此全部完成。本轮把三项「部分完成」推到可自动�
 
 - 真机 UI 未验：组件/锁屏/语音播报的「今日支出」与 App 头部一致性、每月习惯跨月后的实际提醒排期，只在模拟器单测层验证。
 - 上述无关的 `HomeThemeTests` 圆角令牌失败仍挂在首页 redesign 在制改动上，待该项收口时一并处理。
+
+## 2026-11-11 实施记录（在制改动按功能梳理为 10 个独立提交）
+
+### 范围
+
+把工作树里积压的在制改动（39 个已跟踪修改 + 约 40 个未跟踪新文件）按功能拆成 10 个提交，依赖顺序在前、 wiring/文案在后：
+
+| 提交 | 范围 |
+|---|---|
+| `abb6f05` test(project) | 注册 AssistantTests 目标 + CI 磁盘/源校验（`project.yml`、`ci.sh`、`check_disk_space.py`、`check_project_sources.py`） |
+| `be9d63e` feat(body) | 身体档案参与活力/愉悦指数（`BodyMetrics`/`BodyProfileContext` + 两个 evaluator、`HealthData`/`HealthKit`/`LifeQuery`/`PeriodicReport`、接线与类型检查脚本） |
+| `4671525` feat(medication) | 服药剂量证据 + 口径下沉 Core（`MedicationDoseEvidence`/`MedicationHabitDoseResolver`、`Models`/`Persistence` 的 V13/V14 迁移、`WidgetSnapshot` 乐观更新、服药小组件与 Intents） |
+| `cb9d3e7` feat(checkin) | 完成态联动单一真源（`CheckInTodoLink`/`CheckInPlanSync`、`RecurrencePlan`、`LifeEventTodoLink`、scheduler、`ReminderCenter`、`TodoRowViews`） |
+| `5939119` feat(home) | 首页概览重设计（`HomeSnapshot`/`DayScheduleCalculator`/`HomeBannerQueue`/`WidgetHomeModels`/`WatchSyncModels`、`Home/*`、主题、首页小组件、交接文档） |
+| `8eae830` feat(travel) | 行程倒计时/出门清单（`TravelCountdown`、`LiveActivity`、`EditTodoSheet`、`WatchDeparture`、三个小组件） |
+| `8b0b4af` feat(widget) | 在 `AssistantWidgetBundle` 注册上述小组件与 LiveActivity |
+| `4350e4f` feat(backup) | 备份包纳入身体档案与服药剂量证据（`BackupPackageModels` + Export/Restore） |
+| `f6e44d2` fix(storage) | 物品取出/归还联动（`StoredItemLinkService`、`ItemStorageVaultView`） |
+| `da9c19e` chore(i18n) | `Localizable.xcstrings` 双语同步 |
+
+### 关键决定
+
+- **共享文件整文件归入主功能簇，不做 hunk 拆分**：`Persistence`（V13→服药、V14→身体档案）、`Models`（`doseConfirmedAt`→服药、`syncPlan`/`lifeEventTaskID`→联动）、`WatchSyncModels`（首页概览/纪念日→首页、服药汇总→服药、出门计数→行程）、`AssistantWidgetBundle`（跨三簇注册）都携带多功能的 hunk。逐一 `git add -p` 拆分成本高且易错，改为整文件归入其主簇。
+- **代价明确**：因此中间提交不保证各自可编译，只有**最终树**可编译——最终树逐字等同此前已构建验证过的工作树，提交只移动暂存指针、不改文件内容。
+- **精确暂存**：全程按文件名/目录 `git add`，未用 `git add -A`；`DerivedDataTests/`（约 1G 构建产物，`.gitignore` 只忽略 `DerivedData/` 未覆盖它）始终未纳入任何提交，留作未跟踪。
+- 依赖顺序：test 基建 → body → medication（含 schema 基座）→ checkin → home（含 `WatchSyncModels`）→ travel → widget wiring → backup → storage → i18n。
+
+### 验证
+
+- `git status`：工作树干净，仅剩未跟踪 `DerivedDataTests/`。
+- `git log origin/main..HEAD -- DerivedDataTests/`：空（确认构建产物从未被提交）。
+- 未重跑构建：提交不改文件内容，最终树 == 已验证工作树。
+
+### 未验 / 未做
+
+- 未推送：分支领先 `origin/main` 共 12 个提交（含前次两处口径收口）。
+- 未逐提交编译：如需每个提交都可编译，须对共享文件做 hunk 拆分，本轮未做。
+- 回退方式：`git reset --soft efdb085` 可将这 10 个提交退回暂存区重新分组。
