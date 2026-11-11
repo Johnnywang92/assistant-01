@@ -7963,6 +7963,9 @@
         }
       }
     },
+    "Apple Watch 伴生 App 页面（按高频排序）" : {
+
+    },
     "Apple Watch 低电量：在快捷指令中新建自动化 →「电池电量低于 20%」→ 执行「汇报设备电量」（设备选 Apple Watch 手表）" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -21155,6 +21158,9 @@
     "同步一份到首页待办" : {
 
     },
+    "同步于 %@" : {
+
+    },
     "同步记录测量日期和月龄" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -30653,6 +30659,9 @@
         }
       }
     },
+    "已配对手表（可在 Watch App 安装小助）" : {
+
+    },
     "已采用 AES-256 密文存储，请牢记您的 PIN 码。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35288,6 +35297,9 @@
         }
       }
     },
+    "手表小助已安装" : {
+
+    },
     "手足适应" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -38303,6 +38315,9 @@
         }
       }
     },
+    "支持独立腕上伴生 App 与智能叠放实时联动：抬腕查待办、看大字取件码、一句话记账、10 秒心情打卡与一键补水。" : {
+
+    },
     "支持规则分句或调用端侧 AI 自动提炼录音中的行动事项，勾选后加入待办清单。" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -39928,9 +39943,6 @@
           }
         }
       }
-    },
-    "无需单独安装 Watch App，即可享受完整的抬腕即看与语音查记体验。" : {
-
     },
     "无需处理" : {
       "extractionState" : "manual",
@@ -42827,6 +42839,9 @@
       }
     },
     "未检测到待办内容" : {
+
+    },
+    "未检测到配对的 Apple Watch" : {
 
     },
     "未添加" : {
