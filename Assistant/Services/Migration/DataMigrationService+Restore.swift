@@ -175,6 +175,8 @@ extension DataMigrationService {
             // 避免「覆盖还原」在真正插入数据前就整段冻住。
             await Task.yield()
             try context.delete(model: HealthDaySnapshotRecord.self)
+            try context.delete(model: BodyMetricProfile.self)
+            try context.delete(model: BodyVitalRecord.self)
         }
 
         var details: [String] = []
@@ -225,6 +227,8 @@ extension DataMigrationService {
             // init 从 DTO 逐项恢复，再走 setter 会用快照里的值二次覆盖，导致旧备份
             // 与新备份对同一条记录解释不一致。
             item.scheduleRaw = t.scheduleRaw
+            // 服药打卡确认也要还原，否则恢复后今日服药进度退回保守口径。
+            item.doseConfirmedAt = t.doseConfirmedAt
             context.insert(item)
             restoredTodos += 1
         }
@@ -1249,6 +1253,63 @@ extension DataMigrationService {
             totalRestored += restoredMood
         }
 
+        // 21.6 身体档案与体征记录（Schema V14 新增）。
+        // 档案只应有一条：合并策略下若本机已存在档案，保留本机那条，
+        // 不插入第二条——否则 `ensureProfile` 每次进入页面都得做去重清理。
+        await Task.yield()
+        let existingBodyProfileIDs = Set(try context.fetch(FetchDescriptor<BodyMetricProfile>()).map(\.id))
+        var restoredBodyProfiles = 0
+        for p in package.bodyMetricProfiles ?? [] {
+            if strategy == .merge && (!existingBodyProfileIDs.isEmpty || existingBodyProfileIDs.contains(p.id)) {
+                continue
+            }
+            let profile = BodyMetricProfile(
+                id: p.id,
+                heightCm: p.heightCm,
+                birthDate: p.birthDate,
+                biologicalSexRaw: p.biologicalSexRaw,
+                note: p.note,
+                createdAt: p.createdAt,
+                updatedAt: p.updatedAt
+            )
+            context.insert(profile)
+            restoredBodyProfiles += 1
+        }
+        if restoredBodyProfiles > 0 || package.bodyMetricProfiles != nil {
+            details.append("身体档案: \(restoredBodyProfiles) 份")
+            totalRestored += restoredBodyProfiles
+        }
+
+        await Task.yield()
+        let existingBodyVitalIDs = Set(try context.fetch(FetchDescriptor<BodyVitalRecord>()).map(\.id))
+        var restoredBodyVitals = 0
+        for (index, v) in (package.bodyVitalRecords ?? []).enumerated() {
+            if index > 0, index % 200 == 0 { await Task.yield() }
+            if strategy == .merge && existingBodyVitalIDs.contains(v.id) { continue }
+            // 还原时直接写字段，不再过业务校验：老版本导出的值可能落在今天的
+            // 可录入范围之外，把用户历史数据静默丢掉比放宽范围更糟。
+            let record = BodyVitalRecord(
+                id: v.id,
+                measuredAt: v.measuredAt,
+                weightKg: v.weightKg,
+                systolic: v.systolic,
+                diastolic: v.diastolic,
+                heartRate: v.heartRate,
+                bloodGlucose: v.bloodGlucose,
+                bodyTemperature: v.bodyTemperature,
+                bloodOxygen: v.bloodOxygen,
+                bodyFat: v.bodyFat,
+                note: v.note,
+                createdAt: v.createdAt
+            )
+            context.insert(record)
+            restoredBodyVitals += 1
+        }
+        if restoredBodyVitals > 0 || package.bodyVitalRecords != nil {
+            details.append("体征记录: \(restoredBodyVitals) 条")
+            totalRestored += restoredBodyVitals
+        }
+
         // 22. 偏好设置（仅覆盖策略：合并策略只搬数据，不改本机行为）。
         // 放在 context.save() 之后：UserDefaults 无法随 context.rollback() 回滚，
         // 必须等数据库落库成功再动设置，避免「库回滚了、偏好却已写盘」的不一致。
@@ -1257,6 +1318,9 @@ extension DataMigrationService {
         await Task.yield()
         try context.save()
         await Task.yield()
+        // 备份恢复可能整批换掉身体档案与体征记录；指数缓存必须跟着失效，
+        // 否则恢复完成后两卡还显示旧档案算出的分数。
+        BodyProfileContextProvider.shared.invalidate()
 
         // 事务成功落库后，清理未被引用的沙盒孤儿证件照与语音文件（避免先删文件导致回滚丢失）
         if strategy == .overwrite {

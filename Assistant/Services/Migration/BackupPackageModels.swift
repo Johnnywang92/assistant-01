@@ -69,6 +69,12 @@ public struct BackupPackage: Codable {
     public var psychScaleRecords: [PsychScaleRecordDTO]?
     /// 每日情绪微记录（Schema V8 新增；旧版备份为 nil）
     public var moodCheckIns: [MoodCheckInRecordDTO]?
+    /// 身体基础档案与体征时间序列（Schema V14 新增；旧版备份为 nil）
+    ///
+    /// 档案里是**出生日期而非年龄**：备份还原后年龄按设备当前日期现算，
+    /// 不会把导出那天的年龄固化成永久数字。
+    public var bodyMetricProfiles: [BodyMetricProfileDTO]?
+    public var bodyVitalRecords: [BodyVitalRecordDTO]?
     /// 用户偏好设置快照（旧版备份为 nil；收录原则见 AssistantCore 的 AssistantSettingsKeys）
     public var settings: SettingsSnapshotDTO?
 }
@@ -112,6 +118,8 @@ public struct TodoDTO: Codable {
     public var tags: [String]?
     /// 结构化日程 JSON（V11 起）；旧备份包为 nil，恢复后按 legacy 语义解释。
     public var scheduleRaw: String?
+    /// 服药打卡确认时刻（V13 起）；旧备份包为 nil，恢复后不作为服药证据。
+    public var doseConfirmedAt: Date?
 }
 
 public struct SubscriptionDTO: Codable {
@@ -762,4 +770,34 @@ public struct MoodCheckInRecordDTO: Codable {
     public var note: String?
     public var createdAt: Date
     public var updatedAt: Date
+}
+
+// MARK: - 身体档案（Schema V14）
+
+/// 基础档案 DTO。年龄**不入包**，只存出生日期，由 Core 现算。
+public struct BodyMetricProfileDTO: Codable {
+    public var id: UUID
+    public var heightCm: Double?
+    public var birthDate: Date?
+    public var biologicalSexRaw: String?
+    public var note: String?
+    public var createdAt: Date
+    public var updatedAt: Date
+}
+
+/// 体征记录 DTO。八个字段全部可选，与模型一一对应；
+/// 未来新增字段请用可选值追加，旧包 `decodeIfPresent` 后为 nil 不影响还原。
+public struct BodyVitalRecordDTO: Codable {
+    public var id: UUID
+    public var measuredAt: Date
+    public var weightKg: Double?
+    public var systolic: Double?
+    public var diastolic: Double?
+    public var heartRate: Double?
+    public var bloodGlucose: Double?
+    public var bodyTemperature: Double?
+    public var bloodOxygen: Double?
+    public var bodyFat: Double?
+    public var note: String?
+    public var createdAt: Date
 }

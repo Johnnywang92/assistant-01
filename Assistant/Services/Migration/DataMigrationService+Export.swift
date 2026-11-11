@@ -60,6 +60,8 @@ extension DataMigrationService {
         let healthSnapshots = try context.fetch(FetchDescriptor<HealthDaySnapshotRecord>())
         let psychScaleRecords = try context.fetch(FetchDescriptor<PsychScaleRecord>())
         let moodCheckIns = try context.fetch(FetchDescriptor<MoodCheckInRecord>())
+        let bodyMetricProfiles = try context.fetch(FetchDescriptor<BodyMetricProfile>())
+        let bodyVitalRecords = try context.fetch(FetchDescriptor<BodyVitalRecord>())
 
         // 上面的 43 次全表 fetch 全部在主 actor 上同步完成；DTO 映射/附件读盘之前先让出一次。
         await Task.yield()
@@ -89,7 +91,8 @@ extension DataMigrationService {
                 arrivalTransportRaw: $0.arrivalTransportRaw,
                 arrivalCheckFiredAt: $0.arrivalCheckFiredAt,
                 tags: $0.tags,
-                scheduleRaw: $0.scheduleRaw
+                scheduleRaw: $0.scheduleRaw,
+                doseConfirmedAt: $0.doseConfirmedAt
             )
         }
 
@@ -585,6 +588,23 @@ extension DataMigrationService {
                 )
             }
 
+        let bodyMetricProfileDTOs: [BodyMetricProfileDTO] = bodyMetricProfiles.map {
+            BodyMetricProfileDTO(
+                id: $0.id, heightCm: $0.heightCm, birthDate: $0.birthDate,
+                biologicalSexRaw: $0.biologicalSexRaw, note: $0.note,
+                createdAt: $0.createdAt, updatedAt: $0.updatedAt
+            )
+        }
+        let bodyVitalDTOs: [BodyVitalRecordDTO] = bodyVitalRecords.map {
+            BodyVitalRecordDTO(
+                id: $0.id, measuredAt: $0.measuredAt,
+                weightKg: $0.weightKg, systolic: $0.systolic, diastolic: $0.diastolic,
+                heartRate: $0.heartRate, bloodGlucose: $0.bloodGlucose,
+                bodyTemperature: $0.bodyTemperature, bloodOxygen: $0.bloodOxygen,
+                bodyFat: $0.bodyFat, note: $0.note, createdAt: $0.createdAt
+            )
+        }
+
         let metadata = BackupPackage.Metadata(
             schemaVersion: 4,
             appVersion: "0.1.0",
@@ -637,6 +657,8 @@ extension DataMigrationService {
             healthSnapshots: healthSnapshotDTOs,
             psychScaleRecords: psychScaleDTOs,
             moodCheckIns: moodCheckInDTOs,
+            bodyMetricProfiles: bodyMetricProfileDTOs,
+            bodyVitalRecords: bodyVitalDTOs,
             settings: collectSettingsSnapshot()
         )
     }
