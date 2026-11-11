@@ -71,6 +71,18 @@ enum AppRadius {
     static let panel: CGFloat = 20
     /// 分享卡片、主视觉卡
     static let hero: CGFloat = 24
+
+    // 方案 C 首页专用档位（docs/home-redesign-handoff.md §3.2 圆角层级）
+    /// 手机外框
+    static let homeDevice: CGFloat = 28
+    /// 今日概览卡 / 今日节奏卡
+    static let homeCard: CGFloat = 22
+    /// 任务列表容器
+    static let homeList: CGFloat = 18
+    /// 筛选 chip（高 28 的胶囊）
+    static let homeChip: CGFloat = 14
+    /// 时间带色块 / 状态横幅
+    static let homeBlock: CGFloat = 8
 }
 
 // MARK: - 卡片与警告态样式
@@ -261,5 +273,85 @@ extension View {
     /// 纯图标按钮的统一出口。label 写**动作**而不是图标名（「删除」而非「叉号」）。
     func iconButton(_ label: String, hint: String? = nil) -> some View {
         modifier(IconButtonAccessibilityModifier(label: label, hint: hint))
+    }
+}
+
+// MARK: - 方案 C 首页语义色
+//
+// docs/home-redesign-handoff.md §3.1：浅/深两套值集中在 Theme 定义，
+// **组件内不写死 hex**。全部走 UIColor 动态色，随外观自动切换。
+
+private extension UIColor {
+    convenience init(homeHex hex: UInt32, alpha: CGFloat = 1) {
+        self.init(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: alpha
+        )
+    }
+}
+
+enum HomeColor {
+    private static func semantic(_ light: UInt32, _ dark: UInt32, alpha: CGFloat = 1) -> Color {
+        Color(uiColor: UIColor { traits in
+            UIColor(homeHex: traits.userInterfaceStyle == .dark ? dark : light, alpha: alpha)
+        })
+    }
+
+    /// 壁纸渐变（#E8F2FF → #F7EDFF / #101828 → #1A1B35）
+    static var wallpaperTop: Color { semantic(0xE8F2FF, 0x101828) }
+    static var wallpaperBottom: Color { semantic(0xF7EDFF, 0x1A1B35) }
+
+    static var card: Color { semantic(0xFFFFFF, 0x1E2436) }
+    static var primary: Color { semantic(0x1A73E8, 0x6FA8FF) }
+    static var text: Color { semantic(0x202124, 0xF2F5FF) }
+    static var secondaryText: Color { semantic(0x5F6368, 0xA7B0C4) }
+    static var tertiaryText: Color { semantic(0x9AA0A6, 0x6E7791) }
+
+    /// 完成环轨道 / 时间带空闲块
+    static var ringTrack: Color { semantic(0xE8EEFB, 0x2A3552) }
+    /// 主任务行底
+    static var priorityRow: Color { semantic(0xEAF1FF, 0x24304A) }
+
+    static var separator: Color { semantic(0xE8EAF0, 0x2E3852) }
+    static var tabBar: Color { semantic(0xFFFFFF, 0x1A2032) }
+
+    static var success: Color { Color(uiColor: UIColor(homeHex: 0x34A853)) }
+    static var warning: Color { Color(uiColor: UIColor(homeHex: 0xFBBC04)) }
+    /// 深色模式下警告文字仍用深色，保证对浅黄底的对比 ≥ 4.5:1
+    static var warningText: Color { Color(uiColor: UIColor(homeHex: 0xB26A00)) }
+    static var warningSurface: Color { semantic(0xFFF7E0, 0x3A2E14) }
+    static var successSurface: Color { semantic(0xE9F7EC, 0x1B3527) }
+    static var neutralSurface: Color { semantic(0xEEF2FB, 0x222C42) }
+}
+
+/// 字号层级（§3.2）：页面标题 20 · 卡片标题 15 · 指标 14 · 正文 13 · 辅助 11。
+/// 长辈关怀模式统一放大，视图不各自写字号。
+enum HomeTypography {
+    enum Role: CaseIterable {
+        case pageTitle
+        case cardTitle
+        case metric
+        case body
+        case auxiliary
+
+        var size: CGFloat {
+            switch self {
+            case .pageTitle: return 20
+            case .cardTitle: return 15
+            case .metric: return 14
+            case .body: return 13
+            case .auxiliary: return 11
+            }
+        }
+    }
+
+    static func font(
+        _ role: Role,
+        weight: Font.Weight = .regular,
+        scale: CGFloat = 1
+    ) -> Font {
+        .system(size: role.size * max(1, scale), weight: weight)
     }
 }

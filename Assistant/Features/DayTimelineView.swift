@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftData
 import SwiftUI
 
@@ -264,30 +265,26 @@ struct DayTimelineView: View {
     }
 
     private func buildFreeSlots() -> [FreeSlot] {
+        // 与首页节奏条共用 Core 的唯一一份计算：窗口、占用合并、
+        // 起点对齐 now、>= 30 分钟阈值全部在 DayScheduleCalculator 里定死，
+        // 避免两处各算一套「剩余空闲」。
         let anchorEnd = max(offDate, wakeDate.addingTimeInterval(3600))
-        var cursor = wakeDate
-        var raw: [(Date, Date)] = []
-
-        let busy = todayEvents
-            .map { (max($0.startDate, wakeDate), min($0.endDate, anchorEnd)) }
-            .filter { $1 > $0 }
-            .sorted { $0.0 < $1.0 }
-
-        for (busyStart, busyEnd) in busy {
-            if busyStart > cursor { raw.append((cursor, busyStart)) }
-            cursor = max(cursor, busyEnd)
-        }
-        if cursor < anchorEnd { raw.append((cursor, anchorEnd)) }
-
-        // 只保留还有剩余时间的空档，起点对齐到"现在"之后
-        let now = Date.now
-        return raw.compactMap { start, end in
-            let clampedStart = max(start, now)
-            guard end.timeIntervalSince(clampedStart) / 60 >= Double(Self.minFreeSlotMinutes) else { return nil }
-            return FreeSlot(
-                id: "free-\(Int(start.timeIntervalSince1970))",
-                start: clampedStart,
-                end: end
+        let schedule = HomeScheduleFact(
+            windowStart: wakeDate,
+            windowEnd: anchorEnd,
+            busy: todayEvents.map { HomeBusyInterval(start: $0.startDate, end: $0.endDate) },
+            reminders: todayTimedTodos.compactMap(\.dueAt)
+        )
+        let plan = DayScheduleCalculator.make(
+            schedule: schedule,
+            now: .now,
+            minFreeSlotMinutes: Self.minFreeSlotMinutes
+        )
+        return plan.freeSlots.map {
+            FreeSlot(
+                id: "free-\(Int($0.start.timeIntervalSince1970))",
+                start: $0.start,
+                end: $0.end
             )
         }
     }

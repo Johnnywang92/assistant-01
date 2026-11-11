@@ -61,6 +61,15 @@ struct TodoListView: View {
     @State private var isReordering: Bool = false
     @State private var crossModuleSearchText: String = ""
     @State private var showOverdueTriage = false
+    /// 方案 C：存量条件横幅收敛为单条队列，其余进「更多 · N」二级页
+    @State private var showMoreBanners = false
+    /// 人生大事横幅收敛进队列后，仍需读取当前进行中的项目
+    @Query(sort: [SortDescriptor(\LifeEventProject.targetDate, order: .forward)])
+    private var lifeEventProjects: [LifeEventProject]
+    /// 首页节奏条与今日时间轴共用同一组起床/下班锚点与系统日历日程
+    @AppStorage("day_timeline_wake_minutes") private var homeWakeMinutes: Int = 7 * 60 + 30
+    @AppStorage("day_timeline_off_minutes") private var homeOffMinutes: Int = 19 * 60
+    @ObservedObject private var calendarAgenda = CalendarAgendaService.shared
     @AppStorage("overdue_triage_last_date") private var lastTriageDateKey = ""
     /// 时间聚合条：当前展开的桶（逾期/今天/本周）详情弹层
     @State private var selectedTimeBucket: TodoTimeBucketKind?
@@ -392,9 +401,15 @@ struct TodoListView: View {
                 try? await Task.sleep(nanoseconds: 900_000_000)
                 guard !Task.isCancelled else { return }
                 await SearchIndexService.shared.rebuildIndex(context: context)
+                // 节奏条需要系统日程：仅在已授权时静默加载，绝不在首屏弹日历权限
+                await calendarAgenda.loadTodayEventsIfAuthorized()
             }
             .sheet(isPresented: $showAddTodo) {
                 AddTodoSheet(initialCategory: selectedFilter)
+            }
+            // 存量条件横幅的二级收纳页：首页只显示队列头，其余在这里分流
+            .sheet(isPresented: $showMoreBanners) {
+                HomeMoreBannersView(items: homeBannerItems)
             }
             .sheet(isPresented: $showOverdueTriage) {
                 OverdueTriageSheet(items: triageItemsOverride ?? overdueTodos)
@@ -700,51 +715,31 @@ struct TodoListView: View {
             }
             .themedRow()
         } else {
-            // 自由排序流 vs 板块分组切换小药丸
-            Section {
-                HStack {
-                    HStack(spacing: 5) {
-                        Image(systemName: isGroupedByType ? "square.grid.2x2.fill" : "list.number")
-                            .font(.caption2)
-                        Text(isGroupedByType ? "当前为板块分组展示" : "当前为全局自由排序流")
-                            .font(.caption)
-                    }
-                    .foregroundStyle(.secondary)
-                    .wallpaperReadableText()
-
-                    Spacer()
-
-                    Button {
-                        AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            isGroupedByType.toggle()
-                        }
-                        Haptic.selection()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(isGroupedByType ? "切换为自由排序流" : "按板块分类")
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                        }
-                        .font(.caption2.bold())
-                        .foregroundStyle(.tint)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(AppColor.softFill(AppColor.primary)))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("切换待办的展示方式：板块分组或全局自由排序")
-                }
-            }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 2, trailing: 16))
-
+            // 分组切换整行提示已删除，入口收进分类栏末尾的图标按钮（功能不丢）。
+            // 主任务 ID 由 Core 给出，视图只负责把对应行置顶。
+            let snapshot = homeSnapshot
             if !isGroupedByType {
-                // 自由排序流：所有待办在一个连续列表中，支持任意事项跨类型上下拖动！
-                Section("事项清单（\(activeTodos.count)）") {
-                    ForEach(activeTodos) { item in
-                        todoRow(item, within: activeTodos)
+                Section("接下来（\(activeTodos.count)）") {
+                    ForEach(orderedActiveTodos) { item in
+                        if item.id == snapshot.priorityTaskID {
+                            HomePriorityTaskRow(
+                                title: item.title,
+                                timeText: priorityRowTimeText(item),
+                                fontScale: seniorManager.isSeniorModeEnabled
+                                    ? seniorManager.fontScale.fontScaleFactor
+                                    : 1,
+                                onToggle: { completePriorityTask(item) },
+                                onComplete: { completePriorityTask(item) }
+                            )
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                        } else {
+                            todoRow(item, within: activeTodos)
+                        }
                     }
                     .onMove { from, to in
-                        reorder(items: activeTodos, fromOffsets: from, toOffset: to)
+                        reorder(items: orderedActiveTodos, fromOffsets: from, toOffset: to)
                     }
                 }
             } else {
@@ -1242,15 +1237,23 @@ struct TodoListView: View {
                                 }
                             }
                             .padding(.horizontal, 12)
-                            .frame(minHeight: 44)
+                            // 视觉胶囊高 28；44pt 点击区由 Button 外层保证
+                            .frame(height: 28)
+                            // 轻文字化：非选中态不再有描边与阴影，只有选中态保留一枚实心胶囊。
+                            // 自定义壁纸下不用黑色投影做可读性：文字压在自带的不透明语义底上，
+                            // 对比度由底色保证，与壁纸亮度无关（见 homeHeaderSection 的装配注释）。
                             .background {
-                                RoundedRectangle(cornerRadius: AppRadius.medium, style: .continuous)
-                                    .fill(isSelected ? Color.accentColor : Color(.secondarySystemBackground))
-                                    .shadow(color: isSelected ? Color.accentColor.opacity(0.22) : .clear, radius: 4, y: 2)
+                                if isSelected {
+                                    Capsule().fill(HomeColor.primary)
+                                } else if isCustomBackgroundActive {
+                                    Capsule().fill(Color(.secondarySystemBackground))
+                                }
                             }
-                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                            .foregroundStyle(isSelected ? Color.white : HomeColor.text)
                         }
                         .buttonStyle(.plain)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                         .accessibilityLabel("\(category.rawValue)，\(count) 项")
                         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                         .id(category)
@@ -1265,6 +1268,24 @@ struct TodoListView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("定制首页分类")
+
+                    // 分组切换入口：原先占首屏一整行，现收进分类栏末尾
+                    Button {
+                        AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            isGroupedByType.toggle()
+                        }
+                        Haptic.selection()
+                    } label: {
+                        Image(systemName: isGroupedByType ? "square.grid.2x2.fill" : "list.number")
+                            .font(.subheadline.bold())
+                            .frame(width: 44, height: 44)
+                            .background(RoundedRectangle(cornerRadius: AppRadius.medium).fill(Color(.secondarySystemBackground)))
+                    }
+                    .buttonStyle(.plain)
+                    .iconButton(
+                        "切换待办展示方式",
+                        hint: isGroupedByType ? "当前按板块分组，切换为自由排序流" : "当前自由排序，切换为板块分组"
+                    )
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
@@ -1315,7 +1336,16 @@ struct TodoListView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(Capsule().fill(isSelected ? Color.indigo : Color.indigo.opacity(0.12)))
+                        // 自定义壁纸下先垫一层不透明语义底，再叠原本的淡靛色：
+                        // 半透明胶囊直接压在照片上会看不清，但绝不能用黑色投影补对比度。
+                        .background {
+                            ZStack {
+                                if isCustomBackgroundActive {
+                                    Capsule().fill(Color(.secondarySystemBackground))
+                                }
+                                Capsule().fill(isSelected ? Color.indigo : Color.indigo.opacity(0.12))
+                            }
+                        }
                         .foregroundStyle(isSelected ? Color.white : Color.indigo)
                     }
                     .buttonStyle(.plain)
@@ -1339,105 +1369,484 @@ struct TodoListView: View {
         .padding(.vertical, 8)
     }
 
+    // MARK: - 方案 C · 首页结构化事实（视图只渲染，不计算）
+    //
+    // 所有环数字、空闲时长、主任务判定、时间带比例都由 AssistantCore 的
+    // `HomeSnapshotBuilder` 输出；这里只做 SwiftData 模型 → 纯值快照的映射。
+    // 详见 docs/home-redesign-handoff.md §6 / §7。
+
+    /// 今日口径：今天到期（含逾期）或今天创建的活跃待办 + 今天完成的事项。
+    /// 筛选规则由 `HomeTodoFactMapper` 统一（App 层测试覆盖），这里只负责喂事实。
+    private var homeFacts: [HomeTodoFact] {
+        let calendar = Calendar.current
+        let now = Date.now
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)
+
+        var facts: [HomeTodoFact] = []
+
+        for item in activeTodos {
+            let candidate = HomeTodoFactMapper.map(
+                id: item.id,
+                isDone: false,
+                dueAt: item.dueAt,
+                reminderOverrideAt: item.reminderOverrideAt,
+                createdAt: item.createdAt,
+                completedAt: nil,
+                now: now,
+                calendar: calendar
+            )
+            if let fact = candidate.fact { facts.append(fact) }
+        }
+
+        for item in recentDoneTodos {
+            let candidate = HomeTodoFactMapper.map(
+                id: item.id,
+                isDone: true,
+                dueAt: item.dueAt,
+                reminderOverrideAt: item.reminderOverrideAt,
+                createdAt: item.createdAt,
+                completedAt: item.completedAt,
+                now: now,
+                calendar: calendar
+            )
+            if let fact = candidate.fact { facts.append(fact) }
+        }
+
+        return facts
+    }
+
+    /// 与 `DayTimelineView` 完全同源的当日窗口：起床 → 下班，终点不含。
+    /// 占用只取系统日历的非全天日程；定时待办按「提醒时间点」进入时间带，
+    /// 不再伪造 30 分钟占用。空闲时长由 Core 的 `DayScheduleCalculator` 统一算。
+    private var homeSchedule: HomeScheduleFact {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: .now)
+        let wake = calendar.date(byAdding: .minute, value: homeWakeMinutes, to: startOfToday) ?? startOfToday
+        let off = calendar.date(
+            byAdding: .minute,
+            value: max(homeOffMinutes, homeWakeMinutes + 60),
+            to: startOfToday
+        ) ?? wake
+        guard off > wake else { return .unscheduled }
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? off
+
+        // 与 DayTimelineView.todayEvents 相同的过滤条件
+        let busy = calendarAgenda.events
+            .filter { !$0.isAllDay && $0.startDate < dayEnd && $0.endDate > startOfToday }
+            .map { HomeBusyInterval(start: $0.startDate, end: $0.endDate) }
+        let reminders = activeTodos
+            .compactMap { $0.reminderOverrideAt ?? $0.dueAt }
+            .filter { $0 >= wake && $0 < off }
+
+        return HomeScheduleFact(
+            windowStart: wake,
+            windowEnd: off,
+            busy: busy,
+            reminders: reminders
+        )
+    }
+
+    private var homeWindowText: String {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: .now)
+        let wake = calendar.date(byAdding: .minute, value: homeWakeMinutes, to: startOfToday) ?? startOfToday
+        let off = calendar.date(
+            byAdding: .minute,
+            value: max(homeOffMinutes, homeWakeMinutes + 60),
+            to: startOfToday
+        ) ?? wake
+        return "\(wake.formatted(.dateTime.hour().minute())) – \(off.formatted(.dateTime.hour().minute()))"
+    }
+
+    private var homeSnapshot: HomeSnapshot {
+        HomeSnapshotBuilder.make(todos: homeFacts, schedule: homeSchedule)
+    }
+
+    /// 主任务置顶：Core 给 ID，视图不自行排序。
+    private var orderedActiveTodos: [TodoItem] {
+        guard let id = homeSnapshot.priorityTaskID,
+              let item = activeTodos.first(where: { $0.id == id }) else {
+            return activeTodos
+        }
+        return [item] + activeTodos.filter { $0.id != id }
+    }
+
+    private var homeGreetingText: String {
+        let hour = Calendar.current.component(.hour, from: .now)
+        let prefix = hour < 12 ? "早上好" : (hour < 18 ? "下午好" : "晚上好")
+        return "\(prefix)，\(userTitle)"
+    }
+
+    /// 日期 + 天气压成一行；只读已有缓存，不为首屏额外申请定位/天气权限。
+    private var homeDateSubtitle: String {
+        let datePart = Date.now.formatted(.dateTime.month().day().weekday(.wide))
+        guard let snapshot = weatherAlerts.cachedWeatherSnapshot else { return datePart }
+        return "\(datePart) · \(snapshot.conditionDescription) \(snapshot.formattedTemperature)"
+    }
+
+    // MARK: - 存量条件横幅队列
+    //
+    // §8.4 的 10 项一个不丢：6 个条件横幅进优先队列（首页只显示头 1 条），
+    // 搜索索引预览 / 标签栏 / 时间聚合条 / 待确认事项保持原样——它们是
+    // 常驻模块，不是条件横幅，不能塞进队列。
+    //
+    // 队列规则（分组、排序、「更多 · N」、互斥、关闭后重算）全部由
+    // Core 的 `HomeBannerQueueBuilder` 决定，视图只提供纯值事实 + 绑定动作。
+    // 优先级顺序仍需产品确认，这里采用设计侧建议版。
+
+    /// 横幅的**纯值事实**。分组与排序由 Core 判定，这里只描述「当前命中了什么」。
+    private var homeBannerFacts: [HomeBannerFact] {
+        var facts: [HomeBannerFact] = []
+        let now = Date.now
+
+        if isReordering {
+            facts.append(HomeBannerFact(
+                id: HomeBannerID.reordering,
+                group: .activeOperation,
+                isDismissible: false,
+                triggeredAt: now
+            ))
+        }
+
+        if seniorManager.isSeniorModeEnabled {
+            facts.append(HomeBannerFact(
+                id: HomeBannerID.seniorMode,
+                group: .activeOperation,
+                isDismissible: false,
+                triggeredAt: now
+            ))
+        }
+
+        if weatherAlerts.currentBanner != nil {
+            facts.append(HomeBannerFact(
+                id: HomeBannerID.weather,
+                group: .safetyAndTimeliness,
+                triggeredAt: now
+            ))
+        }
+
+        if let upcoming = anniversaryReminder.activeUpcoming {
+            facts.append(HomeBannerFact(
+                id: HomeBannerID.anniversary,
+                group: .safetyAndTimeliness,
+                triggeredAt: now
+            ))
+        }
+
+        if ticketReminder.activeUpcomingTicket != nil {
+            facts.append(HomeBannerFact(
+                id: HomeBannerID.ticket,
+                group: .safetyAndTimeliness,
+                triggeredAt: now
+            ))
+        }
+
+        // 行程倒计时：有近期发车的行程时占 P0（安全与时效）。
+        // 与「出行购票」横幅是两件事：购票提醒的是*还没买票*，
+        // 倒计时提醒的是*行程要发了*，缺时间就不出现（不编造）。
+        if homeTravelCountdown != nil {
+            facts.append(HomeBannerFact(
+                id: HomeBannerID.travelCountdown,
+                group: .safetyAndTimeliness,
+                triggeredAt: now
+            ))
+        }
+
+        if lifeEventProjects.contains(where: { $0.statusRaw == "active" }) {
+            facts.append(HomeBannerFact(
+                id: HomeBannerID.lifeEvent,
+                group: .informational,
+                isDismissible: false,
+                triggeredAt: now
+            ))
+        }
+
+        return facts
+    }
+
+    /// 首页的行程倒计时事实（Core 口径）。
+    ///
+    /// 与手表/小组件共用 `TravelCountdownBuilder`：
+    /// 窗口 3 天、取最近发车的一趟、没有可靠发车时间就不产出。
+    private var homeTravelCountdown: TravelDepartureCountdown? {
+        let now = Date.now
+        let candidates = activeTodos.map { item -> TravelDepartureCandidate in
+            let info = TravelDepartureDetector.ticketInfo(
+                title: item.title,
+                detail: item.detail,
+                sourceText: item.sourceText
+            )
+            let isTravel = info.hasSignal
+                || TravelDepartureDetector.looksLikeTravel(
+                    title: item.title,
+                    detail: item.detail,
+                    sourceText: item.sourceText
+                )
+            return TravelDepartureCandidate(
+                id: item.id,
+                title: item.displayConciseTitle,
+                departureAt: item.dueAt,
+                ticketSummary: info.summary,
+                gate: info.gate,
+                place: item.displayLocationText,
+                isTravel: isTravel
+            )
+        }
+        return TravelCountdownBuilder.build(candidates: candidates, now: now)
+    }
+
+    /// Core 判定的队列。长辈模式与排序模式互斥，同时命中只留一条。
+    private var homeBannerQueue: HomeBannerQueue {
+        HomeBannerQueueBuilder.make(
+            facts: homeBannerFacts,
+            mutualExclusiveGroup: HomeBannerID.mutuallyExclusive
+        )
+    }
+
+    /// 队列条目的展示信息（文案 + 动作绑定）。**顺序由 Core 决定**，
+    /// 这里按 ID 查表补上文案与闭包，不参与排序。
+    /// 文案本身由 `HomeBannerPresenter` 统一（App 层测试覆盖），这里只绑定动作。
+    private var homeBannerItems: [HomeBannerItem] {
+        let order = homeBannerQueue.ordered.map(\.id)
+        let facts = homeBannerFacts
+
+        /// 需要动态文案的条目（带天数 / 字号）在此覆盖。
+        var overrides: [String: (title: String, detail: String)] = [:]
+        if let upcoming = anniversaryReminder.activeUpcoming {
+            overrides[HomeBannerID.anniversary] = (
+                title: "\(upcoming.title) · 还有 \(upcoming.daysUntil) 天",
+                detail: "纪念日筹备，可一键把准备事项加入待办"
+            )
+        }
+        if seniorManager.isSeniorModeEnabled {
+            overrides[HomeBannerID.seniorMode] = (
+                title: "长辈关怀大字模式已开启",
+                detail: "字号 \(seniorManager.fontScale.title)，可随时调整"
+            )
+        }
+        // 倒计时文案走 Core 口径（与手表/组件同源），标题直接带上剩余时间。
+        if let countdown = homeTravelCountdown {
+            let remaining = TravelCountdownPolicy.text(
+                departureAt: countdown.departureAt,
+                now: Date.now
+            )
+            let facts = [
+                countdown.candidate.ticketSummary,
+                countdown.candidate.gate.map { "检票口 \($0)" },
+                countdown.candidate.place
+            ].compactMap { $0 }.joined(separator: " · ")
+            overrides[HomeBannerID.travelCountdown] = (
+                title: "\(countdown.candidate.title) · \(remaining)",
+                detail: facts.isEmpty ? "临近出发，可查看行程详情" : "临近出发 · \(facts)"
+            )
+        }
+        if let project = lifeEventProjects.first(where: { $0.statusRaw == "active" }) {
+            overrides[HomeBannerID.lifeEvent] = (
+                title: "\(project.title) · 还有 \(project.daysRemaining) 天",
+                detail: "进行中的人生大事，点开查看筹备进度"
+            )
+        }
+
+        func item(for id: String) -> HomeBannerItem? {
+            let fact = facts.first { $0.id == id }
+            guard let fact,
+                  let presentation = HomeBannerPresenter.presentation(for: fact, overrides: overrides) else {
+                return nil
+            }
+
+            switch id {
+            case HomeBannerID.reordering:
+                return HomeBannerItem(
+                    id: id,
+                    title: presentation.title,
+                    detail: presentation.detail,
+                    tone: presentation.tone,
+                    group: fact.group,
+                    actionLabel: presentation.actionLabel,
+                    action: { self.isReordering = false; Haptic.medium() },
+                    dismiss: nil
+                )
+            case HomeBannerID.seniorMode:
+                return HomeBannerItem(
+                    id: id,
+                    title: presentation.title,
+                    detail: presentation.detail,
+                    tone: presentation.tone,
+                    group: fact.group,
+                    actionLabel: presentation.actionLabel,
+                    action: { self.showSeniorSettings = true },
+                    dismiss: nil
+                )
+            case HomeBannerID.weather:
+                return HomeBannerItem(
+                    id: id,
+                    title: presentation.title,
+                    detail: presentation.detail,
+                    tone: presentation.tone,
+                    group: fact.group,
+                    actionLabel: presentation.actionLabel,
+                    action: { self.weatherAlerts.dismissCurrentBanner() },
+                    dismiss: { self.weatherAlerts.dismissCurrentBanner() }
+                )
+            case HomeBannerID.anniversary:
+                guard let upcoming = self.anniversaryReminder.activeUpcoming else { return nil }
+                return HomeBannerItem(
+                    id: id,
+                    title: presentation.title,
+                    detail: presentation.detail,
+                    tone: presentation.tone,
+                    group: fact.group,
+                    actionLabel: presentation.actionLabel,
+                    action: {
+                        if self.anniversaryReminder.addPreparationTodos(for: upcoming, in: self.context) {
+                            self.showToast("已加入待办")
+                        }
+                    },
+                    dismiss: { self.anniversaryReminder.dismiss(for: upcoming) }
+                )
+            case HomeBannerID.ticket:
+                guard let ticket = self.ticketReminder.activeUpcomingTicket else { return nil }
+                return HomeBannerItem(
+                    id: id,
+                    title: presentation.title,
+                    detail: presentation.detail,
+                    tone: presentation.tone,
+                    group: fact.group,
+                    actionLabel: presentation.actionLabel,
+                    action: { self.confirmingTicketInfo = ticket },
+                    dismiss: { self.ticketReminder.dismiss(for: ticket) }
+                )
+            case HomeBannerID.travelCountdown:
+                guard let countdown = self.homeTravelCountdown else { return nil }
+                return HomeBannerItem(
+                    id: id,
+                    title: presentation.title,
+                    detail: presentation.detail,
+                    tone: presentation.tone,
+                    group: fact.group,
+                    actionLabel: presentation.actionLabel,
+                    action: { self.router.focusTodo(countdown.candidate.id) },
+                    dismiss: nil
+                )
+            case HomeBannerID.lifeEvent:
+                return HomeBannerItem(
+                    id: id,
+                    title: presentation.title,
+                    detail: presentation.detail,
+                    tone: presentation.tone,
+                    group: fact.group,
+                    actionLabel: presentation.actionLabel,
+                    action: { self.router.selectedTab = .lifeEvents },
+                    dismiss: nil
+                )
+            default:
+                return nil
+            }
+        }
+
+        return order.compactMap { item(for: $0) }
+    }
+
+    /// 主任务一键完成：先落库成功，再让成功副作用生效，不留假状态。
+    private func completePriorityTask(_ item: TodoItem) {
+        item.markAsCompleted(in: context)
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "完成待办") }) else {
+            Haptic.error()
+            return
+        }
+        Haptic.success()
+        WidgetSnapshotSyncController.shared.refreshSnapshot(context: context)
+    }
+
+    private func priorityRowTimeText(_ item: TodoItem) -> String {
+        guard let due = item.reminderOverrideAt ?? item.dueAt else { return "今天" }
+        return due.formatted(.dateTime.hour().minute())
+    }
+
     // MARK: - 首页头部可滑动区域（卡片、分类栏、筛选栏、横幅）
 
     @ViewBuilder
     private var homeHeaderSection: some View {
         Section {
-            VStack(spacing: 0) {
+            VStack(spacing: AppSpacing.md) {
                 if !isSearching {
-                    // 顶部快捷卡片支持左右滑动，避免欢迎信息和投喂入口同时占用首页高度。
-                    HomeTopCardsCarousel(activeCount: activeTodos.count) {
-                        Haptic.light()
-                        router.activeSheet = .omnibox
+                    let scale = seniorManager.isSeniorModeEnabled
+                        ? seniorManager.fontScale.fontScaleFactor
+                        : 1
+
+                    // 1. 问候 + 日期压成一行，不再单独成卡
+                    HStack(alignment: .center, spacing: AppSpacing.md) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(homeGreetingText)
+                                .font(HomeTypography.font(.pageTitle, weight: .semibold, scale: scale))
+                                .foregroundStyle(HomeColor.text)
+                            Text(homeDateSubtitle)
+                                .font(HomeTypography.font(.auxiliary, scale: scale))
+                                .foregroundStyle(HomeColor.secondaryText)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 4)
+
+                        // 语音入口：原悬浮球会压住列表第一行勾选区，
+                        // 改为问候行里的显式按钮，复用已有 showVoice sheet。
+                        Button {
+                            Haptic.light()
+                            showVoice = true
+                        } label: {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(HomeColor.primary)
+                                .frame(width: 36, height: 36)
+                                .background(Circle().fill(HomeColor.card))
+                        }
+                        .buttonStyle(.plain)
+                        .iconButton("开始语音对话", hint: "用语音新建待办或查询事项")
                     }
-                    LifeEventHomeBanner()
+                    .padding(.horizontal, AppSpacing.xl)
+
+                    // 2. 存量条件横幅收敛：同一时刻只显示队列头 1 条。
+                    //    队头与「更多 · N」都由 Core 判定，视图不排序、不裁剪。
+                    let bannerItems = homeBannerItems
+                    if let head = bannerItems.first {
+                        HomeStatusBanner(item: head, moreCount: homeBannerQueue.moreCount) {
+                            showMoreBanners = true
+                        }
+                        .padding(.horizontal, AppSpacing.xl)
+                    }
+
+                    // 3. 今日概览卡：完成环 + 三项数字（数据全部来自 Core）
+                    HomeOverviewCard(snapshot: homeSnapshot, fontScale: scale) {
+                        showCompletedHistory = true
+                    }
+                    .padding(.horizontal, AppSpacing.xl)
+
+                    // 4. 今日节奏卡：时间带宽度按窗口比例算
+                    HomeRhythmCard(snapshot: homeSnapshot, windowText: homeWindowText, fontScale: scale)
+                        .padding(.horizontal, AppSpacing.xl)
                 }
 
-                // 横向分类 Tab 栏（带指示胶囊与角标）
+                // 5. 横向分类 Tab 栏（轻文字化后保留）
+                // 分类栏 / 标签栏 / 时间聚合条一律**禁挂 .wallpaperReadableText()**：
+                // 它会在自定义壁纸下给整栏叠一层 black.opacity(0.55) 黑色投影，
+                // 胶囊看着像脏了一圈。可读性改由控件自带的不透明底色保证
+                // （见 filterTabBar / tagFilterBar 内的 .background）。
                 filterTabBar
-                    .wallpaperReadableText()
 
-                // 标签快速筛选栏：仅在库内存在标签时自适应展示，支持按项目/客户/标签聚焦
+                // 标签快速筛选栏：仅在库内存在标签时自适应展示
                 if !isSearching && !allActiveTags.isEmpty {
                     tagFilterBar
-                        .wallpaperReadableText()
                 }
 
-                // 时间聚合条：按时间组织的逾期/今天/本周入口 + 逾期一键整理
-                // （与类型分类正交；三桶互斥，chip 计数即详情列表长度）
+                // 时间聚合条：与类型分类正交，三桶互斥
+                // 同样不挂 .wallpaperReadableText()（胶囊自带底色）
                 if !isSearching && !timeBuckets.isEmpty {
                     timeAggregationBar
                 }
 
-                // 搜索词非空时，展示全域索引实时匹配卡片，支持直接跳转任意模块/设置或进入全景搜索
+                // 搜索词非空时，展示全域索引实时匹配卡片
                 if isSearching {
                     homeSearchIndexPreview(query: crossModuleSearchText)
-                }
-
-                if !isSearching {
-                    // 上下滑动排序模式开启提示横幅
-                    if isReordering {
-                        TodoReorderingBanner {
-                            AppMotion.animate(.spring(response: 0.32, dampingFraction: 0.8)) {
-                                isReordering = false
-                            }
-                            Haptic.medium()
-                        }
-                    }
-
-                    // 长辈关怀大字模式顶部状态微胶囊（支持一键调整字号）
-                    if seniorManager.isSeniorModeEnabled {
-                        TodoSeniorModeBanner(fontScaleTitle: seniorManager.fontScale.title) {
-                            showSeniorSettings = true
-                            Haptic.light()
-                        }
-                    }
-
-                    // 突发气象预警或气温骤降轻巧胶囊（若有则展示，支持手动划掉关闭）
-                    if let banner = weatherAlerts.currentBanner {
-                        TodoWeatherAlertBanner(banner: banner) {
-                            weatherAlerts.dismissCurrentBanner()
-                        }
-                    }
-
-                    // 临近 5~7 天纪念日浪漫筹备备忘横幅（支持一键加入待办与不再提醒）
-                    if let upcoming = anniversaryReminder.activeUpcoming {
-                        TodoAnniversaryPrepBanner(
-                            upcoming: upcoming,
-                            onDismiss: {
-                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    anniversaryReminder.dismiss(for: upcoming)
-                                    showToast("已设置本周期不再提醒该纪念日")
-                                }
-                            },
-                            onAddTodos: {
-                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    // 返回 false = 落库失败（已回滚 + 全局失败横幅），
-                                    // 不能再 toast「已加入待办」。
-                                    if anniversaryReminder.addPreparationTodos(for: upcoming, in: context) {
-                                        showToast("已一键将准备鲜花、订蛋糕与订餐厅加入待办！🎉")
-                                    }
-                                }
-                            }
-                        )
-                    }
-
-                    // 临近节假日或出差旅游出行前购票提醒横幅（火车票提前15天、机票提前15-30天）
-                    if let ticketInfo = ticketReminder.activeUpcomingTicket {
-                        TodoTravelTicketPrepBanner(
-                            info: ticketInfo,
-                            onDismiss: {
-                                AppMotion.animate(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                    ticketReminder.dismiss(for: ticketInfo)
-                                    showToast("已设置本周期不再提醒该出行购票")
-                                }
-                            },
-                            onConfirm: {
-                                confirmingTicketInfo = ticketInfo
-                            }
-                        )
-                    }
                 }
 
                 Divider()
@@ -1453,20 +1862,9 @@ struct TodoListView: View {
     private func renderPageContent(for category: TodoFilterCategory) -> some View {
         List {
             homeHeaderSection
-            // 放进列表内普通行，使“今日安排”可以随首页内容向上滚动，同时避免空 Section + 超高自定义 Header 引发 UICollectionView 布局死锁与白屏
-            if category == .all && !isSearching {
-                Section {
-                    VStack(spacing: 4) {
-                        TodayBriefingView(items: activeTodos)
-                        // Structured 式今日时间轴：起床/下班锚点 + 日程 + 定时待办 + 打卡，
-                        // 自动标出空闲时段，一眼判断"今天塞不塞得下一件新事"。
-                        DayTimelineView(items: activeTodos)
-                    }
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                }
-            }
+            // 方案 C：原「现在最该做什么」独立卡与「今日时间轴」整卡已降级为
+            // 概览卡 / 节奏条 / 主任务行（见 homeHeaderSection 与 renderAllSections）。
+            // 这里不留空 Section + 复杂 header，避免 UICollectionView 高度死锁白屏。
 
             // 待确认事项（在全部和日常待办页面显示）
             if !review.isEmpty && (category == .all || category == .general) {

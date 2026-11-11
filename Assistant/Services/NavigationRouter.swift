@@ -214,12 +214,21 @@ public final class NavigationRouter: ObservableObject {
             selectedTab = .todos
         case "departure", "checklist", "pack":
             selectedTab = .departure
+        case "anniversary", "anniversaries", "纪念日":
+            // 纪念日小组件深链：纪念日在「生活档案」下，走 vault 的模块路由。
+            navigateTo(tab: .vault, vaultDestination: "anniversaries")
         case "expense", "expenses", "billing", "bill":
             selectedTab = .expenses
         case "vault", "id-vault", "ids":
             selectedTab = .vault
         case "storage", "store", "items":
             navigateTo(tab: .vault, vaultDestination: "storage")
+        case "medication", "meds", "drug", "medicine":
+            // 用药与打卡小组件深链：药品在「生活档案 → 物品收纳 → 药品与健康储备」。
+            navigateTo(tab: .vault, vaultDestination: "storage")
+        case "habits", "exercise", "sport":
+            // 周期运动打卡小组件深链。
+            navigateTo(tab: .vault, vaultDestination: "habits")
         case "skills", "skill", "learning", "practice":
             selectedTab = .vault
             requestedSkillPathList = true

@@ -100,6 +100,13 @@ final class CalendarAgendaService: ObservableObject {
         await loadEvents(daysAhead: 7)
     }
 
+    /// 首页节奏条用：只在**已经拿到日历权限**时静默加载，绝不首屏弹权限。
+    /// 未授权时首页只按定时待办显示节奏，不谎报系统日程的空闲时长。
+    func loadTodayEventsIfAuthorized() async {
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return }
+        await loadEvents(daysAhead: 7)
+    }
+
     /// 将待办事项保存或更新到系统日历
     /// - Parameters:
     ///   - title: 日程标题

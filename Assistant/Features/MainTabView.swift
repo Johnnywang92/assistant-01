@@ -5,7 +5,6 @@ import SwiftUI
 
 /// 主应用底部 Tab 栏导航（支持用户自定义板块增删与顺序排列，最多 5 个板块）
 struct MainTabView: View {
-    @Environment(\.modelContext) private var context
     @ObservedObject private var router = NavigationRouter.shared
     @ObservedObject private var tabManager = TabBarManager.shared
     @Query(filter: #Predicate<TodoItem> { $0.statusRaw == "active" }) private var activeTodos: [TodoItem]
@@ -19,8 +18,6 @@ struct MainTabView: View {
     @State private var autoStartListening = false
     @ObservedObject private var clipboard = ClipboardIngestionService.shared
     @Environment(\.scenePhase) private var scenePhase
-    @State private var directVoiceStatus = ""
-    @State private var isDirectVoiceConversation = false
     @AppStorage("has_completed_permission_onboarding_v1") private var hasCompletedPermissionOnboarding: Bool = false
     @State private var showPermissionOnboarding = false
     @ObservedObject private var pinManager = MigrationPinManager.shared
@@ -46,7 +43,7 @@ struct MainTabView: View {
                         Label(tab.title, systemImage: tab.systemImage)
                     }
                     .tag(tab)
-                    .badge(badgeCount(for: tab))
+                    // 方案 C：去掉动态数字角标，今日待办数已由首页概览卡回答
                 }
             }
 
@@ -68,28 +65,12 @@ struct MainTabView: View {
             }
             .responsiveAnimation(.spring(response: 0.35, dampingFraction: 0.85), value: clipboard.suggestion)
 
-            // 单手自由拖拽吸边语音悬浮球（支持单击唤起、长按直启语音输入）
-            DraggableVoiceFloatingBall(showVoice: $showVoice, autoStartListening: $autoStartListening) {
-                startDirectVoiceConversation()
-            }
-            if !directVoiceStatus.isEmpty {
-                VStack {
-                    Spacer()
-                    Text(directVoiceStatus)
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .background(.black.opacity(0.78), in: Capsule())
-                        .padding(.bottom, 78)
-                }
-                .transition(.opacity)
-                .allowsHitTesting(false)
-            }
+            // 方案 C：语音悬浮球已移除。它原先压住首页列表第一行的勾选区，
+            // 入口迁到首页问候行的麦克风按钮（复用 showVoice sheet），
+            // 系统快捷指令的 .voice route 也仍可唤起。
         }
         .sheet(isPresented: $showVoice, onDismiss: {
             autoStartListening = false
-            isDirectVoiceConversation = false
         }) {
             VoiceDialogueView(autoStartListening: autoStartListening)
                 .environment(\.locale, LanguageManager.shared.locale)
@@ -148,21 +129,6 @@ struct MainTabView: View {
             } else if newSheet == .settings {
                 showSettings = true
                 router.activeSheet = nil
-            }
-        }
-        .onReceive(VoiceDialogueService.shared.$isListening.removeDuplicates()) { listening in
-            let voice = VoiceDialogueService.shared
-            guard isDirectVoiceConversation, !listening, !voice.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            let query = voice.recognizedText
-            voice.recognizedText = ""
-            Task { @MainActor in
-                directVoiceStatus = L10n.isEnglish ? "Processing: \(query)" : "正在处理：\(query)"
-                let result = await VoiceIntentProcessor(context: context).processIntent(query: query)
-                directVoiceStatus = result.reply
-                voice.speak(text: result.reply)
-                isDirectVoiceConversation = false
-                try? await Task.sleep(nanoseconds: 4_000_000_000)
-                if directVoiceStatus == result.reply { directVoiceStatus = "" }
             }
         }
         .onAppear {
@@ -250,34 +216,6 @@ struct MainTabView: View {
         clipboard.markHandled(suggestion.changeCount)
     }
 
-    private func startDirectVoiceConversation() {
-        let voice = VoiceDialogueService.shared
-        guard !voice.isListening else {
-            voice.stopListening()
-            return
-        }
-        isDirectVoiceConversation = true
-        directVoiceStatus = L10n.tr("请说话…")
-        Task { @MainActor in
-            guard await voice.requestPermissions() else {
-                isDirectVoiceConversation = false
-                directVoiceStatus = L10n.tr("需要允许语音识别和麦克风权限")
-                return
-            }
-            do {
-                try await voice.startListening()
-                // 激活会话期间被再次点击取消时不会开麦，别继续显示「请说话…」
-                guard voice.isListening else {
-                    isDirectVoiceConversation = false
-                    return
-                }
-            } catch {
-                isDirectVoiceConversation = false
-                directVoiceStatus = error.localizedDescription
-            }
-        }
-    }
-
     // MARK: - 板块内容视图分发
 
     @ViewBuilder
@@ -285,28 +223,4 @@ struct MainTabView: View {
         ModuleViewRegistry.tabView(for: tab.moduleID)
     }
 
-    // MARK: - 动态角标徽标
-
-    /// 首页角标只提示「今天需要完成」的事项，不再把未来几天与无日期的存量待办全算上。
-    /// 判定规则复用 Core 的唯一实现，与首页「今日待办」分组、今日摘要计数同源。
-    private func badgeCount(for tab: NavigationRouter.AppTab) -> Int {
-        switch tab {
-        case .todos:
-            let now = Date.now
-            let cal = Calendar.current
-            return activeTodos.reduce(into: 0) { count, item in
-                if TodoShareContent.isTodayItem(
-                    dueAt: item.dueAt,
-                    reminderOverrideAt: item.reminderOverrideAt,
-                    createdAt: item.createdAt,
-                    now: now,
-                    calendar: cal
-                ) {
-                    count += 1
-                }
-            }
-        default:
-            return 0
-        }
-    }
 }
