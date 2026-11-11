@@ -164,6 +164,15 @@ public final class ExpenseRecord {
         guard let formatted = formattedForeignAmount else { return nil }
         return "\(currency.flag) \(formatted)"
     }
+
+    /// 「今日支出」的唯一口径：归属日为今天、非收入、非待结算。
+    ///
+    /// 待到账/待结算（报销待到账、借出待还等）尚未真正花出，不计入今日支出。
+    /// App 头部汇总、小组件快照与语音播报共用此判定，避免各处各算一套，
+    /// 让同一笔待结算账在「今日支出」上出现两个数字。
+    public func countsAsTodayExpense(now: Date, calendar: Calendar) -> Bool {
+        !isIncome && !isPending && calendar.isDate(date, inSameDayAs: now)
+    }
 }
 
 /// 智能自然语言记账解析器（离线正则与语义关键词分析）

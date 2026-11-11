@@ -1,3 +1,4 @@
+import AssistantCore
 import Foundation
 import SwiftData
 import WidgetKit
@@ -61,9 +62,27 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         let todayMood = Self.todayMoodSummary(context: context)
         let departureSnapshot = Self.buildDepartureSnapshot(context: context)
         let travelSnapshot = Self.buildTravelSnapshot(activeItems: sorted)
-        let medications = Self.buildMedicationEntries(activeItems: sorted, context: context)
-        let habits = Self.buildHabitEntries(context: context)
+
+        // 药品与习惯各只查一次，逐条与汇总共用同一份数据（避免同一张表查两遍）。
+        let enabledPlans = (try? context.fetch(FetchDescriptor<MedicationPlan>(
+            predicate: #Predicate { $0.isEnabled }
+        ))) ?? []
+        let enabledHabits = (try? context.fetch(FetchDescriptor<PeriodicHabit>(
+            predicate: #Predicate { $0.isEnabled },
+            sortBy: [SortDescriptor(\.nextDueAt)]
+        ))) ?? []
+        // 服药完成证据（今日已完成的服药待办）：逐条与汇总共用同一份数据。
+        // 它是「今天到底服了几顿」的**唯一精确来源**——`MedicationPlan.lastTakenAt`
+        // 只有一个时间戳，只能证明「至少服过一次」。
+        // 查两遍同一张表是白白的开销（首页快照是主线程构建的）。
+        let doseEvidence = MedicationDoseEvidence.todayEntries(context: context)
+        let medications = Self.buildMedicationEntries(activeItems: sorted, plans: enabledPlans, evidence: doseEvidence)
+        let habits = Self.buildHabitEntries(habits: enabledHabits)
+        let medicationSummary = Self.buildMedicationSummary(plans: enabledPlans, evidence: doseEvidence)
+        let habitSummary = Self.buildHabitSummary(habits: enabledHabits)
         let healthSnapshot = Self.buildHealthSnapshot(todayWaterML: todayWaterML, context: context)
+        let homeOverview = Self.buildHomeOverview(context: context, activeItems: sorted)
+        let anniversaries = Self.buildAnniversaryEntries(context: context)
 
         return WidgetSnapshot(
             topTodos: Array(topEntries),
@@ -78,9 +97,169 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             medications: medications,
             habits: habits,
             healthSnapshot: healthSnapshot,
+            homeOverview: homeOverview,
+            anniversaries: anniversaries,
+            medicationSummary: medicationSummary,
+            habitSummary: habitSummary,
             ackedCommandIDs: recentAckedCommandIDs,
             generatedAt: .now
         )
+    }
+
+    // MARK: - 首页概览（与 App 首页同源）
+
+    /// 构建小组件用的首页概览。
+    ///
+    /// **必须与 App 首页用同一份 Core 计算**：这里调用 `HomeSnapshotBuilder`，
+    /// 而不是自己数一遍完成数/空闲时间。否则会出现「桌面显示 2/4、App 显示 3/4」。
+    private static func buildHomeOverview(
+        context: ModelContext,
+        activeItems: [TodoItem]
+    ) -> WidgetHomeOverview? {
+        let calendar = Calendar.current
+        let now = Date.now
+        let startOfToday = calendar.startOfDay(for: now)
+        guard let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday) else {
+            return nil
+        }
+
+        // 今日口径：今天到期（含逾期）或今天创建的活跃待办 + 今天完成的。
+        // 与 App 首页 `homeFacts` 保持一致。
+        var facts: [HomeTodoFact] = []
+        for item in activeItems {
+            let effective = item.reminderOverrideAt ?? item.dueAt
+            if let effective {
+                guard effective < startOfTomorrow else { continue }
+            } else {
+                guard item.createdAt >= startOfToday else { continue }
+            }
+            facts.append(HomeTodoFact(
+                id: item.id,
+                isDone: false,
+                dueAt: effective,
+                createdAt: item.createdAt,
+                isOverdue: (effective ?? .distantFuture) < now
+            ))
+        }
+
+        let doneRaw = TodoStatus.done.rawValue
+        let completedToday = (try? context.fetch(FetchDescriptor<TodoItem>(
+            predicate: #Predicate { $0.statusRaw == doneRaw }
+        ))) ?? []
+        for item in completedToday {
+            guard let completedAt = item.completedAt, completedAt >= startOfToday else { continue }
+            facts.append(HomeTodoFact(
+                id: item.id,
+                isDone: true,
+                dueAt: item.reminderOverrideAt ?? item.dueAt,
+                createdAt: item.createdAt
+            ))
+        }
+
+        let schedule = Self.homeScheduleFact(context: context, activeItems: activeItems, now: now)
+        let snapshot = HomeSnapshotBuilder.make(
+            todos: facts,
+            schedule: schedule,
+            now: now,
+            calendar: calendar
+        )
+
+        // 节奏比例：空闲段与已安排段各占多少
+        var freeRatio = 0.0
+        var busyRatio = 0.0
+        for slice in snapshot.segments {
+            switch slice.segment {
+            case .free: freeRatio += slice.weight
+            case .busy, .reminder: busyRatio += slice.weight
+            }
+        }
+
+        // 主任务标题：Core 判定 ID，标题由 App 查表（扩展拿不到 SwiftData）
+        let priorityTitle: String? = {
+            guard let id = snapshot.priorityTaskID,
+                  let item = activeItems.first(where: { $0.id == id }) else { return nil }
+            return item.title
+        }()
+
+        return WidgetHomeOverview(
+            done: snapshot.done,
+            total: snapshot.total,
+            freeMinutes: snapshot.freeMinutes,
+            isAllDayFree: snapshot.isAllDayFree,
+            priorityTaskTitle: priorityTitle,
+            freeRatio: freeRatio,
+            busyRatio: busyRatio
+        )
+    }
+
+    /// 当日窗口与占用。与 App 首页 `homeSchedule` 保持同源：
+    /// 起床 → 下班窗口（终点不含）+ 系统日历非全天日程 + 定时待办作为提醒点。
+    private static func homeScheduleFact(
+        context: ModelContext,
+        activeItems: [TodoItem],
+        now: Date
+    ) -> HomeScheduleFact {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: now)
+
+        // 与 App 首页共用同一组 @AppStorage 键
+        let wakeMinutes = UserDefaults.standard.integer(forKey: "day_timeline_wake_minutes")
+        let offMinutes = UserDefaults.standard.integer(forKey: "day_timeline_off_minutes")
+        let wake = calendar.date(
+            byAdding: .minute,
+            value: wakeMinutes > 0 ? wakeMinutes : 7 * 60 + 30,
+            to: startOfToday
+        ) ?? startOfToday
+        let off = calendar.date(
+            byAdding: .minute,
+            value: max(offMinutes > 0 ? offMinutes : 19 * 60, (wakeMinutes > 0 ? wakeMinutes : 7 * 60 + 30) + 60),
+            to: startOfToday
+        ) ?? wake
+        guard off > wake else { return .unscheduled }
+
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? off
+        let busy = CalendarAgendaService.shared.events
+            .filter { !$0.isAllDay && $0.startDate < dayEnd && $0.endDate > startOfToday }
+            .map { HomeBusyInterval(start: $0.startDate, end: $0.endDate) }
+        let reminders = activeItems
+            .compactMap { $0.reminderOverrideAt ?? $0.dueAt }
+            .filter { $0 >= wake && $0 < off }
+
+        return HomeScheduleFact(
+            windowStart: wake,
+            windowEnd: off,
+            busy: busy,
+            reminders: reminders
+        )
+    }
+
+    // MARK: - 纪念日倒计时
+
+    /// 构建纪念日倒计时快照（按距离升序，最多 5 条）。
+    /// 农历换算由 Core 的 `AnniversaryCountdown` 统一处理。
+    private static func buildAnniversaryEntries(context: ModelContext) -> [WidgetAnniversaryEntry] {
+        let items = (try? context.fetch(FetchDescriptor<AnniversaryItem>())) ?? []
+        guard !items.isEmpty else { return [] }
+
+        let calendar = Calendar.current
+        let now = Date.now
+        return items
+            .map { item in
+                AnniversaryCountdown.entry(
+                    id: item.id,
+                    title: item.title,
+                    targetDate: item.targetDate,
+                    isLunar: item.isLunar,
+                    now: now,
+                    calendar: calendar
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.daysUntil != rhs.daysUntil { return lhs.daysUntil < rhs.daysUntil }
+                return lhs.title < rhs.title
+            }
+            .prefix(5)
+            .map { $0 }
     }
 
     private static func buildDepartureSnapshot(context: ModelContext) -> WatchDepartureSnapshot? {
@@ -112,6 +291,11 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             return a.createdAt < b.createdAt
         }
 
+        // 汇总计数基于**全部**条目，不是截断后的 12 条：
+        // 否则「20 件里确认了 12 件」会被显示成「全部带齐」。
+        let checkedCount = filtered.filter(\.isChecked).count
+        let totalCount = filtered.count
+
         let watchItems = sorted.prefix(12).map {
             WatchDepartureItem(
                 id: $0.id,
@@ -121,56 +305,120 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
                 locationNote: $0.storageLocationNote
             )
         }
-        return WatchDepartureSnapshot(sceneName: sceneName, items: Array(watchItems))
+        return WatchDepartureSnapshot(
+            sceneName: sceneName,
+            items: Array(watchItems),
+            checkedCount: checkedCount,
+            totalCount: totalCount
+        )
     }
 
+    /// 构建行程护航快照。
+    ///
+    /// 口径全部走 Core 的 `TravelCountdownBuilder`：
+    /// - 窗口 3 天（旧实现是 36 小时硬窗口 → 3 天后的行程直接从手表消失）；
+    /// - 选**最近发车**的那一趟，不按待办优先级取第一条；
+    /// - **没有可靠发车时刻就不产出倒计时**，不再编造 `now + 1 小时`
+    ///   （那会让手表上出现一条根本不存在的「1 小时后发车」）。
     private static func buildTravelSnapshot(activeItems: [TodoItem]) -> WatchTravelSnapshot? {
         let now = Date.now
-        let horizon = now.addingTimeInterval(36 * 3600)
-        for item in activeItems {
-            let ticket = TicketDetailsExtractor.extract(from: [item.detail, item.sourceText, item.title])
-            let hasTicketSignal = ticket.vehicleAndSeatLine != nil || ticket.gate != nil
-            let isTravelKeyword = item.title.contains("高铁") || item.title.contains("航班")
-                || item.title.contains("飞机") || item.title.contains("火车")
-                || item.title.contains("动车") || item.title.contains("发车")
-                || item.title.contains("登机") || item.title.contains("车站")
-                || item.title.contains("机场")
-            guard hasTicketSignal || isTravelKeyword else { continue }
-            if let due = item.dueAt, due >= now.addingTimeInterval(-2 * 3600), due <= horizon {
-                return WatchTravelSnapshot(
-                    id: item.id,
-                    title: item.displayConciseTitle,
-                    departureDate: due,
-                    ticketSummary: ticket.vehicleAndSeatLine,
-                    gate: ticket.gate,
-                    place: item.displayLocationText
+        let candidates = activeItems.map { item -> TravelDepartureCandidate in
+            let info = TravelDepartureDetector.ticketInfo(
+                title: item.title,
+                detail: item.detail,
+                sourceText: item.sourceText
+            )
+            let isTravel = info.hasSignal
+                || TravelDepartureDetector.looksLikeTravel(
+                    title: item.title,
+                    detail: item.detail,
+                    sourceText: item.sourceText
                 )
-            } else if hasTicketSignal {
-                return WatchTravelSnapshot(
-                    id: item.id,
-                    title: item.displayConciseTitle,
-                    departureDate: item.dueAt ?? now.addingTimeInterval(3600),
-                    ticketSummary: ticket.vehicleAndSeatLine,
-                    gate: ticket.gate,
-                    place: item.displayLocationText
-                )
-            }
+            return TravelDepartureCandidate(
+                id: item.id,
+                title: item.displayConciseTitle,
+                departureAt: item.dueAt,
+                ticketSummary: info.summary,
+                gate: info.gate,
+                place: item.displayLocationText,
+                isTravel: isTravel
+            )
         }
-        return nil
+
+        guard let countdown = TravelCountdownBuilder.build(candidates: candidates, now: now) else {
+            return nil
+        }
+        return WatchTravelSnapshot(
+            id: countdown.candidate.id,
+            title: countdown.candidate.title,
+            departureDate: countdown.departureAt,
+            ticketSummary: countdown.candidate.ticketSummary,
+            gate: countdown.candidate.gate,
+            place: countdown.candidate.place
+        )
     }
 
-    private static func buildMedicationEntries(activeItems: [TodoItem], context: ModelContext) -> [WatchMedicationEntry] {
-        let descriptor = FetchDescriptor<MedicationPlan>(
-            predicate: #Predicate { $0.isEnabled }
-        )
-        guard let plans = try? context.fetch(descriptor), !plans.isEmpty else { return [] }
+    private static func buildMedicationEntries(
+        activeItems: [TodoItem],
+        plans: [MedicationPlan],
+        evidence: [MedicationDoseEvidence.Entry]
+    ) -> [WatchMedicationEntry] {
+        guard !plans.isEmpty else { return [] }
         let cal = Calendar.current
+        let now = Date.now
         let medTodos = activeItems.filter { $0.type == .medication }
+        // 今日已完成的服药待办（用于识别「漏服」的那一顿 + 精确算出已服几顿）
+        let completedMedTitles = Set(evidence.map {
+            MedicationTodoMaterializer.todoTitle(medName: $0.medName, timePoint: $0.timePoint)
+        })
 
-        return plans.prefix(6).map { plan in
-            let matchedTodo = medTodos.first { $0.title.contains(plan.medName) }
-            let takenTodayByPlan = plan.lastTakenAt.map { cal.isDateInToday($0) } ?? false
-            let isTaken = takenTodayByPlan && matchedTodo == nil
+        // **待服排前面**再截断：快照里的条目是 `prefix(6)`，
+        // 若按数据库原始顺序截断，可能截到的全是已服完的，
+        // 而真正待服的第 7 条根本进不来 → 组件显示「已服完」→ 漏服。
+        let sortedPlans = MedicationHabitDoseResolver.sortMedicationsPendingFirst(
+            plans,
+            isPending: { plan in
+                !MedicationHabitDoseResolver.isMedicationTakenToday(
+                    lastTakenAt: plan.lastTakenAt, now: now, calendar: cal)
+            },
+            nameOf: { $0.medName }
+        )
+
+        return sortedPlans.prefix(6).map { plan in
+            // **精确匹配**（标题全等），不用 `contains(medName)`：
+            // 药名可能互为子串（「维生素D」⊂「维生素D3」），
+            // 用 contains 会让「维生素D」认领「维生素D3」的待办 → 另一种药被漏服。
+            let slotTitles = MedicationTodoMaterializer.slotTitles(
+                medName: plan.medName,
+                dailyTimePoints: plan.dailyTimePoints,
+                on: now,
+                calendar: cal
+            )
+            let matchedTodo = medTodos.first { slotTitles.contains($0.title) }
+            // 进度与下一时点由 Core 算（证据口径：精确到时点，不谎报也不多报）
+            let progress = MedicationHabitDoseResolver.doseProgress(
+                lastTakenAt: plan.lastTakenAt,
+                dailyTimePoints: plan.dailyTimePoints,
+                now: now,
+                calendar: cal,
+                completedSlotTimes: MedicationDoseEvidence.completedSlotTimes(
+                    medName: plan.medName, entries: evidence)
+            )
+            // 「今天不用再吃了」= **今天每一顿都有完成记录**。
+            //
+            // 不能只看「今天有没有服药记录」+「没有待办」：一天 3 次的药只吃了
+            // 08:00 那顿时，两个条件也会同时成立 → 谎报已服完 → 后面两顿漏服。
+            let isTaken = progress.isFullySatisfied
+            let nextSlotText = MedicationHabitDoseResolver.nextScheduledSlotText(
+                dailyTimePoints: plan.dailyTimePoints, now: now, calendar: cal)
+            // 漏服的那一顿（已过时点但未完成）——必须显式提示，否则用户会默默漏服
+            let missedSlotText = MedicationHabitDoseResolver.missedSlotText(
+                medName: plan.medName,
+                dailyTimePoints: plan.dailyTimePoints,
+                completedTitles: completedMedTitles,
+                now: now,
+                calendar: cal
+            )
             return WatchMedicationEntry(
                 id: plan.id,
                 medName: plan.medName,
@@ -178,30 +426,120 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
                 mealRelationText: plan.mealRelation.displayName,
                 timePointsText: plan.dailyTimePoints.joined(separator: " / "),
                 isTakenToday: isTaken,
-                activeTodoID: matchedTodo?.id
+                activeTodoID: matchedTodo?.id,
+                scheduledCount: progress.scheduledCount,
+                takenCount: progress.takenLowerBound,
+                nextDueText: nextSlotText,
+                missedSlotText: missedSlotText
             )
         }
     }
 
-    private static func buildHabitEntries(context: ModelContext) -> [WatchHabitEntry] {
-        let descriptor = FetchDescriptor<PeriodicHabit>(
-            predicate: #Predicate { $0.isEnabled },
-            sortBy: [SortDescriptor(\.nextDueAt)]
-        )
-        guard let habits = try? context.fetch(descriptor), !habits.isEmpty else { return [] }
+    /// 今日服药汇总。
+    ///
+    /// **必须在这里算，不能让小组件自己聚合**：快照里的 `medications` 是
+    /// `prefix(6)` 截断的，扩展若拿这 6 条求和，会把「10 个药里服了 6 个」
+    /// 显示成「全部服完」——这类谎报会直接导致漏服。
+    ///
+    /// 与 `buildMedicationEntries` 共用同一份完成证据（同一个函数里查两遍
+    /// 同一张表是白白的开销，首页快照是主线程构建的）。
+    private static func buildMedicationSummary(
+        plans: [MedicationPlan],
+        evidence: [MedicationDoseEvidence.Entry]
+    ) -> WidgetMedicationSummary? {
+        guard !plans.isEmpty else { return nil }
         let cal = Calendar.current
-        let endOfToday = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: .now)) ?? .now
+        let now = Date.now
 
-        return habits.prefix(6).map { habit in
-            let completedToday = habit.lastCompletedAt.map { cal.isDateInToday($0) } ?? false
-            let isDue = !completedToday && habit.nextDueAt < endOfToday
+        var scheduledDoseCount = 0
+        var takenDoseLowerBound = 0
+        var pendingPlanCount = 0
+        var pendingDoseCount = 0
+        var allSatisfied = true
+
+        for plan in plans {
+            let progress = MedicationHabitDoseResolver.doseProgress(
+                lastTakenAt: plan.lastTakenAt,
+                dailyTimePoints: plan.dailyTimePoints,
+                now: now,
+                calendar: cal,
+                completedSlotTimes: MedicationDoseEvidence.completedSlotTimes(
+                    medName: plan.medName, entries: evidence)
+            )
+            scheduledDoseCount += progress.scheduledCount
+            takenDoseLowerBound += progress.takenLowerBound
+            // 逐计划累加待服数：已服完的计划贡献 0（不是差值算出的 2），
+            // 否则聚合后会虚报 → 用户重复服药。
+            pendingDoseCount += progress.pendingCount
+            if progress.pendingCount > 0 {
+                pendingPlanCount += 1
+                allSatisfied = false
+            }
+        }
+
+        return WidgetMedicationSummary(
+            scheduledDoseCount: scheduledDoseCount,
+            takenDoseLowerBound: takenDoseLowerBound,
+            pendingPlanCount: pendingPlanCount,
+            totalPlanCount: plans.count,
+            isAllSatisfied: allSatisfied,
+            pendingDoseCount: pendingDoseCount
+        )
+    }
+
+    private static func buildHabitEntries(habits: [PeriodicHabit]) -> [WatchHabitEntry] {
+        guard !habits.isEmpty else { return [] }
+        let cal = Calendar.current
+        let now = Date.now
+
+        // **待打卡排前面**再截断（与药品同理：截断在前会把待打卡的挤掉）。
+        let sortedHabits = MedicationHabitDoseResolver.sortHabitsDueFirst(
+            habits,
+            isDue: { habit in
+                MedicationHabitDoseResolver.isHabitDueToday(
+                    nextDueAt: habit.nextDueAt, lastCompletedAt: habit.lastCompletedAt,
+                    now: now, calendar: cal)
+            },
+            dueAt: { $0.nextDueAt },
+            titleOf: { $0.title }
+        )
+
+        return sortedHabits.prefix(6).map { habit in
+            // 口径统一到 Core：今日是否该打卡（含逾期），与 App 列表同源。
+            let isDue = MedicationHabitDoseResolver.isHabitDueToday(
+                nextDueAt: habit.nextDueAt,
+                lastCompletedAt: habit.lastCompletedAt,
+                now: now,
+                calendar: cal
+            )
             return WatchHabitEntry(
                 id: habit.id,
                 title: habit.title,
                 recurrenceText: habit.recurrence.displayName,
-                isDueToday: isDue
+                isDueToday: isDue,
+                nextDueText: MedicationHabitDoseResolver.slotTimeText(habit.nextDueAt, calendar: cal)
             )
         }
+    }
+
+    /// 今日打卡汇总（同样在主 App 侧算，避免截断失真）。
+    ///
+    /// 与 `buildHabitEntries` 共用同一次 fetch。
+    private static func buildHabitSummary(habits: [PeriodicHabit]) -> WidgetHabitSummary? {
+        guard !habits.isEmpty else { return nil }
+        let cal = Calendar.current
+        let now = Date.now
+
+        let dueCount = habits.filter { habit in
+            MedicationHabitDoseResolver.isHabitDueToday(
+                nextDueAt: habit.nextDueAt,
+                lastCompletedAt: habit.lastCompletedAt,
+                now: now,
+                calendar: cal
+            )
+        }.count
+
+        return WidgetHabitSummary(dueCount: dueCount, totalCount: habits.count)
     }
 
     private static func buildHealthSnapshot(todayWaterML: Double, context: ModelContext) -> WatchHealthSnapshot? {
@@ -234,9 +572,19 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
 
         guard hasHealthData || todayFoodCalories != nil else { return nil }
 
-        let vitality = VitalityEvaluator.evaluate(snapshot: effectiveSnap, foodIntakeCalories: todayFoodCalories)
+        // 两个指数必须共用同一份身体档案事实，否则桌面/手表与 App 会给出不同分数。
+        let bodyProfile = BodyProfileContextProvider.shared.context()
+        let vitality = VitalityEvaluator.evaluate(
+            snapshot: effectiveSnap,
+            foodIntakeCalories: todayFoodCalories,
+            profile: bodyProfile
+        )
         let pleasure = HealthKitService.shared.pleasureEvaluation
-            ?? PleasureIndexEvaluator.evaluate(snapshot: effectiveSnap, baseline: HealthKitService.shared.userBaseline)
+            ?? PleasureIndexEvaluator.evaluate(
+                snapshot: effectiveSnap,
+                baseline: HealthKitService.shared.userBaseline,
+                profile: bodyProfile
+            )
 
         let stepsVal = (effectiveSnap?.value(for: .stepCount)?.value).map { Int($0.rounded()) }
         let rhrVal = effectiveSnap?.value(for: .restingHeartRate)?.value
@@ -324,19 +672,21 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
         )
     }
 
-    /// 今日弹性支出合计。查询抛错返回 nil：调用方据此省略或提示，
+    /// 今日支出合计（非收入、非待结算）。查询抛错返回 nil：调用方据此省略或提示，
     /// 不能把「读失败」当成「今天没花钱」报给用户。
     private static func todayExpenseTotal(context: ModelContext) -> Double? {
         // 只取今日窗口内的账单，避免全量历史支出记录物化到主线程
         let calendar = Calendar.current
-        let dayStart = calendar.startOfDay(for: .now)
+        let now = Date.now
+        let dayStart = calendar.startOfDay(for: now)
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
         let descriptor = FetchDescriptor<ExpenseRecord>(
             predicate: #Predicate { $0.date >= dayStart && $0.date < dayEnd }
         )
         guard let records = try? context.fetch(descriptor) else { return nil }
+        // 与 App 头部「今日支出」同一口径，见 ExpenseRecord.countsAsTodayExpense
         return records
-            .filter { !$0.isIncome }
+            .filter { $0.countsAsTodayExpense(now: now, calendar: calendar) }
             .reduce(0) { $0 + $1.amount }
     }
 
@@ -641,7 +991,17 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
                 let todoDesc = FetchDescriptor<TodoItem>(
                     predicate: #Predicate { $0.typeRaw == medTypeRaw && $0.statusRaw == activeRaw }
                 )
-                let matchingTodos = ((try? context.fetch(todoDesc)) ?? []).filter { $0.title.contains(medName) }
+                // **精确匹配**（标题全等），不用 `contains(medName)`：
+                // 药名可能互为子串（「维生素D」⊂「维生素D3」），用 contains 会
+                // 让「维生素D」的计划完成「维生素D3」的待办 → 另一种药被漏服。
+                let slotTitles = Set(MedicationTodoMaterializer.slotTitles(
+                    medName: medName,
+                    dailyTimePoints: plan.dailyTimePoints,
+                    on: .now,
+                    calendar: .current
+                ))
+                let matchingTodos = ((try? context.fetch(todoDesc)) ?? [])
+                    .filter { slotTitles.contains($0.title) }
                 for todo in matchingTodos {
                     todo.markAsCompleted(in: context)
                 }
@@ -665,7 +1025,14 @@ final class WidgetSnapshotSyncController: WidgetBridgeAppHook {
             let todoDesc = FetchDescriptor<TodoItem>(
                 predicate: #Predicate { $0.typeRaw == exTypeRaw && $0.statusRaw == activeRaw }
             )
-            let matchingTodos = ((try? context.fetch(todoDesc)) ?? []).filter { $0.title.contains(habitTitle) }
+            // **精确匹配**（标题全等），不用 `contains(habitTitle)`：
+            // 习惯名可能互为子串（「跑步」⊂「夜跑」），用 contains 会让
+            // 「跑步」的打卡完成「夜跑」的待办 → 另一个习惯被误标完成。
+            // 标题格式与 `HabitAndMedicationScheduler` 生成的一致：「运动：<名称>」。
+            // 两端都取 Core 的单一真源，避免字面量各写一份后漂移。
+            let expectedTitle = CheckInTodoLink.habitTodoTitle(habitName: habitTitle)
+            let matchingTodos = ((try? context.fetch(todoDesc)) ?? [])
+                .filter { $0.title == expectedTitle }
             for todo in matchingTodos {
                 todo.markAsCompleted(in: context)
             }

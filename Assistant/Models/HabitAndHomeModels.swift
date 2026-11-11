@@ -21,6 +21,19 @@ public enum RecurrenceInterval: String, Codable, CaseIterable {
     }
 
     public var displayName: String { L10n.tr(rawValue) }
+
+    /// 按周期把日期推进一格（只负责日期分量，提醒时刻由调用方回填）。
+    ///
+    /// 「每月」必须用日历加一个月，不能折算成固定 30 天：大小月交替时
+    /// 30 天会逐月漂移（1/31 加 30 天落到 3/2，而非 2 月末），习惯的到期日
+    /// 会越漂越偏。加一个月时目标月天数不足会自动收敛到月末（1/31 → 2/28）。
+    /// 其余周期按日历天间隔加天（而非加秒），避免 DST 让时刻漂移一小时。
+    public func advance(from date: Date, calendar: Calendar = .current) -> Date? {
+        if self == .monthly {
+            return calendar.date(byAdding: .month, value: 1, to: date)
+        }
+        return calendar.date(byAdding: .day, value: dayInterval, to: date)
+    }
 }
 
 /// 周期性家务与习惯规则模型
@@ -70,14 +83,20 @@ public final class PeriodicHabit {
     }
 
     /// 完成一次打卡，并自动推导下一次到期时间
-    public func completeOnce() {
-        self.lastCompletedAt = .now
-        let cal = Calendar.current
-        if let next = cal.date(byAdding: .day, value: recurrence.dayInterval, to: .now) {
-            var comps = cal.dateComponents([.year, .month, .day], from: next)
+    ///
+    /// **同一天重复打卡不重复推进周期**：一天只该推进一次。
+    /// 「提醒中心打卡」与「待办完成」两条路径都会调这里，不加守卫会把周期
+    /// 一次跳过两格（下次到期直接推到两周后 → 习惯静默停摆）。
+    public func completeOnce(now: Date = .now, calendar: Calendar = .current) {
+        if let last = lastCompletedAt, calendar.isDate(last, inSameDayAs: now) {
+            return
+        }
+        self.lastCompletedAt = now
+        if let next = recurrence.advance(from: now, calendar: calendar) {
+            var comps = calendar.dateComponents([.year, .month, .day], from: next)
             comps.hour = preferredHour
             comps.minute = preferredMinute
-            self.nextDueAt = cal.date(from: comps) ?? next
+            self.nextDueAt = calendar.date(from: comps) ?? next
         }
     }
 }

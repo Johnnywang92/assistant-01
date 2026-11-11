@@ -676,3 +676,29 @@ P0 五项至此全部完成。本轮把三项「部分完成」推到可自动�
 - 真机链路未跑：下载 → 校验 → 加载 → 出图整条路只在设备切片上编译过，没有真实 GGUF 与 mmproj 跑过。
 - 发布指纹只经 ModelScope 单源核对（写指纹时 huggingface.co 超时，未做 HF 侧交叉核对），因此这两个条目**只挂 ModelScope 一个下载源**。
 - 图像 token 上限 512 与上下文上限的真实占用关系只有静态校验，未在真机量过。
+
+## 2026-11-11 实施记录（两处口径收口：支出「今日」统一 + 周期习惯每月跨月漂移）
+
+### 范围
+
+- **支出「今日」两套口径 → 唯一口径**：新增 `Assistant/Models/ExpenseModel.swift` 的 `ExpenseRecord.countsAsTodayExpense(now:calendar:)`（非收入、非待结算、归属日今天）。App 头部汇总 `Assistant/Features/ExpenseTrackerView.swift` 的 `ExpenseSummary` 与组件/播报取数 `Assistant/Services/WidgetSnapshotSync.swift` 的 `todayExpenseTotal` 共用此判定。
+- **`PeriodicHabit.completeOnce()` 每月跨月漂移 → 日历加月**：新增 `Assistant/Models/HabitAndHomeModels.swift` 的 `RecurrenceInterval.advance(from:calendar:)`（每月用日历加一个月，其余按日历天间隔）；`completeOnce(now:calendar:)` 与 `Assistant/Features/HabitAndMedicationView.swift` 的 `computeNextDueAt` 共用。
+- **测试**：新增 `AssistantTests/PeriodicHabitTests.swift`（9 项）与 `AssistantTests/ExpenseTodayCaliberTests.swift`（6 项）。
+
+### 关键决定
+
+- 「今日支出」分歧点在 `isPending`：App 头部 `ExpenseSummary` 一直跳过待结算账（报销待到账、借出待还等），而组件 `todayExpenseTotal` 只滤 `!isIncome`、把待结算也计入，于是同一笔待结算账在「今日支出」上出现两个数字。统一到「非收入、非待结算、今日」，与 App 头部既有口径对齐（待结算尚未真正花出）。
+- 组件取数**保留今日窗口谓词**（`[dayStart, dayEnd)`），口径判定放在取数后的 filter，不退化为全表物化（沿用 CR-09 的性能约束）；顺手修正了 `todayExpenseTotal` 误导性的「弹性」注释（实为非收入合计，并非剔除固定支出）。
+- 「每月」不能用固定 30 天：大小月交替会逐月漂移（1/31 加 30 天落到 3/2，而非 2 月末）。改为日历加一个月，目标月天数不足自动收敛到月末（1/31 → 2/28）；其余周期仍按日历天间隔加天（而非加秒，避免 DST 漂时刻）。推进逻辑收敛到 `RecurrenceInterval.advance` 一处，`completeOnce` 与创建习惯的 `computeNextDueAt` 共用，避免两处各写一份再漂移。
+- `completeOnce` 改为可注入 `now/calendar`（默认 `.now`/`.current`，调用点零改动），同日重复打卡守卫保留；测试用固定时区与时刻，不读墙上时钟。
+
+### 验证
+
+- `swift test`（Packages/AssistantCore）：**1399 项、0 失败**。
+- App 层：`xcodegen generate` + `xcodebuild test -scheme AssistantTests -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5'` → 构建成功，新增 `PeriodicHabitTests` **9/9**（跨月不漂移、月末收敛、跨年、日/隔日/周/双周、同日守卫）、`ExpenseTodayCaliberTests` **6/6**（待结算/收入/昨日/明日排除、混合账本合计口径）全过。
+- 该轮 AssistantTests 共 42 项、**唯一失败** `HomeThemeTests.testHomeRadiusTokensAreRegisteredInGate`（断言 `AppRadius.homeBlock > homeChip`，实际 8 ≯ 14）——属工作区在制首页 redesign 的圆角令牌排序问题，**与本次改动无关**，本轮未触碰 `AppRadius`/首页主题，未处理。
+
+### 未验 / 未做
+
+- 真机 UI 未验：组件/锁屏/语音播报的「今日支出」与 App 头部一致性、每月习惯跨月后的实际提醒排期，只在模拟器单测层验证。
+- 上述无关的 `HomeThemeTests` 圆角令牌失败仍挂在首页 redesign 在制改动上，待该项收口时一并处理。

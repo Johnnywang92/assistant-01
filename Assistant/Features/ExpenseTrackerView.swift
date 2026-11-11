@@ -31,7 +31,7 @@ fileprivate struct ExpenseSummary {
 
         for record in records {
             if record.isPending { continue }
-            let isToday = calendar.isDate(record.date, inSameDayAs: now)
+            let isTodayExpense = record.countsAsTodayExpense(now: now, calendar: calendar)
             let isYesterday = if let startOfYesterday {
                 calendar.isDate(record.date, inSameDayAs: startOfYesterday)
             } else {
@@ -50,7 +50,7 @@ fileprivate struct ExpenseSummary {
                 }
             } else {
                 let isFixed = SafeToSpendCalculator.isFixedExpenseRecord(record.rawText)
-                if isToday {
+                if isTodayExpense {
                     todayExp += record.amount
                     if !isFixed {
                         todayFlex += record.amount

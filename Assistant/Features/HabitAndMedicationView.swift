@@ -363,7 +363,7 @@ struct HabitEditorSheet: View {
         comps.minute = preferredMinute
         guard var candidate = cal.date(from: comps) else { return .now }
         if candidate <= .now {
-            candidate = cal.date(byAdding: .day, value: recurrence.dayInterval, to: candidate) ?? candidate
+            candidate = recurrence.advance(from: candidate, calendar: cal) ?? candidate
         }
         return candidate
     }
