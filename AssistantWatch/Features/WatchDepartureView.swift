@@ -1,3 +1,4 @@
+import AssistantCore
 import SwiftUI
 import WatchKit
 
@@ -165,12 +166,21 @@ struct WatchDepartureView: View {
             }
 
             HStack(alignment: .firstTextBaseline) {
+                // 倒计时口径与 App / 桌面组件同源（Core 的 `TravelCountdownPolicy`）：
+                // - 不足 1 天 → 系统计时器逐秒走（HH:MM:SS）；
+                // - 超过 1 天 → 走「还有 N 天」，否则 timerInterval 会显示「72:00:00」这种没法读的巨长时分秒。
                 if travel.departureDate > .now {
-                    Text(timerInterval: Date.now...travel.departureDate, countsDown: true)
-                        .font(.system(.title3, design: .monospaced).bold())
-                        .foregroundStyle(.cyan)
+                    if TravelCountdownPolicy.isImminent(departureAt: travel.departureDate, now: .now) {
+                        Text(timerInterval: Date.now...travel.departureDate, countsDown: true)
+                            .font(.system(.title3, design: .monospaced).bold())
+                            .foregroundStyle(.cyan)
+                    } else {
+                        Text(TravelCountdownPolicy.text(departureAt: travel.departureDate, now: .now))
+                            .font(.system(.title3, design: .rounded).bold())
+                            .foregroundStyle(.cyan)
+                    }
                 } else {
-                    Text("已到发车时间")
+                    Text(TravelCountdownPolicy.text(departureAt: travel.departureDate, now: .now))
                         .font(.caption.bold())
                         .foregroundStyle(.orange)
                 }

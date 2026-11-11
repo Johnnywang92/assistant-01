@@ -54,10 +54,16 @@ enum LiveActivityService {
 
     // MARK: - 场景 2：行程护航上岛
 
+    /// 启动行程护航实时活动。
+    ///
+    /// **必须有可靠的发车时刻才启动**：灵动岛的核心是倒计时，
+    /// 没有发车时间就没有倒计时可显示。此时编造 `now + 1 小时`
+    /// 会让用户看到一条根本不存在的「1 小时后发车」，据此出门反而更糟。
+    /// 所以这里直接拒绝启动，由调用方提示用户补全时间。
     @discardableResult
     static func startTravelActivity(for item: TodoItem) -> Bool {
         guard activitiesEnabled else { return false }
-        let departure = item.dueAt ?? Date().addingTimeInterval(3600)
+        guard let departure = item.dueAt else { return false }
         // 座位号/检票口国内票面短信里通常就在详情或原文里，上岛前抽一次，
         // 抬腕就能直接看到，不用再去翻截图。抽不到就只显示倒计时，不硬凑。
         let ticket = TicketDetailsExtractor.extract(from: [item.detail, item.sourceText, item.title])

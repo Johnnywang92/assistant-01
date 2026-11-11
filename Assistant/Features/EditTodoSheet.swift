@@ -48,6 +48,8 @@ struct EditTodoSheet: View {
     @State private var showConfidenceNotice: Bool = true
 
     @State private var showingDeleteConfirmation: Bool = false
+    /// 行程护航无法启动时的原因（如缺少出发时间），用于给出可执行的提示
+    @State private var liveActivityErrorMessage: String? = nil
 
     // 结构化日程：与新建页同构，旧待办通过 TodoItem.schedule 的 legacy 解释无损回填。
     @State private var isTimeRange: Bool = false
@@ -264,7 +266,16 @@ struct EditTodoSheet: View {
                             } else {
                                 started = LiveActivityService.startPickupActivity(for: [item])
                             }
-                            if started { Haptic.success() } else { Haptic.warning() }
+                            if started {
+                                Haptic.success()
+                            } else {
+                                Haptic.warning()
+                                // 行程护航卡的核心是倒计时：没有发车时间就没有倒计时可显示。
+                                // 与其静默失败（用户以为功能坏了），不如说明缺什么。
+                                if isTravelActivity && !hasDueDate {
+                                    liveActivityErrorMessage = "请先设置出发时间，再开启行程倒计时。"
+                                }
+                            }
                         } label: {
                             Label("上灵动岛（同步手表）", systemImage: "platter.filled.top.iphone")
                         }
@@ -703,12 +714,30 @@ struct EditTodoSheet: View {
             } message: {
                 Text("删除后将无法恢复。")
             }
+            // 独立 alert：同层 SwiftUI 只允许一个 alert，
+            // 行程护航的失败原因必须走另一个绑定，不能覆盖删除确认。
+            .alert(
+                "无法开启行程倒计时",
+                isPresented: Binding(
+                    get: { liveActivityErrorMessage != nil },
+                    set: { if !$0 { liveActivityErrorMessage = nil } }
+                )
+            ) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(liveActivityErrorMessage ?? "")
+            }
         }
     }
 
     private var canStartLiveActivity: Bool {
         item.status == .active &&
         (item.type == .parcel || item.type == .returnParcel || item.type == .travelBooking || item.type == .event)
+    }
+
+    /// 是否走行程护航（倒计时）路径。取件类不需要出发时间。
+    private var isTravelActivity: Bool {
+        item.type == .travelBooking || item.type == .event
     }
 
     private var hasVisualCredential: Bool {
@@ -830,6 +859,10 @@ struct EditTodoSheet: View {
                 TodoNotificationManager.shared.cancelNotification(for: item.id)
             }
             LifeEventTodoLink.syncTask(for: item, in: context)
+            if !isDone {
+                // 撤销完成时回滚打卡计划（服药 / 运动），否则计划仍显示已打卡。
+                CheckInPlanSync.undoPlan(for: item, in: context)
+            }
         }
 
         applyArrivalCheck()

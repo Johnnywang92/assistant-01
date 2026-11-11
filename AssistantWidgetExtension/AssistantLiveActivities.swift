@@ -1,4 +1,5 @@
 import ActivityKit
+import AssistantCore
 import SwiftUI
 import WidgetKit
 
@@ -298,16 +299,31 @@ struct TravelLiveActivity: Widget {
 }
 
 /// 发车倒计时。用 Text(timerInterval:) 由系统驱动刷新，不额外消耗 update 预算。
+///
+/// 口径与 App / 手表同源（Core 的 `TravelCountdownPolicy`）：
+/// 不足 1 天走系统逐秒计时；超过 1 天走「还有 N 天」——
+/// 否则 timerInterval 在 3 天后会显示「72:00:00」这种没法读的巨长时分秒。
 struct TravelCountdown: View {
     let context: ActivityViewContext<TravelActivityAttributes>
     var compact: Bool = false
 
     var body: some View {
-        let range = Date.now...max(Date.now, context.state.departureDate)
-        Text(timerInterval: range, countsDown: true)
-            .font(compact ? .caption2.monospaced() : .title3.monospaced().bold())
-            .multilineTextAlignment(.trailing)
-            .frame(width: compact ? 44 : nil)
+        let departure = context.state.departureDate
+        let now = Date.now
+        if departure > now, !TravelCountdownPolicy.isImminent(departureAt: departure, now: now) {
+            Text(TravelCountdownPolicy.text(departureAt: departure, now: now))
+                .font(compact
+                    ? .system(size: 11, weight: .medium, design: .rounded)
+                    : .system(size: 20, weight: .bold, design: .rounded))
+                .multilineTextAlignment(.trailing)
+                .frame(width: compact ? 44 : nil)
+        } else {
+            let range = now...max(now, departure)
+            Text(timerInterval: range, countsDown: true)
+                .font(compact ? .caption2.monospaced() : .title3.monospaced().bold())
+                .multilineTextAlignment(.trailing)
+                .frame(width: compact ? 44 : nil)
+        }
     }
 }
 
