@@ -18,13 +18,24 @@ enum LifeEventTodoLink {
     }
 
     /// 人生大事任务完成态变化后调用：把状态推给全部镜像待办。
+    ///
+    /// 推「完成」时必须走 `markAsCompleted` 而不是直接写 `status`：
+    /// 直接写状态会漏掉三件事——撤销该待办的本地通知（→ 用户还会收到
+    /// 已经完成的待办提醒）、写完成时间、以及周期性镜像的下一期生成。
+    /// 直接改状态留下的镜像待办在列表里看着是完成了，提醒却还在响。
     static func syncMirrors(for task: LifeEventTask, in context: ModelContext) {
         let taskID = task.id
         let descriptor = FetchDescriptor<TodoItem>(predicate: #Predicate { $0.lifeEventTaskID == taskID })
         let mirrors = (try? context.fetch(descriptor)) ?? []
-        let target: TodoStatus = task.isDone ? .done : .active
-        for mirror in mirrors where mirror.status != target {
-            mirror.status = target
+        if task.isDone {
+            for mirror in mirrors where mirror.status != .done {
+                mirror.markAsCompleted(in: context)
+            }
+        } else {
+            for mirror in mirrors where mirror.status != .active {
+                mirror.status = .active
+                TodoNotificationManager.shared.scheduleNotification(for: mirror)
+            }
         }
     }
 

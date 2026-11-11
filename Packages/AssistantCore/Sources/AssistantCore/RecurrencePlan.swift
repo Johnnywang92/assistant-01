@@ -23,6 +23,11 @@ public struct RecurringTodoRecord: Hashable, Sendable {
     public var skillStageIndex: Int
     public var isSkillPractice: Bool
     public var skillPracticeMinutes: Int
+    /// 关联的人生大事任务 ID（软关联）。
+    ///
+    /// 必须随下一期一起复制：关联一旦断掉，后续各期就再也回不到人生大事项目，
+    /// 「首页勾完 = 项目任务完成」的双向联动在第二期就断了。
+    public var lifeEventTaskID: UUID?
     /// 结构化日程 JSON；nil = 存量数据走历史顺延规则，下一期也不写该字段。
     public var scheduleRaw: String?
 
@@ -45,6 +50,7 @@ public struct RecurringTodoRecord: Hashable, Sendable {
         skillStageIndex: Int,
         isSkillPractice: Bool,
         skillPracticeMinutes: Int,
+        lifeEventTaskID: UUID?,
         scheduleRaw: String?
     ) {
         self.typeRaw = typeRaw
@@ -65,6 +71,7 @@ public struct RecurringTodoRecord: Hashable, Sendable {
         self.skillStageIndex = skillStageIndex
         self.isSkillPractice = isSkillPractice
         self.skillPracticeMinutes = skillPracticeMinutes
+        self.lifeEventTaskID = lifeEventTaskID
         self.scheduleRaw = scheduleRaw
     }
 }
@@ -91,6 +98,8 @@ public struct NextOccurrenceFields: Hashable, Sendable {
     public var skillStageIndex: Int
     public var isSkillPractice: Bool
     public var skillPracticeMinutes: Int
+    /// 关联的人生大事任务 ID（软关联）；随下一期一起复制。
+    public var lifeEventTaskID: UUID?
     /// 结构化日程 JSON；nil = 存量数据走历史顺延规则，下一期也不写该字段。
     public var scheduleRaw: String?
 
@@ -113,6 +122,7 @@ public struct NextOccurrenceFields: Hashable, Sendable {
         skillStageIndex: Int,
         isSkillPractice: Bool,
         skillPracticeMinutes: Int,
+        lifeEventTaskID: UUID?,
         scheduleRaw: String?
     ) {
         self.typeRaw = typeRaw
@@ -133,6 +143,7 @@ public struct NextOccurrenceFields: Hashable, Sendable {
         self.skillStageIndex = skillStageIndex
         self.isSkillPractice = isSkillPractice
         self.skillPracticeMinutes = skillPracticeMinutes
+        self.lifeEventTaskID = lifeEventTaskID
         self.scheduleRaw = scheduleRaw
     }
 }
@@ -230,6 +241,7 @@ public enum RecurrencePlan {
             skillStageIndex: parent.skillStageIndex,
             isSkillPractice: parent.isSkillPractice,
             skillPracticeMinutes: parent.skillPracticeMinutes,
+            lifeEventTaskID: parent.lifeEventTaskID,
             scheduleRaw: nextScheduleRaw
         )
     }

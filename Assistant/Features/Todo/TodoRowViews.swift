@@ -277,6 +277,9 @@ struct TodoRow: View {
                     isAnimatingCompletion = false
                 }
                 LifeEventTodoLink.syncTask(for: item, in: context)
+                // 撤销完成时也要回滚打卡计划：否则用户撤销了「已服药 / 已运动」，
+                // 计划仍显示已打卡 → 组件与 App 对不上。
+                CheckInPlanSync.undoPlan(for: item, in: context)
                 context.saveReportingFailure { SaveFailureCenter.shared.report($0, action: "恢复待办") }
             }
         } label: {

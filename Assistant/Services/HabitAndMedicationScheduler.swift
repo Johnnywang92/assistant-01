@@ -40,11 +40,16 @@ struct HabitAndMedicationScheduler {
         // 旧实现边插边排通知、最后 `try? context.save()`，保存失败时通知与智能家居已经触发，
         // 待办却不存在。
         var newTodos: [(todo: TodoItem, habit: PeriodicHabit)] = []
+        let now = Date.now
         for habit in habits {
-            if habit.nextDueAt <= .now {
+            // 口径统一到 Core：`hasReachedDueTime`（到点了没）用于调度，
+            // 与展示用的 `isHabitDueToday`（今天该不该打）是两个不同问题。
+            if MedicationHabitDoseResolver.hasReachedDueTime(nextDueAt: habit.nextDueAt, now: now) {
                 let exercise = TodoType.exercise.rawValue
                 let active = TodoStatus.active.rawValue
-                let title = "运动：\(habit.title)"
+                // 标题格式取 Core 单一真源（生成端与匹配端共用），
+                // 避免两边各写一份字面量后漂移 → 打卡了但待办没完成。
+                let title = CheckInTodoLink.habitTodoTitle(habitName: habit.title)
 
                 // 查重：避免同一家务重复生成未完成的待办
                 let existing = (try? context.fetch(FetchDescriptor<TodoItem>(

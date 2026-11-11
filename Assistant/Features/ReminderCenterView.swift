@@ -71,7 +71,11 @@ struct ReminderCenterView: View {
     private func makeLifeReminder(kind: LifeReminderKind, sourceID: UUID, date: Date, title: String, detail: String, icon: String) -> LifeReminder {
         let action = LifeReminderActionStore.action(kind: kind, sourceID: sourceID, occurrenceDate: date, in: context)
         return LifeReminder(kind: kind, sourceID: sourceID, occurrenceDate: date, id: "\(kind.rawValue)-\(sourceID.uuidString)-\(date.timeIntervalSince1970)", title: title, date: date, detail: detail, icon: icon, snoozedUntil: action?.snoozedUntil, isCompleted: action?.isCompleted ?? false, onComplete: {
-            if kind == .habit, let habit = habits.first(where: { $0.id == sourceID }) { habit.completeOnce() }
+            if kind == .habit, let habit = habits.first(where: { $0.id == sourceID }) {
+                // 习惯打卡要连首页那条运动待办一起完成：
+                // 只推进计划的话，首页待办还挂着 → 用户看到「打卡了但待办没完成」。
+                CheckInPlanSync.completeHabit(habit: habit, in: context)
+            }
             // 返回 false = 落库失败（已回滚 + 全局失败横幅），不能播成功触感/推进 revision。
             guard LifeReminderActionStore.complete(kind: kind, sourceID: sourceID, occurrenceDate: date, in: context) else {
                 Haptic.error()

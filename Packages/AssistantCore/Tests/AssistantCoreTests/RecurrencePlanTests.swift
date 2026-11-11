@@ -36,6 +36,7 @@ final class RecurrencePlanTests: XCTestCase {
         skillStageIndex: Int = 0,
         isSkillPractice: Bool = false,
         skillPracticeMinutes: Int = 0,
+        lifeEventTaskID: UUID? = nil,
         scheduleRaw: String? = nil
     ) -> RecurringTodoRecord {
         RecurringTodoRecord(
@@ -57,6 +58,7 @@ final class RecurrencePlanTests: XCTestCase {
             skillStageIndex: skillStageIndex,
             isSkillPractice: isSkillPractice,
             skillPracticeMinutes: skillPracticeMinutes,
+            lifeEventTaskID: lifeEventTaskID,
             scheduleRaw: scheduleRaw
         )
     }
@@ -192,6 +194,27 @@ final class RecurrencePlanTests: XCTestCase {
         XCTAssertEqual(fields.skillPracticeMinutes, 45)
     }
 
+    /// 人生大事软关联必须随下一期一起复制。
+    ///
+    /// 断一次的后果：第二期起待办不再挂在项目任务下，
+    /// 「首页勾完 = 项目任务完成」的双向联动中途失效——项目进度永远停在第一期。
+    func testLifeEventAssociationCarriedToNextOccurrence() throws {
+        let taskID = UUID()
+        let fields = try XCTUnwrap(nextFields(from: makeRecord(
+            dueAt: reference + 3600,
+            recurrenceRuleRaw: TodoRecurrenceRule.daily.rawValue,
+            lifeEventTaskID: taskID)))
+        XCTAssertEqual(fields.lifeEventTaskID, taskID)
+    }
+
+    /// 存量待办（没有人生大事关联）下一期也必须保持 nil，不能凭空造出关联。
+    func testLegacyRecordWithoutLifeEventLinkKeepsNil() throws {
+        let fields = try XCTUnwrap(nextFields(from: makeRecord(
+            dueAt: reference + 3600,
+            recurrenceRuleRaw: TodoRecurrenceRule.daily.rawValue)))
+        XCTAssertNil(fields.lifeEventTaskID, "存量数据不应凭空多出人生大事关联")
+    }
+
     // MARK: - 字段完整性纪律
 
     /// 纪律测试（同 SettingsSnapshot 白名单先例）：
@@ -206,16 +229,22 @@ final class RecurrencePlanTests: XCTestCase {
         let outputNames = Set(Swift.Mirror(reflecting: fields).children.compactMap { $0.label })
 
         XCTAssertFalse(recordNames.isEmpty, "待复制字段集合不应为空")
-        XCTAssertEqual(recordNames.count, 19, "母记录快照应有 19 个字段；新增字段请同时更新显式清单与本断言")
+        XCTAssertEqual(recordNames.count, 20, "母记录快照应有 20 个字段；新增字段请同时更新显式清单与本断言")
 
         let skillManifest: Set<String> = ["skillPathID", "skillStageIndex", "isSkillPractice", "skillPracticeMinutes"]
         XCTAssertTrue(skillManifest.isSubset(of: recordNames), "母记录必须携带技能路径四项: \(recordNames)")
         XCTAssertTrue(skillManifest.isSubset(of: outputNames), "下一期输出必须携带技能路径四项: \(outputNames)")
 
+        // 人生大事软关联同属「关联不能丢」纪律：断一次，后续各期就再也回不到项目。
+        let lifeEventManifest: Set<String> = ["lifeEventTaskID"]
+        XCTAssertTrue(lifeEventManifest.isSubset(of: recordNames), "母记录必须携带人生大事关联: \(recordNames)")
+        XCTAssertTrue(lifeEventManifest.isSubset(of: outputNames), "下一期输出必须携带人生大事关联: \(outputNames)")
+
         let explicitManifest: Set<String> = [
             "typeRaw", "statusRaw", "title", "detail", "pickupCode", "courier", "station", "location",
             "dueAt", "sourceText", "sortOrder", "recurrenceRuleRaw", "recurrenceIntervalDays",
             "remindBeforeMinutes", "skillPathID", "skillStageIndex", "isSkillPractice", "skillPracticeMinutes",
+            "lifeEventTaskID",
             "scheduleRaw"
         ]
         XCTAssertEqual(recordNames, explicitManifest, "待复制字段清单发生变化，请确认 app 侧 TodoItem 与输出结构同步更新")
