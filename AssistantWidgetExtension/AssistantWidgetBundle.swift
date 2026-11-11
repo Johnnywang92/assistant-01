@@ -5,6 +5,11 @@ import SwiftUI
 @main
 struct AssistantWidgetBundle: WidgetBundle {
     var body: some Widget {
+        HomeOverviewWidget()
+        AnniversaryCountdownWidget()
+        TravelCountdownWidget()
+        DepartureChecklistWidget()
+        MedicationHabitWidget()
         TodayTodosWidget()
         ParcelGlanceWidget()
         PickupLiveActivity()
