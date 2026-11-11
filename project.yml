@@ -258,6 +258,32 @@ targets:
             CFBundleURLSchemes:
               - assistant
 
+  # App 层单元测试。
+  #
+  # 之前 App 层没有测试 target，验收条目只存在于文档里，无法自动回归。
+  # 现在把「App 层独有职责」钉成测试：
+  # - SwiftData 模型 → Core 纯值事实的映射（Core 单测覆盖不到）；
+  # - 横幅文案 / 提示色 / 可关闭性 / 分组标题的映射；
+  # - 首页主题令牌（字号层级、圆角档位）与设计规格的一致性。
+  #
+  # 用 `@testable import Assistant` 访问内部类型，因此依赖 Assistant target。
+  # 注意：llama.xcframework 含模拟器切片（arm64 + x86_64），测试可在模拟器跑。
+  AssistantTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: AssistantTests
+    dependencies:
+      - target: Assistant
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${BUNDLE_ID}.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        BUNDLE_LOADER: $(TEST_HOST)
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Assistant.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Assistant
+        SWIFT_VERSION: "5.0"
+
 schemes:
   Assistant:
     build:
@@ -266,6 +292,7 @@ schemes:
         AssistantWidgetExtension: all
         AssistantShareExtension: all
         AssistantWatch: all
+        AssistantTests: [test]
     run:
       config: Debug
   AssistantWatch:
@@ -274,3 +301,13 @@ schemes:
         AssistantWatch: all
     run:
       config: Debug
+  # 单独跑 App 层测试：xcodebuild test -scheme AssistantTests
+  AssistantTests:
+    build:
+      targets:
+        Assistant: all
+        AssistantTests: [test]
+    test:
+      config: Debug
+      targets:
+        - AssistantTests
