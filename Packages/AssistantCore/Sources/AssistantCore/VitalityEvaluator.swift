@@ -162,11 +162,24 @@ public enum VitalityEvaluator {
     /// - Parameters:
     ///   - snapshot: Apple 健康当日快照（可包含睡眠、体温、能量、健身、心率等）
     ///   - foodIntakeCalories: 当日食物照片或手动录入推测的摄入热量（千卡）
+    ///   - profile: 身体档案上下文（身高/年龄/体重/手动体征）。`nil` 时行为与
+    ///     接入档案前完全一致：能量阈值走历史常量、不产生任何修正分。
     public static func evaluate(
         snapshot: HealthDaySnapshot?,
-        foodIntakeCalories: Double?
+        foodIntakeCalories: Double?,
+        profile: BodyProfileContext? = nil
     ) -> VitalityEvaluation {
         var score: Double = 65.0 // 基准分
+
+        // 身体档案修正：只用「相对本人基线的波动幅度」，不对数值下医学结论。
+        let adjustment = BodyProfileModifier.evaluate(profile)
+        // 有档案时能量收支阈值按本人基础代谢缩放；无档案时原样返回历史常量。
+        let thresholds = BodyMetabolism.energyThresholds(
+            referenceEnergyKcal: profile?.referenceEnergyKcal
+        )
+        let intakeBand = BodyMetabolism.intakeBand(
+            referenceEnergyKcal: profile?.referenceEnergyKcal
+        )
 
         // 1. 睡眠维度（-16 ~ +15）
         let sleepHours = snapshot?.sleepHours
@@ -238,7 +251,7 @@ public enum VitalityEvaluator {
         if let intake = foodIntakeCalories {
             if let burned {
                 let diff = intake - burned
-                if abs(diff) <= 250 {
+                if abs(diff) <= thresholds.balanced {
                     energyDelta = 15.0
                     energyHighlight = VitalityHighlight(
                         icon: "flame.fill",
@@ -247,7 +260,7 @@ public enum VitalityEvaluator {
                         statusText: "收支基本平衡",
                         isPositive: true
                     )
-                } else if diff >= -600 && diff < -250 {
+                } else if diff >= -thresholds.deficit && diff < -thresholds.balanced {
                     energyDelta = 10.0
                     energyHighlight = VitalityHighlight(
                         icon: "flame.fill",
@@ -256,7 +269,7 @@ public enum VitalityEvaluator {
                         statusText: "适度燃脂状态",
                         isPositive: true
                     )
-                } else if diff > 250 && diff <= 550 {
+                } else if diff > thresholds.balanced && diff <= thresholds.surplus {
                     energyDelta = 8.0
                     energyHighlight = VitalityHighlight(
                         icon: "flame.fill",
@@ -265,7 +278,7 @@ public enum VitalityEvaluator {
                         statusText: "体能储备充沛",
                         isPositive: true
                     )
-                } else if diff < -800 {
+                } else if diff < -thresholds.heavy {
                     energyDelta = -10.0
                     energyHighlight = VitalityHighlight(
                         icon: "flame.fill",
@@ -274,7 +287,7 @@ public enum VitalityEvaluator {
                         statusText: "热量缺口偏大",
                         isPositive: false
                     )
-                } else if diff > 800 {
+                } else if diff > thresholds.heavy {
                     energyDelta = -8.0
                     energyHighlight = VitalityHighlight(
                         icon: "flame.fill",
@@ -294,7 +307,18 @@ public enum VitalityEvaluator {
                     )
                 }
             } else {
-                if intake >= 1200 && intake <= 2400 {
+                // 没有「身体耗能」数据时的摄入带：有档案按本人 BMR 参考缩放，
+                // 无档案沿用历史常量（保证既有分数一字不变）。
+                let adequate: Bool
+                let tooLow: Bool
+                if let band = intakeBand {
+                    adequate = intake >= band.lower && intake <= band.upper
+                    tooLow = intake < band.tooLow
+                } else {
+                    adequate = intake >= 1200 && intake <= 2400
+                    tooLow = intake < 800
+                }
+                if adequate {
                     energyDelta = 8.0
                     energyHighlight = VitalityHighlight(
                         icon: "fork.knife",
@@ -303,7 +327,7 @@ public enum VitalityEvaluator {
                         statusText: "热量摄入适度",
                         isPositive: true
                     )
-                } else if intake < 800 {
+                } else if tooLow {
                     energyDelta = -6.0
                     energyHighlight = VitalityHighlight(
                         icon: "fork.knife",
@@ -448,8 +472,8 @@ public enum VitalityEvaluator {
             )
         }
 
-        // 汇总总分
-        score += (sleepDelta + energyDelta + activityDelta + vitalsDelta)
+        // 汇总总分。身体档案是有界修正项，不会盖过睡眠 / 能量 / 活动等客观主导项。
+        score += (sleepDelta + energyDelta + activityDelta + vitalsDelta + adjustment.vitalityDelta)
         let finalScore = min(max(Int(score.rounded()), 10), 100)
 
         // 评定等级
@@ -472,6 +496,17 @@ public enum VitalityEvaluator {
         if let sleepHighlight { highlights.append(sleepHighlight) }
         if let activityHighlight { highlights.append(activityHighlight) }
         if let vitalsHighlight { highlights.append(vitalsHighlight) }
+        // 档案修正项透明可见：用户能看到分数为什么变了，且措辞只说「波动」不做好坏判断。
+        if adjustment.hasUsableData {
+            let stable = BodyProfileModifier.isStable(adjustment)
+            highlights.append(VitalityHighlight(
+                icon: "waveform.path.ecg",
+                title: "身体档案",
+                valueText: "\(adjustment.factors.count) 项体征 · 对照本人基线",
+                statusText: stable ? "近期较平时平稳" : "近期较平时有波动",
+                isPositive: stable
+            ))
+        }
 
         // 生成精简提炼总结与建议
         let summary: String

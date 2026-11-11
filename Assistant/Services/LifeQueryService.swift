@@ -147,7 +147,8 @@ enum LifeQueryService {
             let snapshot = latest.toSnapshot()
             let score = VitalityEvaluator.evaluate(
                 snapshot: snapshot,
-                foodIntakeCalories: foodCaloriesByDay(from: interval.start, to: interval.end, calendar: calendar, context: context)[calendar.startOfDay(for: latest.day)]
+                foodIntakeCalories: foodCaloriesByDay(from: interval.start, to: interval.end, calendar: calendar, context: context)[calendar.startOfDay(for: latest.day)],
+                profile: BodyProfileContextProvider.shared.context(asOf: latest.day, calendar: calendar)
             ).score
             return QueryAnswerBuilder.healthSummary(
                 rangeLabel: insight.timeRange.displayLabel,
@@ -180,7 +181,10 @@ enum LifeQueryService {
             let snapshot = record.toSnapshot()
             let score = VitalityEvaluator.evaluate(
                 snapshot: snapshot,
-                foodIntakeCalories: calories[day]
+                foodIntakeCalories: calories[day],
+                // 逐日回溯：只用该日当时已存在的体征记录，不把今天量的血压
+                // 套到两个月前。档案缺失的历史日自然得到中性修正。
+                profile: BodyProfileContextProvider.shared.context(asOf: day, calendar: calendar)
             ).score
             return TrendAnalytics.HealthEntry(
                 date: record.day,

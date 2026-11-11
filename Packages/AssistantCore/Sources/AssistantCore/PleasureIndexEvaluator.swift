@@ -221,19 +221,27 @@ public enum PleasureIndexEvaluator {
     ///   - baseline: 个人动态基线（若为 nil 则采用标准经验基线）
     ///   - recentMoodEntries: 近期情绪微记录（可选，融合真实情绪表达）
     ///   - recentScaleScores: 近期心理量表筛查结果（可选，PHQ-9/GAD-7）
+    ///   - profile: 身体档案上下文。`nil` 时行为与接入档案前完全一致；
+    ///     非 nil 时即使没有手环数据，手动体征的「相对本人基线波动」也会参与，
+    ///     因此 HealthKit 读不到数据的用户仍能得到一个有依据的修正。
     public static func evaluate(
         snapshot: HealthDaySnapshot?,
         baseline: HealthBaseline = .standard,
         recentMoodEntries: [MoodCheckInEntry] = [],
-        recentScaleScores: [PsychScaleScore] = []
+        recentScaleScores: [PsychScaleScore] = [],
+        profile: BodyProfileContext? = nil
     ) -> PleasureIndexEvaluation {
+        // 身体档案修正：与活力指数共用同一个 Core 引擎，保证两卡口径一致。
+        let bodyAdjustment = BodyProfileModifier.evaluate(profile)
+
         // 1. 无生理数据时的保底稳健处理（若有心理状态，融合心理维度推断）
         guard let snapshot, snapshot.readState == .hasData else {
             return defaultEvaluation(
                 baseline: baseline,
                 reason: "尚无足够手环生理数据，保持作息规律，佩戴手环入睡后将自动生成精准指数。",
                 recentMoodEntries: recentMoodEntries,
-                recentScaleScores: recentScaleScores
+                recentScaleScores: recentScaleScores,
+                bodyAdjustment: bodyAdjustment
             )
         }
 
@@ -264,6 +272,9 @@ public enum PleasureIndexEvaluator {
         if let psychDetail = psychModifier.detailMetric {
             details.append(psychDetail)
         }
+        if let bodyDetail = bodyProfileDetail(bodyAdjustment) {
+            details.append(bodyDetail)
+        }
 
         // 6. 综合加权计算「愉悦指数」
         // 若同时有自律神经与睡眠：权重 45% 自主神经 + 45% 睡眠储备 + 10% 活动激活
@@ -282,10 +293,10 @@ public enum PleasureIndexEvaluator {
             baseScore = (Double(autonomicScore) * 0.50) + (Double(sleepScore) * 0.30) + (Double(activityScore) * 0.20)
         }
 
-        // 融合心理状态修正分（范围 -15 ~ +10）
-        let finalScore = baseScore + psychModifier.pleasureOffset
-        // 压力指数相应受心理压力反馈微调（范围 -8 ~ +12）
-        let finalStress = min(max(stressScore + psychModifier.stressOffset, 0), 100)
+        // 融合心理状态与身体档案修正分（各自有界，合计不超过 ±20 分）
+        let finalScore = baseScore + psychModifier.pleasureOffset + bodyAdjustment.pleasureDelta
+        // 压力指数相应受心理压力反馈与体征波动微调
+        let finalStress = min(max(stressScore + psychModifier.stressOffset + bodyAdjustment.stressDelta, 0), 100)
 
         let clampedPleasure = min(max(Int(finalScore.rounded()), 0), 100)
         let state = pleasureState(for: clampedPleasure)
@@ -634,23 +645,47 @@ public enum PleasureIndexEvaluator {
         )
     }
 
+    /// 身体档案明细。措辞只描述「与本人平时相比是否平稳」，
+    /// 不对血压 / 血糖等数值本身下任何结论。
+    private static func bodyProfileDetail(
+        _ adjustment: BodyProfileAdjustment
+    ) -> PleasureDetailMetric? {
+        guard adjustment.hasUsableData else { return nil }
+        let stable = BodyProfileModifier.isStable(adjustment)
+        return PleasureDetailMetric(
+            title: "身体档案",
+            valueText: "\(adjustment.factors.count) 项体征 · 对照本人基线",
+            statusText: stable ? "近期较平时平稳" : "近期较平时有波动",
+            isPositive: stable
+        )
+    }
+
     private static func defaultEvaluation(
         baseline: HealthBaseline,
         reason: String,
         recentMoodEntries: [MoodCheckInEntry] = [],
-        recentScaleScores: [PsychScaleScore] = []
+        recentScaleScores: [PsychScaleScore] = [],
+        bodyAdjustment: BodyProfileAdjustment = .neutral
     ) -> PleasureIndexEvaluation {
         let modifier = calculatePsychModifier(
             recentMoodEntries: recentMoodEntries,
             recentScaleScores: recentScaleScores
         )
-        let score = min(max(70 + Int(modifier.pleasureOffset.rounded()), 0), 100)
-        let stress = min(max(30 + modifier.stressOffset, 0), 100)
+        // 分别取整再相加，保持与接入档案前完全一致的舍入口径
+        // （先加再取整在负修正时会产生 1 分偏差）。
+        let score = min(max(
+            70 + Int(modifier.pleasureOffset.rounded()) + Int(bodyAdjustment.pleasureDelta.rounded()),
+            0
+        ), 100)
+        let stress = min(max(30 + modifier.stressOffset + bodyAdjustment.stressDelta, 0), 100)
         let state = pleasureState(for: score)
         let stressLvl = stressLevel(for: stress)
 
         var details: [PleasureDetailMetric] = []
         if let metric = modifier.detailMetric {
+            details.append(metric)
+        }
+        if let metric = bodyProfileDetail(bodyAdjustment) {
             details.append(metric)
         }
 

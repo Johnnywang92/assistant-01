@@ -19,6 +19,12 @@ struct HealthDataView: View {
     @ObservedObject private var sleepScheduler = SleepReminderScheduler.shared
     @Query(sort: \FoodIntakeRecord.date, order: .reverse) private var foodRecords: [FoodIntakeRecord]
     @Query(sort: \WaterIntakeRecord.date, order: .reverse) private var waterRecords: [WaterIntakeRecord]
+    /// 身体档案是**手动记录**，与 Apple 健康授权状态无关：
+    /// 即便 HealthKit 读不到任何数据，用户也应该能记身高体重血压。
+    /// 用项目既有的 `@Query(sort:order:)` 写法；不设时间窗口与 fetchLimit，
+    /// 因为摘要要取真正最近的一条，且这是用户手动录入的小表（不是待办大表）。
+    @Query(sort: \BodyVitalRecord.measuredAt, order: .reverse)
+    private var vitalRecords: [BodyVitalRecord]
     @Environment(\.scenePhase) private var scenePhase
     @State private var isVitalitySuggestionExpanded = false
     @State private var isPleasureAdviceExpanded = true
@@ -57,9 +63,19 @@ struct HealthDataView: View {
         return today.reduce(0.0) { $0 + $1.effectiveHydrationML }
     }
 
+    /// 身体档案派生的个人化参考（身高 / 体重 / 年龄 → BMI、基础代谢、补水与热量）。
+    /// Provider 带短 TTL 缓存，body 求值不会触发 SwiftData fetch。
+    private var bodyProfile: BodyProfileContext? {
+        BodyProfileContextProvider.shared.context()
+    }
+
     private var vitalityEvaluation: VitalityEvaluation? {
         guard health.snapshot?.readState == .hasData || todayFoodCalories != nil else { return nil }
-        return VitalityEvaluator.evaluate(snapshot: health.snapshot, foodIntakeCalories: todayFoodCalories)
+        return VitalityEvaluator.evaluate(
+            snapshot: health.snapshot,
+            foodIntakeCalories: todayFoodCalories,
+            profile: bodyProfile
+        )
     }
 
     /// 近 N 天饮食摄入趋势（纯函数聚合在 AssistantCore.TrendAnalytics）
@@ -84,8 +100,15 @@ struct HealthDataView: View {
                 if sleepScheduler.isEnabled, HealthKitService.isAvailable {
                     sleepTonightCard
                 }
+                bodyMetricsEntryCard
                 waterTrackerEntryCard
                 foodCalorieEntryCard
+                if bodyProfile != nil {
+                    Text("以上参考值按身高、体重、年龄与基础代谢公式估算，仅用于调整目标时参考，不构成医疗建议；指数也不对身体数值作分级解读。")
+                        .font(.caption2)
+                        .foregroundStyle(AppColor.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 DietTrendCard(trend: dietTrend, dayCount: $dietTrendDays)
                 if !HealthKitService.isAvailable {
                     unavailableCard
@@ -150,6 +173,64 @@ struct HealthDataView: View {
         await sleepScheduler.syncSleepReminders()
     }
 
+    // MARK: - 身体档案入口（手动记录，不依赖 HealthKit 授权）
+
+    /// 摘要只用「最近一次记录」这一条，不做全表聚合。
+    /// 没有记录时给引导文案，不显示「0 项」这种看似精确的假值。
+    private var bodyMetricsEntryCard: some View {
+        let latest = vitalRecords.first
+        let summary: String = {
+            guard let latest else { return "记录身高、体重、出生日期与血压 · 自动生成 BMI 与趋势" }
+            let fields = BodyMetricField.allCases.filter { latest.metricValues[$0] != nil }
+            guard let first = fields.first, let value = latest.metricValues[first] else {
+                return "已有一条记录 · 可继续补充数值"
+            }
+            let leading = "\(BodyMetricDisplay.name(first)) \(BodyMetricCalculator.display(value, field: first))\(first.unit)"
+            let more = fields.count > 1 ? " 等 \(fields.count) 项" : ""
+            return "最近记录：\(leading)\(more)"
+        }()
+        let derived: String? = {
+            guard let profile = bodyProfile else { return nil }
+            var parts: [String] = []
+            if let bmi = profile.bmi { parts.append("BMI \(BodyMetricCalculator.displayBMI(bmi))") }
+            if let bmr = profile.bmrKcal { parts.append("基础代谢约 \(Int(bmr.rounded())) 千卡") }
+            guard !parts.isEmpty else { return nil }
+            return "按身高体重年龄：\(parts.joined(separator: " · "))"
+        }()
+
+        return NavigationLink {
+            BodyMetricsView()
+        } label: {
+            HStack(spacing: AppSpacing.sm) {
+                Image(systemName: "person.text.rectangle.fill")
+                    .font(.title2)
+                    .foregroundStyle(AppColor.feature)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("身体档案与体征记录")
+                        .font(.headline)
+                        .foregroundStyle(AppColor.text)
+                    Text(summary)
+                        .font(.caption)
+                        .foregroundStyle(AppColor.secondaryText)
+                        .lineLimit(2)
+                    if let derived {
+                        Text(derived)
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.feature)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(AppColor.secondaryText)
+            }
+            .padding(AppSpacing.md)
+            .appCard()
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - 喝水记录与折算入口卡
 
     private var waterTrackerEntryCard: some View {
@@ -157,6 +238,10 @@ struct HealthDataView: View {
         let today = waterRecords.filter { cal.isDateInToday($0.date) }
         let effectiveWater = Int(today.reduce(0.0) { $0 + $1.effectiveHydrationML }.rounded())
         let goal = Int(dailyWaterGoalML > 0 ? dailyWaterGoalML : AppSettings.dailyWaterGoalML)
+        // 只展示参考值，绝不覆盖用户显式设置的目标。
+        let reference: String? = bodyProfile?.referenceWaterML.map {
+            "按体重参考约 \(Int($0.rounded())) ml/天 · 当前目标 \(goal) ml"
+        }
 
         return NavigationLink {
             WaterTrackerView()
@@ -174,6 +259,12 @@ struct HealthDataView: View {
                          : "今日已记 \(today.count) 次 · 补水 \(effectiveWater)/\(goal) ml (\(Int(Double(effectiveWater) / Double(max(goal, 1)) * 100))%)")
                         .font(.caption)
                         .foregroundStyle(AppColor.secondaryText)
+                    if let reference {
+                        Text(reference)
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.feature)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -193,6 +284,10 @@ struct HealthDataView: View {
         let today = foodRecords.filter { cal.isDateInToday($0.date) }
         let totalCalories = Int(today.reduce(0.0) { $0 + $1.consumedCalories }.rounded())
         let goal = Int((dailyCalorieGoal > 0 ? dailyCalorieGoal : AppSettings.dailyCalorieGoalKcal).rounded())
+        // 基础代谢 × 轻体力活动系数得到的参考消耗，只作展示，不覆盖用户目标。
+        let reference: String? = bodyProfile?.referenceEnergyKcal.map {
+            "按身高体重年龄参考约 \(Int($0.rounded())) 千卡/天 · 当前目标 \(goal) 千卡"
+        }
 
         return NavigationLink {
             FoodPhotoCalorieView()
@@ -210,6 +305,12 @@ struct HealthDataView: View {
                          : "今日已记 \(today.count) 餐 · 共摄入约 \(totalCalories)/\(goal) 千卡")
                         .font(.caption)
                         .foregroundStyle(AppColor.secondaryText)
+                    if let reference {
+                        Text(reference)
+                            .font(.caption2)
+                            .foregroundStyle(AppColor.feature)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
                 Image(systemName: "chevron.right")

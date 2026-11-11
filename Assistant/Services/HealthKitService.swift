@@ -34,6 +34,22 @@ final class HealthKitService: ObservableObject {
     @Published private(set) var userBaseline: HealthBaseline = .standard
     /// 综合推断的愉悦指数评估报告
     @Published private(set) var pleasureEvaluation: PleasureIndexEvaluation?
+    /// 身体档案 / 体征记录变更后重算愉悦指数。
+    ///
+    /// 该指数是本服务的 `@Published` 结果，而档案编辑发生在另一个页面；
+    /// 不主动重算的话，健康页那张卡会一直显示旧档案算出的分数，
+    /// 直到用户下次回前台触发手环刷新——看起来就像「改了没反应」。
+    ///
+    /// 只在**已经展示过该卡**时重算：完全没有手环数据时不应凭空造出一张指数卡。
+    func refreshPleasureWithCurrentProfile() {
+        guard pleasureEvaluation != nil else { return }
+        pleasureEvaluation = PleasureIndexEvaluator.evaluate(
+            snapshot: snapshot,
+            baseline: userBaseline,
+            profile: BodyProfileContextProvider.shared.context()
+        )
+    }
+
     /// 拉取失败时的可诊断描述（面向开发者，不直接展示给用户）。
     @Published private(set) var lastError: String?
     /// 是否正在拉取。
@@ -72,6 +88,12 @@ final class HealthKitService: ObservableObject {
     private init() {
         self.hasRequestedAuthorization = UserDefaults.standard.bool(forKey: Self.keyHasRequestedAuth)
         self.hasEverConnected = UserDefaults.standard.bool(forKey: Self.keyHasEverConnected)
+        // 身体档案变更后立即重算已展示的愉悦指数卡。
+        // 放在 restoreLatestSnapshotFromStorage 之前，保证恢复出的评估也会被后续
+        // 的 invalidate() 正确刷新；弱引用避免两个单例互相持有。
+        BodyProfileContextProvider.shared.registerReevaluationHook { [weak self] in
+            self?.refreshPleasureWithCurrentProfile()
+        }
         restoreLatestSnapshotFromStorage()
     }
 
@@ -92,7 +114,11 @@ final class HealthKitService: ObservableObject {
                 self.snapshot = snap
                 self.hasEverConnected = true
                 self.hasRequestedAuthorization = true
-                self.pleasureEvaluation = PleasureIndexEvaluator.evaluate(snapshot: snap, baseline: self.userBaseline)
+                self.pleasureEvaluation = PleasureIndexEvaluator.evaluate(
+                    snapshot: snap,
+                    baseline: self.userBaseline,
+                    profile: BodyProfileContextProvider.shared.context()
+                )
                 return
             }
         }
@@ -332,7 +358,11 @@ final class HealthKitService: ObservableObject {
         // 异步更新 14 天基线并推断愉悦指数
         let baseline = await fetchBaseline()
         if let current = snapshot {
-            pleasureEvaluation = PleasureIndexEvaluator.evaluate(snapshot: current, baseline: baseline)
+            pleasureEvaluation = PleasureIndexEvaluator.evaluate(
+                snapshot: current,
+                baseline: baseline,
+                profile: BodyProfileContextProvider.shared.context()
+            )
         }
 
         // 保留子查询记录的错误描述：整次刷新成功不代表每个指标都成功

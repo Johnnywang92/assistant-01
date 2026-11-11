@@ -750,7 +750,11 @@ final class PeriodicReportManager: ObservableObject {
         // 日报优先读取健康快照（如果是今天，优先使用 HealthKitService.shared.snapshot）
         let healthSnapshot: HealthDaySnapshot? = period == .daily ? HealthKitService.shared.snapshot : nil
         let vitality: VitalityEvaluation? = (healthSnapshot != nil || foodIntakeCalories != nil)
-            ? VitalityEvaluator.evaluate(snapshot: healthSnapshot, foodIntakeCalories: foodIntakeCalories)
+            ? VitalityEvaluator.evaluate(
+                snapshot: healthSnapshot,
+                foodIntakeCalories: foodIntakeCalories,
+                profile: BodyProfileContextProvider.shared.context(asOf: targetDate, calendar: cal)
+            )
             : nil
 
         // 4.6 趋势与变化分析（周/月/季/年报）：回溯多期数据，交给 Core 的纯函数算趋势

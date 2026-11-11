@@ -47,8 +47,12 @@ CORE_SRC = ROOT / "Packages/AssistantCore/Sources/AssistantCore"
 CORE_OUT = pathlib.Path("/tmp/psych-typecheck/ioscore")
 
 # 视图依赖但不属于心理模块的 Core 文件。
+# BodyProfileContext / BodyMetrics 是身体档案参与指数计算的单一真源，
+# PleasureIndexEvaluator 直接引用其中的类型，漏掉会报「cannot find type in scope」。
 CORE_EXTRA = [
     "PleasureIndexEvaluator.swift",
+    "BodyProfileContext.swift",
+    "BodyMetrics.swift",
     "SettingsSnapshot.swift",
     "ExpenseCurrency.swift",
     "AmountFormatter.swift",
