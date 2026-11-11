@@ -1030,25 +1030,40 @@ enum MedicineStockHelper {
         // 2. 联动更新同名的 MedicationPlan 打卡状态
         let targetName = medicine.name
         let planDescriptor = FetchDescriptor<MedicationPlan>(predicate: #Predicate { $0.medName == targetName })
+        var planTimePoints: [String] = []
         if let plans = try? context.fetch(planDescriptor) {
             for plan in plans {
                 plan.markTaken()
+                planTimePoints.append(contentsOf: plan.dailyTimePoints)
             }
         }
 
         // 3. 联动完成今日待办列表中的同名服药任务（取最早一条未完成的）
+        //
+        // **精确匹配**（标题全等），不用 `contains(targetName)`：药名可能互为子串
+        // （「维生素D」⊂「维生素D3」），用 contains 会完成另一种药的待办 → 漏服。
         let activeRaw = TodoStatus.active.rawValue
         let medTypeRaw = TodoType.medication.rawValue
         let todoDescriptor = FetchDescriptor<TodoItem>(
             predicate: #Predicate { $0.typeRaw == medTypeRaw && $0.statusRaw == activeRaw }
         )
-        if let activeMedTodos = try? context.fetch(todoDescriptor) {
+        if let activeMedTodos = try? context.fetch(todoDescriptor), !planTimePoints.isEmpty {
+            // 标题格式与 `MedicationTodoMaterializer.todoTitle` 一致。
+            let slotTitles = Set(MedicationTodoMaterializer.slotTitles(
+                medName: targetName,
+                dailyTimePoints: planTimePoints,
+                on: .now,
+                calendar: .current
+            ))
             let matching = activeMedTodos
-                .filter { $0.title.contains(targetName) }
+                .filter { slotTitles.contains($0.title) }
                 .sorted { ($0.dueAt ?? .distantFuture) < ($1.dueAt ?? .distantFuture) }
             if let firstTodo = matching.first {
-                firstTodo.status = .done
-                firstTodo.completedAt = .now
+                // 走 `markAsCompleted` 而不是直接写 status：直接写会漏掉
+                // ①撤销这条待办的本地通知（→ 用户还会收到已完成的服药提醒）
+                // ②写完成时间（漏服检测与「今日已服」判定都依赖它）
+                // ③把打卡状态回流到关联的用药计划（反向链路）。
+                firstTodo.markAsCompleted(in: context)
             }
         }
 

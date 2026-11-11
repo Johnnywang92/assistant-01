@@ -28,6 +28,38 @@ public enum MedicationTodoMaterializer {
         return parts.count == 2 && (0...23).contains(parts[0]) && (0...59).contains(parts[1])
     }
 
+    /// 从物化标题反解析药名：「服药：维生素D（08:00）」→ "维生素D"。
+    ///
+    /// ## 为什么需要反解析
+    ///
+    /// 服药待办是系统**自动生成并关联**到用药计划上的。用户直接在待办上
+    /// 勾完成时，关联计划的状态必须跟着变，否则「待办完成了，计划的今日状态
+    /// 却还显示待服」，用户以为按钮没生效。
+    ///
+    /// 反解析必须与 `todoTitle` 严格对称：解析不出来一律返回 nil，
+    /// **宁可漏联动也不能错联动**（药名可能互为子串：「维生素D」⊂「维生素D3」，
+    /// 错解析会让一种药认领另一种药的待办 → 漏服）。
+    public static func medName(fromMaterializedTitle title: String) -> String? {
+        guard isMaterializedTitle(title),
+              let openRange = title.range(of: "（", options: .backwards) else { return nil }
+        let start = title.index(title.startIndex, offsetBy: 3) // 「服药：」三个字符
+        let name = String(title[start..<openRange.lowerBound])
+            .trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
+    }
+
+    /// 从物化标题反解析时点：「服药：维生素D（08:00）」→ "08:00"。
+    ///
+    /// 与 `medName(fromMaterializedTitle:)` 同源同规则：解析不出来返回 nil。
+    public static func timePoint(fromMaterializedTitle title: String) -> String? {
+        guard isMaterializedTitle(title),
+              let openRange = title.range(of: "（", options: .backwards) else { return nil }
+        let timeStr = String(title[openRange.upperBound..<title.index(before: title.endIndex)])
+        let parts = timeStr.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2, (0...23).contains(parts[0]), (0...59).contains(parts[1]) else { return nil }
+        return String(format: "%02d:%02d", parts[0], parts[1])
+    }
+
     /// 解析 "HH:mm" 为指定日期当天的具体时刻；非法时点返回 nil。
     public static func dueDate(timePoint: String, on day: Date, calendar: Calendar = .current) -> Date? {
         let parts = timePoint.split(separator: ":").compactMap { Int($0) }
@@ -72,5 +104,32 @@ public enum MedicationTodoMaterializer {
     /// - 其余（含昨日及更早的已完成）→ 建当天新条目
     public static func shouldMaterialize(hasActive: Bool, hasCompletedToday: Bool) -> Bool {
         !hasActive && !hasCompletedToday
+    }
+
+    /// 某药某日应物化的**槽位标题**列表（与 `daySlots` 的标题一一对应）。
+    ///
+    /// 用于**精确匹配**服药待办与用药计划。
+    ///
+    /// ## 为什么不能用 `title.contains(medName)`
+    ///
+    /// 药名之间可能互为子串：「维生素D」是「维生素D3」的前缀。
+    /// 用 `contains` 匹配时，「维生素D3」的待办标题「服药：维生素D3（08:00）」
+    /// 会被「维生素D」的计划认领 → 点「维生素D」的按钮会完成
+    /// 「维生素D3」的待办 → **另一种药被漏服**。
+    ///
+    /// 精确匹配（标题全等）没有这个问题。
+    public static func slotTitles(
+        medName: String,
+        dailyTimePoints: [String],
+        on day: Date,
+        calendar: Calendar = .current
+    ) -> [String] {
+        daySlots(
+            medName: medName,
+            dailyTimePoints: dailyTimePoints,
+            on: day,
+            calendar: calendar
+        )
+        .map(\.title)
     }
 }

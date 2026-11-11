@@ -384,7 +384,10 @@ final class SleepReminderScheduler: ObservableObject {
                     return h >= 20
                 }
                 if isBedtime || isLatePoint {
-                    let takenToday = plan.lastTakenAt.map { calendar.isDateInToday($0) } ?? false
+                    // 口径统一到 Core：只看「今天有没有服药记录」。
+                    // 改动前用 `isDateInToday`（读墙上时钟），与小组件不可复现地错位。
+                    let takenToday = MedicationHabitDoseResolver.isMedicationTakenToday(
+                        lastTakenAt: plan.lastTakenAt, now: .now, calendar: calendar)
                     if !takenToday {
                         pendingMeds.append(plan.medName)
                     }
@@ -395,7 +398,8 @@ final class SleepReminderScheduler: ObservableObject {
         // 活力指数
         let vitality = VitalityEvaluator.evaluate(
             snapshot: healthSnapshot ?? .empty(day: .now),
-            foodIntakeCalories: foodCalories
+            foodIntakeCalories: foodCalories,
+            profile: BodyProfileContextProvider.shared.context()
         )
 
         // 屏幕时间

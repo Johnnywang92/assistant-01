@@ -130,6 +130,55 @@ public enum WidgetSnapshotStore {
         snapshot.todayMood = MoodCheckInSummary(mood: mood, energy: energy, stress: stress)
         save(snapshot)
     }
+
+    /// 服药打卡的乐观更新。
+    ///
+    /// **必须同步更新汇总数字**，否则用户点完「服药」桌面仍显示「待服 2 项」，
+    /// 直到打开 App 才对上——用户会以为没点上而重复点击。
+    ///
+    /// 计数口径与 Core 的 `MedicationDoseProgress` 一致：
+    /// 待服数逐条减 1（不越界），已服数加 1（不超应服数）。
+    public static func applyMedicationTakenLocally(planID: UUID) {
+        var snapshot = load()
+        guard let idx = snapshot.medications.firstIndex(where: { $0.id == planID }) else { return }
+        snapshot.medications[idx].isTakenToday = true
+        snapshot.medications[idx].activeTodoID = nil
+        snapshot.medications[idx].takenCount = min(
+            snapshot.medications[idx].scheduledCount,
+            snapshot.medications[idx].takenCount + 1
+        )
+
+        if var summary = snapshot.medicationSummary {
+            summary.takenDoseLowerBound = min(
+                summary.scheduledDoseCount,
+                summary.takenDoseLowerBound + 1
+            )
+            // 待服数逐条减，**不用差值推**：差值会把已服完的计划算成还有 2 剂待服
+            // → 虚报 → 用户重复服药。
+            summary.pendingDoseCount = max(0, summary.pendingDoseCount - 1)
+            if summary.pendingPlanCount > 0 {
+                summary.pendingPlanCount -= 1
+            }
+            summary.isAllSatisfied = summary.pendingPlanCount == 0
+            snapshot.medicationSummary = summary
+        }
+        save(snapshot)
+    }
+
+    /// 周期打卡完成的乐观更新（同步汇总里的待打卡数）。
+    public static func applyHabitCompletedLocally(habitID: UUID) {
+        var snapshot = load()
+        guard let idx = snapshot.habits.firstIndex(where: { $0.id == habitID }) else { return }
+        snapshot.habits[idx].isDueToday = false
+
+        if var summary = snapshot.habitSummary {
+            if summary.dueCount > 0 {
+                summary.dueCount -= 1
+            }
+            snapshot.habitSummary = summary
+        }
+        save(snapshot)
+    }
 }
 
 /// 进程判断：主应用进程 vs 扩展进程

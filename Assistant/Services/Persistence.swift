@@ -41,7 +41,7 @@ enum Persistence {
             } catch {
                 // 不删除或覆盖原库。仅用内存容器承载恢复页，禁止进入正常业务界面。
                 storedRecoveryError = Self.diagnose(openError: error)
-                let memSchema = Schema(AssistantSchemaV12.models)
+                let memSchema = Schema(AssistantSchemaV14.models)
                 if let memContainer = try? ModelContainer(for: memSchema, configurations: ModelConfiguration(isStoredInMemoryOnly: true)) {
                     return memContainer
                 }
@@ -54,7 +54,7 @@ enum Persistence {
     /// 旧库（V1）经 lightweight 阶段自动升级到 V2；**任何失败都不动磁盘文件**，
     /// 由调用方走恢复页导出原库。详见 `AssistantMigrationPlan`。
     private static func openStore() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV12.models)
+        let schema = Schema(AssistantSchemaV14.models)
         let config = ModelConfiguration(schema: schema)
         #if DEBUG
         Self.assertSchemaCoverage()
@@ -66,7 +66,7 @@ enum Persistence {
 
     /// 单次直达轻量升级路径：仅反射当前最新 Schema 一次，消除多版本 Schema 反射堆叠。
     private static func openStoreAutoMigrate() throws -> ModelContainer {
-        let schema = Schema(AssistantSchemaV12.models)
+        let schema = Schema(AssistantSchemaV14.models)
         let config = ModelConfiguration(schema: schema)
         #if DEBUG
         Self.assertSchemaCoverage()
@@ -97,7 +97,7 @@ enum Persistence {
     /// 删模型会让旧库升级后静默丢表。DEBUG 下断言，发布构建不增开销。
     private static func assertSchemaCoverage() {
         let v1 = Set(AssistantSchemaV1.models.map { String(describing: $0) })
-        let current = Set(AssistantSchemaV12.models.map { String(describing: $0) })
+        let current = Set(AssistantSchemaV14.models.map { String(describing: $0) })
         let missing = v1.subtracting(current)
         assert(missing.isEmpty, "V1 模型从当前版本消失，旧库升级会丢数据：\(missing.sorted())")
     }
@@ -306,6 +306,37 @@ enum AssistantSchemaV12: VersionedSchema {
     }
 }
 
+/// Schema V13：待办新增「服药打卡确认时刻」可选列。
+///
+/// **纯加法**：`TodoItem.doseConfirmedAt: Date?`，模型清单不变、不新增 @Model、
+/// 不加 @Relationship。旧库该列为 NULL，一律不作为服药证据，行为与 V12 完全一致。
+///
+/// 为什么需要它：「完成」不等于「服用」——逾期清理里的「算了不做」也会把待办
+/// 标记为完成。拿 `completedAt` 当服药证据，放弃的那一顿会被算成「已服」，
+/// 漏服被静默掩盖。只有明确的服药打卡动作才写这一列。
+enum AssistantSchemaV13: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(13, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        AssistantSchemaV12.models
+    }
+}
+
+/// Schema V14：新增「身体档案」两张独立表。
+///
+/// **纯加法**：`AssistantSchemaV13.models + [BodyMetricProfile, BodyVitalRecord]`。
+/// 不修改任何历史 @Model、不追加 @Relationship（V1~V13 共用运行时类型，
+/// 给旧模型加关系会让迁移失败甚至白屏）。旧库没有这两张表，升级后为空，
+/// 用户首次进入档案页时由 `ensureProfile(in:)` 幂等建一条档案。
+enum AssistantSchemaV14: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(14, 0, 0) }
+    static var models: [any PersistentModel.Type] {
+        AssistantSchemaV13.models + [
+            BodyMetricProfile.self,
+            BodyVitalRecord.self
+        ]
+    }
+}
+
 /// 显式版本化迁移计划。**不要再回到「打不开就删库重建」**——
 /// 旧代码首次失败即删 default.store，用户数据直接蒸发；现在失败走恢复页导出原库。
 enum AssistantMigrationPlan: SchemaMigrationPlan {
@@ -314,12 +345,13 @@ enum AssistantMigrationPlan: SchemaMigrationPlan {
             AssistantSchemaV1.self, AssistantSchemaV2.self, AssistantSchemaV3.self,
             AssistantSchemaV4.self, AssistantSchemaV5.self, AssistantSchemaV6.self,
             AssistantSchemaV7.self, AssistantSchemaV8.self, AssistantSchemaV9.self,
-            AssistantSchemaV10.self, AssistantSchemaV11.self, AssistantSchemaV12.self
+            AssistantSchemaV10.self, AssistantSchemaV11.self, AssistantSchemaV12.self,
+            AssistantSchemaV13.self, AssistantSchemaV14.self
         ]
     }
 
     static var stages: [MigrationStage] {
-        // V1→V2→…→V12 全是「加字段（带默认值/可选）+ 加模型」，系统 lightweight 迁移可完成。
+        // V1→V2→…→V14 全是「加字段（带默认值/可选）+ 加模型」，系统 lightweight 迁移可完成。
         // 若未来出现不兼容变更（删字段/改类型），在此插自定义阶段，
         // 并把目标版本的该字段改回可选或提供默认值——不要静默丢数据。
         [
@@ -333,7 +365,9 @@ enum AssistantMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: AssistantSchemaV8.self, toVersion: AssistantSchemaV9.self),
             .lightweight(fromVersion: AssistantSchemaV9.self, toVersion: AssistantSchemaV10.self),
             .lightweight(fromVersion: AssistantSchemaV10.self, toVersion: AssistantSchemaV11.self),
-            .lightweight(fromVersion: AssistantSchemaV11.self, toVersion: AssistantSchemaV12.self)
+            .lightweight(fromVersion: AssistantSchemaV11.self, toVersion: AssistantSchemaV12.self),
+            .lightweight(fromVersion: AssistantSchemaV12.self, toVersion: AssistantSchemaV13.self),
+            .lightweight(fromVersion: AssistantSchemaV13.self, toVersion: AssistantSchemaV14.self)
         ]
     }
 }

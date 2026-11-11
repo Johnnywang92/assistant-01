@@ -27,9 +27,12 @@ public enum MedicationFoodTimingAdvisor {
         let scheduledDates = parseTodayTimePoints(plan.dailyTimePoints, referenceDate: now)
 
         // 2. 检查今日是否已打卡服用
-        if let lastTaken = plan.lastTakenAt, calendar.isDate(lastTaken, inSameDayAs: now) {
-            // 如果最近一次服药是在 4 小时内，或者所有今日计划点均已完成
-            let isRecentlyTaken = now.timeIntervalSince(lastTaken) < 4 * 3600
+        // 「今天」的定义统一到 `MedicationHabitDoseResolver.isSameDay`（不再用 isDateInToday）。
+        // 4 小时是**服药安全间隔**（刚吃完不报漏服），与 UI 防抖的 3 小时不是一回事。
+        if let lastTaken = plan.lastTakenAt,
+           MedicationHabitDoseResolver.isSameDay(lastTaken, now: now, calendar: calendar) {
+            // 如果最近一次服药是在安全间隔内，或者所有今日计划点均已完成
+            let isRecentlyTaken = now.timeIntervalSince(lastTaken) < MedicationHabitDoseResolver.safetyInterval
             let futurePoints = scheduledDates.filter { $0 > lastTaken }
             if isRecentlyTaken || futurePoints.isEmpty {
                 return MedicationTimingEvaluation(

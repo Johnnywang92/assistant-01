@@ -226,6 +226,17 @@ final class TodoItem {
     /// nil = 存量数据，按 legacy 语义（单时间点 + 完成后顺延）解释，行为与改造前一致。
     /// 只存一个可选字符串而非多个字段：Schema V11 为纯加法轻量迁移，旧库升级零负担。
     var scheduleRaw: String?
+    /// 服药打卡确认时刻：用户在「服药：药名（HH:mm）」待办上确认「已服用」的时刻。
+    ///
+    /// ## 为什么不能拿 `completedAt` 当证据
+    ///
+    /// 「完成」不等于「服用」：逾期清理里的「算了不做」也会把待办标记为完成。
+    /// 拿 `completedAt` 当服药证据，放弃的那一顿会被算成「已服」→ **漏服被静默掩盖**。
+    ///
+    /// 只有明确的服药打卡动作才写这个字段（待办上勾完成 / 药品库「吃1次」/ 组件服药按钮）。
+    /// nil = 存量数据或「非服药确认的完成」，一律不作为服药证据。
+    /// Schema V13 纯加法轻量迁移，旧库该列为 NULL，不影响任何既有行为。
+    var doseConfirmedAt: Date?
 
     init(type: TodoType, status: TodoStatus = .active, title: String, detail: String? = nil,
          pickupCode: String? = nil, courier: String? = nil, station: String? = nil, location: String? = nil,
@@ -238,7 +249,8 @@ final class TodoItem {
          lifeEventTaskID: UUID? = nil,
          calendarItemIdentifier: String? = nil,
          arrivalReminderAt: Date? = nil, arrivalTransportRaw: String? = nil,
-         tags: [String] = []) {
+         tags: [String] = [],
+         doseConfirmedAt: Date? = nil) {
         self.id = UUID()
         self.typeRaw = type.rawValue
         self.statusRaw = status.rawValue
@@ -268,6 +280,7 @@ final class TodoItem {
         self.arrivalTransportRaw = arrivalTransportRaw
         self.tags = tags
         self.scheduleRaw = nil
+        self.doseConfirmedAt = doseConfirmedAt
     }
 
     /// 结构化日程读写。**唯一写入口**：setter 同步 dueAt / 重复规则散字段，
@@ -445,6 +458,11 @@ final class TodoItem {
         self.status = .done
         // 人生大事镜像联动：首页勾完 → 项目任务同步完成
         LifeEventTodoLink.syncTask(for: self, in: context)
+        // 打卡联动：服药 / 运动待办是系统自动关联到计划上的，
+        // 用户在这里勾完成时，计划的打卡状态必须跟着变。
+        // 不跟的后果：运动待办勾完就「复活」（计划到期时间没推进，
+        // 下一轮前台巡检又生成同名待办），服药待办勾完则组件数字不动。
+        CheckInPlanSync.syncPlan(for: self, in: context)
         TodoNotificationManager.shared.cancelNotification(for: self.id)
         // 行程已完成，到站清点提醒随之撤销（递归事项下一期不继承该提醒）
         Task { @MainActor in TripArrivalService.shared.cancelAllReminders(for: self.id) }
@@ -487,7 +505,10 @@ final class TodoItem {
             skillPathID: next.skillPathID,
             skillStageIndex: next.skillStageIndex,
             isSkillPractice: next.isSkillPractice,
-            skillPracticeMinutes: next.skillPracticeMinutes
+            skillPracticeMinutes: next.skillPracticeMinutes,
+            // 人生大事关联同理：下一期必须仍挂在同一个项目任务下，
+            // 否则后续各期勾完成不再回写项目进度。
+            lifeEventTaskID: next.lifeEventTaskID
         )
         // 下一期必须继承结构化日程，否则日历锚点只在第一期生效、第二期起退回顺延。
         // 直接写 scheduleRaw 而不是走 schedule setter：dueAt / 规则散字段已在上面的
@@ -534,6 +555,9 @@ extension RecurringTodoRecord {
             skillStageIndex: item.skillStageIndex,
             isSkillPractice: item.isSkillPractice,
             skillPracticeMinutes: item.skillPracticeMinutes,
+            // 人生大事关联同样必须随下一期复制，否则第二期起就脱离项目，
+            // 「首页勾完 = 项目任务完成」的双向联动中途断掉。
+            lifeEventTaskID: item.lifeEventTaskID,
             // 用 `item.schedule`（读时自愈后的值）而非原始快照，避免外部直接改过
             // dueAt 的待办在生成下一期时又拿旧 endAt 去算锚点。存量数据保持 nil。
             scheduleRaw: item.scheduleRaw == nil ? nil : TodoScheduleCodec.encode(item.schedule)
