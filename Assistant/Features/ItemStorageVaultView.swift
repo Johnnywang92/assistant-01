@@ -515,6 +515,9 @@ struct ItemStorageVaultView: View {
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 Haptic.warning()
+                                // 先解除账单上的关联再删物品：关联留着会让持有成本统计
+                                // 凭空少一截，日均成本与回本进度静默失真。
+                                StoredItemLinkService.unlinkExpenses(for: item.id, in: context)
                                 context.delete(item)
                                 guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除物品") }) else {
                                     Haptic.error()
@@ -543,6 +546,8 @@ struct ItemStorageVaultView: View {
 
                             Button(role: .destructive) {
                                 Haptic.warning()
+                                // 同上：删除物品要一并解除账单上的关联。
+                                StoredItemLinkService.unlinkExpenses(for: item.id, in: context)
                                 context.delete(item)
                                 guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除物品") }) else {
                                     Haptic.error()
@@ -1387,9 +1392,29 @@ private struct MedicineItemRow: View {
         medPlans.first { $0.medName == medicine.name && !$0.isEnabled }
     }
 
-    private var takenRecentlyToday: Bool {
-        guard let last = linkedPlan?.lastTakenAt else { return false }
-        return Calendar.current.isDateInToday(last) && Date().timeIntervalSince(last) < 3 * 3600
+    /// 今日服药进度（保守口径，来源唯一：Core `MedicationHabitDoseResolver`）。
+    ///
+    /// 注意**不能**只看「今天有没有服药记录」来决定按钮是否可用：
+    /// 一个药可能一天要吃 3 次（08:00 / 13:00 / 20:00），吃完早上那次
+    /// 不该把按钮永久锁死。判定改为「今日是否已完全满足」——
+    /// 只有服药记录覆盖到最后一个应服时点才算吃完。
+    private var doseProgress: MedicationDoseProgress {
+        guard let plan = linkedPlan else {
+            return MedicationDoseProgress(
+                scheduledCount: 0, takenLowerBound: 0,
+                isFullySatisfied: true, isWithinCooldown: false)
+        }
+        return MedicationHabitDoseResolver.doseProgress(
+            lastTakenAt: plan.lastTakenAt,
+            dailyTimePoints: plan.dailyTimePoints,
+            now: .now,
+            calendar: .current
+        )
+    }
+
+    /// 今日是否已完全服完（可显示「已服」）。
+    private var takenToday: Bool {
+        doseProgress.isFullySatisfied
     }
 
     var body: some View {
@@ -1513,17 +1538,17 @@ private struct MedicineItemRow: View {
                         onTakeDose()
                     } label: {
                         HStack(spacing: 3) {
-                            Image(systemName: takenRecentlyToday ? "checkmark.circle.fill" : "pills.fill")
+                            Image(systemName: takenToday ? "checkmark.circle.fill" : "pills.fill")
                                 .font(.caption2)
-                            Text(takenRecentlyToday ? "已服" : "吃1次")
+                            Text(takenToday ? "已服" : "吃1次")
                                 .font(.caption2.bold())
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .background(
-                            Capsule().fill(takenRecentlyToday ? Color.green.opacity(0.18) : Color.teal.opacity(0.14))
+                            Capsule().fill(takenToday ? Color.green.opacity(0.18) : Color.teal.opacity(0.14))
                         )
-                        .foregroundStyle(takenRecentlyToday ? .green : .teal)
+                        .foregroundStyle(takenToday ? .green : .teal)
                     }
                     .buttonStyle(.plain)
                 }
