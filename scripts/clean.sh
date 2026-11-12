@@ -19,7 +19,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
 
 # 白名单：新增条目必须同时出现在 .gitignore 里，否则可能误删受版本控制的源码。
-CLEAN_DIRS=(build DerivedData .build)
+CLEAN_DIRS=(build DerivedData DerivedDataTests .build)
 
 usage() {
     cat <<'EOF'
@@ -29,7 +29,7 @@ usage() {
   --yes   实际删除白名单内的构建产物目录。
   --help  显示本帮助。
 
-清理范围（仅限仓库根下）：build/、DerivedData/、.build/
+清理范围（仅限仓库根下）：build/、DerivedData/、DerivedDataTests/、.build/
 不会触碰 .workbuddy/、源码、git 元数据或任何个人目录。
 删除后首次 ./scripts/ci.sh all 会全量重编（数分钟）。
 EOF

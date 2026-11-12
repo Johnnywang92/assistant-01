@@ -30,6 +30,16 @@ struct ItemStorageVaultView: View {
     @State private var selectedSymptom: MedicineSymptomFilter = .all
     @State private var actionFeedbackToast: String? = nil
     @State private var activeStorageMotion: StoredItemMotionData? = nil
+    @State private var displayMode: StorageDisplayMode = .walletCard
+    @State private var expandedItemID: UUID? = nil
+
+    enum StorageDisplayMode: String, CaseIterable, Identifiable {
+        case walletCard = "卡片"
+        case stack = "堆叠"
+        case list = "列表"
+
+        var id: String { rawValue }
+    }
 
     private func triggerStorageMotion(name: String, roomArea: String, location: String, isEditing: Bool) {
         // 稍作微小延迟让弹窗开始收起，使动效落在主界面中央
@@ -474,7 +484,7 @@ struct ItemStorageVaultView: View {
                 }
             }
 
-            // 3. 物品清单列表
+            // 3. 物品清单列表 (支持 Apple Wallet 风格卡片与堆叠)
             if filteredItems.isEmpty {
                 Section {
                     ContentUnavailableView {
@@ -485,78 +495,119 @@ struct ItemStorageVaultView: View {
                     .padding(.vertical, 16)
                 }
             } else {
-                Section("收纳明细 (\(filteredItems.count))") {
-                    ForEach(filteredItems) { item in
-                        StoredItemRow(item: item, linkedExpenseTotal: linkedTotals[item.id] ?? 0, onPreviewImage: { data in
-                            previewImageData = data
-                        })
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            itemToEdit = item
-                            Haptic.light()
+                Section {
+                    switch displayMode {
+                    case .walletCard:
+                        // Apple Wallet 卡片流
+                        ForEach(filteredItems) { item in
+                            StoredItemWalletCard(
+                                item: item,
+                                linkedExpenseTotal: linkedTotals[item.id] ?? 0,
+                                isExpanded: expandedItemID == item.id,
+                                onPreviewImage: { data in
+                                    previewImageData = data
+                                },
+                                onTap: {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                        expandedItemID = (expandedItemID == item.id) ? nil : item.id
+                                    }
+                                    Haptic.selection()
+                                },
+                                onEdit: {
+                                    itemToEdit = item
+                                    Haptic.light()
+                                },
+                                onShare: {
+                                    itemToShare = item
+                                    Haptic.light()
+                                },
+                                onDelete: {
+                                    deleteStoredItem(item)
+                                }
+                            )
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
                         }
-                        .swipeActions(edge: .leading) {
-                            Button {
-                                itemToShare = item
-                                Haptic.light()
-                            } label: {
-                                Label("分享", systemImage: "square.and.arrow.up")
-                            }
-                            .tint(.blue)
 
-                            Button {
+                    case .stack:
+                        // Apple Wallet 经典卡片堆叠展开交互
+                        walletStackItemsView
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+
+                    case .list:
+                        // 经典精简列表
+                        ForEach(filteredItems) { item in
+                            StoredItemRow(item: item, linkedExpenseTotal: linkedTotals[item.id] ?? 0, onPreviewImage: { data in
+                                previewImageData = data
+                            })
+                            .contentShape(Rectangle())
+                            .onTapGesture {
                                 itemToEdit = item
                                 Haptic.light()
-                            } label: {
-                                Label("编辑", systemImage: "pencil")
                             }
-                            .tint(.indigo)
-                        }
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                Haptic.warning()
-                                // 先解除账单上的关联再删物品：关联留着会让持有成本统计
-                                // 凭空少一截，日均成本与回本进度静默失真。
-                                StoredItemLinkService.unlinkExpenses(for: item.id, in: context)
-                                context.delete(item)
-                                guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除物品") }) else {
-                                    Haptic.error()
-                                    return
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    itemToShare = item
+                                    Haptic.light()
+                                } label: {
+                                    Label("分享", systemImage: "square.and.arrow.up")
                                 }
-                            } label: {
-                                Label("删除", systemImage: "trash")
-                            }
-                        }
-                        .contextMenu {
-                            Button {
-                                itemToShare = item
-                                Haptic.light()
-                            } label: {
-                                Label("分享收纳位置", systemImage: "square.and.arrow.up")
-                            }
+                                .tint(.blue)
 
-                            Button {
-                                itemToEdit = item
-                                Haptic.light()
-                            } label: {
-                                Label("编辑", systemImage: "pencil")
-                            }
-
-                            Divider()
-
-                            Button(role: .destructive) {
-                                Haptic.warning()
-                                // 同上：删除物品要一并解除账单上的关联。
-                                StoredItemLinkService.unlinkExpenses(for: item.id, in: context)
-                                context.delete(item)
-                                guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除物品") }) else {
-                                    Haptic.error()
-                                    return
+                                Button {
+                                    itemToEdit = item
+                                    Haptic.light()
+                                } label: {
+                                    Label("编辑", systemImage: "pencil")
                                 }
-                            } label: {
-                                Label("删除", systemImage: "trash")
+                                .tint(.indigo)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    deleteStoredItem(item)
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
+                            }
+                            .contextMenu {
+                                Button {
+                                    itemToShare = item
+                                    Haptic.light()
+                                } label: {
+                                    Label("分享收纳位置", systemImage: "square.and.arrow.up")
+                                }
+
+                                Button {
+                                    itemToEdit = item
+                                    Haptic.light()
+                                } label: {
+                                    Label("编辑", systemImage: "pencil")
+                                }
+
+                                Divider()
+
+                                Button(role: .destructive) {
+                                    deleteStoredItem(item)
+                                } label: {
+                                    Label("删除", systemImage: "trash")
+                                }
                             }
                         }
+                    }
+                } header: {
+                    HStack {
+                        Text("收纳明细 (\(filteredItems.count))")
+                        Spacer()
+                        Picker("展示模式", selection: $displayMode) {
+                            ForEach(StorageDisplayMode.allCases) { mode in
+                                Text(L10n.tr(mode.rawValue)).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 170)
                     }
                 }
             }
@@ -765,6 +816,85 @@ struct ItemStorageVaultView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Apple Wallet 物品卡片堆叠与操作支持
+
+    private func deleteStoredItem(_ item: StoredItem) {
+        Haptic.warning()
+        StoredItemLinkService.unlinkExpenses(for: item.id, in: context)
+        context.delete(item)
+        if expandedItemID == item.id { expandedItemID = nil }
+        guard context.saveReportingFailure({ SaveFailureCenter.shared.report($0, action: "删除物品") }) else {
+            Haptic.error()
+            return
+        }
+    }
+
+    private var walletStackItemsView: some View {
+        let count = filteredItems.count
+        let cardPeek: CGFloat = 66
+        let baseHeight: CGFloat = 180
+
+        return VStack(spacing: 0) {
+            ZStack(alignment: .top) {
+                ForEach(Array(filteredItems.enumerated()), id: \.element.id) { index, item in
+                    let isExpanded = expandedItemID == item.id
+                    let hasExpandedCard = expandedItemID != nil
+                    let expandedIndex = filteredItems.firstIndex(where: { $0.id == expandedItemID }) ?? 0
+
+                    let yOffset: CGFloat = {
+                        if !hasExpandedCard {
+                            return CGFloat(index) * cardPeek
+                        }
+                        if isExpanded {
+                            return CGFloat(index) * 24
+                        } else if index < expandedIndex {
+                            return CGFloat(index) * 24
+                        } else {
+                            return CGFloat(index) * 24 + 140
+                        }
+                    }()
+
+                    StoredItemWalletCard(
+                        item: item,
+                        linkedExpenseTotal: linkedTotals[item.id] ?? 0,
+                        isExpanded: isExpanded,
+                        onPreviewImage: { data in
+                            previewImageData = data
+                        },
+                        onTap: {
+                            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+                                expandedItemID = (expandedItemID == item.id) ? nil : item.id
+                            }
+                            Haptic.selection()
+                        },
+                        onEdit: {
+                            itemToEdit = item
+                            Haptic.light()
+                        },
+                        onShare: {
+                            itemToShare = item
+                            Haptic.light()
+                        },
+                        onDelete: {
+                            deleteStoredItem(item)
+                        }
+                    )
+                    .offset(y: yOffset)
+                    .zIndex(isExpanded ? 100 : Double(index))
+                }
+            }
+            .frame(height: calculateItemStackHeight(count: count, peek: cardPeek, baseHeight: baseHeight))
+        }
+    }
+
+    private func calculateItemStackHeight(count: Int, peek: CGFloat, baseHeight: CGFloat) -> CGFloat {
+        if count == 0 { return 0 }
+        if expandedItemID != nil {
+            return CGFloat(count) * 24 + baseHeight + 140
+        }
+        return CGFloat(count - 1) * peek + baseHeight + 20
     }
 }
 

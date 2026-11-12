@@ -2,6 +2,8 @@
 build/
 .build/
 DerivedData/
+DerivedData*/
+DerivedDataTests/
 *.xcodeproj/
 xcuserdata/
 scripts/config.local
