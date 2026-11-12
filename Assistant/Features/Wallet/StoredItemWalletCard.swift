@@ -160,7 +160,7 @@ struct StoredItemWalletCard: View {
                                     Text(costSummary.isResold ? "持有天数" : "已持有")
                                         .font(.system(size: 10, weight: .medium))
                                         .foregroundStyle(.white.opacity(0.6))
-                                    Text("\(costSummary.holdingDays) 天")
+                                    Text("\(costSummary.daysHeld) 天")
                                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                                         .foregroundStyle(.white.opacity(0.85))
                                 }

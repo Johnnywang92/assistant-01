@@ -197,11 +197,18 @@ final class FoodEstimationService: ObservableObject {
             systemInstruction: systemInstruction,
             userContent: "用户吃了：\(clean)。请估算热量。",
             maxNewTokens: 64
-        ), let parsed = FoodLLMOutputParser.parse(output),
-           let food = FoodCatalog.item(matchingNameStrict: parsed.foodName) ?? FoodCatalog.items(matchingName: parsed.foodName).first {
+        ), let parsed = FoodLLMOutputParser.parse(output) {
             let portion = parsed.portion ?? .regular
-            let baseline = food.standardServingCalories
-            let cal = parsed.calories > 0 ? Self.reconcile(llmCalories: parsed.calories, baseline: baseline) : baseline
+            let food: FoodItem
+            let cal: Double
+            if let matched = FoodCatalog.item(matchingNameStrict: parsed.foodName) ?? FoodCatalog.items(matchingName: parsed.foodName).first {
+                food = matched
+                let baseline = food.standardServingCalories
+                cal = parsed.calories > 0 ? Self.reconcile(llmCalories: parsed.calories, baseline: baseline) : baseline
+            } else {
+                food = FoodItem.inferred(name: parsed.foodName, calories: parsed.calories)
+                cal = parsed.calories > 0 ? min(3000, parsed.calories) : food.standardServingCalories * portion.multiplier
+            }
             let est = FoodCalorieEstimate(food: food, portion: portion, confidence: 0.8)
                 .withOverriddenCalories(cal)
             estimate = est
@@ -209,10 +216,53 @@ final class FoodEstimationService: ObservableObject {
             return est
         }
 
-        // 4. 无法自动解析，提示手动选择
-        needsManualSelection = true
-        statusMessage = "未能在食物库中直接找到「\(clean)」，请点击「从食物库选择」挑选相近菜品。"
-        return nil
+        // 4. 语义规则类推保底（无需大模型，离线也能类推未知食物）
+        let inferred = FoodItem.inferred(name: clean)
+        let est = FoodCalorieEstimate(food: inferred, portion: .regular, confidence: 0.75)
+        estimate = est
+        statusMessage = "已通过食材与烹饪规则类推「\(inferred.name)」热量，可在下方微调或保存。"
+        return est
+    }
+
+    /// 从用户输入的文本中解析一道或多道菜品，并追加到当前餐盘中（支持一次吃多样连续输入）
+    @discardableResult
+    func appendDishes(fromText text: String, mealDate: Date = .now) async -> FoodCalorieEstimate? {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return estimate }
+
+        guard let current = estimate else {
+            return await estimateCalories(fromText: clean, mealDate: mealDate)
+        }
+
+        isEstimating = true
+        statusMessage = nil
+        needsManualSelection = false
+        defer { isEstimating = false }
+
+        // 解析输入的文本（可能包含「扁豆炒肉 + 黄豆焖猪蹄」等多道菜）
+        if let parsedMeal = FoodCalorieEstimator.estimateMeal(fromHint: clean, confidence: 0.9) {
+            var updated = current
+            for dish in parsedMeal.dishes {
+                updated = updated.addingDish(dish)
+            }
+            for hint in parsedMeal.unmatchedHints where hint.count >= 2 {
+                let inferred = FoodItem.inferred(name: hint)
+                updated = updated.addingDish(FoodDishEstimate(food: inferred))
+            }
+            estimate = updated
+            statusMessage = "已将「\(updated.displayName)」加入本餐，当前共 \(updated.dishes.count) 道菜（合计 \(Int(updated.consumedCalories.rounded())) 千卡）。"
+            return updated
+        }
+
+        // 单菜快速类推或匹配
+        let food: FoodItem
+        if let matched = FoodCatalog.item(matchingNameStrict: clean) ?? FoodCatalog.items(matchingName: clean).first {
+            food = matched
+        } else {
+            food = FoodItem.inferred(name: clean)
+        }
+        addDish(food: food)
+        return estimate
     }
 
     /// 用端侧 LLM 细化候选。
@@ -318,7 +368,7 @@ final class FoodEstimationService: ObservableObject {
                 languageModelURL: paths.languageModel,
                 visionProjectorURL: paths.visionProjector,
                 imageMaxTokens: bundle.imageMaxTokens,
-                maxNewTokens: 256,
+                maxNewTokens: 512,
                 onPartialOutput: { _ in }
             )
         } catch {
@@ -330,30 +380,59 @@ final class FoodEstimationService: ObservableObject {
         // 拍照算热量是低频操作：用完即放，避免 2B 视觉包（约 1.5GB）与聊天模型同时常驻被系统杀掉
         await engine.unload()
 
-        guard let meal = FoodLLMOutputParser.parseMeal(output) else {
-            Self.log.notice("视觉模型输出不可采信，退回 Vision 链路（长度 \(output.count)）")
+        let meal = FoodLLMOutputParser.parseMeal(output)
+        var dishes: [FoodDishEstimate] = []
+        var unmatched: [String] = []
+
+        if let meal {
+            unmatched = meal.unmatchedNames
+            dishes = meal.dishes.enumerated().compactMap { index, parsed in
+                let portion = parsed.portion ?? .regular
+                let food: FoodItem
+                let calories: Double
+                if let matched = FoodCatalog.item(matchingNameStrict: parsed.foodName) ?? FoodCatalog.items(matchingName: parsed.foodName).first {
+                    food = matched
+                    let baseline = food.standardServingCalories * portion.multiplier
+                    calories = Self.reconcile(llmCalories: parsed.calories, baseline: baseline)
+                } else {
+                    // 食物库未严格收录时，利用 Qwen3-VL 识别出的菜名与热量构建推断菜品，绝不丢弃
+                    food = FoodItem.inferred(name: parsed.foodName, calories: parsed.calories)
+                    calories = parsed.calories > 0 ? min(3000, parsed.calories) : food.standardServingCalories * portion.multiplier
+                }
+                let confidence = min(parsed.confidence ?? 0.8, Self.visionLanguageConfidenceCap)
+                return FoodDishEstimate(
+                    id: "\(food.id)_vl_\(index)",
+                    food: food,
+                    portion: portion,
+                    confidence: confidence,
+                    consumedRatio: 1.0
+                ).withOverriddenCalories(calories)
+            }
+        }
+
+        // 如果严格解析未匹配到任何菜品，但识别到了菜名（unmatchedNames），通过语义推断将其激活为推断菜品
+        if dishes.isEmpty && !unmatched.isEmpty {
+            for (idx, name) in unmatched.enumerated() {
+                guard name.count >= 2 else { continue }
+                let inferredFood = FoodItem.inferred(name: name)
+                dishes.append(FoodDishEstimate(
+                    id: "vl_inferred_\(idx)",
+                    food: inferredFood,
+                    portion: .regular,
+                    confidence: 0.75,
+                    consumedRatio: 1.0
+                ))
+            }
+        }
+
+        guard !dishes.isEmpty else {
+            Self.log.notice("视觉模型未解析出有效菜品，退回 Vision 链路（长度 \(output.count)）")
             return nil
         }
 
-        let dishes: [FoodDishEstimate] = meal.dishes.enumerated().compactMap { index, parsed in
-            guard let food = FoodCatalog.item(matchingNameStrict: parsed.foodName) else { return nil }
-            let portion = parsed.portion ?? .regular
-            let baseline = food.standardServingCalories * portion.multiplier
-            let calories = Self.reconcile(llmCalories: parsed.calories, baseline: baseline)
-            let confidence = min(parsed.confidence ?? 0.7, Self.visionLanguageConfidenceCap)
-            return FoodDishEstimate(
-                id: "\(food.id)_vl_\(index)",
-                food: food,
-                portion: portion,
-                confidence: confidence,
-                consumedRatio: 1.0
-            ).withOverriddenCalories(calories)
-        }
-        guard !dishes.isEmpty else { return nil }
-
         return VisionLanguageMeal(
-            estimate: FoodCalorieEstimate(dishes: dishes, unmatchedHints: meal.unmatchedNames),
-            unmatchedNames: meal.unmatchedNames,
+            estimate: FoodCalorieEstimate(dishes: dishes, unmatchedHints: unmatched.filter { name in !dishes.contains { $0.food.name == name } }),
+            unmatchedNames: unmatched,
             modelName: bundle.shortName
         )
     }

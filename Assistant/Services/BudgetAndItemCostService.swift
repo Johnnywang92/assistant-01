@@ -110,6 +110,7 @@ public struct ItemCostSummary: Equatable {
     public var isTracked: Bool        // 是否已有可计算的成本数据
     public var totalCost: Double      // 累计投入 = 购入价 + 关联记账金额
     public var daysHeld: Int          // 已持有天数（从购入/建档日起；已转卖则截至转卖日）
+    public var holdingDays: Int { daysHeld } // 别名兼容
     public var dailyCost: Double      // 日均持有成本（总投入口径）
     public var milestoneText: String? // 如 "再用 45 天，日均成本就低于 ¥10 啦"
 

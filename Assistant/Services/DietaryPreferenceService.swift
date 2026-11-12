@@ -38,17 +38,21 @@ final class DietaryPreferenceService: ObservableObject {
         let startOfToday = cal.startOfDay(for: now)
 
         let summaries: [FoodIntakeItemSummary] = allRecords.compactMap { rec in
-            // 根据 foodID 回查对应分类
+            // 根据 foodID 或菜名推断对应分类（优先识别组合餐中的荤素搭配）
             let matchedCategory: FoodCategory
-            if let firstID = rec.foodID?.components(separatedBy: "+").first,
-               let item = FoodCatalog.item(id: firstID) {
-                matchedCategory = item.category
-            } else if rec.foodName.contains("咖啡") || rec.foodName.contains("拿铁") || rec.foodName.contains("奶茶") || rec.foodName.contains("茶") || rec.foodName.contains("可乐") {
-                matchedCategory = .drink
-            } else if rec.foodName.contains("面") || rec.foodName.contains("粉") || rec.foodName.contains("饭") || rec.foodName.contains("包子") {
-                matchedCategory = .staple
+            if let ids = rec.foodID?.components(separatedBy: "+"), !ids.isEmpty {
+                let items = ids.compactMap { FoodCatalog.item(id: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                if let meat = items.first(where: { $0.category == .meat }) {
+                    matchedCategory = meat.category
+                } else if let nonStaple = items.first(where: { $0.category != .staple }) {
+                    matchedCategory = nonStaple.category
+                } else if let first = items.first {
+                    matchedCategory = first.category
+                } else {
+                    matchedCategory = FoodItem.inferCategory(from: rec.foodName)
+                }
             } else {
-                matchedCategory = .staple
+                matchedCategory = FoodItem.inferCategory(from: rec.foodName)
             }
 
             return FoodIntakeItemSummary(

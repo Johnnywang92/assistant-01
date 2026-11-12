@@ -64,12 +64,23 @@ struct FoodPhotoCalorieView: View {
         var c: Double = 0
         var f: Double = 0
         for r in todayRecords {
-            if let foodID = r.foodID?.components(separatedBy: "+").first,
-               let item = FoodCatalog.item(id: foodID) {
-                let ratio = (r.consumedCalories / max(1, item.caloriesPer100g))
-                p += ratio * item.proteinPer100g
-                c += ratio * item.carbsPer100g
-                f += ratio * item.fatPer100g
+            if let ids = r.foodID?.components(separatedBy: "+"), !ids.isEmpty {
+                let dishCount = Double(ids.count)
+                let calPerDish = r.consumedCalories / dishCount
+                for rawID in ids {
+                    let cleanID = rawID.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let item = FoodCatalog.item(id: cleanID) {
+                        let ratio = calPerDish / max(1, item.caloriesPer100g)
+                        p += ratio * item.proteinPer100g
+                        c += ratio * item.carbsPer100g
+                        f += ratio * item.fatPer100g
+                    } else {
+                        // 自定义或推断菜品按均衡宏量估算
+                        c += (calPerDish * 0.50) / 4.0
+                        p += (calPerDish * 0.20) / 4.0
+                        f += (calPerDish * 0.30) / 9.0
+                    }
+                }
             } else {
                 // 自定义或组合菜品按标准健康均衡宏量推算（碳水 50%、蛋白 20%、脂肪 30%）
                 let cal = r.consumedCalories
@@ -520,14 +531,36 @@ struct FoodPhotoCalorieView: View {
                 }
             }
 
-            // 3. 常驻文字与语音输入框（整合录音与手输，避免悬浮遮挡历史记录）
+            // 3. 当前已加菜品提示（支持多菜合一餐）
+            if photo == nil, let draft = estimation.estimate {
+                HStack(spacing: 6) {
+                    Image(systemName: "tray.full.fill")
+                        .font(.caption2)
+                        .foregroundStyle(AppColor.primary)
+                    Text("当前餐盘已加 \(draft.dishes.count) 道菜（\(draft.displayName)）")
+                        .font(.caption2)
+                        .foregroundStyle(AppColor.secondaryText)
+                        .lineLimit(1)
+                    Spacer()
+                    Button("重开一餐") {
+                        estimation.clearDraft()
+                        hintText = ""
+                        Haptic.light()
+                    }
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 4)
+            }
+
+            // 4. 常驻文字与语音输入框（整合录音与手输，支持逐个输入合并为一餐）
             HStack(spacing: 8) {
                 Image(systemName: "fork.knife")
                     .font(.footnote)
                     .foregroundStyle(AppColor.secondaryText)
 
                 TextField(
-                    photo == nil ? "手输食物（如：牛肉面 / 米饭+炒青菜）" : "补充说明（如：少油、红烧肉）",
+                    photo == nil ? (estimation.estimate != nil ? "输入菜名加入本餐（如：扁豆炒肉）" : "手输食物（如：牛肉面 / 米饭+炒青菜）") : "补充说明（如：少油、红烧肉）",
                     text: $hintText
                 )
                 .font(.subheadline)
@@ -561,11 +594,11 @@ struct FoodPhotoCalorieView: View {
                 }
                 .buttonStyle(.plain)
 
-                // 估算按钮
+                // 估算 / 加入本餐按钮
                 Button {
                     submitEstimation()
                 } label: {
-                    Text("估算")
+                    Text(photo == nil && estimation.estimate != nil ? "+加入本餐" : "估算")
                         .font(.caption.bold())
                         .foregroundStyle(.white)
                         .padding(.horizontal, 12)
@@ -1154,7 +1187,9 @@ enum FoodRecordPeriodFilter: String, CaseIterable, Identifiable {
                                 .font(.caption.bold())
                                 .foregroundStyle(AppColor.secondaryText)
                             Spacer()
-                            Text("\(group.items.count) 餐 · \(Int(group.totalCalories.rounded())) 千卡")
+                            let sessions = mealSessionCount(for: group.items)
+                            let countText = sessions == group.items.count ? "\(sessions) 餐" : "\(sessions) 餐（\(group.items.count) 样食物）"
+                            Text("\(countText) · \(Int(group.totalCalories.rounded())) 千卡")
                                 .font(.caption2)
                                 .foregroundStyle(AppColor.secondaryText)
                         }
@@ -1364,6 +1399,21 @@ enum FoodRecordPeriodFilter: String, CaseIterable, Identifiable {
         voiceService.stopListening()
     }
 
+    private func mealSessionCount(for records: [FoodIntakeRecord]) -> Int {
+        guard !records.isEmpty else { return 0 }
+        let sorted = records.sorted { $0.date < $1.date }
+        var sessions = 1
+        var lastDate = sorted[0].date
+        for record in sorted.dropFirst() {
+            // 间隔超过 45 分钟视为不同餐次，否则归入同一餐（解决多食物分步录入被统计为多餐的问题）
+            if record.date.timeIntervalSince(lastDate) > 45 * 60 {
+                sessions += 1
+            }
+            lastDate = record.date
+        }
+        return sessions
+    }
+
     // MARK: - 动作
 
     private func submitEstimation() {
@@ -1372,8 +1422,17 @@ enum FoodRecordPeriodFilter: String, CaseIterable, Identifiable {
             Task { await runEstimation() }
         } else if !clean.isEmpty {
             Task {
-                didAdjust = false
-                await estimation.estimateCalories(fromText: clean, mealDate: mealDate)
+                didAdjust = true
+                if estimation.estimate != nil {
+                    // 已有餐盘草稿时，追加菜品到本餐，避免覆盖已有菜品
+                    await estimation.appendDishes(fromText: clean, mealDate: mealDate)
+                    hintText = ""
+                    Haptic.light()
+                } else {
+                    await estimation.estimateCalories(fromText: clean, mealDate: mealDate)
+                    hintText = ""
+                    Haptic.light()
+                }
             }
         }
     }
@@ -1889,6 +1948,46 @@ struct FoodSelectionSheet: View {
                                     .foregroundStyle(AppColor.secondaryText)
                             }
                             .padding(.vertical, 4)
+                        }
+                    }
+
+                    // 搜索关键词的智能语义类推入口（当食物库未直接精确命中时，一键选择）
+                    let cleanSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if cleanSearch.count >= 2, !filtered.contains(where: { $0.name == cleanSearch }) {
+                        let inferredFood = FoodItem.inferred(name: cleanSearch)
+                        Section("智能食材规则类推") {
+                            Button {
+                                onSelect(inferredFood)
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack(spacing: 6) {
+                                            Text(inferredFood.name)
+                                                .font(.body.weight(.semibold))
+                                            Text(inferredFood.category.rawValue)
+                                                .font(.caption2)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 1)
+                                                .background(Capsule().fill(AppColor.primary.opacity(0.12)))
+                                                .foregroundStyle(AppColor.primary)
+                                            Text("规则类推")
+                                                .font(.system(size: 9, weight: .bold))
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 1)
+                                                .background(Capsule().fill(Color.orange.opacity(0.15)))
+                                                .foregroundStyle(Color.orange)
+                                        }
+                                        Text("标准份约 \(Int(inferredFood.standardServingCalories.rounded())) 千卡 · 每100g \(Int(inferredFood.caloriesPer100g.rounded())) 千卡")
+                                            .font(.caption)
+                                            .foregroundStyle(AppColor.secondaryText)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "sparkles")
+                                        .foregroundStyle(AppColor.primary)
+                                }
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 

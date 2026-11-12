@@ -292,6 +292,92 @@ public struct FoodItem: Equatable, Sendable, Identifiable {
         )
     }
 
+    /// 根据食物名称与可选热量，自动推断类别、单位热量及宏量营养素的食物条目（支持未知菜品类推）
+    public static func inferred(name: String, calories: Double? = nil, category: FoodCategory? = nil) -> FoodItem {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = trimmed.isEmpty ? "常见菜品" : trimmed
+        let cat = category ?? inferCategory(from: displayName)
+        let calPer100g: Double = {
+            if let cal = calories, cal > 0 {
+                // 标准份通常约为 200~250g，若提供了整份热量则换算为 100g 可食部热量
+                return max(15, min(750, cal / 2.0))
+            }
+            return defaultCaloriesPer100g(for: cat, name: displayName)
+        }()
+        let cleanID = "inferred_\(abs(displayName.hashValue % 1000000))"
+        let macros = inferMacros(id: cleanID, name: displayName, category: cat, caloriesPer100g: calPer100g)
+        return FoodItem(
+            id: cleanID,
+            name: displayName,
+            nameEn: "Inferred Food",
+            caloriesPer100g: calPer100g,
+            proteinPer100g: macros.protein,
+            fatPer100g: macros.fat,
+            carbsPer100g: macros.carbs,
+            category: cat,
+            visionIdentifiers: [],
+            aliases: [displayName]
+        )
+    }
+
+    /// 依据中文菜名关键字自动推断菜品大类
+    public static func inferCategory(from name: String) -> FoodCategory {
+        let n = name.lowercased()
+        if n.contains("饭") || n.contains("面") || n.contains("粥") || n.contains("粉") ||
+           n.contains("包") || n.contains("饼") || n.contains("馍") || n.contains("饺") ||
+           n.contains("馄饨") || n.contains("米") || n.contains("馒头") || n.contains("花卷") ||
+           n.contains("年糕") || n.contains("肠粉") || n.contains("卷饼") || n.contains("土豆") ||
+           n.contains("红薯") || n.contains("玉米") || n.contains("燕麦") || n.contains("麦片") {
+            return .staple
+        }
+        if n.contains("汤") || n.contains("羹") || n.contains("煲") {
+            return .soup
+        }
+        if n.contains("奶") || n.contains("茶") || n.contains("咖啡") || n.contains("汁") ||
+           n.contains("水") || n.contains("可乐") || n.contains("拿铁") || n.contains("饮") {
+            return .drink
+        }
+        if n.contains("糖") || n.contains("糕") || n.contains("蛋糕") || n.contains("饼干") ||
+           n.contains("冰淇淋") || n.contains("巧克力") || n.contains("果冻") {
+            return .dessert
+        }
+        if n.contains("肉") || n.contains("牛") || n.contains("羊") || n.contains("猪") ||
+           n.contains("鸡") || n.contains("鸭") || n.contains("鹅") || n.contains("鱼") ||
+           n.contains("虾") || n.contains("蟹") || n.contains("排骨") || n.contains("蹄") ||
+           n.contains("手") || n.contains("肝") || n.contains("肠") || n.contains("肚") ||
+           n.contains("翅") || n.contains("爪") || n.contains("骨") || n.contains("杂") ||
+           n.contains("培根") || n.contains("香肠") || n.contains("丸") || n.contains("肥肠") {
+            return .meat
+        }
+        return .veggie
+    }
+
+    private static func defaultCaloriesPer100g(for cat: FoodCategory, name: String) -> Double {
+        switch cat {
+        case .staple: return 135
+        case .meat:
+            if name.contains("蹄") || name.contains("肥") || name.contains("炸") || name.contains("腩") {
+                return 220
+            }
+            if name.contains("鱼") || name.contains("虾") || name.contains("鸡胸") {
+                return 120
+            }
+            return 165
+        case .veggie:
+            if name.contains("豆腐") || name.contains("蛋") || name.contains("豆") {
+                return 115
+            }
+            if name.contains("炒") || name.contains("干锅") || name.contains("红烧") || name.contains("茄") {
+                return 95
+            }
+            return 60
+        case .soup: return 45
+        case .snack: return 220
+        case .dessert: return 350
+        case .drink: return 40
+        }
+    }
+
     /// 克隆并替换名称或热量
     public func withCustom(name: String? = nil, caloriesPer100g: Double? = nil) -> FoodItem {
         let changed = name != nil || caloriesPer100g != nil
@@ -764,13 +850,21 @@ public enum FoodCatalog {
                  visionIdentifiers: ["curry"], aliases: ["咖喱鸡", "咖喱牛肉", "咖喱饭", "日式咖喱", "curry"]),
         FoodItem(id: "fried_pork_cutlet", name: "炸猪排", nameEn: "Fried Pork Cutlet", caloriesPer100g: 300, category: .meat,
                  visionIdentifiers: ["cutlet", "schnitzel", "tonkatsu", "tempura"], aliases: ["炸猪排", "猪排", "日式猪排", "天妇罗", "tonkatsu"]),
-        FoodItem(id: "pig_trotter", name: "卤猪蹄/猪手", nameEn: "Braised Pig Trotter", caloriesPer100g: 260, category: .meat,
-                 visionIdentifiers: ["pork"], aliases: ["猪蹄", "卤猪蹄", "猪手", "红烧猪蹄", "猪脚姜", "pig trotter"]),
+        FoodItem(id: "pig_trotter", name: "卤猪蹄/黄豆炖猪蹄", nameEn: "Braised Pig Trotter with Soybeans", caloriesPer100g: 235, category: .meat,
+                 visionIdentifiers: ["pork"], aliases: ["猪蹄", "卤猪蹄", "猪手", "红烧猪蹄", "黄豆焖猪蹄", "黄豆炖猪蹄", "黄豆炖猪手", "黄豆猪蹄", "红烧猪手", "炖猪蹄", "酱猪蹄", "猪脚", "猪脚姜", "pig trotter"]),
+        FoodItem(id: "stir_fry_beans_pork", name: "扁豆炒肉/四季豆肉丝", nameEn: "Stir-fried Green Beans & Pork", caloriesPer100g: 150, category: .meat,
+                 visionIdentifiers: [], aliases: ["扁豆炒肉", "四季豆炒肉", "荷兰豆炒肉", "豆角炒肉", "扁豆肉丝", "四季豆肉丝", "豆角炒肉片", "豆角肉沫", "炒扁豆", "扁豆"]),
+        FoodItem(id: "stir_fry_pork_liver", name: "青椒炒猪肝/熘肝尖", nameEn: "Stir-fried Pork Liver & Peppers", caloriesPer100g: 135, category: .meat,
+                 visionIdentifiers: [], aliases: ["青椒炒猪肝", "炒猪肝", "洋葱炒猪肝", "熘肝尖", "尖椒猪肝", "爆炒猪肝", "猪肝", "炒猪肝儿"]),
 
         // MARK: - 素菜、豆制品与菌菇 (Veggie)
         FoodItem(id: "vegetable_dish", name: "素菜/炒青菜", nameEn: "Vegetable Dish", caloriesPer100g: 75, category: .veggie,
                  visionIdentifiers: ["vegetable", "broccoli", "tomato", "potato", "eggplant", "pepper_veggie", "bell_pepper", "jalapeno", "green_beans", "bean", "asparagus", "cabbage", "carrot", "cucumber", "lettuce", "onion", "pea", "pumpkin", "spinach"],
                  aliases: ["青菜", "炒青菜", "蔬菜", "素菜", "炒时蔬", "四季豆", "豆角", "干煸豆角", "红烧茄子", "vegetable"]),
+        FoodItem(id: "cabbage_eggplant", name: "白菜烧茄子/炒大白菜", nameEn: "Braised Cabbage & Eggplant", caloriesPer100g: 80, category: .veggie,
+                 visionIdentifiers: [], aliases: ["白菜烧茄子", "炒大白菜", "大白菜炒茄子", "烧茄子", "茄子烧白菜", "清炒大白菜", "醋溜大白菜", "烂糊白菜", "大白菜", "白菜", "炒白菜"]),
+        FoodItem(id: "braised_eggplant", name: "红烧茄子/肉末茄子", nameEn: "Braised Eggplant", caloriesPer100g: 115, category: .veggie,
+                 visionIdentifiers: [], aliases: ["红烧茄子", "风味茄子", "肉末茄子", "肉沫茄子", "油焖茄子", "鱼香茄子", "茄子"]),
         FoodItem(id: "stir_fry_cabbage", name: "手撕包菜/干锅花菜", nameEn: "Stir-fried Cabbage & Cauliflower", caloriesPer100g: 80, category: .veggie,
                  visionIdentifiers: ["cabbage", "cauliflower"], aliases: ["手撕包菜", "干锅花菜", "炒花菜", "大头菜", "圆白菜", "包菜", "fried cabbage"]),
         FoodItem(id: "sour_potato_shreds", name: "酸辣土豆丝/地三鲜", nameEn: "Shredded Potato & Eggplant", caloriesPer100g: 120, category: .veggie,
@@ -2140,7 +2234,6 @@ public enum FoodCalorieEstimator {
                 ?? FoodCatalog.items(matchingName: queryName).first
                 ?? FoodCatalog.item(matchingNameStrict: part)
                 ?? FoodCatalog.items(matchingName: part).first else {
-                // 没认出来的片段不再静默丢弃：收集起来供 UI 提示「这部分没计入热量」
                 let hint = part.trimmingCharacters(in: .whitespacesAndNewlines)
                 if hint.count >= 2, !unmatchedHints.contains(hint) {
                     unmatchedHints.append(hint)
